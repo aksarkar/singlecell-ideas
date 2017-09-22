@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2017-09-22 Fri 14:39 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Latent representation of single cell experiments</title>
+<meta name="generator" content="Org mode" />
+<meta name="author" content="Abhishek Sarkar" />
+<link rel="stylesheet" type="text/css" href="main.css" />
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Latent representation of single cell experiments</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org46b5613">1. Introduction</a></li>
+<li><a href="#orgb47aaa2">2. Cell clustering</a></li>
+<li><a href="#org6fe8815">3. Hierarchical representations</a></li>
+<li><a href="#orga989667">4. Differential expression</a></li>
+<li><a href="#org8f08b12">5. Replicate data</a></li>
+<li><a href="#org7dde3c8">6. Useful datasets</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org46b5613" class="outline-2">
+<h2 id="org46b5613"><span class="section-number-2">1</span> Introduction</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+We are interested in learning latent representations of single cell sequencing
+data. There are a number of potential questions which we could pursue:
+</p>
+
+<ol class="org-ol">
+<li>Can we make quantitative claims about clustering of cells in latent
+spaces?</li>
+
+<li>Can we learn hierarchical representations of cells?</li>
+
+<li>How should we think about differential expression between groups of
+single cells?</li>
+
+<li>How should we handle replicate data in latent variable models?</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgb47aaa2" class="outline-2">
+<h2 id="orgb47aaa2"><span class="section-number-2">2</span> Cell clustering</h2>
+<div class="outline-text-2" id="text-2">
+<p>
+Currently, the state of the art is to generate a visualization of
+cells in the latent space (e.g. principal components) and then make
+qualitative claims about the distances between points of interest.
+</p>
+
+<p>
+<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4481139/">Macosko et al 2015</a> developed Drop-Seq, a microfluidics platform which can now
+assay enough cells to start applying deep learning-based approaches.
+</p>
+
+<blockquote>
+<p>
+We analyzed transcriptomes from 44,808 mouse retinal cells and identified
+39 transcriptionally distinct cell populations, creating a molecular atlas
+of gene expression for known retinal cell classes and novel candidate cell
+subtypes.
+</p>
+</blockquote>
+
+<p>
+For comparison, the well-studied <a href="https://www.cs.toronto.edu/~kriz/cifar.html">CIFAR10 data set</a> is 60,000 images.
+</p>
+
+<p>
+A number of analyses in the paper could be improved upon using modeling-based
+approaches. <b>However, most important is to first clarify what exactly the end
+goal of the analysis is.</b>
+</p>
+
+<blockquote>
+<p>
+We projected the remaining 36,145 cells in the data into the tSNE analysis.
+We then combined a density clustering approach with post hoc differential
+expression analysis to divide 44,808 cells among 39 transcriptionally
+distinct clusters (Supplemental Experimental Procedures) ranging from 50 to
+29,400 cells in size (Figures 5B and 5C).
+</p>
+</blockquote>
+
+<p>
+<b>Can we say anything more than things we already know from low-dimensional
+visualization?</b>
+</p>
+
+<p>
+The most obvious thing to do is fit a variational auto-encoder to the
+data. This is already being done (<a href="http://dx.doi.org/10.1101/178624">Ding et al. 2017</a>), but the goal is to
+make a better visualization.
+</p>
+
+<blockquote>
+<p>
+For all the scRNA-seq datasets, we used principal component analysis (as
+a noise-reduction preprocessing step) to project the cells into a
+100-dimensional space, and used the projected coordinates in the
+100-dimensional spaces as inputs to scvis.
+</p>
+</blockquote>
+
+<p>
+This is the one obvious thing to improve on.
+</p>
+
+<blockquote>
+<p>
+To explicitly encourage cells with similar expression profiles to be
+proximal (and those with dissimilar profiles to be distal) in the latent
+space, we add the t-SNE objective function on the latent z distribution as
+a constraint.
+</p>
+</blockquote>
+
+<p>
+Improving the visualization in this way seems counterproductive when the
+goal is to use the visualization to learn something new. In particular, in
+unsupervised learning of images the goal is actually the opposite: to put
+the examples on a dense manifold. The canonical example of useful
+representations learned like this is to trace along dimensions of this
+manifold, generating images which are smooth interpolations between the
+observations.
+</p>
+
+<blockquote>
+<p>
+We next analyzed the scvis learned probabilistic mapping from a training
+single-cell dataset, and tested how it performed on unseen data. We first
+trained a model on the mouse bipolar cell of the retina dataset, and then
+used the learned model to map the independently generated mouse retina
+dataset
+</p>
+</blockquote>
+
+<p>
+<b>How to make this quantitative?</b>
+</p>
+
+<p>
+<b>What exactly are we trying to learn from low-dimensional visualization,
+and how do we validate any novel insights?</b>
+</p>
+
+<p>
+In the machine learning community, latent representations are instead
+typically evaluated by showing that the latent states (say, clusters) can
+be used to predict independent labeled data (say, cell type). With DropSeq,
+it might be feasible to hold out data points, although we might have to
+worry about which points get held out. Better would be to generate
+replicate data, but if we fail to predict in replicate data, can we really
+say that was a failure of the model or a failure of the data?
+</p>
+
+<p>
+We might have to tackle the more basic problem of correcting for
+confounders in single cell data.
+</p>
+
+<p>
+The most basic approach is to fit a variational autoencoder (<a href="https://arxiv.org/abs/1312.6114">Kingma and
+Welling 2013</a>) to the cells.
+</p>
+
+<p>
+A more complicated approach would be to use an adversarial autoencoder
+<a href="https://arxiv.org/abs/1511.05644">(Makhzani et al., 2015</a>) to include prior information about the latent
+space. For example, if we knew that the sample was a heterogenous mixture of
+some number of cell types, we could try to use a GMM prior on the latent
+states. This example was already pursued in the AAE paper. 
+</p>
+
+<p>
+We could try a DP prior on number of mixture components. Would AAE beat
+hierarchical Dirichlet process (<a href="https://people.eecs.berkeley.edu/~jordan/papers/hdp.pdf">Teh et al. 2005</a>) in that case? However, this
+might be overcomplicated, and not help with the end inference goal.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org6fe8815" class="outline-2">
+<h2 id="org6fe8815"><span class="section-number-2">3</span> Hierarchical representations</h2>
+<div class="outline-text-2" id="text-3">
+<p>
+Ideally, we should learn not just individual genes, but gene
+sets/pathways/processes which change between cell states. We could
+do this either for cell cycle at one time point, or differentiation
+across several time points.
+</p>
+
+<p>
+<b>Can we learn the analogue of "high-level image features" from scRNA-Seq?</b>
+</p>
+
+<p>
+By analogy to computer vision, we need the equivalent of edge detectors, line
+detectors, etc. In simpler terms, we need the AlexNet (<a href="https://papers.nips.cc/paper/4824-imagenet-classification-with-deep-convolutional-neural-networks.pdf">Krizhevsky et al 2012</a>)
+of gene expression. One of the key advances in this area which we should
+build off of is DCGAN (<a href="https://arxiv.org/abs/1511.06434">Radford et al 2016</a>).
+</p>
+</div>
+</div>
+
+<div id="outline-container-orga989667" class="outline-2">
+<h2 id="orga989667"><span class="section-number-2">4</span> Differential expression</h2>
+<div class="outline-text-2" id="text-4">
+<p>
+In a bulk-sequencing DE analysis, we expose cells to different conditions,
+take an average over expression in those conditions, then ask about
+difference in the means.
+</p>
+
+<p>
+But in single cells, different clusters in latent space don't really
+correspond to different conditions. Instead, the single cells are on
+trajectories between the states represented by the clusters.
+</p>
+
+<p>
+<b>Can we write this as regression over the latent dimensions instead of just
+comparing means between two groups?</b>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org8f08b12" class="outline-2">
+<h2 id="org8f08b12"><span class="section-number-2">5</span> Replicate data</h2>
+<div class="outline-text-2" id="text-5">
+<p>
+A natural idea is to require that replicate observations are generated from
+the same latent state, which leads to an interesting modeling problem. Again
+from <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4481139/">Macosko et al 2015</a>:
+</p>
+
+<blockquote>
+<p>
+The retinal STAMPs were generated on 4 different days (weeks apart),
+utilizing different litters and multiple runs in several sessions, for a
+total of seven replicates.
+</p>
+</blockquote>
+
+<p>
+How should we think about replicates in the context of deep implicit models
+(or really, any kind of latent variable model)?
+</p>
+
+<p>
+Do biological replicates really come from the same latent state? If we
+learn a hierarchical representation of latent states, can we require that
+they share some higher-level representation (assuming unknown variability
+is lower down)?
+</p>
+
+<p>
+Should we try to learn a latent representation of technical artifacts also?
+Or should we try to simply correct for technical artifacts (like <a href="https://www.nature.com/nbt/journal/v33/n2/full/nbt.3102.html">Buettner et
+al 2015</a>).
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7dde3c8" class="outline-2">
+<h2 id="org7dde3c8"><span class="section-number-2">6</span> Useful datasets</h2>
+<div class="outline-text-2" id="text-6">
+<ul class="org-ul">
+<li>Mouse retina: <a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE63473">GSE63473</a></li>
+<li>Mouse bipolar neurons: <a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE81905">GSE81905</a></li>
+<li>oligodendroglioma: <a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE70630">GSE70630</a></li>
+<li>metastatic melanoma: <a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE72056">GSE72056</a></li>
+</ul>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2017-09-22 Fri 14:39</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

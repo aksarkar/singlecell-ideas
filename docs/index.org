@@ -1,0 +1,4 @@
+#+TITLE: Single cell
+
+- [[file:ideas.org][Latent representation of single cell experiments]]
+- [[file:vae.org][VAE for single cells]]

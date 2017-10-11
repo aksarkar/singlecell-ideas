@@ -1,0 +1,5 @@
+matplotlib
+numpy
+pandas
+scipy
+tensorflow==1.3.0

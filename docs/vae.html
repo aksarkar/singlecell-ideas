@@ -1,10 +1,10 @@
 html-strict
 <html>
 <head>
-<!-- 2017-10-01 Sun 19:10 -->
+<!-- 2017-10-12 Thu 16:27 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VAE for single cells</title>
+<title>ZIP VAE for single-cell expression</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -224,75 +224,182 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">VAE for single cells</h1>
+<h1 class="title">ZIP VAE for single-cell expression</h1>
 <div id="table-of-contents">
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orgfc64520">1. Setup</a></li>
-<li><a href="#org6461d42">2. Data</a></li>
-<li><a href="#orgc52c2cc">3. Model</a></li>
+<li><a href="#org3394265">1. Get the data</a></li>
+<li><a href="#orgc52c2cc">2. Model</a></li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-orgfc64520" class="outline-2">
-<h2 id="orgfc64520"><span class="section-number-2">1</span> Setup</h2>
+<div id="outline-container-org3394265" class="outline-2">
+<h2 id="org3394265"><span class="section-number-2">1</span> Get the data</h2>
 <div class="outline-text-2" id="text-1">
 <div class="org-src-container">
-<pre><code class="src src-emacs-lisp">(<span style="color: #00cd00;">setq</span> ob-ipython-command <span style="color: #00cdcd;">"ipython"</span>)
-</code></pre>
-</div>
-
-<p>
-Run a remote <code>ipython3</code> kernel on <code>midway2</code>, then connect to it locally using
-<a href="https://github.com/gregsexton/ob-ipython">ob-ipython</a>. On the <code>org-mode</code> side, we need to name the connection file for the
-kernel in such a way that <code>ob-ipthon</code> recognizes it.
-</p>
-
-<div class="org-src-container">
-<pre><code class="src src-shell"><span style="color: #00cd00;">source</span> activate nwas
-sbatch --time=12:00:00 --job-name=ipython3 --output=ipython3.out
-<span style="color: #00ffff; font-style: italic;">#</span><span style="color: #00ffff; font-style: italic;">!/bin/bash</span>
-ipython3 kernel --ip=$(<span style="color: #cd00cd;">hostname</span> -i) -f kernel-aksarkar.json
-</code></pre>
-</div>
-
-<div class="org-src-container">
-<pre><code class="src src-ipython"><span style="color: #00cd00;">import</span> edward <span style="color: #00cd00;">as</span> ed
-<span style="color: #00cd00;">import</span> gzip
-<span style="color: #00cd00;">import</span> pandas <span style="color: #00cd00;">as</span> pd
-</code></pre>
-</div>
-</div>
-</div>
-
-<div id="outline-container-org6461d42" class="outline-2">
-<h2 id="org6461d42"><span class="section-number-2">2</span> Data</h2>
-<div class="outline-text-2" id="text-2">
-<div class="org-src-container">
-<pre><code class="src src-ipython"><span style="color: #00cd00;">with</span> gzip.<span style="color: #00cd00;">open</span>(<span style="color: #00cdcd;">'/home/aksarkar/projects/singlecell/data/mouse-p14-dge.txt.gz'</span>, <span style="color: #00cdcd;">'rt'</span>) <span style="color: #00cd00;">as</span> f:
-    <span style="color: #0000ee;">dge</span> = pd.read_table(f)
-</code></pre>
+<pre class="src src-ipython"><span style="color: #00ff00;">import</span> pandas <span style="color: #00ff00;">as</span> pd
+<span style="color: #0000ff;">dge</span> = pd.read_table(<span style="color: #00ffff;">'/home/aksarkar/projects/singlecell/data/mouse-p14-dge.txt.gz'</span>, index_col=<span style="color: #00ffff;">'gene'</span>, nrows=10000).transpose()
+dge.shape
+</pre>
 </div>
 </div>
 </div>
 
 <div id="outline-container-orgc52c2cc" class="outline-2">
-<h2 id="orgc52c2cc"><span class="section-number-2">3</span> Model</h2>
-<div class="outline-text-2" id="text-3">
-<pre class="example">
+<h2 id="orgc52c2cc"><span class="section-number-2">2</span> Model</h2>
+<div class="outline-text-2" id="text-2">
+<p>
+\[ q(z \mid x) = N(\mu(x), \sigma(x)) \]
+</p>
 
+<p>
+\[ p(x \mid z) = \pi_0(z) \delta_0(x) + (1 - \pi_0(z)) \mathrm{Pois}(x; \lambda(z)) \]
+</p>
+
+<p>
+The idea is that \(\mu, \sigma, \pi_0, \lambda\) are outputs of neural
+networks.
+</p>
+
+<p>
+To achieve dimensionality reduction, we want the dimension of \(\mu(x)\) less
+than the dimension of \(x\).
+</p>
+
+<p>
+To visualize the result, we can take \(\mu(x)\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #00ff00;">import</span> tensorflow <span style="color: #00ff00;">as</span> tf
+<span style="color: #00ff00;">import</span> tensorflow.contrib.distributions <span style="color: #00ff00;">as</span> ds
+<span style="color: #00ff00;">import</span> tensorflow.contrib.bayesflow <span style="color: #00ff00;">as</span> bf
+<span style="color: #00ff00;">import</span> tensorflow.contrib.slim <span style="color: #00ff00;">as</span> slim
+
+<span style="color: #0000ff;">st</span> = bf.stochastic_tensor
+<span style="color: #0000ff;">vi</span> = bf.variational_inference
+
+<span style="color: #0000ff;">num_epochs</span> = 10
+<span style="color: #0000ff;">minibatch_size</span> = 100
+<span style="color: #0000ff;">n</span>, <span style="color: #0000ff;">p</span> = dge.shape
+<span style="color: #0000ff;">num_minibatch</span> = n // 100
+<span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">Last layer is the target latent dimension</span>
+<span style="color: #0000ff;">layer_dim</span> = [2048, 1024, 512]
+
+<span style="color: #0000ff;">graph</span> = tf.Graph()
+<span style="color: #0000ff;">gpu_dev</span> = <span style="color: #00ffff;">'/gpu:{}'</span>.<span style="color: #00ff00;">format</span>(os.getenv(<span style="color: #00ffff;">'CUDA_VISIBLE_DEVICES'</span>).split(<span style="color: #00ffff;">','</span>)[0])
+<span style="color: #00ff00;">with</span> graph.as_default(), graph.device(gpu_dev):
+  <span style="color: #00ff00;">with</span> tf.name_scope(<span style="color: #00ffff;">'input'</span>):
+    <span style="color: #0000ff;">x</span> = tf.placeholder(shape=[minibatch_size, p], dtype=tf.float32)
+  <span style="color: #00ff00;">with</span> tf.variable_scope(<span style="color: #00ffff;">'encoder'</span>):
+    <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">Default activation is relu</span>
+    <span style="color: #0000ff;">qz</span> = slim.stack(x, slim.fully_connected, layer_dim[:-1], scope=<span style="color: #00ffff;">'fc'</span>)
+    <span style="color: #0000ff;">loc</span> = slim.linear(qz, num_outputs=layer_dim[-1], activation_fn=<span style="color: #00ffff;">None</span>,
+                      scope=<span style="color: #00ffff;">'loc'</span>)
+    <span style="color: #0000ff;">scale</span> = slim.fully_connected(qz, num_outputs=layer_dim[-1],
+                                 activation_fn=tf.nn.softplus, scope=<span style="color: #00ffff;">'scale'</span>)
+    <span style="color: #00ff00;">with</span> st.value_type(st.SampleValue()):
+      <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">Put minimum scale here because it has to be outside the softplus (bias</span>
+      <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">on sigma is inside the softplus)</span>
+      <span style="color: #0000ff;">qz</span> = st.StochasticTensor(ds.Normal(loc=loc, scale=(1e-6 + scale)))
+  <span style="color: #00ff00;">with</span> tf.variable_scope(<span style="color: #00ffff;">'decoder'</span>):
+    <span style="color: #0000ff;">pz</span> = ds.Normal(loc=tf.zeros(layer_dim[-1]), scale=tf.ones(layer_dim[-1]))
+    <span style="color: #0000ff;">px</span> = slim.stack(qz, slim.fully_connected, <span style="color: #00ff00;">list</span>(<span style="color: #00ff00;">reversed</span>(layer_dim[:-1])),
+                    scope=<span style="color: #00ffff;">'fc'</span>)
+    <span style="color: #0000ff;">pi_0</span> = slim.fully_connected(px, num_outputs=1,
+                                activation_fn=tf.nn.sigmoid, scope=<span style="color: #00ffff;">'pi_0'</span>)
+    <span style="color: #0000ff;">rate</span> = slim.linear(px, num_outputs=1, activation_fn=tf.nn.softplus,
+                       scope=<span style="color: #00ffff;">'lambda'</span>)
+    <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">pi_0 + (1 - pi_0) Pois(0; rate), x = 0</span>
+    <span style="color: brightcyan; font-style: italic;">#        </span><span style="color: brightcyan; font-style: italic;">(1 - pi_0) Pois(x; rate), x &gt; 0</span>
+    <span style="color: brightcyan; font-style: italic;">#</span>
+    <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">We need minimum rate because otherwise log_prob gives nan</span>
+    <span style="color: #0000ff;">px</span> = ds.Poisson(1e-6 + rate)
+    <span style="color: #0000ff;">num_0</span> = tf.reduce_sum(tf.cast(x == 0, tf.float32))
+    <span style="color: #0000ff;">llik</span> = tf.reduce_sum(pi_0 * num_0 + (1 - pi_0) * px.log_prob(x))
+
+  vi.register_prior(qz, pz)
+  <span style="color: #0000ff;">elbo</span> = tf.reduce_sum(vi.elbo(llik))
+  <span style="color: #0000ff;">opt</span> = tf.train.AdamOptimizer(learning_rate=1e-5)
+  <span style="color: #0000ff;">train</span> = opt.minimize(-elbo)
 </pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #00ff00;">import</span> numpy <span style="color: #00ff00;">as</span> np
+
+<span style="color: #0000ff;">sv</span> = tf.train.Supervisor(
+  graph=graph,
+  logdir=os.path.join(os.getenv(<span style="color: #00ffff;">'SCRATCH'</span>), <span style="color: #00ffff;">'zip-vae-model'</span>))
+<span style="color: #00ff00;">with</span> sv.managed_session() <span style="color: #00ff00;">as</span> sess:
+  <span style="color: #00ff00;">for</span> i <span style="color: #00ff00;">in</span> <span style="color: #00ff00;">range</span>(num_epochs * dge.shape[0] // minibatch_size):
+    <span style="color: #00ff00;">if</span> sv.should_stop():
+      <span style="color: #00ff00;">break</span>
+    <span style="color: #0000ff;">start</span> = (i % num_minibatch) * minibatch_size
+    <span style="color: #0000ff;">_</span>, <span style="color: #0000ff;">loss</span> = sess.run([train, elbo], feed_dict={x: dge.iloc[start:start + minibatch_size]})
+    <span style="color: #00ff00;">if</span> np.isnan(loss):
+      <span style="color: #00ff00;">raise</span> tf.train.NanLossDuringTrainingError
+    <span style="color: #00ff00;">if</span> <span style="color: #00ff00;">not</span> i % 10:
+      <span style="color: #00ff00;">print</span>(i, loss)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span style="color: #00ff00;">with</span> sv.managed_session() <span style="color: #00ff00;">as</span> sess:
+  <span style="color: #0000ff;">z</span> = np.zeros((n, layer_dim[-1]))
+  <span style="color: #00ff00;">for</span> i <span style="color: #00ff00;">in</span> <span style="color: #00ff00;">range</span>(num_minibatch):
+    <span style="color: #0000ff;">start</span> = i * minibatch_size
+    <span style="color: #0000ff;">z</span>[start:start + minibatch_size] = sess.run(qz.value(), feed_dict={x: dge.iloc[start:start + minibatch_size]})
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+
+<span style="color: #00ff00;">import</span> matplotlib.pyplot <span style="color: #00ff00;">as</span> plt
+<span style="color: #00ff00;">import</span> scipy.linalg <span style="color: #00ff00;">as</span> spla
+
+<span style="color: #0000ff;">u</span>, <span style="color: #0000ff;">d</span>, <span style="color: #0000ff;">v</span> = spla.svd(z, full_matrices=<span style="color: #00ffff;">False</span>)
+<span style="color: #0000ff;">z_proj</span> = z.dot(v)
+plt.clf()
+plt.scatter(z_proj[:,0], z_proj[:,1])
+plt.xlabel(<span style="color: #00ffff;">'PC1 $q(z \mid x)$'</span>)
+plt.ylabel(<span style="color: #00ffff;">'PC2 $q(z \mid x)'</span>)
+</pre>
+</div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2017-10-01 Sun 19:10</p>
+<p class="date">Created: 2017-10-12 Thu 16:27</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

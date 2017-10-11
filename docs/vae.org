@@ -1,4 +1,4 @@
-#+TITLE: VAE for single cells
+#+TITLE: ZIP VAE for single-cell expression
 #+AUTHOR: Abhishek Sarkar
 #+EMAIL: aksarkar@uchicago.edu
 #+EXCLUDE_TAGS: noexport
@@ -12,38 +12,173 @@
 #+OPTIONS: html-scripts:t html-style:t html5-fancy:nil tex:t
 #+OPTIONS: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t
 
-* Setup
+* Setup :noexport:
 
-#+BEGIN_SRC emacs-lisp :results none
-(setq ob-ipython-command "ipython")
-#+END_SRC
+  #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
+  #+END_SRC
 
-Run a remote ~ipython3~ kernel on ~midway2~, then connect to it locally using
-[[https://github.com/gregsexton/ob-ipython][ob-ipython]]. On the ~org-mode~ side, we need to name the connection file for the
-kernel in such a way that ~ob-ipthon~ recognizes it.
+  #+RESULTS:
 
-#+BEGIN_SRC shell :results none
-source activate nwas
-sbatch --time=12:00:00 --job-name=ipython3 --output=ipython3.out
-#!/bin/bash
-ipython3 kernel --ip=$(hostname -i) -f kernel-aksarkar.json
-#+END_SRC
+  #+BEGIN_SRC shell :dir (concat (file-name-as-directory (getenv "SCRATCH"))) :var RESOURCES="--mem=36G --partition=gpu2 --gres=gpu:1"
+    sbatch $RESOURCES --job-name=ipython3 --output=ipython3.out
+    #!/bin/bash
+    module unload cuda
+    module load cuda/8.0
+    source activate singlecell
+    rm -f $HOME/.local/share/jupyter/runtime/kernel-aksarkar.json
+    ipython3 kernel --ip=$(hostname -i) -f kernel-aksarkar.json
+  #+END_SRC
 
-#+BEGIN_SRC ipython :session kernel-aksarkar.json
-  import edward as ed
-  import gzip
-  import pandas as pd
-#+END_SRC
+  #+RESULTS:
+  : Submitted batch job 37938405
 
-* Data
+  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :async t
+  import tensorflow as tf
+  tf.__version__
+  #+END_SRC
 
-#+BEGIN_SRC ipython :session kernel-aksarkar.json
-  with gzip.open('/home/aksarkar/projects/singlecell/data/mouse-p14-dge.txt.gz', 'rt') as f:
-      dge = pd.read_table(f)
-#+END_SRC
+  #+RESULTS:
+  :RESULTS:
+  : '1.3.0'
+  :END:
+
+* Get the data
+
+  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :async t
+    import pandas as pd
+    dge = pd.read_table('/home/aksarkar/projects/singlecell/data/mouse-p14-dge.txt.gz', index_col='gene', nrows=10000).transpose()
+    dge.shape
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  : (49300, 10000)
+  :END:
 
 * Model
 
-#+BEGIN_SRC 
+  \[ q(z \mid x) = N(\mu(x), \sigma(x)) \]
 
-#+END_SRC
+  \[ p(x \mid z) = \pi_0(z) \delta_0(x) + (1 - \pi_0(z)) \mathrm{Pois}(x; \lambda(z)) \]
+
+  The idea is that \(\mu, \sigma, \pi_0, \lambda\) are outputs of neural
+  networks.
+
+  To achieve dimensionality reduction, we want the dimension of \(\mu(x)\) less
+  than the dimension of \(x\).
+
+  To visualize the result, we can take \(\mu(x)\).
+
+  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :async t
+    import tensorflow as tf
+    import tensorflow.contrib.distributions as ds
+    import tensorflow.contrib.bayesflow as bf
+    import tensorflow.contrib.slim as slim
+
+    st = bf.stochastic_tensor
+    vi = bf.variational_inference
+
+    num_epochs = 10
+    minibatch_size = 100
+    n, p = dge.shape
+    num_minibatch = n // 100
+    # Last layer is the target latent dimension
+    layer_dim = [2048, 1024, 512]
+
+    graph = tf.Graph()
+    gpu_dev = '/gpu:{}'.format(os.getenv('CUDA_VISIBLE_DEVICES').split(',')[0])
+    with graph.as_default(), graph.device(gpu_dev):
+      with tf.name_scope('input'):
+        x = tf.placeholder(shape=[minibatch_size, p], dtype=tf.float32)
+      with tf.variable_scope('encoder'):
+        # Default activation is relu
+        qz = slim.stack(x, slim.fully_connected, layer_dim[:-1], scope='fc')
+        loc = slim.linear(qz, num_outputs=layer_dim[-1], activation_fn=None,
+                          scope='loc')
+        scale = slim.fully_connected(qz, num_outputs=layer_dim[-1],
+                                     activation_fn=tf.nn.softplus, scope='scale')
+        with st.value_type(st.SampleValue()):
+          # Put minimum scale here because it has to be outside the softplus (bias
+          # on sigma is inside the softplus)
+          qz = st.StochasticTensor(ds.Normal(loc=loc, scale=(1e-6 + scale)))
+      with tf.variable_scope('decoder'):
+        pz = ds.Normal(loc=tf.zeros(layer_dim[-1]), scale=tf.ones(layer_dim[-1]))
+        px = slim.stack(qz, slim.fully_connected, list(reversed(layer_dim[:-1])),
+                        scope='fc')
+        pi_0 = slim.fully_connected(px, num_outputs=1,
+                                    activation_fn=tf.nn.sigmoid, scope='pi_0')
+        rate = slim.linear(px, num_outputs=1, activation_fn=tf.nn.softplus,
+                           scope='lambda')
+        # pi_0 + (1 - pi_0) Pois(0; rate), x = 0
+        #        (1 - pi_0) Pois(x; rate), x > 0
+        #
+        # We need minimum rate because otherwise log_prob gives nan
+        px = ds.Poisson(1e-6 + rate)
+        num_0 = tf.reduce_sum(tf.cast(x == 0, tf.float32))
+        llik = tf.reduce_sum(pi_0 * num_0 + (1 - pi_0) * px.log_prob(x))
+
+      vi.register_prior(qz, pz)
+      elbo = tf.reduce_sum(vi.elbo(llik))
+      opt = tf.train.AdamOptimizer(learning_rate=1e-5)
+      train = opt.minimize(-elbo)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  :END:
+
+  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :async t
+    import numpy as np
+
+    sv = tf.train.Supervisor(
+      graph=graph,
+      logdir=os.path.join(os.getenv('SCRATCH'), 'zip-vae-model'))
+    with sv.managed_session() as sess:
+      for i in range(num_epochs * dge.shape[0] // minibatch_size):
+        if sv.should_stop():
+          break
+        start = (i % num_minibatch) * minibatch_size
+        _, loss = sess.run([train, elbo], feed_dict={x: dge.iloc[start:start + minibatch_size]})
+        if np.isnan(loss):
+          raise tf.train.NanLossDuringTrainingError
+        if not i % 10:
+          print(i, loss)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  :END:
+
+  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :async t
+    with sv.managed_session() as sess:
+      z = np.zeros((n, layer_dim[-1]))
+      for i in range(num_minibatch):
+        start = i * minibatch_size
+        z[start:start + minibatch_size] = sess.run(qz.value(), feed_dict={x: dge.iloc[start:start + minibatch_size]})
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  : (49300, 512)
+  :END:
+
+  #+BEGIN_SRC ipython :ipyfile pca.png :session kernel-aksarkar.json :results raw drawer :async t
+    %matplotlib inline
+
+    import matplotlib.pyplot as plt
+    import scipy.linalg as spla
+
+    u, d, v = spla.svd(z, full_matrices=False)
+    z_proj = z.dot(v)
+    plt.clf()
+    plt.scatter(z_proj[:,0], z_proj[:,1])
+    plt.xlabel('PC1 $q(z \mid x)$')
+    plt.ylabel('PC2 $q(z \mid x)')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  : <matplotlib.text.Text at 0x7fdd150733c8>
+  [[file:pca.png]]
+  :END:

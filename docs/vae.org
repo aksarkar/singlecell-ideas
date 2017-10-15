@@ -64,6 +64,7 @@
     import tensorflow.contrib.bayesflow as bf
     import tensorflow.contrib.distributions as ds
     import tensorflow.contrib.slim as slim
+    import tensorflow.python.ops.array_ops as array_ops
 
     st = bf.stochastic_tensor
     vi = bf.variational_inference
@@ -81,6 +82,57 @@
   :RESULTS:
   f9067002-ac82-4542-84ea-5aaed7671d3c
   :END:
+
+* Gumbel-Softmax distribution
+  
+  [[https://arxiv.org/abs/1611.00712][Maddison et al ICLR 2017]]
+
+  [[https://arxiv.org/abs/1611.01144][Jang et al ICLR 2017]]
+
+  #+BEGIN_SRC ipython :session kernel-aksarkar.json :result raw drawer
+    def sample_gumbel(size=1):
+      return -np.log(-np.log(np.random.uniform(size=size)))
+
+    def softmax(logits):
+      # This is needed to avoid exp overflow
+      p = np.exp(logits - logits.max())
+      return p / p.sum()
+
+    def sample_gumbel_softmax(probs, temperature):
+      return softmax((np.log(probs) + sample_gumbel(probs.shape)) / temperature)
+  #+END_SRC
+
+  #+RESULTS:
+
+  The only thing we need is to be able to draw samples through the differentiable
+  transform in tensorflow:
+
+  #+BEGIN_SRC ipython :session kernel-aksarkar.json :result raw drawer
+    class GumbelSoftmax(ds.Distribution):
+      def __init__(self, probs, temperature, validate_args=False,
+                   allow_nan_stats=False, name='GumbelSoftmax'):
+        parameters = locals()
+        with tf.name_scope(name, values=[probs, temperatures]):
+          with tf.control_dependencies([]):
+            self._probs = array_ops.identity(probs, name='probs')
+            self._temperature = array_ops.identity(temperature, name='temperature')
+        super(distribution_SpikeSlab, self).__init__(
+          allow_nan_stats=allow_nan_stats,
+          dtype=self._probs.dtype,
+          graph_parents=[self._probs, self._temperature],
+          name=name,
+          parameters=parameters,
+          reparameterization_type=ds.FULLY_REPARAMETERIZED,
+          validate_args=validate_args,
+        )
+
+      def _log_prob(self, value):
+        raise NotImplementedError("log_prob is not implemented")
+
+      def _sample_n(self, n, seed=None):
+        gumbel_samples = -tf.log(-tf.log(tf.random_uniform([n, self._probs.shape[0]])))
+        return tf.nn.softmax((tf.log(self._probs) + gumbel_samples) / temperature)
+  #+END_SRC
 
 * Model
 

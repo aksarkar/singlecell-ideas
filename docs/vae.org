@@ -12,6 +12,8 @@
 #+OPTIONS: html-scripts:t html-style:t html5-fancy:nil tex:t
 #+OPTIONS: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t
 
+#+PROPERTY: header-args:ipython+ :session kernel-aksarkar.json :results raw drawer :async t
+
 * Setup :noexport:
 
   #+BEGIN_SRC emacs-lisp
@@ -20,39 +22,20 @@
 
   #+RESULTS:
 
+  #+NAME: ipython3-kernel
   #+BEGIN_SRC shell :dir (concat (file-name-as-directory (getenv "SCRATCH"))) :var RESOURCES="--mem=36G --partition=gpu2 --gres=gpu:1"
     sbatch $RESOURCES --job-name=ipython3 --output=ipython3.out
     #!/bin/bash
-    module unload cuda
-    module load cuda/8.0
     source activate singlecell
     rm -f $HOME/.local/share/jupyter/runtime/kernel-aksarkar.json
     ipython3 kernel --ip=$(hostname -i) -f kernel-aksarkar.json
   #+END_SRC
 
-  #+RESULTS:
-  : Submitted batch job 38019028
-
-  #+BEGIN_SRC shell :dir (concat (file-name-as-directory (getenv "SCRATCH"))) :results raw drawer
-  tail ipython3.out
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  NOTE: When using the `ipython kernel` entry point, Ctrl-C will not work.
-
-  To exit, you will have to explicitly quit this process, by either sending
-  "quit" from a client, or using Ctrl-\ in UNIX-like environments.
-
-  To read more about this, see https://github.com/ipython/ipython/issues/2049
-
-
-  To connect another client to this kernel, use:
-      --existing kernel-aksarkar.json
-  :END:
+  #+RESULTS: ipython3-kernel
+  : Submitted batch job 38512951
 
   #+NAME: imports
-  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer
+  #+BEGIN_SRC ipython
     %matplotlib inline
 
     import matplotlib.pyplot as plt
@@ -60,15 +43,44 @@
     import os
     import pandas as pd
     import scipy.linalg as spla
+    import scipy.stats as sps
     import tensorflow as tf
     import tensorflow.contrib.bayesflow as bf
     import tensorflow.contrib.distributions as ds
     import tensorflow.contrib.slim as slim
-    import tensorflow.python.ops.array_ops as array_ops
 
     st = bf.stochastic_tensor
     vi = bf.variational_inference
   #+END_SRC
+
+  #+RESULTS: imports
+  :RESULTS:
+  382c333e-1ff1-45db-bef8-d0edd0fecd91
+  :END:
+
+  #+BEGIN_SRC ipython
+    from tensorflow.python.client import device_lib as dl
+    dl.list_local_devices()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  #+BEGIN_EXAMPLE
+  [name: "/cpu:0"
+     device_type: "CPU"
+     memory_limit: 268435456
+     locality {
+     }
+     incarnation: 10620457322698722014, name: "/gpu:0"
+     device_type: "GPU"
+     memory_limit: 11324823962
+     locality {
+       bus_id: 2
+     }
+     incarnation: 13794022081997974724
+     physical_device_desc: "device: 0, name: Tesla K80, pci bus id: 0000:89:00.0"]
+  #+END_EXAMPLE
+  :END:
 
 * Get the data
 

@@ -23,7 +23,7 @@
   #+RESULTS:
 
   #+NAME: ipython3-kernel
-  #+BEGIN_SRC shell :dir (concat (file-name-as-directory (getenv "SCRATCH"))) :var RESOURCES="--mem=36G --partition=gpu2 --gres=gpu:1"
+  #+BEGIN_SRC shell :dir (concat (file-name-as-directory (getenv "SCRATCH")) "singlecell") :var RESOURCES="--mem=36G --partition=gpu2 --gres=gpu:1"
     sbatch $RESOURCES --job-name=ipython3 --output=ipython3.out
     #!/bin/bash
     source activate singlecell
@@ -32,7 +32,7 @@
   #+END_SRC
 
   #+RESULTS: ipython3-kernel
-  : Submitted batch job 38512951
+  : Submitted batch job 38513527
 
   #+NAME: imports
   #+BEGIN_SRC ipython
@@ -55,7 +55,6 @@
 
   #+RESULTS: imports
   :RESULTS:
-  382c333e-1ff1-45db-bef8-d0edd0fecd91
   :END:
 
   #+BEGIN_SRC ipython
@@ -71,13 +70,13 @@
      memory_limit: 268435456
      locality {
      }
-     incarnation: 10620457322698722014, name: "/gpu:0"
+     incarnation: 6311300002200915715, name: "/gpu:0"
      device_type: "GPU"
      memory_limit: 11324823962
      locality {
        bus_id: 2
      }
-     incarnation: 13794022081997974724
+     incarnation: 14476157233182787061
      physical_device_desc: "device: 0, name: Tesla K80, pci bus id: 0000:89:00.0"]
   #+END_EXAMPLE
   :END:
@@ -100,9 +99,18 @@
   !Sample_data_processing = Supplementary_files_format_and_content: tab-delimited text file containing the normalized expression levels (E) for 8008 analyzed genes across 2,594 oligodendroglioma cells that passed QC.
   :END:
 
+  #+NAME: signature-genes
+  #+BEGIN_SRC ipython
+    signature_genes = pd.read_excel('https://www.nature.com/nature/journal/v539/n7628/extref/nature20123-s1.xlsx', skiprows=8, header=0)
+  #+END_SRC
+
+  #+RESULTS: signature-genes
+  :RESULTS:
+  :END:
+
   #+NAME: oligodendroma
   #+BEGIN_SRC ipython
-    dge = pd.read_table('/home/aksarkar/projects/singlecell/data/oligodendroma.txt.gz', index_col=0)
+    dge = pd.read_table('/home/aksarkar/projects/singlecell/data/oligodendroma.txt.gz', index_col=0, quotechar="'")
     dge = dge.fillna(value=0)
     dge.columns = pd.Series(dge.columns).apply(lambda x: 'MGH{}'.format(x.split('_')[0]) if 'MGH' not in x else x.split('_')[0])
     dge.shape, dge.columns.value_counts()
@@ -121,7 +129,7 @@
   #+END_EXAMPLE
   :END:
 
-* Replicate Tirosh et al
+* Replicate Tirosh et al:
 
   Expression levels were quantified as \(E_{i,j} = \log_2 (TPM_{i,j} /10 +
   1)\), where \(TPM_{i,j}\) refers to transcript-per-million for gene \(i\) in
@@ -133,55 +141,86 @@
   than 3,000 detected genes or an average housekeeping expression (E, as defined
   above) below 2.5.
 
-  Get housekeeping genes from [[http://www.sciencedirect.com/science/article/pii/S0168952513000899~][Eisenberg and Levanon 2013]]:
-
-  #+BEGIN_SRC ipython
-    housekeeping_genes = pd.read_table('https://www.tau.ac.il/~elieis/HKG/HK_genes.txt', header=None, sep=r'\s+')
-    housekeeping_genes.head()
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  #+BEGIN_EXAMPLE
-         0          1
-    0   AAAS  NM_015665
-    1  AAGAB  NM_024666
-    2   AAMP  NM_001087
-    3   AAR2  NM_015511
-    4   AARS  NM_001605
-  #+END_EXAMPLE
-  :END:
-
-  #+BEGIN_SRC ipython
-    pass_detected_genes = np.count_nonzero(dge.values, axis=0) > 3000
-    pass_housekeeping_expression = dge.loc[housekeeping_genes[0]].agg(np.mean, axis=0) > 2.5
-    pass_housekeeping_expression.sum()
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  : 0
-  :END:
+  *Presumably this was already done because the number of cells in the data
+  matrix matches the reported number (4,347)*
 
   For the remaining cells we calculated the aggregate expression of each gene
   as (\log 2 (\mathrm{average}(TPM_{i,1...n})+1)\), and excluded genes with an
   aggregate expression below 4, leaving a set of 8,008 analysed genes.
 
   #+BEGIN_SRC ipython
-    pass_aggregate_expression = np.log(np.mean(np.exp((10 * dge.values - 1) / np.log(2)), axis=1)) / np.log(2) > 4
+    tpm = 10 * (np.exp(dge.values * np.log(2)) - 1)
+    pass_aggregate_expression = np.log(tpm.mean(axis=1) + 1) / np.log(2) > 4
     pass_aggregate_expression.sum()
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  : 22330
+  : 8115
   :END:
 
   For the remaining cells and genes, we defined relative expression by
-  centering the expression levels, \(Er_{i,j} = E_{i,j} - \mathrm{average}[E
-  i,1...n ]\). Centring was performed within each tumour separately in order to
-  decrease the impact of inter-tumoural variability on the combined analysis
-  across tumours.
+  centering the expression levels, \(Er_{i,j} = E_{i,j} -
+  \mathrm{average}[E_{i,1...n} ]\). Centering was performed within each tumour
+  separately in order to decrease the impact of inter-tumoural variability on
+  the combined analysis across tumours.
+
+  #+NAME: relative_expression
+  #+BEGIN_SRC ipython
+    relative_expression = dge[pass_aggregate_expression].groupby(lambda x: x, axis=1).transform(lambda x: x - x.mean())
+  #+END_SRC
+
+  #+RESULTS: relative_expression
+  :RESULTS:
+  :END:
+
+  #+RESULTS:
+  :RESULTS:
+  :END:
+
+  #+BEGIN_SRC shell :dir (concat (file-name-as-directory (getenv "SCRATCH")) "singlecell")
+    curl --ftp-pasv -sO "ftp://ftp.sanger.ac.uk/pub/gencode/Gencode_human/release_27/gencode.v27.basic.annotation.gtf.gz"
+  #+END_SRC
+
+  #+RESULTS:
+
+  #+NAME: gencode
+  #+BEGIN_SRC ipython
+    gencode = pd.read_table(os.path.join(os.getenv('SCRATCH'), 'singlecell', 'gencode.v27.basic.annotation.gtf.gz'), comment='#', header=None)
+    gencode.columns = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute']
+    protein_coding_genes = gencode[(gencode['feature'] == 'gene') & gencode['attribute'].apply(lambda x: 'protein_coding' in x)]
+    protein_coding_genes.loc[:,'symbol'] = protein_coding_genes['attribute'].apply(lambda x: dict(info.split() for info in x.split('; '))['gene_name'].strip('"'))
+    protein_coding_genes.head()
+  #+END_SRC
+
+  #+RESULTS: gencode
+  :RESULTS:
+  #+BEGIN_EXAMPLE
+        chr  source feature   start     end score strand frame  \
+    54   chr1  HAVANA    gene   65419   71585     .      +     .   
+    175  chr1  HAVANA    gene  450703  451697     .      -     .   
+    241  chr1  HAVANA    gene  685679  686673     .      -     .   
+    390  chr1  HAVANA    gene  923928  944581     .      +     .   
+    658  chr1  HAVANA    gene  944204  959309     .      -     .   
+
+                                                 attribute  symbol  
+    54   gene_id "ENSG00000186092.5"; gene_type "protei...   OR4F5  
+    175  gene_id "ENSG00000284733.1"; gene_type "protei...  OR4F29  
+    241  gene_id "ENSG00000284662.1"; gene_type "protei...  OR4F16  
+    390  gene_id "ENSG00000187634.11"; gene_type "prote...  SAMD11  
+    658  gene_id "ENSG00000188976.10"; gene_type "prote...   NOC2L  
+  #+END_EXAMPLE
+  :END:
+
+  #+NAME: cnv
+  #+BEGIN_SRC ipython
+    relative_expression.merge(protein_coding_genes, left_index=True, right_on='symbol').sort_values(by=['chr', 'start']).reindex().rolling(100).mean()
+  #+END_SRC
+
+  #+RESULTS: cnv
+  :RESULTS:
+  cf2e8de6-4b16-47fc-911a-d6ce45d93025
+  :END:
 
 * Model
 
@@ -246,7 +285,7 @@
     # This needs to be outside graph.device
     sv = tf.train.Supervisor(
       graph=graph,
-      logdir=os.path.join(os.getenv('SCRATCH'), 'zip-vae-model'))
+      logdir=os.path.join(os.getenv('SCRATCH'), 'vae-model'))
   #+END_SRC
 
   #+RESULTS:

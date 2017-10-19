@@ -1,4 +1,4 @@
-#+TITLE: ZIP VAE for single-cell expression
+#+TITLE: VAE for single-cell expression
 #+AUTHOR: Abhishek Sarkar
 #+EMAIL: aksarkar@uchicago.edu
 #+EXCLUDE_TAGS: noexport
@@ -187,7 +187,7 @@
 
   \[ q(z \mid x) = N(\mu(x), \sigma(x)) \]
 
-  \[ p(x \mid z) = \pi_0(z) \delta_0(x) + (1 - \pi_0(z)) \mathrm{Pois}(x; \lambda(z)) \]
+  \[ p(x \mid z) = N(\mu(z), \sigma(z)) \]
 
   The idea is that \(\mu, \sigma, \pi_0, \lambda\) are outputs of neural
   networks.
@@ -197,52 +197,51 @@
 
   To visualize the result, we can take \(\mu(x)\).
 
-  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :async t
-    num_epochs = 20
+  #+BEGIN_SRC ipython
+    num_epochs = 10
     minibatch_size = 100
     n, p = dge.shape
     num_minibatch = n // 100
     # Last layer is the target latent dimension
-    layer_dim = [2048, 1024, 512]
+    layer_dim = [1024, 512, 256, 3]
 
     graph = tf.Graph()
-    gpu_dev = '/gpu:0'
-    with graph.as_default(), graph.device(gpu_dev):
+    with graph.as_default(), graph.device('/gpu:*'):
       with tf.name_scope('input'):
         x = tf.placeholder(shape=[minibatch_size, p], dtype=tf.float32)
-      with tf.variable_scope('encoder'):
-        # Default activation is relu
-        qz = slim.stack(x, slim.fully_connected, layer_dim[:-1], scope='fc')
-        loc = slim.linear(qz, num_outputs=layer_dim[-1], activation_fn=None,
-                          scope='loc')
-        scale = slim.fully_connected(qz, num_outputs=layer_dim[-1],
-                                     activation_fn=tf.nn.softplus, scope='scale')
-        with st.value_type(st.MeanValue()):
-          # Put minimum scale here because it has to be outside the softplus (bias
-          # on sigma is inside the softplus)
-          qz = st.StochasticTensor(ds.Normal(loc=loc, scale=(1e-6 + scale)))
-      with tf.variable_scope('decoder'):
-        pz = ds.Normal(loc=tf.zeros(layer_dim[-1]), scale=tf.ones(layer_dim[-1]))
-        px = slim.stack(qz, slim.fully_connected, list(reversed(layer_dim[:-1])),
-                        scope='fc')
-        pi_0 = slim.fully_connected(px, num_outputs=1,
-                                    activation_fn=tf.nn.sigmoid, scope='pi_0')
-        rate = slim.linear(px, num_outputs=p, activation_fn=tf.nn.softplus,
-                           scope='lambda')
-        # pi_0 + (1 - pi_0) Pois(0; rate), x = 0
-        #        (1 - pi_0) Pois(x; rate), x > 0
-        #
-        # We need minimum rate because otherwise log_prob gives nan
-        px = ds.Poisson(1e-6 + rate)
-        num_0 = tf.reduce_sum(tf.cast(x == 0, tf.float32))
-        llik = tf.reduce_sum(pi_0 * num_0 + (1 - pi_0) * px.log_prob(x))
-        reconstructed_x = (1 - pi_0) * rate
-        frob = tf.norm(reconstructed_x - x)
+      with slim.arg_scope([slim.fully_connected],
+                          normalizer_fn=slim.batch_norm):
+        with tf.variable_scope('encoder'):
+          # Default activation is relu
+          qz = slim.stack(x, slim.fully_connected, layer_dim[:-1], scope='fc')
+          loc = slim.linear(qz, num_outputs=layer_dim[-1], activation_fn=None,
+                            scope='loc')
+          scale = slim.fully_connected(qz, num_outputs=layer_dim[-1],
+                                       activation_fn=tf.nn.softplus, scope='scale')
+          with st.value_type(st.MeanValue()):
+            # Put minimum scale here because it has to be outside the softplus (bias
+            # on sigma is inside the softplus)
+            qz = st.StochasticTensor(ds.Normal(loc=loc, scale=(1e-6 + scale)))
+        with tf.variable_scope('decoder'):
+          pz = ds.Normal(loc=tf.zeros(layer_dim[-1]), scale=tf.ones(layer_dim[-1]))
+          px = slim.stack(qz, slim.fully_connected, list(reversed(layer_dim[:-1])),
+                          scope='fc')
+          loc = slim.linear(px, num_outputs=p, activation_fn=None, scope='loc')
+          scale = slim.linear(px, num_outputs=p, activation_fn=tf.nn.softplus, scope='scale')
+          llik = tf.reduce_sum(ds.Normal(loc=loc, scale=(1e-6 + scale)).log_prob(x))
 
       vi.register_prior(qz, pz)
       elbo = tf.reduce_sum(vi.elbo(llik))
-      opt = tf.train.AdamOptimizer(learning_rate=1e-5)
-      train = opt.minimize(-elbo)
+      opt = tf.train.RMSPropOptimizer(learning_rate=1e-3)
+      step = tf.get_variable(
+        name='step',
+        shape=[],
+        initializer=tf.constant_initializer(0.0),
+        trainable=False)
+      train = slim.learning.create_train_op(
+        total_loss=-elbo,
+        optimizer=opt,
+        global_step=step)
 
     # This needs to be outside graph.device
     sv = tf.train.Supervisor(
@@ -254,91 +253,48 @@
   :RESULTS:
   :END:
 
-  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :async t
+  #+BEGIN_SRC shell
+  rm -f $SCRATCH/zip-vae-model/checkpoint
+  #+END_SRC
+
+  #+RESULTS:
+
+  #+BEGIN_SRC ipython
     with sv.managed_session() as sess:
-      for i in range(num_epochs * dge.shape[0] // minibatch_size):
+      for i in range(num_epochs * num_minibatch):
         if sv.should_stop():
           break
         start = (i % num_minibatch) * minibatch_size
-        _, *loss = sess.run([train, elbo, llik, frob], feed_dict={x: dge.iloc[start:start + minibatch_size]})
+        _, *loss = sess.run([train, elbo], feed_dict={x: dge.sample(minibatch_size)})
         if np.isnan(loss[0]):
-          raise tf.train.NanLossDuringTrainingError
-        if not i % 100:
           print(i, *loss)
+          raise tf.train.NanLossDuringTrainingError
+        if not i % num_minibatch:
+          print(i // num_minibatch, *loss)
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
   :END:
 
-  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :async t
+  #+BEGIN_SRC ipython :ipyfile pca.png
+    z = np.zeros((dge.shape[0], 3))
     with sv.managed_session() as sess:
-      frob = np.zeros(num_minibatch)
-      for i in range(num_minibatch):
-        frob[i] = sess.run(frob,
-          feed_dict={x: dge.iloc[start:start + minibatch_size]})
-      np.square(frob).sum()
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  7d14022a-fcef-40ae-a6a9-65bd4a395171
-  :END:
-
-  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :ipyfile test.png
-  plt.clf()
-  plt.scatter(dge.iloc[:,0], x_hat[:,0])
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  : <matplotlib.collections.PathCollection at 0x7ff8b4764080>
-  [[file:test.png]]
-  :END:
-
-  #+BEGIN_SRC ipython :session kernel-aksarkar.json :results raw drawer :async t
-    with sv.managed_session() as sess:
-      z = np.zeros((n, layer_dim[-1]))
       for i in range(num_minibatch):
         start = i * minibatch_size
-        z[start:start + minibatch_size] = sess.run(qz.value(), feed_dict={x: dge.iloc[start:start + minibatch_size]})
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  :END:
-
-  #+BEGIN_SRC ipython :ipyfile pca.png :session kernel-aksarkar.json :results raw drawer :async t
-    u, d, v = spla.svd(z, full_matrices=False)
-    z_proj = z.dot(v)
+        z_proj[start:start + minibatch_size] = sess.run(qz, feed_dict={x: dge.iloc[start:start + minibatch_size]})
     plt.clf()
-    plt.scatter(z_proj[:,0], z_proj[:,1])
-    plt.xlabel('PC1 $q(z \mid x)$')
-    plt.ylabel('PC2 $q(z \mid x)')
+    fig, ax = plt.subplots(2, 1)
+    plt.scatter(z_proj[:,0], z_proj[:,1], ax=ax[0])
+    ax[0].xlabel('$z_1$')
+    ax[0].ylabel('$z_2$')
+    plt.scatter(z_proj[:,1], z_proj[:,2], ax=ax[1])
+    ax[1].xlabel('$z_2$')
+    ax[1].ylabel('$z_3$')
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
   : <matplotlib.text.Text at 0x7fdd150733c8>
   [[file:pca.png]]
-  :END:
-
-  #+BEGIN_SRC ipython :ipyfile pi_0.png :session kernel-aksarkar.json :results raw drawer :async t
-    pi_0_emp = (dge == 0).sum(axis=1) / dge.shape[1]
-    with sv.managed_session() as sess:
-      pi_0_hat = np.zeros((n, 1))
-      for i in range(num_minibatch):
-        start = i * minibatch_size
-        pi_0_hat[start:start + minibatch_size] = sess.run(pi_0, feed_dict={x: dge.iloc[start:start + minibatch_size]})
-
-    plt.clf()
-    plt.scatter(pi_0_emp, pi_0_hat)
-    plt.xlabel('Empirical $\pi_0$')
-    plt.ylabel('Posterior mean $\pi_0$')
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  : <matplotlib.text.Text at 0x7ff8b1787518>
-  [[file:pi_0.png]]
   :END:

@@ -112,21 +112,13 @@
   #+BEGIN_SRC ipython
     dge = pd.read_table('/home/aksarkar/projects/singlecell/data/oligodendroma.txt.gz', index_col=0, quotechar="'")
     dge = dge.fillna(value=0)
-    dge.columns = pd.Series(dge.columns).apply(lambda x: 'MGH{}'.format(x.split('_')[0]) if 'MGH' not in x else x.split('_')[0])
-    dge.shape, dge.columns.value_counts()
+    dge.columns = pd.Series(dge.columns).apply(lambda x: 'MGH{}'.format(x) if 'MGH' not in x else x)
+    dge.shape
   #+END_SRC
 
   #+RESULTS: oligodendroma
   :RESULTS:
-  #+BEGIN_EXAMPLE
-  ((23686, 4347), MGH54    1225
-     MGH53     861
-     MGH36     788
-     MGH97     598
-     MGH93     445
-     MGH60     430
-     dtype: int64)
-  #+END_EXAMPLE
+  : (23686, 4347)
   :END:
 
 * Replicate Tirosh et al:
@@ -167,15 +159,50 @@
 
   #+NAME: relative_expression
   #+BEGIN_SRC ipython
-    relative_expression = dge[pass_aggregate_expression].groupby(lambda x: x, axis=1).transform(lambda x: x - x.mean())
+    relative_expression = dge[pass_aggregate_expression].groupby(lambda x: x.split('_')[0], axis=1).transform(lambda x: x - x.mean())
+    relative_expression.head()
   #+END_SRC
 
   #+RESULTS: relative_expression
   :RESULTS:
-  :END:
+  #+BEGIN_EXAMPLE
+         MGH36_P6_A12  MGH36_P6_H09  MGH53_P4_G04  MGH36_P10_G12  MGH53_P2_H12  \
+    A2M        4.815565      3.546965      6.990853       4.738765     -1.036747   
+    AAAS      -0.920955     -0.920955     -1.410172       0.329445     -1.410172   
+    AADAT     -0.159170     -0.159170     -0.470507      -0.159170     -0.470507   
+    AAGAB      1.103861     -0.716239     -0.440827      -0.716239     -0.440827   
+    AAMDC     -0.872972     -0.872972      5.713970      -0.872972     -0.802730   
 
-  #+RESULTS:
-  :RESULTS:
+           MGH53_P4_D10  MGH53_P4_D01  MGH36_P6_B07  MGH36_P10_B12  MGH53_P2_G11  \
+    A2M        2.299953      7.744353      7.437065       6.536165      8.009453   
+    AAAS      -1.410172     -1.410172     -0.920955      -0.920955     -1.410172   
+    AADAT     -0.470507     -0.470507     -0.159170      -0.159170     -0.470507   
+    AAGAB     -0.440827     -0.440827     -0.716239       4.938261     -0.440827   
+    AAMDC     -0.802730     -0.802730     -0.872972       1.152028     -0.802730   
+
+               ...       MGH93_P10_H06  MGH93_P8_B12  MGH93_P8_D09  MGH93_P9_D11  \
+    A2M        ...           -0.090851     -0.090851     -0.090851     -0.090851   
+    AAAS       ...           -1.836903     -1.836903     -1.836903     -1.836903   
+    AADAT      ...           -0.720218     -0.720218     -0.720218      2.134782   
+    AAGAB      ...           -0.623034     -0.852004     -0.852004     -0.852004   
+    AAMDC      ...            0.000000      0.000000      0.000000      0.000000   
+
+           MGH93_P10_G08  MGH93_P8_H06  MGH93_P9_C07  MGH93_P8_A12  MGH93_P8_C01  \
+    A2M        -0.090851     -0.090851     -0.090851     -0.090851     -0.090851   
+    AAAS       -1.836903     -1.836903     -1.836903      2.913397      0.765497   
+    AADAT      -0.720218     -0.720218     -0.720218     -0.720218     -0.720218   
+    AAGAB      -0.852004     -0.852004      3.706096     -0.852004     -0.852004   
+    AAMDC       0.000000      0.000000      0.000000      0.000000      0.000000   
+
+           MGH93_P9_F06  
+    A2M       -0.090851  
+    AAAS      -1.372233  
+    AADAT      4.004182  
+    AAGAB     -0.852004  
+    AAMDC      0.000000  
+
+    [5 rows x 4347 columns]
+  #+END_EXAMPLE
   :END:
 
   #+BEGIN_SRC shell :dir (concat (file-name-as-directory (getenv "SCRATCH")) "singlecell")
@@ -213,13 +240,25 @@
   :END:
 
   #+NAME: cnv
-  #+BEGIN_SRC ipython
-    relative_expression.merge(protein_coding_genes, left_index=True, right_on='symbol').sort_values(by=['chr', 'start']).reindex().rolling(100).mean()
+  #+BEGIN_SRC ipython :ipyfile cnv.png
+    cnv_score = relative_expression.clip(-3, 3).merge(protein_coding_genes, left_index=True, right_on='symbol').sort_values(by=['chr', 'start'])[dge.columns].rolling(100).mean()
+
+    plt.clf()
+    plt.imshow(cnv_score.transpose(),
+               cmap='RdBu_r',
+               vmin=-cnv_score.abs().max().max(),
+               vmax=cnv_score.abs().max().max())
+    plt.gcf().set_size_inches(8, 6)
+    plt.xticks([])
+    plt.xlabel('Gene by position')
+    plt.ylabel('Cell')
+    plt.colorbar()
   #+END_SRC
 
   #+RESULTS: cnv
   :RESULTS:
-  cf2e8de6-4b16-47fc-911a-d6ce45d93025
+  : <matplotlib.colorbar.Colorbar at 0x7f3b3bebb080>
+  [[file:cnv.png]]
   :END:
 
 * Model

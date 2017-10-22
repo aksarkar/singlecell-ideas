@@ -16,6 +16,7 @@
 
 * Setup :noexport:
 
+  #+NAME: do-not-warn
   #+BEGIN_SRC emacs-lisp
     (setq python-shell-prompt-detect-failure-warning nil)
   #+END_SRC
@@ -32,7 +33,7 @@
   #+END_SRC
 
   #+RESULTS: ipython3-kernel
-  : Submitted batch job 38513527
+  : Submitted batch job 38809493
 
   #+NAME: imports
   #+BEGIN_SRC ipython
@@ -57,6 +58,7 @@
   :RESULTS:
   :END:
 
+  #+NAME: list-local-devices
   #+BEGIN_SRC ipython
     from tensorflow.python.client import device_lib as dl
     dl.list_local_devices()
@@ -70,14 +72,14 @@
      memory_limit: 268435456
      locality {
      }
-     incarnation: 6311300002200915715, name: "/gpu:0"
+     incarnation: 3138266557590326484, name: "/gpu:0"
      device_type: "GPU"
      memory_limit: 11324823962
      locality {
        bus_id: 2
      }
-     incarnation: 14476157233182787061
-     physical_device_desc: "device: 0, name: Tesla K80, pci bus id: 0000:89:00.0"]
+     incarnation: 14397799056180715890
+     physical_device_desc: "device: 0, name: Tesla K80, pci bus id: 0000:88:00.0"]
   #+END_EXAMPLE
   :END:
 
@@ -88,16 +90,6 @@
   #+END_SRC
 
   #+RESULTS:
-
-  #+NAME: sample-processing
-  #+BEGIN_SRC shell :results raw drawer
-    curl --ftp-pasv 'ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE70nnn/GSE70630/soft/GSE70630_family.soft.gz' | zgrep -m1 'Supplementary_files_format_and_content'
-  #+END_SRC
-
-  #+RESULTS: sample-processing
-  :RESULTS:
-  !Sample_data_processing = Supplementary_files_format_and_content: tab-delimited text file containing the normalized expression levels (E) for 8008 analyzed genes across 2,594 oligodendroglioma cells that passed QC.
-  :END:
 
   #+NAME: signature-genes
   #+BEGIN_SRC ipython
@@ -140,6 +132,7 @@
   as (\log 2 (\mathrm{average}(TPM_{i,1...n})+1)\), and excluded genes with an
   aggregate expression below 4, leaving a set of 8,008 analysed genes.
 
+  #+NAME: pass-aggregate-expression
   #+BEGIN_SRC ipython
     tpm = 10 * (np.exp(dge.values * np.log(2)) - 1)
     pass_aggregate_expression = np.log(tpm.mean(axis=1) + 1) / np.log(2) > 4
@@ -159,107 +152,29 @@
 
   #+NAME: relative_expression
   #+BEGIN_SRC ipython
-    relative_expression = dge[pass_aggregate_expression].groupby(lambda x: x.split('_')[0], axis=1).transform(lambda x: x - x.mean())
-    relative_expression.head()
+    relative_expression = dge[pass_aggregate_expression].groupby(lambda x: x.split('_')[0], axis=1).transform(lambda x: x - x.mean()).transpose()
+    relative_expression.shape
   #+END_SRC
 
   #+RESULTS: relative_expression
   :RESULTS:
-  #+BEGIN_EXAMPLE
-         MGH36_P6_A12  MGH36_P6_H09  MGH53_P4_G04  MGH36_P10_G12  MGH53_P2_H12  \
-    A2M        4.815565      3.546965      6.990853       4.738765     -1.036747   
-    AAAS      -0.920955     -0.920955     -1.410172       0.329445     -1.410172   
-    AADAT     -0.159170     -0.159170     -0.470507      -0.159170     -0.470507   
-    AAGAB      1.103861     -0.716239     -0.440827      -0.716239     -0.440827   
-    AAMDC     -0.872972     -0.872972      5.713970      -0.872972     -0.802730   
-
-           MGH53_P4_D10  MGH53_P4_D01  MGH36_P6_B07  MGH36_P10_B12  MGH53_P2_G11  \
-    A2M        2.299953      7.744353      7.437065       6.536165      8.009453   
-    AAAS      -1.410172     -1.410172     -0.920955      -0.920955     -1.410172   
-    AADAT     -0.470507     -0.470507     -0.159170      -0.159170     -0.470507   
-    AAGAB     -0.440827     -0.440827     -0.716239       4.938261     -0.440827   
-    AAMDC     -0.802730     -0.802730     -0.872972       1.152028     -0.802730   
-
-               ...       MGH93_P10_H06  MGH93_P8_B12  MGH93_P8_D09  MGH93_P9_D11  \
-    A2M        ...           -0.090851     -0.090851     -0.090851     -0.090851   
-    AAAS       ...           -1.836903     -1.836903     -1.836903     -1.836903   
-    AADAT      ...           -0.720218     -0.720218     -0.720218      2.134782   
-    AAGAB      ...           -0.623034     -0.852004     -0.852004     -0.852004   
-    AAMDC      ...            0.000000      0.000000      0.000000      0.000000   
-
-           MGH93_P10_G08  MGH93_P8_H06  MGH93_P9_C07  MGH93_P8_A12  MGH93_P8_C01  \
-    A2M        -0.090851     -0.090851     -0.090851     -0.090851     -0.090851   
-    AAAS       -1.836903     -1.836903     -1.836903      2.913397      0.765497   
-    AADAT      -0.720218     -0.720218     -0.720218     -0.720218     -0.720218   
-    AAGAB      -0.852004     -0.852004      3.706096     -0.852004     -0.852004   
-    AAMDC       0.000000      0.000000      0.000000      0.000000      0.000000   
-
-           MGH93_P9_F06  
-    A2M       -0.090851  
-    AAAS      -1.372233  
-    AADAT      4.004182  
-    AAGAB     -0.852004  
-    AAMDC      0.000000  
-
-    [5 rows x 4347 columns]
-  #+END_EXAMPLE
+  : (4347, 8115)
   :END:
 
-  #+BEGIN_SRC shell :dir (concat (file-name-as-directory (getenv "SCRATCH")) "singlecell")
-    curl --ftp-pasv -sO "ftp://ftp.sanger.ac.uk/pub/gencode/Gencode_human/release_27/gencode.v27.basic.annotation.gtf.gz"
-  #+END_SRC
+  The control gene set was defined by first binning all 8,008 analysed genes
+  into 25 bins of aggregate expression levels and then, for each gene in the
+  lineage gene set, randomly selecting 100 genes from the same expression bin.
+  In this way, the control gene set has a comparable distribution of expression
+  levels to that of the lineage gene set and the control gene set is 100-fold
+  larger, such that its average expression is analogous to averaging over 100
+  randomly selected gene sets of the same size as the lineage gene set. The
+  final lineage score of each cell was defined as the maximal score over the
+  two lineages, \(LIN_i = \max(Lin_i OC, Lin_i AC)\).
 
-  #+RESULTS:
-
-  #+NAME: gencode
+  #+NAME: lineage-score
   #+BEGIN_SRC ipython
-    gencode = pd.read_table(os.path.join(os.getenv('SCRATCH'), 'singlecell', 'gencode.v27.basic.annotation.gtf.gz'), comment='#', header=None)
-    gencode.columns = ['chr', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute']
-    protein_coding_genes = gencode[(gencode['feature'] == 'gene') & gencode['attribute'].apply(lambda x: 'protein_coding' in x)]
-    protein_coding_genes.loc[:,'symbol'] = protein_coding_genes['attribute'].apply(lambda x: dict(info.split() for info in x.split('; '))['gene_name'].strip('"'))
-    protein_coding_genes.head()
+  
   #+END_SRC
-
-  #+RESULTS: gencode
-  :RESULTS:
-  #+BEGIN_EXAMPLE
-        chr  source feature   start     end score strand frame  \
-    54   chr1  HAVANA    gene   65419   71585     .      +     .   
-    175  chr1  HAVANA    gene  450703  451697     .      -     .   
-    241  chr1  HAVANA    gene  685679  686673     .      -     .   
-    390  chr1  HAVANA    gene  923928  944581     .      +     .   
-    658  chr1  HAVANA    gene  944204  959309     .      -     .   
-
-                                                 attribute  symbol  
-    54   gene_id "ENSG00000186092.5"; gene_type "protei...   OR4F5  
-    175  gene_id "ENSG00000284733.1"; gene_type "protei...  OR4F29  
-    241  gene_id "ENSG00000284662.1"; gene_type "protei...  OR4F16  
-    390  gene_id "ENSG00000187634.11"; gene_type "prote...  SAMD11  
-    658  gene_id "ENSG00000188976.10"; gene_type "prote...   NOC2L  
-  #+END_EXAMPLE
-  :END:
-
-  #+NAME: cnv
-  #+BEGIN_SRC ipython :ipyfile cnv.png
-    cnv_score = relative_expression.clip(-3, 3).merge(protein_coding_genes, left_index=True, right_on='symbol').sort_values(by=['chr', 'start'])[dge.columns].rolling(100).mean()
-
-    plt.clf()
-    plt.imshow(cnv_score.transpose(),
-               cmap='RdBu_r',
-               vmin=-cnv_score.abs().max().max(),
-               vmax=cnv_score.abs().max().max())
-    plt.gcf().set_size_inches(8, 6)
-    plt.xticks([])
-    plt.xlabel('Gene by position')
-    plt.ylabel('Cell')
-    plt.colorbar()
-  #+END_SRC
-
-  #+RESULTS: cnv
-  :RESULTS:
-  : <matplotlib.colorbar.Colorbar at 0x7f3b3bebb080>
-  [[file:cnv.png]]
-  :END:
 
 * Model
 
@@ -275,13 +190,14 @@
 
   To visualize the result, we can take \(\mu(x)\).
 
+  #+NAME: vae
   #+BEGIN_SRC ipython
-    num_epochs = 10
+    num_epochs = 100
     minibatch_size = 100
-    n, p = dge.shape
+    n, p = relative_expression.shape
     num_minibatch = n // 100
     # Last layer is the target latent dimension
-    layer_dim = [1024, 512, 256, 3]
+    layer_dim = [512, 2]
 
     graph = tf.Graph()
     with graph.as_default(), graph.device('/gpu:*'):
@@ -292,14 +208,14 @@
         with tf.variable_scope('encoder'):
           # Default activation is relu
           qz = slim.stack(x, slim.fully_connected, layer_dim[:-1], scope='fc')
-          loc = slim.linear(qz, num_outputs=layer_dim[-1], activation_fn=None,
-                            scope='loc')
-          scale = slim.fully_connected(qz, num_outputs=layer_dim[-1],
-                                       activation_fn=tf.nn.softplus, scope='scale')
-          with st.value_type(st.MeanValue()):
+          q_loc = slim.linear(qz, num_outputs=layer_dim[-1], activation_fn=None,
+                              scope='loc')
+          q_scale = slim.fully_connected(qz, num_outputs=layer_dim[-1],
+                                         activation_fn=tf.nn.softplus, scope='scale')
+          with st.value_type(st.SampleValue()):
             # Put minimum scale here because it has to be outside the softplus (bias
             # on sigma is inside the softplus)
-            qz = st.StochasticTensor(ds.Normal(loc=loc, scale=(1e-6 + scale)))
+            qz = st.StochasticTensor(ds.Normal(loc=q_loc, scale=(1e-6 + q_scale)))
         with tf.variable_scope('decoder'):
           pz = ds.Normal(loc=tf.zeros(layer_dim[-1]), scale=tf.ones(layer_dim[-1]))
           px = slim.stack(qz, slim.fully_connected, list(reversed(layer_dim[:-1])),
@@ -310,7 +226,7 @@
 
       vi.register_prior(qz, pz)
       elbo = tf.reduce_sum(vi.elbo(llik))
-      opt = tf.train.RMSPropOptimizer(learning_rate=1e-3)
+      opt = tf.train.RMSPropOptimizer(learning_rate=5e-5)
       step = tf.get_variable(
         name='step',
         shape=[],
@@ -332,18 +248,19 @@
   :END:
 
   #+BEGIN_SRC shell
-  rm -f $SCRATCH/zip-vae-model/checkpoint
+  rm -f $SCRATCH/vae-model/checkpoint
   #+END_SRC
 
   #+RESULTS:
 
+  #+NAME: train
   #+BEGIN_SRC ipython
     with sv.managed_session() as sess:
       for i in range(num_epochs * num_minibatch):
         if sv.should_stop():
           break
         start = (i % num_minibatch) * minibatch_size
-        _, *loss = sess.run([train, elbo], feed_dict={x: dge.sample(minibatch_size)})
+        _, *loss = sess.run([train, elbo], feed_dict={x: relative_expression.sample(minibatch_size)})
         if np.isnan(loss[0]):
           print(i, *loss)
           raise tf.train.NanLossDuringTrainingError
@@ -355,24 +272,21 @@
   :RESULTS:
   :END:
 
-  #+BEGIN_SRC ipython :ipyfile pca.png
-    z = np.zeros((dge.shape[0], 3))
+  #+NAME: latent
+  #+BEGIN_SRC ipython :ipyfile latent.png
+    z_proj = np.zeros((relative_expression.shape[0], layer_dim[-1]))
     with sv.managed_session() as sess:
       for i in range(num_minibatch):
         start = i * minibatch_size
-        z_proj[start:start + minibatch_size] = sess.run(qz, feed_dict={x: dge.iloc[start:start + minibatch_size]})
+        z_proj[start:start + minibatch_size] = sess.run(q_loc, feed_dict={x: relative_expression.iloc[start:start + minibatch_size]})
     plt.clf()
-    fig, ax = plt.subplots(2, 1)
-    plt.scatter(z_proj[:,0], z_proj[:,1], ax=ax[0])
-    ax[0].xlabel('$z_1$')
-    ax[0].ylabel('$z_2$')
-    plt.scatter(z_proj[:,1], z_proj[:,2], ax=ax[1])
-    ax[1].xlabel('$z_2$')
-    ax[1].ylabel('$z_3$')
+    plt.scatter(z_proj[:,0], z_proj[:,1])
+    plt.xlabel('$z_1$')
+    plt.ylabel('$z_2$')
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  : <matplotlib.text.Text at 0x7fdd150733c8>
-  [[file:pca.png]]
+  : Text(0,0.5,'$z_2$')
+  [[file:latent.png]]
   :END:

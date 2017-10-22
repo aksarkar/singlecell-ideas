@@ -161,6 +161,79 @@
   : (4347, 8115)
   :END:
 
+  We performed principal component analysis (PCA) for the relative expression
+  values of all cancer cells (as defined by CNV analysis) from the three
+  tumours combined. The covariance matrix used for PCA was generated using an
+  approach outlined in [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4193940/#SD1][ref. 32]] to decrease the weight of less reliable
+  ‘missing’ values in the data. The basis of this approach is that due to the
+  limited sensitivity of single-cell RNA-seq, many genes are not detected in
+  particular cells despite being expressed. This is particularly pronounced for
+  genes expressed at low levels, and for cells with low library complexity
+  (that is, for which relatively few genes are detected), and results in
+  non-random patterns in the data, whereby cells may cluster based on their
+  complexity and genes may cluster based on their expression levels, rather
+  than ‘true’ co-variation. To mitigate this effect, we assign weights to
+  missing values, such that the weight of \(E_{i,j}\) is proportional to the
+  expec- tation that gene \(i\) will be detected in cell \(j\) given the
+  average expression of gene \(i\) and the total complexity (number of detected
+  genes) of cell \(j\).
+
+  All PCA analysis was performed as previously described [[https://www.nature.com/nature/journal/v510/n7505/extref/nature13437-s1.pdf][23]] in R.
+
+  PCA for 632 induced genes was performed in R using the prcomp function. We
+  transformed the expression values of each gene to have zero mean and unit
+  variance across single cells in order to appropriately compare variability
+  patterns across genes with different overall abundance in the population.
+
+  #+NAME: normalize
+  #+BEGIN_SRC ipython
+    normalized_expr = relative_expression.filter(regex="(MGH36|MGH53|MGH54)", axis=0).transform(lambda x: x / x.std())
+  #+END_SRC
+
+  #+RESULTS: normalize
+  :RESULTS:
+  :END:
+
+  #+NAME: pca
+  #+BEGIN_SRC ipython :ipyfile pca.png
+    u, *_ = spla.svd(a=normalized_expr.values, full_matrices=False)
+    plt.clf()
+    fig, ax = plt.subplots(2, 1, sharex=True)
+    fig.set_size_inches(4, 8)
+    ax[0].scatter(u[:,0], u[:,1])
+    ax[0].set_ylabel('PC2')
+    ax[1].scatter(u[:,0], u[:,2])
+    ax[1].set_xlabel('PC1')
+    ax[1].set_ylabel('PC3')
+    fig.set_tight_layout = True
+  #+END_SRC
+
+  #+RESULTS: pca
+  :RESULTS:
+  [[file:pca.png]]
+  :END:
+
+  #+NAME: malignant
+  #+BEGIN_SRC ipython :ipyfile malignant-pca.png
+    # malignant = u[:,0] > -0.03
+    # u, *_ = spla.svd(a=normalized_expr.loc[malignant], full_matrices=False)
+    plt.clf()
+    fig, ax = plt.subplots(3, 3)
+    fig.set_size_inches(9, 9)
+    for i in range(3):
+      ax[i][0].set_ylabel('PC{}'.format(i + 1))
+      for j in range(3):
+        ax[-1][j].set_xlabel('PC{}'.format(j + 1))
+        if i < j:
+          ax[i][j].scatter(u[:,i], u[:,j])
+    fig.tight_layout()
+  #+END_SRC
+
+  #+RESULTS: malignant
+  :RESULTS:
+  [[file:malignant-pca.png]]
+  :END:
+
   The control gene set was defined by first binning all 8,008 analysed genes
   into 25 bins of aggregate expression levels and then, for each gene in the
   lineage gene set, randomly selecting 100 genes from the same expression bin.
@@ -169,7 +242,7 @@
   larger, such that its average expression is analogous to averaging over 100
   randomly selected gene sets of the same size as the lineage gene set. The
   final lineage score of each cell was defined as the maximal score over the
-  two lineages, \(LIN_i = \max(Lin_i OC, Lin_i AC)\).
+  two lineages, \(LIN_i = \max(Lin_{i,OC}, Lin_{i,AC})\).
 
   #+NAME: lineage-score
   #+BEGIN_SRC ipython

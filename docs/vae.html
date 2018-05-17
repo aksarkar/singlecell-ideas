@@ -1,10 +1,10 @@
-html-strict
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<!-- 2017-10-12 Thu 16:27 -->
-<meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+<!-- 2018-05-17 Thu 15:17 -->
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ZIP VAE for single-cell expression</title>
+<title>VAE for single-cell expression</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -178,6 +178,9 @@ html-strict
   .org-svg { width: 90%; }
   /*]]>*/-->
 </style>
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="https://www.pirilampo.org/styles/readtheorg/css/htmlize.css"/>
+<style type="text/css">body {width: 60em; margin:auto} pre.src {overflow:auto}</style>
 <script type="text/javascript">
 /*
 @licstart  The following is the entire license notice for the
@@ -249,149 +252,251 @@ for the JavaScript code in this tag.
 </head>
 <body>
 <div id="content">
-<h1 class="title">ZIP VAE for single-cell expression</h1>
-<div id="table-of-contents">
-<h2>Table of Contents</h2>
-<div id="text-table-of-contents">
-<ul>
-<li><a href="#org3394265">1. Get the data</a></li>
-<li><a href="#orgc52c2cc">2. Model</a></li>
-</ul>
-</div>
-</div>
+<h1 class="title">VAE for single-cell expression</h1>
 
-<div id="outline-container-org3394265" class="outline-2">
-<h2 id="org3394265"><span class="section-number-2">1</span> Get the data</h2>
-<div class="outline-text-2" id="text-1">
+<div id="outline-container-orgc49d3b7" class="outline-2">
+<h2 id="orgc49d3b7">AMSGrad</h2>
+<div class="outline-text-2" id="text-orgc49d3b7">
+<p>
+<a href="https://openreview.net/forum?id=ryQu7f-RZ">Reddi et al 2018</a> demonstrate a convergence problem with Adam for accelerated
+gradient descent, and propose AMSGrad as a replacement.
+</p>
+
+<p>
+<a href="https://github.com/junfengwen/AMSGrad/blob/a00e3f4bcb3ba16b2fe67c75dd8643670bded0c9/optimizers.py">https://github.com/junfengwen/AMSGrad/blob/a00e3f4bcb3ba16b2fe67c75dd8643670bded0c9/optimizers.py</a>
+</p>
+
 <div class="org-src-container">
-<pre class="src src-ipython"><span style="color: #00ff00;">import</span> pandas <span style="color: #00ff00;">as</span> pd
-<span style="color: #0000ff;">dge</span> = pd.read_table(<span style="color: #00ffff;">'/home/aksarkar/projects/singlecell/data/mouse-p14-dge.txt.gz'</span>, index_col=<span style="color: #00ffff;">'gene'</span>, nrows=10000).transpose()
-dge.shape
+<pre class="src src-ipython" id="orgd6bc1bc"><span class="org-keyword">from</span> tensorflow.python.framework <span class="org-keyword">import</span> ops
+<span class="org-keyword">from</span> tensorflow.python.ops <span class="org-keyword">import</span> control_flow_ops
+<span class="org-keyword">from</span> tensorflow.python.ops <span class="org-keyword">import</span> math_ops
+<span class="org-keyword">from</span> tensorflow.python.ops <span class="org-keyword">import</span> gen_math_ops
+<span class="org-keyword">from</span> tensorflow.python.ops <span class="org-keyword">import</span> variable_scope
+<span class="org-keyword">from</span> tensorflow.python.training <span class="org-keyword">import</span> optimizer
+
+<span class="org-keyword">class</span> <span class="org-type">AMSGrad</span>(optimizer.Optimizer):
+  <span class="org-doc">"""The AMSGrad algorithm in the paper</span>
+
+<span class="org-doc">  Reddi, Kale, Kumar, On the Convergence of Adam and Beyond, ICLR 2018</span>
+
+<span class="org-doc">  https://openreview.net/forum?id=ryQu7f-RZ</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, learning_rate=0.001, beta1=0.9, beta2=0.999,
+               epsilon=1e-8, use_locking=<span class="org-constant">False</span>, name=<span class="org-string">"AMSGrad"</span>):
+    <span class="org-builtin">super</span>(AMSGrad, <span class="org-keyword">self</span>).__init__(use_locking, name)
+    <span class="org-keyword">self</span>._lr = learning_rate
+    <span class="org-keyword">self</span>._beta1 = beta1
+    <span class="org-keyword">self</span>._beta2 = beta2
+    <span class="org-keyword">self</span>._epsilon = epsilon
+    <span class="org-keyword">self</span>._lr_t = <span class="org-constant">None</span>
+    <span class="org-keyword">self</span>._beta1_t = <span class="org-constant">None</span>
+    <span class="org-keyword">self</span>._beta2_t = <span class="org-constant">None</span>
+    <span class="org-keyword">self</span>._epsilon_t = <span class="org-constant">None</span>
+    <span class="org-keyword">self</span>._beta1_power = <span class="org-constant">None</span>
+    <span class="org-keyword">self</span>._beta2_power = <span class="org-constant">None</span>
+
+  <span class="org-keyword">def</span> <span class="org-function-name">_create_slots</span>(<span class="org-keyword">self</span>, var_list):
+    <span class="org-variable-name">first_var</span> = <span class="org-builtin">min</span>(var_list, key=<span class="org-keyword">lambda</span> x: x.name)
+    <span class="org-variable-name">create_new</span> = <span class="org-keyword">self</span>._beta1_power <span class="org-keyword">is</span> <span class="org-constant">None</span>
+    <span class="org-keyword">if</span> create_new:
+      <span class="org-keyword">with</span> ops.colocate_with(first_var):
+        <span class="org-keyword">self</span>._beta1_power = variable_scope.variable(<span class="org-keyword">self</span>._beta1,
+                                                    name=<span class="org-string">"beta1_power"</span>,
+                                                    trainable=<span class="org-constant">False</span>)
+        <span class="org-keyword">self</span>._beta2_power = variable_scope.variable(<span class="org-keyword">self</span>._beta2,
+                                                    name=<span class="org-string">"beta2_power"</span>,
+                                                    trainable=<span class="org-constant">False</span>)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Create slots for the first and second moments.</span>
+    <span class="org-keyword">for</span> v <span class="org-keyword">in</span> var_list:
+      <span class="org-comment-delimiter"># </span><span class="org-comment">first moment est</span>
+      <span class="org-keyword">self</span>._zeros_slot(v, <span class="org-string">"first_mom"</span>, <span class="org-keyword">self</span>._name)
+      <span class="org-comment-delimiter"># </span><span class="org-comment">second moment est</span>
+      <span class="org-keyword">self</span>._zeros_slot(v, <span class="org-string">"second_mom"</span>, <span class="org-keyword">self</span>._name)
+      <span class="org-keyword">self</span>._zeros_slot(v, <span class="org-string">"second_mom_max"</span>, <span class="org-keyword">self</span>._name)
+
+  <span class="org-keyword">def</span> <span class="org-function-name">_prepare</span>(<span class="org-keyword">self</span>):
+    <span class="org-keyword">self</span>._lr_t = ops.convert_to_tensor(<span class="org-keyword">self</span>._lr)
+    <span class="org-keyword">self</span>._beta1_t = ops.convert_to_tensor(<span class="org-keyword">self</span>._beta1)
+    <span class="org-keyword">self</span>._beta2_t = ops.convert_to_tensor(<span class="org-keyword">self</span>._beta2)
+    <span class="org-keyword">self</span>._epsilon_t = ops.convert_to_tensor(<span class="org-keyword">self</span>._epsilon)
+    <span class="org-keyword">self</span>._one_minus_beta1 = ops.convert_to_tensor(1. - <span class="org-keyword">self</span>._beta1)
+    <span class="org-keyword">self</span>._one_minus_beta2 = ops.convert_to_tensor(1. - <span class="org-keyword">self</span>._beta2)
+
+  <span class="org-keyword">def</span> <span class="org-function-name">_apply_dense</span>(<span class="org-keyword">self</span>, grad, var):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">bias-corrected learning rate</span>
+    <span class="org-variable-name">lr</span> = <span class="org-keyword">self</span>._lr_t * math_ops.sqrt(1. - <span class="org-keyword">self</span>._beta2_power) / (1. - <span class="org-keyword">self</span>._beta1_power)
+    <span class="org-variable-name">first_mom</span> = <span class="org-keyword">self</span>.get_slot(var, <span class="org-string">"first_mom"</span>)
+    <span class="org-variable-name">second_mom</span> = <span class="org-keyword">self</span>.get_slot(var, <span class="org-string">"second_mom"</span>)
+    <span class="org-variable-name">second_mom_max</span> = <span class="org-keyword">self</span>.get_slot(var, <span class="org-string">"second_mom_max"</span>)
+    <span class="org-variable-name">first_update</span> = first_mom.assign(<span class="org-keyword">self</span>._beta1_t * first_mom +
+                                    <span class="org-keyword">self</span>._one_minus_beta1 * grad,
+                                    use_locking=<span class="org-keyword">self</span>._use_locking)
+    <span class="org-variable-name">second_update</span> = second_mom.assign(<span class="org-keyword">self</span>._beta2_t * second_mom +
+                                      <span class="org-keyword">self</span>._one_minus_beta2 * math_ops.square(grad),
+                                      use_locking=<span class="org-keyword">self</span>._use_locking)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">AMSGrad compared to ADAM</span>
+    <span class="org-variable-name">second_max_update</span> = second_mom_max.assign(gen_math_ops.maximum(second_mom_max,
+                                                                   second_update))
+    <span class="org-variable-name">var_update</span> = var.assign_sub(lr * first_update / (math_ops.sqrt(second_max_update) +
+                                                     <span class="org-keyword">self</span>._epsilon_t),
+                                use_locking=<span class="org-keyword">self</span>._use_locking)
+    <span class="org-keyword">return</span> control_flow_ops.group(*[var_update, first_update,
+                                    second_update, second_max_update])
+
+  <span class="org-keyword">def</span> <span class="org-function-name">_apply_sparse</span>(<span class="org-keyword">self</span>, grad, var):
+    <span class="org-keyword">raise</span> <span class="org-type">NotImplementedError</span>
+
+  <span class="org-keyword">def</span> <span class="org-function-name">_finish</span>(<span class="org-keyword">self</span>, update_ops, name_scope):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Update the power accumulators.</span>
+    <span class="org-keyword">with</span> ops.control_dependencies(update_ops):
+      <span class="org-keyword">with</span> ops.colocate_with(<span class="org-keyword">self</span>._beta1_power):
+        <span class="org-variable-name">update_beta1</span> = <span class="org-keyword">self</span>._beta1_power.assign(
+          <span class="org-keyword">self</span>._beta1_power * <span class="org-keyword">self</span>._beta1,
+          use_locking=<span class="org-keyword">self</span>._use_locking)
+        <span class="org-variable-name">update_beta2</span> = <span class="org-keyword">self</span>._beta2_power.assign(
+          <span class="org-keyword">self</span>._beta2_power * <span class="org-keyword">self</span>._beta2_t,
+          use_locking=<span class="org-keyword">self</span>._use_locking)
+    <span class="org-keyword">return</span> control_flow_ops.group(*update_ops + [update_beta1, update_beta2],
+                                  name=name_scope)
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-orgc52c2cc" class="outline-2">
-<h2 id="orgc52c2cc"><span class="section-number-2">2</span> Model</h2>
-<div class="outline-text-2" id="text-2">
+<div id="outline-container-orgb8113d2" class="outline-2">
+<h2 id="orgb8113d2">Model specification and inference</h2>
+<div class="outline-text-2" id="text-orgb8113d2">
 <p>
-\[ q(z \mid x) = N(\mu(x), \sigma(x)) \]
+\[ x_{ij} \mid \cdot \sim Pois(R_{i} \lambda_{ij}) \]
 </p>
 
 <p>
-\[ p(x \mid z) = \pi_0(z) \delta_0(x) + (1 - \pi_0(z)) \mathrm{Pois}(x; \lambda(z)) \]
-</p>
-
-<p>
-The idea is that \(\mu, \sigma, \pi_0, \lambda\) are outputs of neural
-networks.
-</p>
-
-<p>
-To achieve dimensionality reduction, we want the dimension of \(\mu(x)\) less
-than the dimension of \(x\).
-</p>
-
-<p>
-To visualize the result, we can take \(\mu(x)\).
+\[ \lambda_{ij} \mid \cdot \sim \pi_0(z_{ij}) \delta_0 + (1 - \pi_0)
+  g(z_{ij}, u_i) \]
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span style="color: #00ff00;">import</span> tensorflow <span style="color: #00ff00;">as</span> tf
-<span style="color: #00ff00;">import</span> tensorflow.contrib.distributions <span style="color: #00ff00;">as</span> ds
-<span style="color: #00ff00;">import</span> tensorflow.contrib.bayesflow <span style="color: #00ff00;">as</span> bf
-<span style="color: #00ff00;">import</span> tensorflow.contrib.slim <span style="color: #00ff00;">as</span> slim
+<pre class="src src-ipython" id="org1e48b3e"><span class="org-keyword">def</span> <span class="org-function-name">kl_normal_normal</span>(mean_a, prec_a, mean_b, prec_b, <span class="org-builtin">reduce</span>=<span class="org-constant">True</span>):
+  <span class="org-doc">"""Rasmussen &amp; Williams eq. A.23 for univariate Gaussians"""</span>
+  <span class="org-keyword">return</span> .5 * (1 + tf.log(prec_a) - tf.log(prec_b) + prec_b * (tf.square(mean_a - mean_b) + 1 / prec_a))
 
-<span style="color: #0000ff;">st</span> = bf.stochastic_tensor
-<span style="color: #0000ff;">vi</span> = bf.variational_inference
+<span class="org-keyword">def</span> <span class="org-function-name">pois_llik</span>(x, mean):
+  <span class="org-keyword">return</span> (x * tf.log(mean) + mean - tf.lgamma(x))
 
-<span style="color: #0000ff;">num_epochs</span> = 10
-<span style="color: #0000ff;">minibatch_size</span> = 100
-<span style="color: #0000ff;">n</span>, <span style="color: #0000ff;">p</span> = dge.shape
-<span style="color: #0000ff;">num_minibatch</span> = n // 100
-<span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">Last layer is the target latent dimension</span>
-<span style="color: #0000ff;">layer_dim</span> = [2048, 1024, 512]
+<span class="org-keyword">def</span> <span class="org-function-name">zip_llik</span>(x, mean, logodds):
+  <span class="org-variable-name">case_zero</span> = -tf.nn.softplus(-logodds) + tf.nn.softplus(pois_llik(x, mean, inv_disp) + tf.nn.softplus(-logodds))
+  <span class="org-variable-name">case_non_zero</span> = -tf.nn.softplus(logodds) + pois_llik(x, mean, inv_disp)
+  <span class="org-keyword">return</span> tf.where(tf.less(x, 1), case_zero, case_non_zero)
 
-<span style="color: #0000ff;">graph</span> = tf.Graph()
-<span style="color: #0000ff;">gpu_dev</span> = <span style="color: #00ffff;">'/gpu:{}'</span>.<span style="color: #00ff00;">format</span>(os.getenv(<span style="color: #00ffff;">'CUDA_VISIBLE_DEVICES'</span>).split(<span style="color: #00ffff;">','</span>)[0])
-<span style="color: #00ff00;">with</span> graph.as_default(), graph.device(gpu_dev):
-  <span style="color: #00ff00;">with</span> tf.name_scope(<span style="color: #00ffff;">'input'</span>):
-    <span style="color: #0000ff;">x</span> = tf.placeholder(shape=[minibatch_size, p], dtype=tf.float32)
-  <span style="color: #00ff00;">with</span> tf.variable_scope(<span style="color: #00ffff;">'encoder'</span>):
-    <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">Default activation is relu</span>
-    <span style="color: #0000ff;">qz</span> = slim.stack(x, slim.fully_connected, layer_dim[:-1], scope=<span style="color: #00ffff;">'fc'</span>)
-    <span style="color: #0000ff;">loc</span> = slim.linear(qz, num_outputs=layer_dim[-1], activation_fn=<span style="color: #00ffff;">None</span>,
-                      scope=<span style="color: #00ffff;">'loc'</span>)
-    <span style="color: #0000ff;">scale</span> = slim.fully_connected(qz, num_outputs=layer_dim[-1],
-                                 activation_fn=tf.nn.softplus, scope=<span style="color: #00ffff;">'scale'</span>)
-    <span style="color: #00ff00;">with</span> st.value_type(st.SampleValue()):
-      <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">Put minimum scale here because it has to be outside the softplus (bias</span>
-      <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">on sigma is inside the softplus)</span>
-      <span style="color: #0000ff;">qz</span> = st.StochasticTensor(ds.Normal(loc=loc, scale=(1e-6 + scale)))
-  <span style="color: #00ff00;">with</span> tf.variable_scope(<span style="color: #00ffff;">'decoder'</span>):
-    <span style="color: #0000ff;">pz</span> = ds.Normal(loc=tf.zeros(layer_dim[-1]), scale=tf.ones(layer_dim[-1]))
-    <span style="color: #0000ff;">px</span> = slim.stack(qz, slim.fully_connected, <span style="color: #00ff00;">list</span>(<span style="color: #00ff00;">reversed</span>(layer_dim[:-1])),
-                    scope=<span style="color: #00ffff;">'fc'</span>)
-    <span style="color: #0000ff;">pi_0</span> = slim.fully_connected(px, num_outputs=1,
-                                activation_fn=tf.nn.sigmoid, scope=<span style="color: #00ffff;">'pi_0'</span>)
-    <span style="color: #0000ff;">rate</span> = slim.linear(px, num_outputs=1, activation_fn=tf.nn.softplus,
-                       scope=<span style="color: #00ffff;">'lambda'</span>)
-    <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">pi_0 + (1 - pi_0) Pois(0; rate), x = 0</span>
-    <span style="color: brightcyan; font-style: italic;">#        </span><span style="color: brightcyan; font-style: italic;">(1 - pi_0) Pois(x; rate), x &gt; 0</span>
-    <span style="color: brightcyan; font-style: italic;">#</span>
-    <span style="color: brightcyan; font-style: italic;"># </span><span style="color: brightcyan; font-style: italic;">We need minimum rate because otherwise log_prob gives nan</span>
-    <span style="color: #0000ff;">px</span> = ds.Poisson(1e-6 + rate)
-    <span style="color: #0000ff;">num_0</span> = tf.reduce_sum(tf.cast(x == 0, tf.float32))
-    <span style="color: #0000ff;">llik</span> = tf.reduce_sum(pi_0 * num_0 + (1 - pi_0) * px.log_prob(x))
+<span class="org-keyword">def</span> <span class="org-function-name">nb_llik</span>(x, mean, inv_disp):
+  <span class="org-doc">"""Log likelihood of x distributed as NB</span>
 
-  vi.register_prior(qz, pz)
-  <span style="color: #0000ff;">elbo</span> = tf.reduce_sum(vi.elbo(llik))
-  <span style="color: #0000ff;">opt</span> = tf.train.AdamOptimizer(learning_rate=1e-5)
-  <span style="color: #0000ff;">train</span> = opt.minimize(-elbo)
+<span class="org-doc">  See Hilbe 2012, eq. 8.10</span>
+
+<span class="org-doc">  mean - mean (&gt; 0)</span>
+<span class="org-doc">  inv_disp - inverse dispersion (&gt; 0)</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">return</span> (x * tf.log(mean / inv_disp) -
+          x * tf.log(1 + mean / inv_disp) -
+          inv_disp * tf.log(1 + mean / inv_disp) +
+          tf.lgamma(x + inv_disp) -
+          tf.lgamma(inv_disp) -
+          tf.lgamma(x + 1))
+
+<span class="org-keyword">def</span> <span class="org-function-name">zinb_llik</span>(x, mean, inv_disp, logodds):
+  <span class="org-doc">"""Log likelihood of x distributed as ZINB</span>
+
+<span class="org-doc">  See Hilbe 2012, eq. 11.12, 11.13</span>
+
+<span class="org-doc">  mean - mean (&gt; 0)</span>
+<span class="org-doc">  inv_disp - inverse dispersion (&gt; 0)</span>
+<span class="org-doc">  logodds - dropout log odds</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important identities:</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">log(x + y) = log(x) + softplus(y - x)</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">log(sigmoid(x)) = -softplus(-x)</span>
+  <span class="org-variable-name">case_zero</span> = -tf.nn.softplus(-logodds) + tf.nn.softplus(nb_llik(x, mean, inv_disp) + tf.nn.softplus(-logodds))
+  <span class="org-variable-name">case_non_zero</span> = -tf.nn.softplus(logodds) + nb_llik(x, mean, inv_disp)
+  <span class="org-keyword">return</span> tf.where(tf.less(x, 1), case_zero, case_non_zero)
+
+<span class="org-keyword">def</span> <span class="org-function-name">encoder</span>(x):
+  <span class="org-doc">"""Return mu, tau where q(z | x) = N(mu, diag(tau^-1))</span>
+
+<span class="org-doc">  x - observations [n, p]</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">h</span> = slim.fully_connected(x, 512)
+  <span class="org-variable-name">mu</span> = slim.fully_connected(h, 10, activation=<span class="org-constant">None</span>)
+  <span class="org-variable-name">tau</span> = slim.fully_connected(h, 10, activation=tf.nn.softplus)
+  <span class="org-keyword">return</span> mu, tau
+
+<span class="org-keyword">def</span> <span class="org-function-name">decoder</span>(z, p):
+  <span class="org-doc">"""Return lambda = g(z)</span>
+
+<span class="org-doc">  z - latent variables [n, k]</span>
+<span class="org-doc">  p - output dimension</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">h</span> = slim.fully_connected(z, 512)
+  <span class="org-variable-name">lambda_</span> = slim.fully_connected(h, p, activation=tf.nn.softplus)
+  <span class="org-keyword">return</span> lambda_
+
+<span class="org-keyword">def</span> <span class="org-function-name">fit</span>(umi, size_factor, learning_rate=1e-2, max_epochs=1000, stoch_samples=10):
+  <span class="org-doc">"""Optimize the ELBO.</span>
+
+<span class="org-doc">  umi - count matrix (n x p; float32)</span>
+<span class="org-doc">  size_factor - size factor vector (n x 1; float32)</span>
+<span class="org-doc">  design - confounder matrix (n x q; float32)</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = umi.shape
+  <span class="org-keyword">assert</span> size_factor.shape == (n, 1)
+
+  <span class="org-variable-name">graph</span> = tf.Graph()
+  <span class="org-keyword">with</span> graph.as_default(), graph.device(<span class="org-string">'/gpu:*'</span>):
+    <span class="org-variable-name">size_factor</span> = tf.Variable(size_factor, trainable=<span class="org-constant">False</span>)
+    <span class="org-variable-name">umi</span> = tf.Variable(umi, trainable=<span class="org-constant">False</span>)
+    <span class="org-variable-name">dropout</span> = tf.Variable(tf.zeros([1, p]))
+
+    <span class="org-variable-name">mu</span>, <span class="org-variable-name">tau</span> = encoder(umi)
+    <span class="org-variable-name">z</span> = tf.random.normal(size=stoch_samples) / np.sqrt(tau) + mu
+    <span class="org-variable-name">lambda_</span> = decoder(qz)
+
+    <span class="org-variable-name">elbo</span> = (tf.reduce_mean(zip_llik(umi, size_factor * lambda_, dropout)) -
+            kl_normal_normal(mu, tau, tf.constant(0.), tf.constant(1.)))
+
+    <span class="org-variable-name">train</span> = AMSGrad(learning_rate=learning_rate).minimize(-elbo)
+    <span class="org-variable-name">curr</span> = <span class="org-builtin">float</span>(<span class="org-string">'-inf'</span>)
+    <span class="org-keyword">with</span> tf.Session() <span class="org-keyword">as</span> sess:
+      sess.run(tf.global_variables_initializer())
+      <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_epochs):
+        <span class="org-variable-name">_</span>, <span class="org-variable-name">update</span> = sess.run([train, llik])
+        <span class="org-keyword">if</span> <span class="org-keyword">not</span> np.isfinite(update):
+          <span class="org-keyword">raise</span> tf.train.NanLossDuringTrainingError
+        <span class="org-keyword">if</span> <span class="org-keyword">not</span> i % 500:
+          <span class="org-keyword">print</span>(i, update)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span style="color: #00ff00;">import</span> numpy <span style="color: #00ff00;">as</span> np
-
-<span style="color: #0000ff;">sv</span> = tf.train.Supervisor(
-  graph=graph,
-  logdir=os.path.join(os.getenv(<span style="color: #00ffff;">'SCRATCH'</span>), <span style="color: #00ffff;">'zip-vae-model'</span>))
-<span style="color: #00ff00;">with</span> sv.managed_session() <span style="color: #00ff00;">as</span> sess:
-  <span style="color: #00ff00;">for</span> i <span style="color: #00ff00;">in</span> <span style="color: #00ff00;">range</span>(num_epochs * dge.shape[0] // minibatch_size):
-    <span style="color: #00ff00;">if</span> sv.should_stop():
-      <span style="color: #00ff00;">break</span>
-    <span style="color: #0000ff;">start</span> = (i % num_minibatch) * minibatch_size
-    <span style="color: #0000ff;">_</span>, <span style="color: #0000ff;">loss</span> = sess.run([train, elbo], feed_dict={x: dge.iloc[start:start + minibatch_size]})
-    <span style="color: #00ff00;">if</span> np.isnan(loss):
-      <span style="color: #00ff00;">raise</span> tf.train.NanLossDuringTrainingError
-    <span style="color: #00ff00;">if</span> <span style="color: #00ff00;">not</span> i % 10:
-      <span style="color: #00ff00;">print</span>(i, loss)
+<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
+&lt;&lt;amsgrad-impl&gt;&gt;
+&lt;&lt;tf-<span class="org-builtin">zip</span>-impl&gt;&gt;
+<span class="org-variable-name">keep_samples</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt'</span>, index_col=0, header=<span class="org-constant">None</span>)
+<span class="org-variable-name">keep_genes</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/genes-pass-filter.txt'</span>, index_col=0, header=<span class="org-constant">None</span>)
+<span class="org-variable-name">annotations</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-annotation.txt'</span>)
+<span class="org-variable-name">annotations</span> = annotations.loc[keep_samples.values.ravel()]
+<span class="org-variable-name">header</span> = <span class="org-builtin">sorted</span>(<span class="org-builtin">set</span>(annotations[<span class="org-string">'chip_id'</span>]))
+<span class="org-variable-name">umi</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-counts.txt.gz'</span>, index_col=0).loc[keep_genes.values.ravel(),keep_samples.values.ravel()]
+<span class="org-variable-name">index</span> = umi.index
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span style="color: #00ff00;">with</span> sv.managed_session() <span style="color: #00ff00;">as</span> sess:
-  <span style="color: #0000ff;">z</span> = np.zeros((n, layer_dim[-1]))
-  <span style="color: #00ff00;">for</span> i <span style="color: #00ff00;">in</span> <span style="color: #00ff00;">range</span>(num_minibatch):
-    <span style="color: #0000ff;">start</span> = i * minibatch_size
-    <span style="color: #0000ff;">z</span>[start:start + minibatch_size] = sess.run(qz.value(), feed_dict={x: dge.iloc[start:start + minibatch_size]})
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython">%matplotlib inline
-
-<span style="color: #00ff00;">import</span> matplotlib.pyplot <span style="color: #00ff00;">as</span> plt
-<span style="color: #00ff00;">import</span> scipy.linalg <span style="color: #00ff00;">as</span> spla
-
-<span style="color: #0000ff;">u</span>, <span style="color: #0000ff;">d</span>, <span style="color: #0000ff;">v</span> = spla.svd(z, full_matrices=<span style="color: #00ffff;">False</span>)
-<span style="color: #0000ff;">z_proj</span> = z.dot(v)
-plt.clf()
-plt.scatter(z_proj[:,0], z_proj[:,1])
-plt.xlabel(<span style="color: #00ffff;">'PC1 $q(z \mid x)$'</span>)
-plt.ylabel(<span style="color: #00ffff;">'PC2 $q(z \mid x)'</span>)
+<pre class="src src-sh">s
 </pre>
 </div>
 </div>
@@ -399,7 +504,7 @@ plt.ylabel(<span style="color: #00ffff;">'PC2 $q(z \mid x)'</span>)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2017-10-12 Thu 16:27</p>
+<p class="date">Created: 2018-05-17 Thu 15:17</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

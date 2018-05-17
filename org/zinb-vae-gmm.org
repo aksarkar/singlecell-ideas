@@ -1,0 +1,39 @@
+#+TITLE: ZINB-VAE-GMM
+#+SETUPFILE: setup.org
+
+* Introduction
+
+* Download the data
+
+  Use data on differentiated immune cells from 10X Genomics ([[https://www.nature.com/articles/ncomms14049][Zheng et al
+  2018]]). To make the problem tractable, construct a known mixture of XXX CD14+
+  B cells and XXX CD4+/CD25+ Treg cells.
+
+  #+BEGIN_SRC sh :dir /project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics
+    URLS=("http://cf.10xgenomics.com/samples/cell-exp/1.1.0/b_cells/b_cells_raw_gene_bc_matrices.tar.gz"
+          "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/b_cells/b_cells_metrics_summary.csv"
+          "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/regulatory_t/regulatory_t_raw_gene_bc_matrices.tar.gz"
+          "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/regulatory_t/regulatory_t_metrics_summary.csv")
+
+    for f in ${URLS[@]}
+    do
+        if [[ ! -e $(basename f) ]]
+        then
+            curl -OL $f
+        fi
+    done
+  #+END_SRC
+
+  #+RESULTS:
+
+  #+BEGIN_SRC sh :dir /project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics
+    tar xf b_cells_raw_gene_bc_matrices.tar.gz
+    tar xf regulatory_t_raw_gene_bc_matrices.tar.gz
+  #+END_SRC
+
+  #+RESULTS:
+
+* Model specification and inference
+
+* Results
+

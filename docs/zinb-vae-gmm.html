@@ -1,14 +1,12 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
-"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<!DOCTYPE html>
+<html lang="en">
 <head>
 <!-- 2018-05-17 Thu 15:17 -->
-<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Single cell</title>
-<meta name="generator" content="Org mode" />
-<meta name="author" content="Abhishek Sarkar" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZINB-VAE-GMM</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
  <!--/*--><![CDATA[/*><!--*/
   .title  { text-align: center;
@@ -180,6 +178,9 @@
   .org-svg { width: 90%; }
   /*]]>*/-->
 </style>
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="https://www.pirilampo.org/styles/readtheorg/css/htmlize.css"/>
+<style type="text/css">body {width: 60em; margin:auto} pre.src {overflow:auto}</style>
 <script type="text/javascript">
 /*
 @licstart  The following is the entire license notice for the
@@ -229,12 +230,52 @@ for the JavaScript code in this tag.
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell</h1>
-<ul class="org-ul">
-<li><a href="scvi.html">SCVI</a></li>
-<li><a href="vae.html">VAE for single-cell expression</a></li>
-<li><a href="zinb-vae-gmm.html">ZINB-VAE-GMM</a></li>
-</ul>
+<h1 class="title">ZINB-VAE-GMM</h1>
+
+<div id="outline-container-orgc7059dd" class="outline-2">
+<h2 id="orgc7059dd">Introduction</h2>
+</div>
+
+<div id="outline-container-orgf5d46b3" class="outline-2">
+<h2 id="orgf5d46b3">Download the data</h2>
+<div class="outline-text-2" id="text-orgf5d46b3">
+<p>
+Use data on differentiated immune cells from 10X Genomics (<a href="https://www.nature.com/articles/ncomms14049">Zheng et al
+2018</a>). To make the problem tractable, construct a known mixture of XXX CD14+
+B cells and XXX CD4+/CD25+ Treg cells.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh"><span class="org-variable-name">URLS</span>=(<span class="org-string">"http://cf.10xgenomics.com/samples/cell-exp/1.1.0/b_cells/b_cells_raw_gene_bc_matrices.tar.gz"</span>
+      <span class="org-string">"http://cf.10xgenomics.com/samples/cell-exp/1.1.0/b_cells/b_cells_metrics_summary.csv"</span>
+      <span class="org-string">"http://cf.10xgenomics.com/samples/cell-exp/1.1.0/regulatory_t/regulatory_t_raw_gene_bc_matrices.tar.gz"</span>
+      <span class="org-string">"http://cf.10xgenomics.com/samples/cell-exp/1.1.0/regulatory_t/regulatory_t_metrics_summary.csv"</span>)
+
+<span class="org-keyword">for</span> f<span class="org-keyword"> in</span> ${<span class="org-variable-name">URLS</span>[@]}
+<span class="org-keyword">do</span>
+    <span class="org-keyword">if</span> [[ <span class="org-negation-char">!</span> -e $(<span class="org-sh-quoted-exec">basename</span> f) ]]
+    <span class="org-keyword">then</span>
+        curl -OL $<span class="org-variable-name">f</span>
+    <span class="org-keyword">fi</span>
+<span class="org-keyword">done</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-sh">tar xf b_cells_raw_gene_bc_matrices.tar.gz
+tar xf regulatory_t_raw_gene_bc_matrices.tar.gz
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf344cf3" class="outline-2">
+<h2 id="orgf344cf3">Model specification and inference</h2>
+</div>
+
+<div id="outline-container-org5b29798" class="outline-2">
+<h2 id="org5b29798">Results</h2>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>

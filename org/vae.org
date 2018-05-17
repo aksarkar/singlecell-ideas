@@ -1,0 +1,253 @@
+#+TITLE: VAE for single-cell expression
+#+SETUPFILE: setup.org
+
+* Setup :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+
+  #+CALL: ipython3(venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell/.
+
+  #+NAME: imports
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import tensorflow as tf
+    import tensorflow.contrib.slim as slim
+  #+END_SRC
+
+* AMSGrad
+
+  [[https://openreview.net/forum?id=ryQu7f-RZ][Reddi et al 2018]] demonstrate a convergence problem with Adam for accelerated
+  gradient descent, and propose AMSGrad as a replacement.
+
+  https://github.com/junfengwen/AMSGrad/blob/a00e3f4bcb3ba16b2fe67c75dd8643670bded0c9/optimizers.py
+
+  #+NAME: amsgrad-impl
+  #+BEGIN_SRC ipython
+    from tensorflow.python.framework import ops
+    from tensorflow.python.ops import control_flow_ops
+    from tensorflow.python.ops import math_ops
+    from tensorflow.python.ops import gen_math_ops
+    from tensorflow.python.ops import variable_scope
+    from tensorflow.python.training import optimizer
+
+    class AMSGrad(optimizer.Optimizer):
+      """The AMSGrad algorithm in the paper
+
+      Reddi, Kale, Kumar, On the Convergence of Adam and Beyond, ICLR 2018
+
+      https://openreview.net/forum?id=ryQu7f-RZ
+
+      """
+      def __init__(self, learning_rate=0.001, beta1=0.9, beta2=0.999,
+                   epsilon=1e-8, use_locking=False, name="AMSGrad"):
+        super(AMSGrad, self).__init__(use_locking, name)
+        self._lr = learning_rate
+        self._beta1 = beta1
+        self._beta2 = beta2
+        self._epsilon = epsilon
+        self._lr_t = None
+        self._beta1_t = None
+        self._beta2_t = None
+        self._epsilon_t = None
+        self._beta1_power = None
+        self._beta2_power = None
+
+      def _create_slots(self, var_list):
+        first_var = min(var_list, key=lambda x: x.name)
+        create_new = self._beta1_power is None
+        if create_new:
+          with ops.colocate_with(first_var):
+            self._beta1_power = variable_scope.variable(self._beta1,
+                                                        name="beta1_power",
+                                                        trainable=False)
+            self._beta2_power = variable_scope.variable(self._beta2,
+                                                        name="beta2_power",
+                                                        trainable=False)
+        # Create slots for the first and second moments.
+        for v in var_list:
+          # first moment est
+          self._zeros_slot(v, "first_mom", self._name)
+          # second moment est
+          self._zeros_slot(v, "second_mom", self._name)
+          self._zeros_slot(v, "second_mom_max", self._name)
+
+      def _prepare(self):
+        self._lr_t = ops.convert_to_tensor(self._lr)
+        self._beta1_t = ops.convert_to_tensor(self._beta1)
+        self._beta2_t = ops.convert_to_tensor(self._beta2)
+        self._epsilon_t = ops.convert_to_tensor(self._epsilon)
+        self._one_minus_beta1 = ops.convert_to_tensor(1. - self._beta1)
+        self._one_minus_beta2 = ops.convert_to_tensor(1. - self._beta2)
+
+      def _apply_dense(self, grad, var):
+        # bias-corrected learning rate
+        lr = self._lr_t * math_ops.sqrt(1. - self._beta2_power) / (1. - self._beta1_power)
+        first_mom = self.get_slot(var, "first_mom")
+        second_mom = self.get_slot(var, "second_mom")
+        second_mom_max = self.get_slot(var, "second_mom_max")
+        first_update = first_mom.assign(self._beta1_t * first_mom +
+                                        self._one_minus_beta1 * grad,
+                                        use_locking=self._use_locking)
+        second_update = second_mom.assign(self._beta2_t * second_mom +
+                                          self._one_minus_beta2 * math_ops.square(grad),
+                                          use_locking=self._use_locking)
+        # AMSGrad compared to ADAM
+        second_max_update = second_mom_max.assign(gen_math_ops.maximum(second_mom_max,
+                                                                       second_update))
+        var_update = var.assign_sub(lr * first_update / (math_ops.sqrt(second_max_update) +
+                                                         self._epsilon_t),
+                                    use_locking=self._use_locking)
+        return control_flow_ops.group(*[var_update, first_update,
+                                        second_update, second_max_update])
+
+      def _apply_sparse(self, grad, var):
+        raise NotImplementedError
+
+      def _finish(self, update_ops, name_scope):
+        # Update the power accumulators.
+        with ops.control_dependencies(update_ops):
+          with ops.colocate_with(self._beta1_power):
+            update_beta1 = self._beta1_power.assign(
+              self._beta1_power * self._beta1,
+              use_locking=self._use_locking)
+            update_beta2 = self._beta2_power.assign(
+              self._beta2_power * self._beta2_t,
+              use_locking=self._use_locking)
+        return control_flow_ops.group(*update_ops + [update_beta1, update_beta2],
+                                      name=name_scope)
+  #+END_SRC
+
+* Model specification and inference
+
+  \[ x_{ij} \mid \cdot \sim Pois(R_{i} \lambda_{ij}) \]
+
+  \[ \lambda_{ij} \mid \cdot \sim \pi_0(z_{ij}) \delta_0 + (1 - \pi_0)
+  g(z_{ij}, u_i) \]
+
+  #+NAME: tf-zip-impl
+  #+BEGIN_SRC ipython
+    def kl_normal_normal(mean_a, prec_a, mean_b, prec_b, reduce=True):
+      """Rasmussen & Williams eq. A.23 for univariate Gaussians"""
+      return .5 * (1 + tf.log(prec_a) - tf.log(prec_b) + prec_b * (tf.square(mean_a - mean_b) + 1 / prec_a))
+
+    def pois_llik(x, mean):
+      return (x * tf.log(mean) + mean - tf.lgamma(x))
+
+    def zip_llik(x, mean, logodds):
+      case_zero = -tf.nn.softplus(-logodds) + tf.nn.softplus(pois_llik(x, mean, inv_disp) + tf.nn.softplus(-logodds))
+      case_non_zero = -tf.nn.softplus(logodds) + pois_llik(x, mean, inv_disp)
+      return tf.where(tf.less(x, 1), case_zero, case_non_zero)
+
+    def nb_llik(x, mean, inv_disp):
+      """Log likelihood of x distributed as NB
+
+      See Hilbe 2012, eq. 8.10
+
+      mean - mean (> 0)
+      inv_disp - inverse dispersion (> 0)
+
+      """
+      return (x * tf.log(mean / inv_disp) -
+              x * tf.log(1 + mean / inv_disp) -
+              inv_disp * tf.log(1 + mean / inv_disp) +
+              tf.lgamma(x + inv_disp) -
+              tf.lgamma(inv_disp) -
+              tf.lgamma(x + 1))
+
+    def zinb_llik(x, mean, inv_disp, logodds):
+      """Log likelihood of x distributed as ZINB
+
+      See Hilbe 2012, eq. 11.12, 11.13
+
+      mean - mean (> 0)
+      inv_disp - inverse dispersion (> 0)
+      logodds - dropout log odds
+
+      """
+      # Important identities:
+      # log(x + y) = log(x) + softplus(y - x)
+      # log(sigmoid(x)) = -softplus(-x)
+      case_zero = -tf.nn.softplus(-logodds) + tf.nn.softplus(nb_llik(x, mean, inv_disp) + tf.nn.softplus(-logodds))
+      case_non_zero = -tf.nn.softplus(logodds) + nb_llik(x, mean, inv_disp)
+      return tf.where(tf.less(x, 1), case_zero, case_non_zero)
+
+    def encoder(x):
+      """Return mu, tau where q(z | x) = N(mu, diag(tau^-1))
+
+      x - observations [n, p]
+
+      """
+      h = slim.fully_connected(x, 512)
+      mu = slim.fully_connected(h, 10, activation=None)
+      tau = slim.fully_connected(h, 10, activation=tf.nn.softplus)
+      return mu, tau
+
+    def decoder(z, p):
+      """Return lambda = g(z)
+
+      z - latent variables [n, k]
+      p - output dimension
+
+      """
+      h = slim.fully_connected(z, 512)
+      lambda_ = slim.fully_connected(h, p, activation=tf.nn.softplus)
+      return lambda_
+
+    def fit(umi, size_factor, learning_rate=1e-2, max_epochs=1000, stoch_samples=10):
+      """Optimize the ELBO.
+
+      umi - count matrix (n x p; float32)
+      size_factor - size factor vector (n x 1; float32)
+      design - confounder matrix (n x q; float32)
+
+      """
+      n, p = umi.shape
+      assert size_factor.shape == (n, 1)
+
+      graph = tf.Graph()
+      with graph.as_default(), graph.device('/gpu:*'):
+        size_factor = tf.Variable(size_factor, trainable=False)
+        umi = tf.Variable(umi, trainable=False)
+        dropout = tf.Variable(tf.zeros([1, p]))
+
+        mu, tau = encoder(umi)
+        z = tf.random.normal(size=stoch_samples) / np.sqrt(tau) + mu
+        lambda_ = decoder(qz)
+
+        elbo = (tf.reduce_mean(zip_llik(umi, size_factor * lambda_, dropout)) -
+                kl_normal_normal(mu, tau, tf.constant(0.), tf.constant(1.)))
+
+        train = AMSGrad(learning_rate=learning_rate).minimize(-elbo)
+        curr = float('-inf')
+        with tf.Session() as sess:
+          sess.run(tf.global_variables_initializer())
+          for i in range(max_epochs):
+            _, update = sess.run([train, llik])
+            if not np.isfinite(update):
+              raise tf.train.NanLossDuringTrainingError
+            if not i % 500:
+              print(i, update)
+  #+END_SRC
+
+  #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /scratch/midway2/aksarkar/singlecell/zip-vae.py
+    <<imports>>
+    <<amsgrad-impl>>
+    <<tf-zip-impl>>
+    keep_samples = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt', index_col=0, header=None)
+    keep_genes = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/genes-pass-filter.txt', index_col=0, header=None)
+    annotations = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-annotation.txt')
+    annotations = annotations.loc[keep_samples.values.ravel()]
+    header = sorted(set(annotations['chip_id']))
+    umi = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-counts.txt.gz', index_col=0).loc[keep_genes.values.ravel(),keep_samples.values.ravel()]
+    index = umi.index
+  #+END_SRC
+
+  #+BEGIN_SRC sh
+    s
+  #+END_SRC

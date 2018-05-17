@@ -1,0 +1,75 @@
+#+TITLE: SCVI
+#+SETUPFILE: setup.org
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="6G",venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  : Submitted batch job 45941423
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import scipy.optimize as so
+    import scipy.stats as st
+    import scipy.special as sp
+    import sqlite3
+  #+END_SRC
+
+  #+RESULTS: zinb-imports
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+NAME: tf-imports
+  #+BEGIN_SRC ipython :eval never
+    import tensorflow as tf
+  #+END_SRC
+
+  #+NAME: list-local-devices
+  #+BEGIN_SRC ipython :eval never
+    from tensorflow.python.client import device_lib as dl
+    dl.list_local_devices()
+  #+END_SRC
+
+  #+RESULTS: list-local-devices
+  :RESULTS:
+  #+BEGIN_EXAMPLE
+  [name: "/cpu:0"
+     device_type: "CPU"
+     memory_limit: 268435456
+     locality {
+     }
+     incarnation: 3101117888233869158, name: "/gpu:0"
+     device_type: "GPU"
+     memory_limit: 11324823962
+     locality {
+       bus_id: 1
+     }
+     incarnation: 4298943332142850272
+     physical_device_desc: "device: 0, name: Tesla K80, pci bus id: 0000:08:00.0"]
+  #+END_EXAMPLE
+  :END:
+
+
+

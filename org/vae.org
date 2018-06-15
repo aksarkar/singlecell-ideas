@@ -125,10 +125,10 @@
 
 * Model specification and inference
 
-  \[ x_{ij} \mid \cdot \sim Pois(R_{i} \lambda_{ij}) \]
+  \[ r_{ij} \mid \cdot \sim \mathrm{Poisson}(R_{i} \lambda_{ij}) \]
 
-  \[ \lambda_{ij} \mid \cdot \sim \pi_0(z_{ij}) \delta_0 + (1 - \pi_0)
-  g(z_{ij}, u_i) \]
+  \[ \lambda_{ij} \mid \cdot \sim \pi_j \delta_0 + (1 - \pi_j) g_j(z_i, u_i)
+  \]
 
   #+NAME: tf-zip-impl
   #+BEGIN_SRC ipython

@@ -1,0 +1,178 @@
+#+TITLE: Population structure in single cell data
+#+SETUPFILE: setup.org
+#+OPTIONS: toc:t
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="16G",venv="scqtl") :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  : Submitted batch job 46583128
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[69]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import colorcet
+    import functools
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    import scipy.stats as st
+    import sklearn.decomposition as skd
+    import sklearn.linear_model as sklm
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[70]:
+  :END:
+
+* Rank estimation
+
+  Load the 10X data. Follow their [[https://support.10xgenomics.com/single-cell-gene-expression/software/pipelines/latest/algorithms/overview][instructions]] to filter barcodes to cells.
+
+  #+BEGIN_SRC ipython :eval never :noweb tangle :tangle temp.py
+    <<dim-reduction-imports>>
+    import scipy.io
+    import pickle
+
+    # Important: this is a sparse matrix. Recode to CSC since we need to slice
+    # columns
+    counts  = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/matrices_mex/hg19/matrix.mtx').tocsc()
+    barcodes = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/matrices_mex/hg19/barcodes.tsv", header=None)
+    M = np.percentile(counts.sum(axis=0), 99)
+    keep = (10 * counts.sum(axis=0) >= M).A.ravel()
+    filtered = counts[:,keep].A
+    print(filtered.shape)
+    res = skd.IncrementalPCA().fit(filtered.T)
+    with open('svd.pkl', 'wb') as f:
+      pickle.dump(res, f)
+  #+END_SRC
+
+  #+BEGIN_SRC sh
+    sbatch --partition=broadwl -n1 -c28 --exclusive --mem=32G --time=60:00 --out rank.out --job-name rank
+    #!/bin/bash
+    source activate scqtl
+    python /project2/mstephens/aksarkar/projects/singlecell-qtl/analysis/temp.py
+  #+END_SRC
+
+  #+RESULTS:
+  : Submitted batch job 46582962
+
+  Read the results.
+
+  #+BEGIN_SRC ipython
+    import pickle
+
+    with open('/project2/mstephens/aksarkar/projects/singlecell-qtl/analysis/svd.pkl', 'rb') as f:
+      res = pickle.load(f)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[5]:
+  :END:
+
+  #+begin_SRC ipython :ipyfile figure/pop-structure.org/eigenspectrum.png
+    plt.clf()
+    plt.plot(np.arange(res.singular_values_.shape[0]), np.sqrt(res.singular_values_), lw=1, c='k')
+    elbow = np.where(res.singular_values_[1:] / res.singular_values_[:-1] > 0.9)[0].min()
+    plt.axvline(x=elbow, c='r', lw=1, ls=':')
+    plt.text(s='$\lambda_{}$'.format(elbow + 1), x=5, y=60, color='r')
+    plt.xlabel('Eigenvalue')
+    plt.ylabel('Magnitude')
+    plt.xlim(0, 100)
+    plt.ylim(0, plt.ylim()[1])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[71]:
+  : (0, 63.90538877430894)
+  [[file:figure/pop-structure.org/eigenspectrum.png]]
+  :END:
+
+  #+BEGIN_SRC ipython
+    def marchenko_pastur_pdf(x, lambda_, sigma):
+      lower = np.square(sigma * (1 - np.sqrt(lambda_)))
+      upper = np.square(sigma * (1 + np.sqrt(lambda_)))
+      x = np.ma.masked_outside(x, lower, upper)
+      return (np.sqrt((upper - x) * (x - lower)) / (2 * np.pi * np.square(sigma) * x * lambda_)).filled(0)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[50]:
+  :END:
+
+  #+BEGIN_SRC ipython :ipyfile figure/pop-structure.org/tw-vs-eigenvalues.png
+    plt.clf()
+    eig = np.sqrt(res.singular_values_)
+    f = st.gaussian_kde(eig)
+    grid = np.linspace(0, eig.max(), num=200)
+    plt.plot(grid, f(grid), lw=1, c='k')
+    plt.fill_between(grid, f(grid), color='k', alpha=.1)
+
+    y = marchenko_pastur_pdf(grid, res.singular_values_.shape[0] / res.n_components_, 1.85)
+    plt.plot(grid, y, c='r', lw=1)
+    plt.fill_between(grid, y, color='r', alpha=.1)
+
+    plt.xlim(0, eig.max())
+    plt.ylim(0, plt.ylim()[1])
+    plt.xlabel('Eigenvalue')
+    plt.ylabel('Density')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[72]:
+  : Text(0,0.5,'Density')
+  [[file:figure/pop-structure.org/tw-vs-eigenvalues.png]]
+  :END:
+
+  Implement the Tracy-Widom test for outlier eigenvalues as proposed in
+  Patterson et al. 2006
+
+  #+BEGIN_SRC ipython
+    def tw_test(n, p, eig):
+      effective_p = (n + 1) * np.square(eig.sum()) / ((n - 1) * np.square(eig).sum() - np.square(eig.sum()))
+      l = (p - 1) * eig[0] / eig.sum()
+      mu = np.square(np.sqrt(p - 1) + np.sqrt(n)) / p
+      sigma = (np.sqrt(p - 1) + np.sqrt(n)) / p * pow(1 / np.sqrt(p - 1) + 1 / np.sqrt(n), 1 / 3)
+      x = (l - mu) / sigma
+      return x > .9793
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[66]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    np.where(~np.array([tw_test(res.n_components_, res.singular_values_.shape[0] - i, eig[i:]) for i in range(50)]))[0].min()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[75]:
+  : 4
+  :END:
+
+  #+BEGIN_SRC ipython
+  
+  #+END_SRC

@@ -326,3 +326,5 @@ venv.bak/
 .mypy_cache/
 
 data/
+/code
+/org/figure

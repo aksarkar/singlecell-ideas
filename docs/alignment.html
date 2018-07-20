@@ -1,14 +1,12 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
-"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<!-- 2018-07-20 Fri 15:51 -->
-<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Single cell</title>
-<meta name="generator" content="Org mode" />
-<meta name="author" content="Abhishek Sarkar" />
+<!-- 2018-07-19 Thu 15:01 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Single cell alignment</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
  <!--/*--><![CDATA[/*><!--*/
   .title  { text-align: center;
@@ -180,6 +178,9 @@
   .org-svg { width: 90%; }
   /*]]>*/-->
 </style>
+<link href="https://maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cosmo/bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="https://www.pirilampo.org/styles/readtheorg/css/htmlize.css"/>
+<style type="text/css">body {width: 60em; margin:auto} pre.src {overflow:auto}</style>
 <script type="text/javascript">
 /*
 @licstart  The following is the entire license notice for the
@@ -229,23 +230,117 @@ for the JavaScript code in this tag.
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell</h1>
-<ul class="org-ul">
-<li><a href="wsvd.html">Approximate SVD for single cell data</a></li>
-<li><a href="network.html">Gene-gene network inference</a></li>
-<li><a href="logistic.html">Logistic regression with spike-and-slab</a></li>
-<li><a href="perturb-seq.html">Perturb-Seq re-analysis</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html">SCVI</a></li>
-<li><a href="index.html">Single cell</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="vae.html">VAE for single-cell expression</a></li>
-<li><a href="zinb-vae-gmm.html">ZINB-VAE-GMM</a></li>
+<h1 class="title">Single cell alignment</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org5813f56">Introduction</a></li>
+<li><a href="#org08dd0b0">Download the data</a></li>
+<li><a href="#orgaa2bc42">Cross-entropy loss</a></li>
 </ul>
+</div>
+</div>
+
+<div id="outline-container-org5813f56" class="outline-2">
+<h2 id="org5813f56">Introduction</h2>
+<div class="outline-text-2" id="text-org5813f56">
+<p>
+<i>Single cell alignment</i> is the problem of identifying common biological
+variation between different single cell measurements. The goal of alignment
+is to jointly analyze multiple data sets, maximizing power to detect
+biological differences by increasing sample sizes.
+</p>
+
+<p>
+One obvious application of alignment is to perform batch correction, where
+each data set corresponds to a batch. With the advent of large atlases of
+single cells (Zheng et al 2016, Human Cell Atlas), a more pressing
+application is to allow researchers to quickly align novel single cell
+experiments with millions of previously assayed cells.
+</p>
+
+<p>
+<a href="https://www.nature.com/articles/nbt.4096">Butler et al 2018</a> propose a two-step approach to solve the single cell
+alignment problem. First, they project all of the data into a common basis
+using generalized canonical correlation analysis (Hotelling et al 1936,
+Kettenring 1971). Second, they align cells across data sets to each other
+along the canonical correlation vectors using dynamic time warping (Berndt
+and Clifford 1994). DTW is a special case of sequence alignment (Needleman
+and Wunsch 1970), where mismatches/indels are not penalized, and the
+substitution cost is Euclidean distance.
+</p>
+
+<p>
+Here, we develop an alternative approach based on adversarial training of a
+deep generative model. Our main contributions are:
+</p>
+
+<ol class="org-ol">
+<li>We propose the negative cross-entropy loss as a quantitative metric for
+the quality of the alignment. Intuitively, after aligning the data (in low
+dimensional space), it should not be possible to successfully classify
+points as coming from different data sets.</li>
+
+<li>We propose an adversarial auto encoder (Makzhani et al 2015) which
+simultaneously maximizes the evidence lower bound of the full data,
+directly maximizes the negative cross-entropy loss of classifying points
+into their constituent datasets, and estimates a low dimensional embedding
+of the data.</li>
+
+<li>We show that our method performs well using the alignment score proposed
+by Butler et al 2018, and outperforms it in terms of negative
+cross-entropy loss.</li>
+
+<li>We show our method is robust to non-overlapping cell subpopulations.</li>
+
+<li>We demonstrate our method scales by training models for &gt;450,000 human
+peripheral blood mononuclear cells and &gt;1,000,000 mouse brain cells, and
+then aligning held out datasets to them. We provide our pre-trained models
+as the basis for other researchers to align novel experimental data.</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org08dd0b0" class="outline-2">
+<h2 id="org08dd0b0">Download the data</h2>
+<div class="outline-text-2" id="text-org08dd0b0">
+<p>
+<a href="https://www.nature.com/articles/nbt.4042">Kang et al 2018</a> studied control against stimulated CD4+ T cells. The Satija
+lab provided the processed count matrices.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">curl -sLO https://www.dropbox.com/s/79q6dttg8yl20zg/immune_alignment_expression_matrices.zip
+unzip immune_alignment_expression_matrices.zip
+</pre>
+</div>
+
+<p>
+The Satija lab provided data for four pancreatic alignment data sets.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">curl -O https://www.dropbox.com/s/vdtz4kkodpe8kw3/pancreas_multialignment_expression_matrices.zip
+unzip pancreas_multialignment_expression_matrices.zip
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgaa2bc42" class="outline-2">
+<h2 id="orgaa2bc42">Cross-entropy loss</h2>
+<div class="outline-text-2" id="text-orgaa2bc42">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> 
+</pre>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-07-20 Fri 15:51</p>
+<p class="date">Created: 2018-07-19 Thu 15:01</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

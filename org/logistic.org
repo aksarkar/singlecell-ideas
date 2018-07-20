@@ -1,0 +1,43 @@
+#+TITLE: Logistic regression with spike-and-slab
+#+SETUPFILE: setup.org
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="16G",partition="gpu2",venv="singlecell") :dir /scratch/midway2/aksarkar/manifold
+
+  #+RESULTS:
+  : Submitted batch job 46863019
+
+  #+BEGIN_SRC ipython
+    import glob
+    import numpy as np
+    import pandas as pd
+
+    import nwas
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[5]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+

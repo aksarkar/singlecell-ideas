@@ -1,0 +1,119 @@
+#+TITLE: Single cell alignment
+#+SETUPFILE: setup.org
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="16G",venv="singlecell") :dir /scratch/midway2/aksarkar/ideas
+
+  #+RESULTS:
+  : Submitted batch job 46954766
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+* Introduction
+
+  /Single cell alignment/ is the problem of identifying common biological
+  variation between different single cell measurements. The goal of alignment
+  is to jointly analyze multiple data sets, maximizing power to detect
+  biological differences by increasing sample sizes.
+
+  One obvious application of alignment is to perform batch correction, where
+  each data set corresponds to a batch. With the advent of large atlases of
+  single cells (Zheng et al 2016, Human Cell Atlas), a more pressing
+  application is to allow researchers to quickly align novel single cell
+  experiments with millions of previously assayed cells.
+
+  [[https://www.nature.com/articles/nbt.4096][Butler et al 2018]] propose a two-step approach to solve the single cell
+  alignment problem. First, they project all of the data into a common basis
+  using generalized canonical correlation analysis (Hotelling et al 1936,
+  Kettenring 1971). Second, they align cells across data sets to each other
+  along the canonical correlation vectors using dynamic time warping (Berndt
+  and Clifford 1994). DTW is a special case of sequence alignment (Needleman
+  and Wunsch 1970), where mismatches/indels are not penalized, and the
+  substitution cost is Euclidean distance.
+
+  Here, we develop an alternative approach based on adversarial training of a
+  deep generative model. Our main contributions are:
+
+  1. We propose the negative cross-entropy loss as a quantitative metric for
+     the quality of the alignment. Intuitively, after aligning the data (in low
+     dimensional space), it should not be possible to successfully classify
+     points as coming from different data sets.
+
+  2. We propose an adversarial auto encoder (Makzhani et al 2015) which
+     simultaneously maximizes the evidence lower bound of the full data,
+     directly maximizes the negative cross-entropy loss of classifying points
+     into their constituent datasets, and estimates a low dimensional embedding
+     of the data.
+
+  3. We show that our method performs well using the alignment score proposed
+     by Butler et al 2018, and outperforms it in terms of negative
+     cross-entropy loss.
+
+  4. We show our method is robust to non-overlapping cell subpopulations.
+
+  4. We demonstrate our method scales by training models for >450,000 human
+     peripheral blood mononuclear cells and >1,000,000 mouse brain cells, and
+     then aligning held out datasets to them. We provide our pre-trained models
+     as the basis for other researchers to align novel experimental data.
+
+* Download the data
+
+  [[https://www.nature.com/articles/nbt.4042][Kang et al 2018]] studied control against stimulated CD4+ T cells. The Satija
+  lab provided the processed count matrices.
+
+  #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas
+    curl -sLO https://www.dropbox.com/s/79q6dttg8yl20zg/immune_alignment_expression_matrices.zip
+    unzip immune_alignment_expression_matrices.zip
+  #+END_SRC
+
+  #+RESULTS:
+  | Archive:   | immune_alignment_expression_matrices.zip              |
+  | inflating: | immune_control_expression_matrix.txt.gz               |
+  | creating:  | __MACOSX/                                             |
+  | inflating: | __MACOSX/._immune_control_expression_matrix.txt.gz    |
+  | inflating: | immune_stimulated_expression_matrix.txt.gz            |
+  | inflating: | __MACOSX/._immune_stimulated_expression_matrix.txt.gz |
+
+  The Satija lab provided data for four pancreatic alignment data sets.
+
+  #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas
+    curl -O https://www.dropbox.com/s/vdtz4kkodpe8kw3/pancreas_multialignment_expression_matrices.zip
+    unzip pancreas_multialignment_expression_matrices.zip
+  #+END_SRC
+  
+* Cross-entropy loss
+
+  
+
+  #+BEGIN_SRC ipython
+    def 
+  #+END_SRC

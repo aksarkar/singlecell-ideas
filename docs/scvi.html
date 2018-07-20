@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-06-15 Fri 13:31 -->
+<!-- 2018-07-19 Thu 15:01 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SCVI</title>
+<title>Manifold learning using scVI</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -230,12 +230,65 @@ for the JavaScript code in this tag.
 </head>
 <body>
 <div id="content">
-<h1 class="title">SCVI</h1>
+<h1 class="title">Manifold learning using scVI</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orga26cc8b">Introduction</a></li>
+<li><a href="#org6f5ab3b">Download the data</a></li>
+<li><a href="#orgd66df6e">Fit the model</a></li>
+</ul>
+</div>
+</div>
 
+<div id="outline-container-orga26cc8b" class="outline-2">
+<h2 id="orga26cc8b">Introduction</h2>
+<div class="outline-text-2" id="text-orga26cc8b">
+<p>
+<a href="https://github.com/YosefLab/scVI">Lopez et al 2018</a> have already done the hard work of implementing VAE. Use
+their implementation to study the geometry of the embedding.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org6f5ab3b" class="outline-2">
+<h2 id="org6f5ab3b">Download the data</h2>
+<div class="outline-text-2" id="text-org6f5ab3b">
+<p>
+Download <a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE106273">mammary epithelial cell time course</a> (<a href="https://www.nature.com/articles/s41467-017-02001-5">Bach et al 2017</a>).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">mkdir -p GSE106273
+curl -s <span class="org-string">"https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE106273&amp;format=file"</span> | tar xf - -C GSE106273
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd66df6e" class="outline-2">
+<h2 id="orgd66df6e">Fit the model</h2>
+<div class="outline-text-2" id="text-orgd66df6e">
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">xs</span> = [si.mmread(f) <span class="org-keyword">for</span> f <span class="org-keyword">in</span> glob.glob(<span class="org-string">"/project2/mstephens/aksarkar/projects/singlecell-ideas/data/GSE106273/*.mtx.gz"</span>)]
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">training</span> = torch.data.DataLoader
+</pre>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-06-15 Fri 13:31</p>
+<p class="date">Created: 2018-07-19 Thu 15:01</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

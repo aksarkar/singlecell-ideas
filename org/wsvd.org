@@ -1,0 +1,327 @@
+#+TITLE: Factor analysis for single cell data
+#+SETUPFILE: setup.org
+#+OPTIONS: toc:t
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="8G",venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  : Submitted batch job 47753657
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+NAME: imports
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import scipy.io as si
+    import scipy.special as sp
+    import scipy.stats as st
+    import sklearn.decomposition as skd
+    import sklearn.linear_model as sklm
+  #+END_SRC
+
+  #+RESULTS: imports
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+* Introduction
+
+  Suppose we want to fit a linear model with heteroscedastic errors:
+
+  \[ y \sim N(X \beta, \Sigma) \]
+
+  where \(\Sigma = \mathrm{diag}(\sigma^2_1, \ldots, \sigma^2_n)\).
+
+  We can estimate \(\beta\) via weighted least squares:
+
+  \[ \hat\beta = (X' W X)^{-1} X' W y \]
+
+  where \(W = \Sigma^{-1}\).
+
+  Now suppose \(y\) is not Gaussian, but we assume a generalized linear model:
+
+  \[ \eta = X \beta \]
+
+  \[ E[y \mid x] = \mu = g^{-1}(\eta) \]
+
+  In this case, we can estimate \(\beta\) via iterative reweighted least
+  squares (Nelder and Wedderbun 1972).
+
+  The key idea is to introduce an auxiliary response:
+
+  \[ z = \eta + (y - \mu) \left(\frac{\partial \mu}{\partial \eta}\right) \]
+
+  and associated weight:
+
+  \[ w = \frac{1}{V[y]} \left(\frac{\partial \mu}{\partial \eta}\right)^2 \]
+
+  IRLS consists of repeatedly applying the updates:
+
+  1. Given \(z, w\), update \(\beta \leftarrow (X' W X)^{-1} X' W z\)
+  2. Given \(\beta\), update \(z, w\)
+
+  Can we generalize these ideas to perform PCA/factor analysis (Tipping 1999)?
+  Suppose:
+
+  \[ x_i = W z_i + \mu_i + \epsilon_i \]
+
+  where \(x_i\) is an observed \(p\)-vector, \(z_i\) is a latent \(q\)-vector,
+  and \(q \ll p\).
+
+  If we assume \(i = 1, \ldots, n, z_i \sim N(0, 1), \epsilon_i \sim N(0,
+  \sigma^2)\) then the MAP estimates are:
+
+  \[ \hat{\mu_{ij}} = \frac{1}{n} \sum x_{ij} \]
+
+  \[ \hat{\sigma^2} = \frac{1}{p - q} \sum_{j = q + 1}^{p} \lambda_j \]
+
+  \[ \hat{W} = U (\Lambda - \sigma^2 I)^{1/2} \]
+
+  where \(U, \Lambda\) are the top \(q\) eigenvectors (eigenvalues) of \(X' X\)
+
+  If the errors are heteroscedastic, can we generalize the weighted least
+  squares idea to a weighted SVD? Suppose:
+
+  \[ X = U D V' + Z + E \]
+
+  \[ z_{ij} \sim N(0, s_{ij}^2) \]
+
+  \[ e_{ij} \sim N(0, \tau^{-1}) \]
+
+  Given \(Z\), the problem becomes PCA of \((X - Z)\) with homoscedastic
+  errors.
+
+  Let \(R = X - UDV'\), \(\sigma^2 = \tau^{-1}\). Then, given \(U, D, V, S,
+  \sigma^2\):
+
+  \[ r_{ij} \mid z_{ij} \sim N(r_{ij}, \tau^{-1}) \]
+
+  \[ z_{ij} \mid \cdot \sim N(\mu_1, \tau_1^{-1}) \]
+
+  \[ \mu_1 = r_{ij} \tau / \tau_1 \]
+
+  \[ \tau_1 = \tau + 1 / s_{ij}^2 \]
+
+  This idea generalizes the basic iteration in the Soft-Impute algorithm for
+  matrix completion (Mazumder 2010), by representing missing entries as
+  \(s_{ij} = \infty\).
+
+  Now suppose the data \(X\) is not Gaussian. Can we generalize IRLS to an
+  iterative reweighted factor analysis, using our weighted SVD? Suppose \(Y\)
+  is the auxiliary response:
+
+  1. Given \(Y\), update \(U, D, V\)
+  2. Given \(U, D, V\), update \(Y, W\)
+
+* Implementation
+
+  #+BEGIN_SRC ipython
+    def wsvd(x, s, n_components, prior_prec=1, max_iters=10, verbose=False):
+      n, p = x.shape
+      z = np.zeros((n, p))
+      pca = skd.PCA(n_components=n_components)
+      obj = float('-inf')
+      for i in range(max_iters):
+        u, d, vt = pca._fit(x - z)
+        r = x - np.einsum('ij,j,jk->ik', u, d, vt)
+        posterior_prec = prior_prec + 1 / s ** 2
+        z = r * prior_prec / posterior_prec
+        update = st.norm(scale=np.sqrt(s ** 2 + 1 / prior_prec)).logpdf(r).mean()
+        if verbose:
+          print(f'wsvd [{i}] = {update}')
+        if update < obj or np.isclose(update, obj):
+          return u, d, vt
+        else:
+          obj = update
+      raise RuntimeError('failed to converge')
+
+    def pois_llik(y, lam):
+      return y * np.log(lam) - lam - sp.gammaln(y + 1)
+
+    def exp(x):
+      """Numerically safe exp"""
+      return np.exp(np.clip(x, 0, 700))
+
+    def pois_svd(x, max_outer_iters=10, verbose=False, **kwargs):
+      mu = x.mean(axis=0, keepdims=True) * np.ones(x.shape)
+      eta = np.log(mu)
+      obj = float('-inf')
+      for i in range(max_outer_iters):
+        y = eta + (x - mu) / mu
+        w = 1 / mu
+        u, d, vt = wsvd(y, w, verbose=verbose, **kwargs)
+        eta = np.einsum('ij,j,jk->ik', u, d, vt)
+        mu = exp(eta)
+        update = pois_llik(x, mu).mean()
+        if verbose:
+          print(f'pois_svd [{i}] = {update}')
+        if update < obj or np.isclose(update, obj):
+          return u, d, vt
+        else:
+          obj = update
+      raise RuntimeError('failed to converge')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[192]:
+  :END:
+
+* Simulation
+
+  Generate a Poisson data matrix assuming the rate matrix is low rank. Evaluate
+  the quality of the fit using RRMSE.
+
+  #+NAME: simulation
+  #+BEGIN_SRC ipython
+    def simulate(num_samples, num_features, rank, seed=None):
+      if seed is None:
+        seed = 0
+      np.random.seed(seed)
+      l = np.random.normal(scale=0.7, size=(num_samples, rank))
+      f = np.random.normal(scale=0.7, size=(rank, num_features))
+      lf = l.dot(f)
+      e = np.random.normal(scale=lf.std(), size=(num_samples, num_features))
+      x = np.random.poisson(lam=np.exp(lf + e))
+      return x, lf
+
+    def reconstruct(res):
+      return np.einsum('ij,j,jk->ik', *res)
+
+    def rrmse(pred, true):
+      return np.sqrt(np.linalg.norm(pred - true) / np.linalg.norm(true))
+  #+END_SRC
+
+  #+RESULTS: simulation
+  :RESULTS:
+  # Out[234]:
+  :END:
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[221]:
+  :END:
+
+  Test the simulation framework.
+
+  #+BEGIN_SRC ipython
+    x, lf = simulate(num_samples=100, num_features=1000, rank=1, seed=0)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[250]:
+  :END:
+
+  #+BEGIN_SRC ipython :async t
+    res = pois_svd(x, n_components=1)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[252]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    rrmse(reconstruct(res), lam)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[253]:
+  : 1.7511857491443785
+  :END:
+
+  For comparison, the naive approach would be to compute the Poisson MLE
+  \(\hat\lambda_{ij}\) once and then factorize the resulting matrix. But without
+  further assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
+
+  #+BEGIN_SRC ipython
+    def naive_pois_svd(x, n_components, **kwargs):
+      return skd.PCA(n_components=n_components)._fit(x)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[225]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    rrmse(reconstruct(naive_pois_svd(x, 1)), lam)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[255]:
+  : 1.9158662623016778
+  :END:
+
+  Evaluate the methods systematically.
+
+  #+NAME: main
+  #+BEGIN_SRC ipython
+    def evaluate(num_trials=10):
+      result = []
+      for rank in range(1, 4):
+        for method in (pois_svd, naive_pois_svd):
+          for trial in range(num_trials):
+            try:
+              x, lam = simulate(num_samples=100, num_features=1000, rank=rank, seed=trial)
+              res = method(x, n_components=rank)
+              score = rrmse(reconstruct(res), lam)
+            except:
+              score = np.nan
+            result.append((method.__name__, rank, trial, score))
+      result = pd.DataFrame(result)
+      result.columns = ['method', 'rank', 'trial', 'rrmse']
+      return result
+  #+END_SRC
+
+  #+RESULTS: main
+  :RESULTS:
+  # Out[264]:
+  :END:
+
+  #+BEGIN_SRC ipython :async t
+    result = evaluate()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[265]:
+  :END:
+
+  #+BEGIN_SRC ipython :ipyfile figure/wsvd.org/rank-1-3-rrmse.png
+    plt.clf()
+    result.boxplot(column='rrmse', by=['rank', 'method'], figsize=(3, 3), grid=False, rot=90)
+    plt.ylabel('Relative RMSE')
+    plt.title('')
+    plt.suptitle('')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[267]:
+  : Text(0.5,0.98,'')
+  [[file:figure/wsvd.org/rank-1-3-rrmse.png]]
+  :END:

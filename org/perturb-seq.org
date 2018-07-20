@@ -1,0 +1,76 @@
+#+TITLE: Perturb-Seq re-analysis
+#+SETUPFILE: setup.org
+
+* Setup :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="16G",venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell/.
+
+  #+RESULTS:
+  : Submitted batch job 46874773
+
+  #+BEGIN_SRC ipython
+    import pathlib
+    import gzip
+    import numpy as np
+    import pandas as pd
+    import scipy.io as si
+    import torch
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[10]:
+  :END:
+
+  #+RESULTS: imports
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+* Download the data
+
+  #+BEGIN_SRC sh
+    mkdir -p /project2/mstephens/aksarkar/projects/singlecell-ideas/data
+    cd /project2/mstephens/aksarkar/projects/singlecell-ideas/data
+    curl "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE90063&format=file" | tar xf -
+  #+END_SRC
+
+* Read the data
+
+  #+BEGIN_SRC ipython
+    def parse_guide_dict(f):
+      return {k: v[1:-1].split(', ') for k, v in (line.split(',', maxsplit=1) for line in f)}
+
+    def load(sample, path):
+      path = pathlib.Path(path)
+      helper = lambda x: str(next(path.glob('{}*{}'.format(sample, x))))
+      barcodes = pd.read_table(helper('cellnames.csv.gz'))
+      genes = pd.read_table(helper('genenames.csv.gz'))
+      with gzip.open(helper('cbc_gbc_dict.csv.gz'), 'rt') as f:
+        guides = parse_guide_dict(f)
+      counts = si.mmread(helper('mtx.txt.gz'))
+      return counts, barcodes, genes, guides
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[35]:
+  :END:
+
+  #+BEGIN_SRC ipython :async t
+    counts, barcodes, genes, guides = load('GSM2396858', '/project2/mstephens/aksarkar/projects/singlecell-ideas/data/perturb-seq')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[36]:
+  :END:

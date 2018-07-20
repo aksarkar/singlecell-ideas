@@ -11,82 +11,110 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="16G",venv="scqtl") :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(memory="32G",venv="scqtl") :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 46583128
+  : Submitted batch job 47544833
 
   #+BEGIN_SRC ipython
     %matplotlib inline
     %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[69]:
+  # Out[1]:
   :END:
 
+  #+NAME: imports
   #+BEGIN_SRC ipython
-    import colorcet
-    import functools
-    import matplotlib.pyplot as plt
     import numpy as np
     import pandas as pd
+    import pickle
+    import rpy2.robjects.packages
+    import rpy2.robjects.pandas2ri
+    import rpy2.robjects.numpy2ri
+    import scipy.io as si
     import scipy.stats as st
     import sklearn.decomposition as skd
     import sklearn.linear_model as sklm
+
+    rpy2.robjects.pandas2ri.activate()
+    rpy2.robjects.numpy2ri.activate()
+    flashr = rpy2.robjects.packages.importr('flashr')
   #+END_SRC
 
-  #+RESULTS:
+  #+RESULTS: imports
   :RESULTS:
-  # Out[70]:
+  # Out[2]:
   :END:
 
-* Rank estimation
+* Download the data
 
-  Load the 10X data. Follow their [[https://support.10xgenomics.com/single-cell-gene-expression/software/pipelines/latest/algorithms/overview][instructions]] to filter barcodes to cells.
+  Download the data generated in [[https://www.nature.com/articles/ncomms14049][Zheng et al 2016]].
 
-  #+BEGIN_SRC ipython :eval never :noweb tangle :tangle temp.py
-    <<dim-reduction-imports>>
-    import scipy.io
-    import pickle
+  #+BEGIN_SRC sh :dir /project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics
+    mkdir -p cd8+_cytotoxic_t_cells
+    curl -s "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/cytotoxic_t/cytotoxic_t_filtered_gene_bc_matrices.tar.gz" | tar xzf - -C cd8+_cytotoxic_t_cells
 
-    # Important: this is a sparse matrix. Recode to CSC since we need to slice
-    # columns
-    counts  = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/matrices_mex/hg19/matrix.mtx').tocsc()
-    barcodes = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/matrices_mex/hg19/barcodes.tsv", header=None)
-    M = np.percentile(counts.sum(axis=0), 99)
-    keep = (10 * counts.sum(axis=0) >= M).A.ravel()
-    filtered = counts[:,keep].A
-    print(filtered.shape)
-    res = skd.IncrementalPCA().fit(filtered.T)
+    mkdir -p cd19+_b_cells
+    curl -s http://cf.10xgenomics.com/samples/cell-exp/1.1.0/b_cells/b_cells_filtered_gene_bc_matrices.tar.gz | tar xzf - -C cd19+_b_cells
+  #+END_SRC
+
+* Read the data
+
+  Read the B cell data.
+
+  #+NAME: read-data-impl
+  #+BEGIN_SRC ipython
+    data = si.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/matrix.mtx').A
+    data = data[data.sum(axis=1) > 0]
+    data.shape
+  #+END_SRC
+
+  #+RESULTS: read-data-impl
+  :RESULTS:
+  # Out[22]:
+  : (15858, 10085)
+  :END:
+
+* Principal components analysis
+
+  Fit incremental SVD (to avoid memory problems).
+
+  #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/svd.py
+    <<imports>>
+    <<read-data-impl>>
+    res = skd.IncrementalPCA().fit(data.T)
     with open('svd.pkl', 'wb') as f:
       pickle.dump(res, f)
   #+END_SRC
 
-  #+BEGIN_SRC sh
-    sbatch --partition=broadwl -n1 -c28 --exclusive --mem=32G --time=60:00 --out rank.out --job-name rank
+  #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/singlecell
+    sbatch --partition=broadwl -n1 -c28 --exclusive --mem=32G --job-name=svd --out svd.out --time=60:00
     #!/bin/bash
     source activate scqtl
-    python /project2/mstephens/aksarkar/projects/singlecell-qtl/analysis/temp.py
+    python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/svd.py
   #+END_SRC
 
   #+RESULTS:
-  : Submitted batch job 46582962
+  : Submitted batch job 46605041
 
   Read the results.
 
   #+BEGIN_SRC ipython
-    import pickle
-
-    with open('/project2/mstephens/aksarkar/projects/singlecell-qtl/analysis/svd.pkl', 'rb') as f:
+    with open('/scratch/midway2/aksarkar/singlecell/svd.pkl', 'rb') as f:
       res = pickle.load(f)
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[5]:
+  # Out[4]:
   :END:
+
+  Plot the eigenspectrum of the data.
 
   #+begin_SRC ipython :ipyfile figure/pop-structure.org/eigenspectrum.png
     plt.clf()
@@ -96,16 +124,17 @@
     plt.text(s='$\lambda_{}$'.format(elbow + 1), x=5, y=60, color='r')
     plt.xlabel('Eigenvalue')
     plt.ylabel('Magnitude')
-    plt.xlim(0, 100)
-    plt.ylim(0, plt.ylim()[1])
+    _ = plt.ylim(0, plt.ylim()[1])
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[71]:
-  : (0, 63.90538877430894)
+  # Out[6]:
   [[file:figure/pop-structure.org/eigenspectrum.png]]
   :END:
+
+  The Marchenko-Pastur distribution describes the noise distribution of the
+  eigenvalues, under the null that all eigenvalues are 1.
 
   #+BEGIN_SRC ipython
     def marchenko_pastur_pdf(x, lambda_, sigma):
@@ -117,8 +146,10 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[50]:
+  # Out[7]:
   :END:
+
+  Plot the observed eigenvalues against the estimated noise distribution.
 
   #+BEGIN_SRC ipython :ipyfile figure/pop-structure.org/tw-vs-eigenvalues.png
     plt.clf()
@@ -135,22 +166,20 @@
     plt.xlim(0, eig.max())
     plt.ylim(0, plt.ylim()[1])
     plt.xlabel('Eigenvalue')
-    plt.ylabel('Density')
+    _ = plt.ylabel('Density')
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[72]:
-  : Text(0,0.5,'Density')
+  # Out[8]:
   [[file:figure/pop-structure.org/tw-vs-eigenvalues.png]]
   :END:
 
   Implement the Tracy-Widom test for outlier eigenvalues as proposed in
-  Patterson et al. 2006
+  [[http://dx.doi.org/10.1371/journal.pgen.0020190][Patterson et al. 2006]].
 
   #+BEGIN_SRC ipython
     def tw_test(n, p, eig):
-      effective_p = (n + 1) * np.square(eig.sum()) / ((n - 1) * np.square(eig).sum() - np.square(eig.sum()))
       l = (p - 1) * eig[0] / eig.sum()
       mu = np.square(np.sqrt(p - 1) + np.sqrt(n)) / p
       sigma = (np.sqrt(p - 1) + np.sqrt(n)) / p * pow(1 / np.sqrt(p - 1) + 1 / np.sqrt(n), 1 / 3)
@@ -160,7 +189,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[66]:
+  # Out[14]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -169,10 +198,98 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[75]:
-  : 4
+  # Out[15]:
+  : 24
+  :END:
+
+* Empirical Bayes matrix factorization
+
+  Fit ~flash~.
+
+  #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /scratch/midway2/aksarkar/singlecell/flash.py
+    <<imports>>
+    <<read-data-impl>>
+    res0 = skd.TruncatedSVD(n_components=100).fit(data.T)
+    flash_data = flashr.flash_init_lf(res0.transform(data.T), res0.components_.T)
+    res = flashr.flash(flash_data, greedy=False, backfit=True, verbose=True)
+    with open('flash.pkl', 'wb') as f:
+      pickle.dump(res, f)
+  #+END_SRC
+
+  #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/singlecell/
+    sbatch --partition=broadwl -n1 -c28 --exclusive --mem=32G --job-name=flash --out flash.out --time=60:00
+    #!/bin/bash
+    source activate scqtl
+    python flash.py
+  #+END_SRC
+
+  #+RESULTS:
+  : Submitted batch job 46604337
+
+  #+BEGIN_SRC sh
+    sacct -j 46596099 -o Elapsed,MaxRSS,MaxVMSize
+  #+END_SRC
+
+  #+RESULTS:
+  |    Elapsed | MaxRSS     | MaxVMSize  |
+  | ---------- | ---------- | ---------- |
+  |   01:01:48 |            |            |
+  |   01:01:49 | 21550040K  | 24148752K  |
+  |   01:01:48 | 2276K      | 173996K    |
+
+  Read the results.
+
+  #+BEGIN_SRC ipython
+    with open('/scratch/midway2/aksarkar/singlecell/flash.pkl', 'rb') as f:
+      res = pickle.load(f)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[5]:
   :END:
 
   #+BEGIN_SRC ipython
-  
+    np.array(flashr.flash_get_k(res))
   #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[10]:
+  : array([1], dtype=int32)
+  :END:
+
+  #+BEGIN_SRC ipython
+    l, d, f = flashr.flash_get_ldf(res)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[11]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    list(res.names)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[17]:
+  #+BEGIN_EXAMPLE
+    ['EL',
+    'EF',
+    'EL2',
+    'EF2',
+    'fixl',
+    'fixf',
+    'gl',
+    'gf',
+    'ebnm_param_l',
+    'ebnm_param_f',
+    'KL_l',
+    'KL_f',
+    'penloglik_l',
+    'penloglik_f',
+    'tau']
+  #+END_EXAMPLE
+  :END:

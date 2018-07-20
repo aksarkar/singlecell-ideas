@@ -1,0 +1,67 @@
+#+TITLE: Gene-gene network inference
+#+SETUPFILE: setup.org
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(partition="gpu2",memory="16G",venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  : Submitted batch job 46954766
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+
+    import nwas
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+* Idea
+
+  \[ \ln((1 - \pi_i) \mu_i) = \theta_i + \sum_{j \neq i} \theta_{ij} \ln((1 -
+  \pi_j) \mu_j) \]
+
+  \[ \theta_{ij} \sim \pi_0 \delta_0 + (1 - \pi_0) N(0, \tau^{-1}) \]
+
+* Read the data
+
+  #+BEGIN_SRC ipython
+    log_mu = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-mu.txt.gz', index_col=0, sep=' ')
+    logodds = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-logodds.txt.gz', index_col=0, sep=' ')
+    log_mu -= np.log1p(np.exp(logodds))
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[5]:
+  :END:
+
+* Fit linear regression with point-normal prior
+
+  #+BEGIN_SRC ipython
+    res = nwas.sgvb.gaussian_spike_slab(log_mu.loc[])
+  #+END_SRC

@@ -1,32 +1,40 @@
-#+TITLE: SCVI
+#+TITLE: Manifold learning using scVI
 #+SETUPFILE: setup.org
+
+* Introduction
+
+  [[https://github.com/YosefLab/scVI][Lopez et al 2018]] have already done the hard work of implementing VAE. Use
+  their implementation to study the geometry of the embedding.
 
 * Setup                                                            :noexport:
 
   #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
     (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
   #+END_SRC
 
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="6G",venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(memory="16G",partition="gpu",opts="--gres=gpu:1",venv="singlecell") :dir /scratch/midway2/aksarkar/manifold
 
   #+RESULTS:
-  : Submitted batch job 45941423
+  : Submitted batch job 46766834
 
   #+BEGIN_SRC ipython
+    import glob
     import numpy as np
     import pandas as pd
-    import scipy.optimize as so
-    import scipy.stats as st
-    import scipy.special as sp
-    import sqlite3
+    import scipy.io as si
+    import torch.utils.data
+
+    import scvi.models
+    import scvi.train
   #+END_SRC
 
-  #+RESULTS: zinb-imports
+  #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[5]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -41,35 +49,30 @@
   # Out[2]:
   :END:
 
-  #+NAME: tf-imports
-  #+BEGIN_SRC ipython :eval never
-    import tensorflow as tf
+* Download the data
+
+  Download [[https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE106273][mammary epithelial cell time course]] ([[https://www.nature.com/articles/s41467-017-02001-5][Bach et al 2017]]).
+
+  #+BEGIN_SRC sh :dir /project2/mstephens/aksarkar/projects/singlecell-ideas/data
+    mkdir -p GSE106273
+    curl -s "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE106273&format=file" | tar xf - -C GSE106273
   #+END_SRC
 
-  #+NAME: list-local-devices
-  #+BEGIN_SRC ipython :eval never
-    from tensorflow.python.client import device_lib as dl
-    dl.list_local_devices()
+  #+RESULTS:
+
+* Fit the model
+
+  Read the data.
+
+  #+BEGIN_SRC ipython
+    xs = [si.mmread(f) for f in glob.glob("/project2/mstephens/aksarkar/projects/singlecell-ideas/data/GSE106273/*.mtx.gz")]
   #+END_SRC
 
-  #+RESULTS: list-local-devices
+  #+RESULTS:
   :RESULTS:
-  #+BEGIN_EXAMPLE
-  [name: "/cpu:0"
-     device_type: "CPU"
-     memory_limit: 268435456
-     locality {
-     }
-     incarnation: 3101117888233869158, name: "/gpu:0"
-     device_type: "GPU"
-     memory_limit: 11324823962
-     locality {
-       bus_id: 1
-     }
-     incarnation: 4298943332142850272
-     physical_device_desc: "device: 0, name: Tesla K80, pci bus id: 0000:08:00.0"]
-  #+END_EXAMPLE
+  # Out[6]:
   :END:
 
-
-
+  #+BEGIN_SRC ipython
+    training = torch.data.DataLoader
+  #+END_SRC

@@ -235,19 +235,8 @@
               print(i, update)
   #+END_SRC
 
-  #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /scratch/midway2/aksarkar/singlecell/zip-vae.py
-    <<imports>>
-    <<amsgrad-impl>>
-    <<tf-zip-impl>>
-    keep_samples = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt', index_col=0, header=None)
-    keep_genes = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/genes-pass-filter.txt', index_col=0, header=None)
-    annotations = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-annotation.txt')
-    annotations = annotations.loc[keep_samples.values.ravel()]
-    header = sorted(set(annotations['chip_id']))
-    umi = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-counts.txt.gz', index_col=0).loc[keep_genes.values.ravel(),keep_samples.values.ravel()]
-    index = umi.index
-  #+END_SRC
+* Embed the data
 
-  #+BEGIN_SRC sh
-    s
+  #+BEGIN_SRC ipython
+    
   #+END_SRC

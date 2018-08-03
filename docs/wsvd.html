@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-08-02 Thu 17:20 -->
+<!-- 2018-08-03 Fri 18:10 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Factor analysis for single cell data</title>
@@ -258,7 +258,13 @@ for the JavaScript code in this tag.
 <div id="text-table-of-contents">
 <ul>
 <li><a href="#org792a4de">Introduction</a></li>
-<li><a href="#org3e1b3c4">Implementation</a></li>
+<li><a href="#org3e1b3c4">Implementation</a>
+<ul>
+<li><a href="#org9050847">Iterative reweighted factor analysis</a></li>
+<li><a href="#org420c835">First order optimization</a></li>
+<li><a href="#org44d3211">Naive factor analysis</a></li>
+</ul>
+</li>
 <li><a href="#org17b1019">Simulation</a></li>
 <li><a href="#orgc11fabd">Application to single cell data</a></li>
 </ul>
@@ -435,6 +441,10 @@ is the auxiliary response:
 <div id="outline-container-org3e1b3c4" class="outline-2">
 <h2 id="org3e1b3c4">Implementation</h2>
 <div class="outline-text-2" id="text-org3e1b3c4">
+</div>
+<div id="outline-container-org9050847" class="outline-3">
+<h3 id="org9050847">Iterative reweighted factor analysis</h3>
+<div class="outline-text-3" id="text-org9050847">
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">wsvd</span>(x, s, n_components, prior_prec=1, max_iters=10, verbose=<span class="org-constant">False</span>):
   <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
@@ -484,6 +494,78 @@ is the auxiliary response:
 </div>
 </div>
 </div>
+
+<div id="outline-container-org420c835" class="outline-3">
+<h3 id="org420c835">First order optimization</h3>
+<div class="outline-text-3" id="text-org420c835">
+<p>
+Directly optimize the log likelihood via gradient descent:
+</p>
+
+<p>
+\[ x_{ij} \sim Poisson(\lambda_{ij}) \]
+</p>
+
+<p>
+\[ \lambda_{ij} = \sum_k L_{ik} F_{kj} \]
+</p>
+
+<p>
+For simplicity, don't put any constraints on \(L, F\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> torch
+
+<span class="org-keyword">class</span> <span class="org-type">PoissonFA</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, n_samples, n_features, n_components):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.l = torch.randn([n_samples, n_components], requires_grad=<span class="org-constant">True</span>)
+    <span class="org-keyword">self</span>.f = torch.randn([n_components, n_features], requires_grad=<span class="org-constant">True</span>)
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-variable-name">log_lam</span> = torch.matmul(<span class="org-keyword">self</span>.l, <span class="org-keyword">self</span>.f)
+    <span class="org-keyword">return</span> -torch.mean(x * log_lam - torch.exp(log_lam) + sp.gammaln(x + 1))
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, max_epochs=1000, verbose=<span class="org-constant">False</span>, **kwargs):
+    <span class="org-variable-name">x</span> = torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>)
+    <span class="org-variable-name">opt</span> = torch.optim.Adam([<span class="org-keyword">self</span>.l, <span class="org-keyword">self</span>.f], **kwargs)
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_epochs):
+      opt.zero_grad()
+      <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x)
+      <span class="org-keyword">if</span> verbose <span class="org-keyword">and</span> <span class="org-keyword">not</span> i % 100:
+        <span class="org-keyword">print</span>(f<span class="org-string">'Epoch {i} = {loss}'</span>)
+      loss.backward()
+      opt.step()
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+
+<span class="org-keyword">def</span> <span class="org-function-name">pois_fa</span>(x, n_components, **kwargs):
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
+  <span class="org-variable-name">res</span> = PoissonFA(n, p, n_components).fit(x, max_epochs=2000, lr=5e-2)
+  <span class="org-keyword">return</span> res.l.detach().numpy(), np.ones(n_components), res.f.detach().numpy()
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org44d3211" class="outline-3">
+<h3 id="org44d3211">Naive factor analysis</h3>
+<div class="outline-text-3" id="text-org44d3211">
+<p>
+The naive approach would be to compute the Poisson MLE \(\hat\lambda_{ij}\)
+once and then factorize the resulting matrix. But without further
+assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org97eb20d"><span class="org-keyword">def</span> <span class="org-function-name">naive_pois_svd</span>(x, n_components, **kwargs):
+  <span class="org-keyword">return</span> skd.PCA(n_components=n_components)._fit(x)
+</pre>
+</div>
+</div>
+</div>
+</div>
+
 
 <div id="outline-container-org17b1019" class="outline-2">
 <h2 id="org17b1019">Simulation</h2>
@@ -538,16 +620,8 @@ Test the simulation framework.
 </pre>
 
 <p>
-For comparison, the naive approach would be to compute the Poisson MLE
-\(\hat\lambda_{ij}\) once and then factorize the resulting matrix. But without
-further assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
+Compute the naive estimate.
 </p>
-
-<div class="org-src-container">
-<pre class="src src-ipython" id="org97eb20d"><span class="org-keyword">def</span> <span class="org-function-name">naive_pois_svd</span>(x, n_components, **kwargs):
-  <span class="org-keyword">return</span> skd.PCA(n_components=n_components)._fit(x)
-</pre>
-</div>
 
 <div class="org-src-container">
 <pre class="src src-ipython">rrmse(reconstruct(naive_pois_svd(x, 1)), lf)
@@ -568,7 +642,7 @@ Evaluate the methods systematically.
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 4):
     <span class="org-keyword">for</span> n_components <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 4):
-      <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (pois_svd, naive_pois_svd):
+      <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (pois_svd, pois_fa, naive_pois_svd):
         <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
           <span class="org-keyword">try</span>:
             <span class="org-variable-name">x</span>, <span class="org-variable-name">lam</span> = simulate(num_samples=100, num_features=1000, rank=rank, seed=trial)
@@ -657,21 +731,30 @@ to the ground truth have the highest likelihood?
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">(result
+<pre class="src src-ipython">(result[result[<span class="org-string">'method'</span>] == <span class="org-string">'pois_svd'</span>]
  .groupby([<span class="org-string">'rank'</span>, <span class="org-string">'trial'</span>])
- .<span class="org-builtin">apply</span>(<span class="org-keyword">lambda</span> x: x.loc[x[<span class="org-string">'llik'</span>].idxmax, <span class="org-string">'n_components'</span>] == x.iloc[0][<span class="org-string">'rank'</span>])
- .reset_index()
- .groupby(<span class="org-string">'rank'</span>)[0]
- .mean())
+ .<span class="org-builtin">apply</span>(<span class="org-keyword">lambda</span> x: x.loc[x[<span class="org-string">'llik'</span>].idxmax, <span class="org-string">'n_components'</span>])
+ .reset_index())
 </pre>
 </div>
 
 <pre class="example">
-rank
-1    1.0
-2    0.8
-3    1.0
-Name: 0, dtype: float64
+rank  trial  0
+0      1      0  1
+1      1      1  1
+2      1      2  1
+3      1      3  1
+4      1      4  1
+5      2      0  2
+6      2      1  2
+7      2      2  3
+8      2      3  2
+9      2      4  2
+10     3      0  3
+11     3      1  3
+12     3      2  3
+13     3      3  3
+14     3      4  3
 </pre>
 </div>
 </div>
@@ -775,7 +858,7 @@ m1.score(scaler.transform(mix), Y)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-08-02 Thu 17:20</p>
+<p class="date">Created: 2018-08-03 Fri 18:10</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

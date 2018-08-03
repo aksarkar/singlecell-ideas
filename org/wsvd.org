@@ -15,7 +15,7 @@
 
   #+RESULTS:
   :RESULTS:
-  Submitted batch job 48061133
+  Submitted batch job 48099657
   :END:
 
   #+BEGIN_SRC ipython
@@ -46,7 +46,7 @@
 
   #+RESULTS: imports
   :RESULTS:
-  # Out[7]:
+  # Out[2]:
   :END:
 
 * Introduction
@@ -140,6 +140,7 @@
   2. Given \(U, D, V\), update \(Y, W\)
 
 * Implementation
+** Iterative reweighted factor analysis
 
   #+BEGIN_SRC ipython
     def wsvd(x, s, n_components, prior_prec=1, max_iters=10, verbose=False):
@@ -190,7 +191,70 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[74]:
+  :END:
+
+** First order optimization
+
+  Directly optimize the log likelihood via gradient descent:
+
+  \[ x_{ij} \sim Poisson(\lambda_{ij}) \]
+
+  \[ \lambda_{ij} = \sum_k L_{ik} F_{kj} \]
+
+  For simplicity, don't put any constraints on \(L, F\).
+
+  #+BEGIN_SRC ipython
+    import torch
+
+    class PoissonFA(torch.nn.Module):
+      def __init__(self, n_samples, n_features, n_components):
+        super().__init__()
+        self.l = torch.randn([n_samples, n_components], requires_grad=True)
+        self.f = torch.randn([n_components, n_features], requires_grad=True)
+
+      def forward(self, x):
+        log_lam = torch.matmul(self.l, self.f)
+        return -torch.mean(x * log_lam - torch.exp(log_lam) + sp.gammaln(x + 1))
+
+      def fit(self, x, max_epochs=1000, verbose=False, **kwargs):
+        x = torch.tensor(x, dtype=torch.float)
+        opt = torch.optim.Adam([self.l, self.f], **kwargs)
+        for i in range(max_epochs):
+          opt.zero_grad()
+          loss = self.forward(x)
+          if verbose and not i % 100:
+            print(f'Epoch {i} = {loss}')
+          loss.backward()
+          opt.step()
+        return self
+
+    def pois_fa(x, n_components, **kwargs):
+      n, p = x.shape
+      res = PoissonFA(n, p, n_components).fit(x, max_epochs=2000, lr=5e-2)
+      return res.l.detach().numpy(), np.ones(n_components), res.f.detach().numpy()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[99]:
+  :END:
+
+** Naive factor analysis
+
+  The naive approach would be to compute the Poisson MLE \(\hat\lambda_{ij}\)
+  once and then factorize the resulting matrix. But without further
+  assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
+
+  #+NAME: naive-pois-svd
+  #+BEGIN_SRC ipython
+    def naive_pois_svd(x, n_components, **kwargs):
+      return skd.PCA(n_components=n_components)._fit(x)
+  #+END_SRC
+
+  #+RESULTS: naive-pois-svd
+  :RESULTS:
+  # Out[80]:
   :END:
 
 * Simulation
@@ -220,7 +284,7 @@
 
   #+RESULTS: simulation
   :RESULTS:
-  # Out[4]:
+  # Out[15]:
   :END:
 
   Test the simulation framework.
@@ -231,7 +295,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[54]:
+  # Out[16]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -253,20 +317,7 @@
   : 0.7758305792529097
   :END:
 
-  For comparison, the naive approach would be to compute the Poisson MLE
-  \(\hat\lambda_{ij}\) once and then factorize the resulting matrix. But without
-  further assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
-
-  #+NAME: naive-pois-svd
-  #+BEGIN_SRC ipython
-    def naive_pois_svd(x, n_components, **kwargs):
-      return skd.PCA(n_components=n_components)._fit(x)
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  # Out[5]:
-  :END:
+  Compute the naive estimate.
 
   #+BEGIN_SRC ipython
     rrmse(reconstruct(naive_pois_svd(x, 1)), lf)
@@ -286,7 +337,7 @@
       result = []
       for rank in range(1, 4):
         for n_components in range(1, 4):
-          for method in (pois_svd, naive_pois_svd):
+          for method in (pois_svd, pois_fa, naive_pois_svd):
             for trial in range(num_trials):
               try:
                 x, lam = simulate(num_samples=100, num_features=1000, rank=rank, seed=trial)
@@ -304,7 +355,7 @@
 
   #+RESULTS: main
   :RESULTS:
-  # Out[37]:
+  # Out[72]:
   :END:
 
   #+BEGIN_SRC ipython :async t
@@ -323,7 +374,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[45]:
+  # Out[107]:
   :END:
 
   Read the results.
@@ -331,6 +382,11 @@
   #+BEGIN_SRC ipython
     result = pd.read_table('pois-svd-simulation.txt.gz', index_col=0)
   #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[83]:
+  :END:
 
   #+BEGIN_SRC ipython :ipyfile figure/wsvd.org/rrmse.png
     plt.clf()
@@ -342,7 +398,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[46]:
+  # Out[109]:
   : Text(0.5,0.98,'')
   [[file:figure/wsvd.org/rrmse.png]]
   :END:
@@ -360,7 +416,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[50]:
+  # Out[110]:
   : Text(0.5,0.98,'')
   [[file:figure/wsvd.org/llik.png]]
   :END:
@@ -369,23 +425,32 @@
   to the ground truth have the highest likelihood?
 
   #+BEGIN_SRC ipython
-    (result
+    (result[result['method'] == 'pois_svd']
      .groupby(['rank', 'trial'])
-     .apply(lambda x: x.loc[x['llik'].idxmax, 'n_components'] == x.iloc[0]['rank'])
-     .reset_index()
-     .groupby('rank')[0]
-     .mean())
+     .apply(lambda x: x.loc[x['llik'].idxmax, 'n_components'])
+     .reset_index())
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[48]:
+  # Out[125]:
   #+BEGIN_EXAMPLE
-    rank
-    1    1.0
-    2    0.8
-    3    1.0
-    Name: 0, dtype: float64
+    rank  trial  0
+    0      1      0  1
+    1      1      1  1
+    2      1      2  1
+    3      1      3  1
+    4      1      4  1
+    5      2      0  2
+    6      2      1  2
+    7      2      2  3
+    8      2      3  2
+    9      2      4  2
+    10     3      0  3
+    11     3      1  3
+    12     3      2  3
+    13     3      3  3
+    14     3      4  3
   #+END_EXAMPLE
   :END:
 

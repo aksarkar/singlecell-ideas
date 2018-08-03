@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-07-20 Fri 15:51 -->
+<!-- 2018-08-02 Thu 17:20 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Factor analysis for single cell data</title>
@@ -260,6 +260,7 @@ for the JavaScript code in this tag.
 <li><a href="#org792a4de">Introduction</a></li>
 <li><a href="#org3e1b3c4">Implementation</a></li>
 <li><a href="#org17b1019">Simulation</a></li>
+<li><a href="#orgc11fabd">Application to single cell data</a></li>
 </ul>
 </div>
 </div>
@@ -276,7 +277,8 @@ Suppose we want to fit a linear model with heteroscedastic errors:
 </p>
 
 <p>
-where \(\Sigma = \mathrm{diag}(\sigma^2_1, \ldots, \sigma^2_n)\).
+where \(y\) is \(n \times 1\), \(X\) is \(n \times p\), and \(\Sigma =
+  \mathrm{diag}(\sigma^2_1, \ldots, \sigma^2_n)\).
 </p>
 
 <p>
@@ -309,7 +311,8 @@ squares (Nelder and Wedderbun 1972).
 </p>
 
 <p>
-The key idea is to introduce an auxiliary response:
+The key idea is to perform approximate Newton-Raphson updates (by
+approximating the Hessian). Introduce an auxiliary response:
 </p>
 
 <p>
@@ -353,7 +356,7 @@ If we assume \(i = 1, \ldots, n, z_i \sim N(0, 1), \epsilon_i \sim N(0,
 </p>
 
 <p>
-\[ \hat{\mu_{ij}} = \frac{1}{n} \sum x_{ij} \]
+\[ \hat{\mu}_i = \frac{1}{n} \sum_j x_{ij} \]
 </p>
 
 <p>
@@ -391,8 +394,7 @@ errors.
 </p>
 
 <p>
-Let \(R = X - UDV'\), \(\sigma^2 = \tau^{-1}\). Then, given \(U, D, V, S,
-  \sigma^2\):
+Let \(R = X - UDV'\). Then, given \(U, D, V, S, \tau\):
 </p>
 
 <p>
@@ -424,7 +426,7 @@ is the auxiliary response:
 </p>
 
 <ol class="org-ol">
-<li>Given \(Y\), update \(U, D, V\)</li>
+<li>Given \(Y, W\), update \(U, D, V\)</li>
 <li>Given \(U, D, V\), update \(Y, W\)</li>
 </ol>
 </div>
@@ -526,12 +528,12 @@ Test the simulation framework.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython">rrmse(reconstruct(res), lam)
+<pre class="src src-ipython">rrmse(reconstruct(res), lf)
 </pre>
 </div>
 
 <pre class="example">
-1.7511857491443785
+0.7758305792529097
 
 </pre>
 
@@ -542,18 +544,18 @@ further assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">naive_pois_svd</span>(x, n_components, **kwargs):
+<pre class="src src-ipython" id="org97eb20d"><span class="org-keyword">def</span> <span class="org-function-name">naive_pois_svd</span>(x, n_components, **kwargs):
   <span class="org-keyword">return</span> skd.PCA(n_components=n_components)._fit(x)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython">rrmse(reconstruct(naive_pois_svd(x, 1)), lam)
+<pre class="src src-ipython">rrmse(reconstruct(naive_pois_svd(x, 1)), lf)
 </pre>
 </div>
 
 <pre class="example">
-1.9158662623016778
+1.1425364246860807
 
 </pre>
 
@@ -565,29 +567,50 @@ Evaluate the methods systematically.
 <pre class="src src-ipython" id="orgd87ff5d"><span class="org-keyword">def</span> <span class="org-function-name">evaluate</span>(num_trials=10):
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 4):
-    <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (pois_svd, naive_pois_svd):
-      <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
-        <span class="org-keyword">try</span>:
-          <span class="org-variable-name">x</span>, <span class="org-variable-name">lam</span> = simulate(num_samples=100, num_features=1000, rank=rank, seed=trial)
-          <span class="org-variable-name">res</span> = method(x, n_components=rank)
-          <span class="org-variable-name">score</span> = rrmse(reconstruct(res), lam)
-        <span class="org-keyword">except</span>:
-          <span class="org-variable-name">score</span> = np.nan
-        result.append((method.<span class="org-builtin">__name__</span>, rank, trial, score))
+    <span class="org-keyword">for</span> n_components <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 4):
+      <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (pois_svd, naive_pois_svd):
+        <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
+          <span class="org-keyword">try</span>:
+            <span class="org-variable-name">x</span>, <span class="org-variable-name">lam</span> = simulate(num_samples=100, num_features=1000, rank=rank, seed=trial)
+            <span class="org-variable-name">res</span> = method(x, n_components=n_components, max_outer_iters=1000, max_iters=1000)
+            <span class="org-variable-name">rrmse_</span> = rrmse(reconstruct(res), lam)
+            <span class="org-variable-name">llik</span> = pois_llik(x, np.exp(reconstruct(res))).mean()
+          <span class="org-keyword">except</span>:
+            <span class="org-variable-name">rrmse_</span> = <span class="org-constant">None</span>
+            <span class="org-variable-name">llik</span> = <span class="org-constant">None</span>
+          result.append((rank, trial, method.<span class="org-builtin">__name__</span>, n_components, rrmse_, llik))
   <span class="org-variable-name">result</span> = pd.DataFrame(result)
-  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'method'</span>, <span class="org-string">'rank'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'rrmse'</span>]
+  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'rank'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'method'</span>, <span class="org-string">'n_components'</span>, <span class="org-string">'rrmse'</span>, <span class="org-string">'llik'</span>]
   <span class="org-keyword">return</span> result
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate()
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate(num_trials=5)
+</pre>
+</div>
+
+<p>
+Serialize the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">result.to_csv(<span class="org-string">'pois-svd-simulation.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
+</pre>
+</div>
+
+<p>
+Read the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = pd.read_table(<span class="org-string">'pois-svd-simulation.txt.gz'</span>, index_col=0)
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
-result.boxplot(column=<span class="org-string">'rrmse'</span>, by=[<span class="org-string">'rank'</span>, <span class="org-string">'method'</span>], figsize=(3, 3), grid=<span class="org-constant">False</span>, rot=90)
+result[result[<span class="org-string">'rank'</span>] == result[<span class="org-string">'n_components'</span>]].boxplot(column=<span class="org-string">'rrmse'</span>, by=[<span class="org-string">'rank'</span>, <span class="org-string">'method'</span>], figsize=(3, 3), grid=<span class="org-constant">False</span>, rot=90)
 plt.ylabel(<span class="org-string">'Relative RMSE'</span>)
 plt.title(<span class="org-string">''</span>)
 plt.suptitle(<span class="org-string">''</span>)
@@ -600,15 +623,159 @@ Text(0.5,0.98,'')
 </pre>
 
 <div class="figure">
-<p><img src="figure/wsvd.org/rank-1-3-rrmse.png" alt="rank-1-3-rrmse.png">
+<p><img src="figure/wsvd.org/rrmse.png" alt="rrmse.png">
 </p>
 </div>
+
+<p>
+Does the WSVD reveal the underlying rank?
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+result[result[<span class="org-string">'method'</span>] == <span class="org-string">'pois_svd'</span>].dropna().boxplot(column=<span class="org-string">'llik'</span>, by=[<span class="org-string">'rank'</span>, <span class="org-string">'n_components'</span>], figsize=(3, 5), grid=<span class="org-constant">False</span>, rot=90)
+plt.ylabel(<span class="org-string">'Per sample log likelihood'</span>)
+plt.yscale(<span class="org-string">'symlog'</span>, linthreshy=1e-14)
+plt.title(<span class="org-string">''</span>)
+plt.suptitle(<span class="org-string">''</span>)
+</pre>
+</div>
+
+<pre class="example">
+Text(0.5,0.98,'')
+
+</pre>
+
+<div class="figure">
+<p><img src="figure/wsvd.org/llik.png" alt="llik.png">
+</p>
+</div>
+
+<p>
+For each data set, how often does the model with number of components equal
+to the ground truth have the highest likelihood?
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">(result
+ .groupby([<span class="org-string">'rank'</span>, <span class="org-string">'trial'</span>])
+ .<span class="org-builtin">apply</span>(<span class="org-keyword">lambda</span> x: x.loc[x[<span class="org-string">'llik'</span>].idxmax, <span class="org-string">'n_components'</span>] == x.iloc[0][<span class="org-string">'rank'</span>])
+ .reset_index()
+ .groupby(<span class="org-string">'rank'</span>)[0]
+ .mean())
+</pre>
+</div>
+
+<pre class="example">
+rank
+1    1.0
+2    0.8
+3    1.0
+Name: 0, dtype: float64
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgc11fabd" class="outline-2">
+<h2 id="orgc11fabd">Application to single cell data</h2>
+<div class="outline-text-2" id="text-orgc11fabd">
+<p>
+What are the latent factors we expect to find in single cell data?
+</p>
+
+<ol class="org-ol">
+<li>Unwanted variation</li>
+<li>Cell types/subpopulations</li>
+</ol>
+
+<p>
+Of these, cell types are of the most interest, because we can then read off
+the relevant genes from the factors.
+</p>
+
+<p>
+To test whether the method recovers cell type, we use known mixtures of
+sorted PBMCs from 10X Genomics.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">b_cells</span> = si.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/matrix.mtx'</span>)
+<span class="org-variable-name">t_cells</span> = si.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">genes</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/genes.tsv'</span>, header=<span class="org-constant">None</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">b_cell_subset</span> = b_cells.tocsc()[:,:500]
+<span class="org-variable-name">t_cell_subset</span> = t_cells.tocsc()[:,:500]
+<span class="org-variable-name">mix</span> = ss.hstack([b_cell_subset, t_cell_subset], <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>)
+<span class="org-variable-name">keep</span> = (mix.<span class="org-builtin">sum</span>(axis=1) &gt; 0).A.ravel()
+<span class="org-variable-name">genes</span> = genes.loc[keep]
+<span class="org-variable-name">mix</span> = mix[keep].A.T
+<span class="org-variable-name">mix</span> /= mix.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res</span> = pois_svd(mix, n_components=10, verbose=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+2 - 8b2e7d2c-614d-46bb-aaff-4a9a5a4420d0
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res0</span> = skd.PCA(n_components=10).fit(mix)  
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">Y</span> = np.zeros(mix.shape[0])
+Y[:mix.shape[0] // 2] = 1
+<span class="org-variable-name">m0</span> = sklm.LogisticRegressionCV(fit_intercept=<span class="org-constant">True</span>).fit(res0.transform(mix), Y)
+m0.coef_
+</pre>
+</div>
+
+<pre class="example">
+array([[ 5.53867438e-04, -1.16538042e-04,  1.97613135e-05,
+-7.26492033e-06, -8.97671870e-06,  6.80991734e-06,
+-3.30404299e-06,  1.02224040e-05, -2.31100318e-06,
+7.68760237e-07]])
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">m0.score(res0.transform(mix), Y)
+</pre>
+</div>
+
+<pre class="example">
+1.0
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">scaler</span> = skp.StandardScaler()
+<span class="org-variable-name">m1</span> = sklm.LogisticRegressionCV(fit_intercept=<span class="org-constant">True</span>).fit(scaler.fit_transform(mix), Y)
+m1.score(scaler.transform(mix), Y)
+</pre>
+</div>
+
+<pre class="example">
+1.0
+
+</pre>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-07-20 Fri 15:51</p>
+<p class="date">Created: 2018-08-02 Thu 17:20</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

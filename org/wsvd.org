@@ -11,10 +11,12 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="8G",venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(memory="32G",venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 47753657
+  :RESULTS:
+  Submitted batch job 48061133
+  :END:
 
   #+BEGIN_SRC ipython
     %matplotlib inline
@@ -32,16 +34,19 @@
   #+BEGIN_SRC ipython
     import numpy as np
     import pandas as pd
+    import pickle
     import scipy.io as si
+    import scipy.sparse as ss
     import scipy.special as sp
     import scipy.stats as st
     import sklearn.decomposition as skd
     import sklearn.linear_model as sklm
+    import sklearn.preprocessing as skp
   #+END_SRC
 
   #+RESULTS: imports
   :RESULTS:
-  # Out[2]:
+  # Out[7]:
   :END:
 
 * Introduction
@@ -50,7 +55,8 @@
 
   \[ y \sim N(X \beta, \Sigma) \]
 
-  where \(\Sigma = \mathrm{diag}(\sigma^2_1, \ldots, \sigma^2_n)\).
+  where \(y\) is \(n \times 1\), \(X\) is \(n \times p\), and \(\Sigma =
+  \mathrm{diag}(\sigma^2_1, \ldots, \sigma^2_n)\).
 
   We can estimate \(\beta\) via weighted least squares:
 
@@ -67,7 +73,8 @@
   In this case, we can estimate \(\beta\) via iterative reweighted least
   squares (Nelder and Wedderbun 1972).
 
-  The key idea is to introduce an auxiliary response:
+  The key idea is to perform approximate Newton-Raphson updates (by
+  approximating the Hessian). Introduce an auxiliary response:
 
   \[ z = \eta + (y - \mu) \left(\frac{\partial \mu}{\partial \eta}\right) \]
 
@@ -91,7 +98,7 @@
   If we assume \(i = 1, \ldots, n, z_i \sim N(0, 1), \epsilon_i \sim N(0,
   \sigma^2)\) then the MAP estimates are:
 
-  \[ \hat{\mu_{ij}} = \frac{1}{n} \sum x_{ij} \]
+  \[ \hat{\mu}_i = \frac{1}{n} \sum_j x_{ij} \]
 
   \[ \hat{\sigma^2} = \frac{1}{p - q} \sum_{j = q + 1}^{p} \lambda_j \]
 
@@ -111,8 +118,7 @@
   Given \(Z\), the problem becomes PCA of \((X - Z)\) with homoscedastic
   errors.
 
-  Let \(R = X - UDV'\), \(\sigma^2 = \tau^{-1}\). Then, given \(U, D, V, S,
-  \sigma^2\):
+  Let \(R = X - UDV'\). Then, given \(U, D, V, S, \tau\):
 
   \[ r_{ij} \mid z_{ij} \sim N(r_{ij}, \tau^{-1}) \]
 
@@ -130,7 +136,7 @@
   iterative reweighted factor analysis, using our weighted SVD? Suppose \(Y\)
   is the auxiliary response:
 
-  1. Given \(Y\), update \(U, D, V\)
+  1. Given \(Y, W\), update \(U, D, V\)
   2. Given \(U, D, V\), update \(Y, W\)
 
 * Implementation
@@ -184,7 +190,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[192]:
+  # Out[3]:
   :END:
 
 * Simulation
@@ -214,12 +220,7 @@
 
   #+RESULTS: simulation
   :RESULTS:
-  # Out[234]:
-  :END:
-
-  #+RESULTS:
-  :RESULTS:
-  # Out[221]:
+  # Out[4]:
   :END:
 
   Test the simulation framework.
@@ -230,32 +231,33 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[250]:
+  # Out[54]:
   :END:
 
-  #+BEGIN_SRC ipython :async t
+  #+BEGIN_SRC ipython
     res = pois_svd(x, n_components=1)
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[252]:
+  # Out[55]:
   :END:
 
   #+BEGIN_SRC ipython
-    rrmse(reconstruct(res), lam)
+    rrmse(reconstruct(res), lf)
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[253]:
-  : 1.7511857491443785
+  # Out[56]:
+  : 0.7758305792529097
   :END:
 
   For comparison, the naive approach would be to compute the Poisson MLE
   \(\hat\lambda_{ij}\) once and then factorize the resulting matrix. But without
   further assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
 
+  #+NAME: naive-pois-svd
   #+BEGIN_SRC ipython
     def naive_pois_svd(x, n_components, **kwargs):
       return skd.PCA(n_components=n_components)._fit(x)
@@ -263,17 +265,17 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[225]:
+  # Out[5]:
   :END:
 
   #+BEGIN_SRC ipython
-    rrmse(reconstruct(naive_pois_svd(x, 1)), lam)
+    rrmse(reconstruct(naive_pois_svd(x, 1)), lf)
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[255]:
-  : 1.9158662623016778
+  # Out[58]:
+  : 1.1425364246860807
   :END:
 
   Evaluate the methods systematically.
@@ -283,37 +285,56 @@
     def evaluate(num_trials=10):
       result = []
       for rank in range(1, 4):
-        for method in (pois_svd, naive_pois_svd):
-          for trial in range(num_trials):
-            try:
-              x, lam = simulate(num_samples=100, num_features=1000, rank=rank, seed=trial)
-              res = method(x, n_components=rank)
-              score = rrmse(reconstruct(res), lam)
-            except:
-              score = np.nan
-            result.append((method.__name__, rank, trial, score))
+        for n_components in range(1, 4):
+          for method in (pois_svd, naive_pois_svd):
+            for trial in range(num_trials):
+              try:
+                x, lam = simulate(num_samples=100, num_features=1000, rank=rank, seed=trial)
+                res = method(x, n_components=n_components, max_outer_iters=1000, max_iters=1000)
+                rrmse_ = rrmse(reconstruct(res), lam)
+                llik = pois_llik(x, np.exp(reconstruct(res))).mean()
+              except:
+                rrmse_ = None
+                llik = None
+              result.append((rank, trial, method.__name__, n_components, rrmse_, llik))
       result = pd.DataFrame(result)
-      result.columns = ['method', 'rank', 'trial', 'rrmse']
+      result.columns = ['rank', 'trial', 'method', 'n_components', 'rrmse', 'llik']
       return result
   #+END_SRC
 
   #+RESULTS: main
   :RESULTS:
-  # Out[264]:
+  # Out[37]:
   :END:
 
   #+BEGIN_SRC ipython :async t
-    result = evaluate()
+    result = evaluate(num_trials=5)
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[265]:
   :END:
 
-  #+BEGIN_SRC ipython :ipyfile figure/wsvd.org/rank-1-3-rrmse.png
+  Serialize the results.
+
+  #+BEGIN_SRC ipython
+    result.to_csv('pois-svd-simulation.txt.gz', sep='\t', compression='gzip')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[45]:
+  :END:
+
+  Read the results.
+
+  #+BEGIN_SRC ipython
+    result = pd.read_table('pois-svd-simulation.txt.gz', index_col=0)
+  #+END_SRC
+
+  #+BEGIN_SRC ipython :ipyfile figure/wsvd.org/rrmse.png
     plt.clf()
-    result.boxplot(column='rrmse', by=['rank', 'method'], figsize=(3, 3), grid=False, rot=90)
+    result[result['rank'] == result['n_components']].boxplot(column='rrmse', by=['rank', 'method'], figsize=(3, 3), grid=False, rot=90)
     plt.ylabel('Relative RMSE')
     plt.title('')
     plt.suptitle('')
@@ -321,7 +342,149 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[267]:
+  # Out[46]:
   : Text(0.5,0.98,'')
-  [[file:figure/wsvd.org/rank-1-3-rrmse.png]]
+  [[file:figure/wsvd.org/rrmse.png]]
+  :END:
+
+  Does the WSVD reveal the underlying rank?
+
+  #+BEGIN_SRC ipython :ipyfile figure/wsvd.org/llik.png
+    plt.clf()
+    result[result['method'] == 'pois_svd'].dropna().boxplot(column='llik', by=['rank', 'n_components'], figsize=(3, 5), grid=False, rot=90)
+    plt.ylabel('Per sample log likelihood')
+    plt.yscale('symlog', linthreshy=1e-14)
+    plt.title('')
+    plt.suptitle('')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[50]:
+  : Text(0.5,0.98,'')
+  [[file:figure/wsvd.org/llik.png]]
+  :END:
+
+  For each data set, how often does the model with number of components equal
+  to the ground truth have the highest likelihood?
+
+  #+BEGIN_SRC ipython
+    (result
+     .groupby(['rank', 'trial'])
+     .apply(lambda x: x.loc[x['llik'].idxmax, 'n_components'] == x.iloc[0]['rank'])
+     .reset_index()
+     .groupby('rank')[0]
+     .mean())
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[48]:
+  #+BEGIN_EXAMPLE
+    rank
+    1    1.0
+    2    0.8
+    3    1.0
+    Name: 0, dtype: float64
+  #+END_EXAMPLE
+  :END:
+
+* Application to single cell data
+
+  What are the latent factors we expect to find in single cell data?
+
+  1. Unwanted variation
+  2. Cell types/subpopulations
+
+  Of these, cell types are of the most interest, because we can then read off
+  the relevant genes from the factors.
+
+  To test whether the method recovers cell type, we use known mixtures of
+  sorted PBMCs from 10X Genomics.
+
+  #+BEGIN_SRC ipython
+    b_cells = si.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/matrix.mtx')
+    t_cells = si.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[71]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    genes = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/genes.tsv', header=None)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[116]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    b_cell_subset = b_cells.tocsc()[:,:500]
+    t_cell_subset = t_cells.tocsc()[:,:500]
+    mix = ss.hstack([b_cell_subset, t_cell_subset], format='csr')
+    keep = (mix.sum(axis=1) > 0).A.ravel()
+    genes = genes.loc[keep]
+    mix = mix[keep].A.T
+    mix /= mix.sum(axis=1, keepdims=True)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[118]:
+  :END:
+
+  #+BEGIN_SRC ipython :async t
+    res = pois_svd(mix, n_components=10, verbose=True)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  2 - 8b2e7d2c-614d-46bb-aaff-4a9a5a4420d0
+  :END:
+
+  #+BEGIN_SRC ipython
+    res0 = skd.PCA(n_components=10).fit(mix)  
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    Y = np.zeros(mix.shape[0])
+    Y[:mix.shape[0] // 2] = 1
+    m0 = sklm.LogisticRegressionCV(fit_intercept=True).fit(res0.transform(mix), Y)
+    m0.coef_
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[105]:
+  #+BEGIN_EXAMPLE
+    array([[ 5.53867438e-04, -1.16538042e-04,  1.97613135e-05,
+    -7.26492033e-06, -8.97671870e-06,  6.80991734e-06,
+    -3.30404299e-06,  1.02224040e-05, -2.31100318e-06,
+    7.68760237e-07]])
+  #+END_EXAMPLE
+  :END:
+
+  #+BEGIN_SRC ipython
+    m0.score(res0.transform(mix), Y)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[106]:
+  : 1.0
+  :END:
+
+  #+BEGIN_SRC ipython
+    scaler = skp.StandardScaler()
+    m1 = sklm.LogisticRegressionCV(fit_intercept=True).fit(scaler.fit_transform(mix), Y)
+    m1.score(scaler.transform(mix), Y)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[129]:
+  : 1.0
   :END:

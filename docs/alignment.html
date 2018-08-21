@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-07-19 Thu 15:01 -->
+<!-- 2018-08-21 Tue 11:46 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Single cell alignment</title>
@@ -237,7 +237,6 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#org5813f56">Introduction</a></li>
 <li><a href="#org08dd0b0">Download the data</a></li>
-<li><a href="#orgaa2bc42">Cross-entropy loss</a></li>
 </ul>
 </div>
 </div>
@@ -282,11 +281,12 @@ the quality of the alignment. Intuitively, after aligning the data (in low
 dimensional space), it should not be possible to successfully classify
 points as coming from different data sets.</li>
 
-<li>We propose an adversarial auto encoder (Makzhani et al 2015) which
-simultaneously maximizes the evidence lower bound of the full data,
-directly maximizes the negative cross-entropy loss of classifying points
-into their constituent datasets, and estimates a low dimensional embedding
-of the data.</li>
+<li>We propose an adversarial auto-encoding architecture (Makzhani et al 2015)
+which simultaneously: (1) explains the observed data (by maximizing the
+evidence lower bound) and removes data-set specific differences (by
+maximizing the cross-entropy loss), (2) learns a separate generative model
+of the data to allow incremental alignment of novel datasets without using
+the original training data.</li>
 
 <li>We show that our method performs well using the alignment score proposed
 by Butler et al 2018, and outperforms it in terms of negative
@@ -316,6 +316,47 @@ unzip immune_alignment_expression_matrices.zip
 </pre>
 </div>
 
+<table>
+
+
+<colgroup>
+<col  class="org-left">
+
+<col  class="org-left">
+</colgroup>
+<tbody>
+<tr>
+<td class="org-left">Archive:</td>
+<td class="org-left">immune<sub>alignment</sub><sub>expression</sub><sub>matrices.zip</sub></td>
+</tr>
+
+<tr>
+<td class="org-left">inflating:</td>
+<td class="org-left">immune<sub>control</sub><sub>expression</sub><sub>matrix.txt.gz</sub></td>
+</tr>
+
+<tr>
+<td class="org-left">creating:</td>
+<td class="org-left">_<sub>MACOSX</sub>/</td>
+</tr>
+
+<tr>
+<td class="org-left">inflating:</td>
+<td class="org-left">_<sub>MACOSX</sub>/.<sub>immune</sub><sub>control</sub><sub>expression</sub><sub>matrix.txt.gz</sub></td>
+</tr>
+
+<tr>
+<td class="org-left">inflating:</td>
+<td class="org-left">immune<sub>stimulated</sub><sub>expression</sub><sub>matrix.txt.gz</sub></td>
+</tr>
+
+<tr>
+<td class="org-left">inflating:</td>
+<td class="org-left">_<sub>MACOSX</sub>/.<sub>immune</sub><sub>stimulated</sub><sub>expression</sub><sub>matrix.txt.gz</sub></td>
+</tr>
+</tbody>
+</table>
+
 <p>
 The Satija lab provided data for four pancreatic alignment data sets.
 </p>
@@ -327,20 +368,10 @@ unzip pancreas_multialignment_expression_matrices.zip
 </div>
 </div>
 </div>
-
-<div id="outline-container-orgaa2bc42" class="outline-2">
-<h2 id="orgaa2bc42">Cross-entropy loss</h2>
-<div class="outline-text-2" id="text-orgaa2bc42">
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> 
-</pre>
-</div>
-</div>
-</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-07-19 Thu 15:01</p>
+<p class="date">Created: 2018-08-21 Tue 11:46</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

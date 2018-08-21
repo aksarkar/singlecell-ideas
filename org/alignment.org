@@ -68,11 +68,12 @@
      dimensional space), it should not be possible to successfully classify
      points as coming from different data sets.
 
-  2. We propose an adversarial auto encoder (Makzhani et al 2015) which
-     simultaneously maximizes the evidence lower bound of the full data,
-     directly maximizes the negative cross-entropy loss of classifying points
-     into their constituent datasets, and estimates a low dimensional embedding
-     of the data.
+  2. We propose an adversarial auto-encoding architecture (Makzhani et al 2015)
+     which simultaneously: (1) explains the observed data (by maximizing the
+     evidence lower bound) and removes data-set specific differences (by
+     maximizing the cross-entropy loss), (2) learns a separate generative model
+     of the data to allow incremental alignment of novel datasets without using
+     the original training data.
 
   3. We show that our method performs well using the alignment score proposed
      by Butler et al 2018, and outperforms it in terms of negative
@@ -108,12 +109,4 @@
   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas
     curl -O https://www.dropbox.com/s/vdtz4kkodpe8kw3/pancreas_multialignment_expression_matrices.zip
     unzip pancreas_multialignment_expression_matrices.zip
-  #+END_SRC
-  
-* Cross-entropy loss
-
-  
-
-  #+BEGIN_SRC ipython
-    def 
   #+END_SRC

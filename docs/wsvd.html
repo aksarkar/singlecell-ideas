@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-08-03 Fri 18:10 -->
+<!-- 2018-08-21 Tue 11:47 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Factor analysis for single cell data</title>
@@ -261,6 +261,7 @@ for the JavaScript code in this tag.
 <li><a href="#org3e1b3c4">Implementation</a>
 <ul>
 <li><a href="#org9050847">Iterative reweighted factor analysis</a></li>
+<li><a href="#org91d25f2">Srebro and Jaakkola 2003</a></li>
 <li><a href="#org420c835">First order optimization</a></li>
 <li><a href="#org44d3211">Naive factor analysis</a></li>
 </ul>
@@ -356,9 +357,18 @@ where \(x_i\) is an observed \(p\)-vector, \(z_i\) is a latent \(q\)-vector,
 and \(q \ll p\).
 </p>
 
+
 <p>
 If we assume \(i = 1, \ldots, n, z_i \sim N(0, 1), \epsilon_i \sim N(0,
-  \sigma^2)\) then the MAP estimates are:
+  \sigma^2)\), then for fixed \(\sigma^2\), the MLE of \(W\) is the the top
+\(q\) left singular vectors of \(X\). This follows from the fact that
+maximizing the likelihood is equivalent to minimizing \(\Vert X - W
+  \Vert^2_2\) subject to \(W\) having rank \(q\), and the truncated SVD is the
+optimal rank \(q\) approximation (Eckhart and Young 1936).
+</p>
+
+<p>
+Further, the MAP estimates are (Tipping 1999):
 </p>
 
 <p>
@@ -495,6 +505,29 @@ is the auxiliary response:
 </div>
 </div>
 
+<div id="outline-container-org91d25f2" class="outline-3">
+<h3 id="org91d25f2">Srebro and Jaakkola 2003</h3>
+<div class="outline-text-3" id="text-org91d25f2">
+<p>
+Srebro and Jaakola 2003 propose an EM algorithm to solve the weighted
+low-rank approximation problem:
+</p>
+
+<p>
+\[ \min \sum_{i,j} W_{ij} \left(X_{ij} - [\mathbf{U} \mathbf{V}']_{ij} \right)^2 \]
+</p>
+
+<p>
+The fundamental iteration is:
+</p>
+
+<p>
+\[ [\mathbf{UV}']^{(t + 1)} = \mathrm{LRA}_k(\mathbf{W} \circ \mathbf{X} +
+   (\mathbf{1} - \mathbf{W}) \circ [\mathbf{UV}']^{(t)}) \]
+</p>
+</div>
+</div>
+
 <div id="outline-container-org420c835" class="outline-3">
 <h3 id="org420c835">First order optimization</h3>
 <div class="outline-text-3" id="text-org420c835">
@@ -503,7 +536,7 @@ Directly optimize the log likelihood via gradient descent:
 </p>
 
 <p>
-\[ x_{ij} \sim Poisson(\lambda_{ij}) \]
+\[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
 </p>
 
 <p>
@@ -565,7 +598,6 @@ assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
 </div>
 </div>
 </div>
-
 
 <div id="outline-container-org17b1019" class="outline-2">
 <h2 id="org17b1019">Simulation</h2>
@@ -858,7 +890,7 @@ m1.score(scaler.transform(mix), Y)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-08-03 Fri 18:10</p>
+<p class="date">Created: 2018-08-21 Tue 11:47</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

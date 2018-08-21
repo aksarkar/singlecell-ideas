@@ -15,7 +15,7 @@
 
   #+RESULTS:
   :RESULTS:
-  Submitted batch job 48099657
+  Submitted batch job 48598238
   :END:
 
   #+BEGIN_SRC ipython
@@ -95,8 +95,15 @@
   where \(x_i\) is an observed \(p\)-vector, \(z_i\) is a latent \(q\)-vector,
   and \(q \ll p\).
 
+  
   If we assume \(i = 1, \ldots, n, z_i \sim N(0, 1), \epsilon_i \sim N(0,
-  \sigma^2)\) then the MAP estimates are:
+  \sigma^2)\), then for fixed \(\sigma^2\), the MLE of \(W\) is the the top
+  \(q\) left singular vectors of \(X\). This follows from the fact that
+  maximizing the likelihood is equivalent to minimizing \(\Vert X - W
+  \Vert^2_2\) subject to \(W\) having rank \(q\), and the truncated SVD is the
+  optimal rank \(q\) approximation (Eckhart and Young 1936).
+
+  Further, the MAP estimates are (Tipping 1999):
 
   \[ \hat{\mu}_i = \frac{1}{n} \sum_j x_{ij} \]
 
@@ -194,11 +201,47 @@
   # Out[74]:
   :END:
 
+** Srebro and Jaakkola 2003
+
+   Srebro and Jaakola 2003 propose an EM algorithm to solve the weighted
+   low-rank approximation problem:
+
+   \[ \min \sum_{i,j} W_{ij} \left(X_{ij} - [\mathbf{U} \mathbf{V}']_{ij} \right)^2 \]
+
+   The fundamental iteration is:
+
+   \[ [\mathbf{UV}']^{(t + 1)} = \mathrm{LRA}_k(\mathbf{W} \circ \mathbf{X} +
+   (\mathbf{1} - \mathbf{W}) \circ [\mathbf{UV}']^{(t)}) \]
+
+   #+BEGIN_SRC ipython
+     def srebro_wsvd(x, w, n_components, max_iters=10, verbose=False):
+       n, p = x.shape
+       low_rank = x
+       pca = skd.PCA(n_components=n_components)
+       obj = float('inf')
+       for i in range(max_iters):
+         u, d, vt = pca._fit(w * x + (1 - w) * low_rank)
+         low_rank = np.einsum('ij,j,jk->ik', u, d, vt)
+         update = (w * np.square(x - low_rank)).mean()
+         if verbose:
+           print(f'wsvd [{i}] = {update}')
+         if update > obj or np.isclose(update, obj):
+           return u, d, vt
+         else:
+           obj = update
+       raise RuntimeError('failed to converge')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[27]:
+   :END:
+
 ** First order optimization
 
   Directly optimize the log likelihood via gradient descent:
 
-  \[ x_{ij} \sim Poisson(\lambda_{ij}) \]
+  \[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
 
   \[ \lambda_{ij} = \sum_k L_{ik} F_{kj} \]
 
@@ -258,13 +301,37 @@
   :END:
 
 * Simulation
+** Gaussian reconstruction
+
+   Reproduce the experiment of Srebro and Jaakkola 2003.
+
+   #+BEGIN_SRC ipython
+     def simulate_gaussian(num_samples, num_features, rank, nsr=1, seed=None):
+       if seed is None:
+         seed = 0
+       np.random.seed(seed)
+       l = np.random.normal(size=(num_samples, rank))
+       f = np.random.normal(size=(rank, num_features))
+       lf = l.dot(f)
+       noise_scale = np.random.uniform(1, nsr, size=(num_samples, num_features))
+       e = np.random.normal(scale=noise_scale, size=(num_samples, num_features))
+       x = lf + e
+       return x, lf, noise_scale
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[32]:
+   :END:
+
+** Poisson matrix completion
 
   Generate a Poisson data matrix assuming the rate matrix is low rank. Evaluate
   the quality of the fit using RRMSE.
 
   #+NAME: simulation
   #+BEGIN_SRC ipython
-    def simulate(num_samples, num_features, rank, seed=None):
+    def simulate_poisson(num_samples, num_features, rank, seed=None):
       if seed is None:
         seed = 0
       np.random.seed(seed)
@@ -284,7 +351,7 @@
 
   #+RESULTS: simulation
   :RESULTS:
-  # Out[15]:
+  # Out[44]:
   :END:
 
   Test the simulation framework.

@@ -3,6 +3,7 @@
 - [[file:wsvd.org][Approximate SVD for single cell data]]
 - [[file:network.org][Gene-gene network inference]]
 - [[file:logistic.org][Logistic regression with spike-and-slab]]
+- [[file:susie.org][Multivariate fine mapping to identify target genes]]
 - [[file:perturb-seq.org][Perturb-Seq re-analysis]]
 - [[file:pop-structure.org][Population structure in single cell data]]
 - [[file:scvi.org][SCVI]]

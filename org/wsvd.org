@@ -15,7 +15,7 @@
 
   #+RESULTS:
   :RESULTS:
-  Submitted batch job 48598238
+  Submitted batch job 48655196
   :END:
 
   #+BEGIN_SRC ipython
@@ -146,7 +146,7 @@
   1. Given \(Y, W\), update \(U, D, V\)
   2. Given \(U, D, V\), update \(Y, W\)
 
-* Implementation
+* Methods
 ** Iterative reweighted factor analysis
 
   #+BEGIN_SRC ipython
@@ -206,18 +206,47 @@
    Srebro and Jaakola 2003 propose an EM algorithm to solve the weighted
    low-rank approximation problem:
 
-   \[ \min \sum_{i,j} W_{ij} \left(X_{ij} - [\mathbf{U} \mathbf{V}']_{ij} \right)^2 \]
+   \[ \min_{\mathbf{Z}} \sum_{i,j} w_{ij} \left(x_{ij} - z_{ij} \right)^2 \]
 
-   The fundamental iteration is:
+   where target matrix \(\mathbf{X}\) and weight matrix \(\mathbf{W}\) are
+   given, and \(\mathbf{Z}\) is constrained to some rank.
 
-   \[ [\mathbf{UV}']^{(t + 1)} = \mathrm{LRA}_k(\mathbf{W} \circ \mathbf{X} +
-   (\mathbf{1} - \mathbf{W}) \circ [\mathbf{UV}']^{(t)}) \]
+   The algorithm is EM in the following sense: suppose the weights \(w_{ij} \in
+   \{0, 1\}\), corresponding to presence/absence, and suppose \(\mathbf{X} =
+   \mathbf{Z} + \mathbf{E}\), where \(\mathbf{Z}\) is low-rank and elements of
+   \(\mathbf{E}\) are Gaussian.
+
+   Then, \(E[x_{ij} \mid w_{ij} = 0] = z_{ij}\), naturally giving an EM
+   algorithm. The E-step fills in \(x_{ij}\) with \(z_{ij}\), and the M-step
+   estimates \(\mathbf{Z}\) from the filled in \(\mathbf{X}\). The solution to
+   the M-step is given by the optimal unweighted rank \(k\) approximation,
+   i.e. truncated SVD, because all the non-zero weights are equal to 1.
+
+   Conceptually, the method for arbitrary weights is to suppose instead that we
+   have rational \(w_{ij} \in \{0, 1/N, \ldots, 1\}\). 
+
+   Then, we can reduce this problem to a problem in 0/1 weights by supposing we
+   have \(X^{(k)} = Z + E^{(k)}\), \(k \in 1, \ldots, N\), and each entry is
+   observed in only \(N w_{ij}\) of the \(X^{(k)}\).
+
+   Then, the M-step becomes:
+
+   \[ \mathbf{Z}^{(t + 1)} = \mathrm{LRA}_k(\mathbf{W} \circ \mathbf{X} +
+   (\mathbf{1} - \mathbf{W}) \circ \mathbf{Z}^{(t)}) \]
+
+   where \(\mathrm{LRA}_k\) is the unweighted rank \(k\) approximation and
+   \(\circ\) denotes Hadamard product.
+
+   Intuitively, the implied E-step corresponds to taking the expectation of
+   \(z_{ij}^{(k)}\) over the targets \(k\). Clearly, the algorithm generalizes
+   to any weight matrix where \(0 \leq w_{ij} \leq 1\) are stored in finite
+   precision.
 
    #+BEGIN_SRC ipython
-     def srebro_wsvd(x, w, n_components, max_iters=10, verbose=False):
+     def wlra(x, w, rank, max_iters=10, verbose=False):
        n, p = x.shape
        low_rank = x
-       pca = skd.PCA(n_components=n_components)
+       pca = skd.PCA(n_components=rank)
        obj = float('inf')
        for i in range(max_iters):
          u, d, vt = pca._fit(w * x + (1 - w) * low_rank)
@@ -226,7 +255,7 @@
          if verbose:
            print(f'wsvd [{i}] = {update}')
          if update > obj or np.isclose(update, obj):
-           return u, d, vt
+           return low_rank
          else:
            obj = update
        raise RuntimeError('failed to converge')
@@ -236,6 +265,52 @@
    :RESULTS:
    # Out[27]:
    :END:
+
+   Srebro and Jaakkola apply this approach to solve low rank approximation
+   minimizing the logistic loss (where entries are e.g. probability a user will
+   prefer an item).
+
+   #+BEGIN_SRC ipython
+     def logistic_lra(x, rank, max_outer_iters=1000, verbose=False):
+       pass
+   #+END_SRC
+
+   We extend this approach to instead maximize the Poisson log-likelihood.
+
+   \[ \ln p(x \mid \lambda) = l(\lambda) = x \ln \lambda - \lambda +
+   \ln\Gamma(x + 1) \]
+
+   Taking a second-order Taylor expansion:
+
+   \[ l(\lambda) \approx \left(\frac{x}{\lambda_0} - 1\right)(\lambda -
+   \lambda_0) - \frac{x}{2\lambda_0^2}(\lambda - \lambda_0)^2 +
+   \mathrm{const}\]
+
+   where the constant does not depend on \(\lambda\).
+
+   \[ l(\lambda) \approx -\frac{x}{2\lambda_0^2} \left[\lambda - \left(1 +
+   \frac{1}{\lambda_0 x}\right)\right]^2 + \mathrm{const}\]
+
+   Clearly, minimizing the negative of this objective function for each entry
+   \(x_{ij}\) is a weighted low-rank approximation problem.  This result
+   suggests an iterative algorithm, where we take successive Taylor
+   approximations about different parameter estimates for each entry.
+
+   #+BEGIN_SRC ipython
+     def pois_lra(x, n_components, max_outer_iters=10, max_iters=1000, verbose=False):
+       n, p = x.shape
+       lam = x.copy()
+       for i in range(max_outer_iters):
+         w = x / (2 * np.square(lam))
+         target = 1 + 1 / (lam * x)
+         u, d, vt = srebro_wsvd(target, w, n_components)
+         low_rank = np.einsum('ij,j,jk->ik', u, d, vt)
+         lam = (target - 1) * x
+         update = pois_llik(x, lam).mean()
+         if verbose:
+           print(f'srebro_pois_svd [{i}]: {update}')
+       return lam
+   #+END_SRC
 
 ** First order optimization
 

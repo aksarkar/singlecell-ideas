@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2018-09-11 Tue 16:29 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multivariate fine mapping to identify target genes</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="https://maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cosmo/bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="https://www.pirilampo.org/styles/readtheorg/css/htmlize.css"/>
+<style type="text/css">body {width: 60em; margin:auto} pre.src {overflow:auto}</style>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Multivariate fine mapping to identify target genes</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org5ab2471">Introduction</a></li>
+<li><a href="#org1029da4">Methods</a>
+<ul>
+<li><a href="#orgeb1bbea">Sum of single effects regression</a></li>
+<li><a href="#orgd443a73">Two step procedure</a></li>
+<li><a href="#orgd410bdb">Factor graph for variable selection</a></li>
+</ul>
+</li>
+<li><a href="#orgee4d4bf">Results</a>
+<ul>
+<li><a href="#orga1d0dba">Toy examples</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org5ab2471" class="outline-2">
+<h2 id="org5ab2471">Introduction</h2>
+<div class="outline-text-2" id="text-org5ab2471">
+<p>
+One of the key challenges in interpreting non-coding variation is linking
+regulatory variants to their target genes. One natural approach to solve this
+problem is QTL mapping: directly associating genetic variation with gene
+expression levels. QTL studies have revealed that genetic variants associated
+with expression of a gene cluster near the transcription start site of that
+gene (<a href="http://dx.doi.org/10.1371/journal.pgen.1000214">Veyrieras et al. 2008</a>, <a href="http://dx.doi.org/10.1126/science.1174148">Dimas et al. 2009</a>, <a href="https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1002639">Stranger et al. 2012</a>). Large
+scale efforts such as the Gene Tissue Expression Project (GTEx) have
+systematically profiled gene expression across cell types, and sought to use
+the insights into gene regulation to make progress on interrogating the
+genetic basis of disease (<a href="https://www.nature.com/articles/nature24277">GTEx consortium 2017</a>).
+</p>
+
+<p>
+However, recent efforts have shown that causal regulatory variants can be
+more than 1 megabase from their target gene, and may not even target the
+closest gene (<a href="https://www.nejm.org/doi/full/10.1056/NEJMoa1502214">Claussnitzer et al. 2015</a>). Similarly, high throughput assays
+reveal a wealth of regulatory nucleotides distal from their target genes
+(<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5438575/">Fulco et al. 2016</a>). These results, as well as a wealth of chromatin
+conformation experiments (<a href="https://www.nature.com/articles/nature11279">Sanyal et al 2012</a>) suggest that it could be
+possible most <i>cis</i>-regulatory variants are not close to the TSS of their
+target gene.
+</p>
+
+<p>
+We argue that the main evidence supporting the claim that <i>cis</i>-regulatory
+variants are close to the TSS are the results of QTL mapping, which is
+performed assuming that variants are close to the TSS. This assumption is
+typically made to reduce the multiple testing burden when controlling the
+gene-level false discovery rate. To avoid this circular reasoning, we develop
+a new approach to fine map QTLs which does not make this assumption. The key
+idea of our approach (<i>susie-mg</i>) is to generalize the <i>sum of single
+effects</i> (<i>susie</i>) approach for fine mapping to multiple phenotypes, under
+the constraint that each genetic effect can only impact up to one phenotype.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org1029da4" class="outline-2">
+<h2 id="org1029da4">Methods</h2>
+<div class="outline-text-2" id="text-org1029da4">
+</div>
+<div id="outline-container-orgeb1bbea" class="outline-3">
+<h3 id="orgeb1bbea">Sum of single effects regression</h3>
+<div class="outline-text-3" id="text-orgeb1bbea">
+<p>
+Suppose we assume a generative model with exactly one causal variant,
+denoted <i>single effect regression</i> (SER):
+</p>
+
+<p>
+\[ \mathbf{y} = \mathbf{X b} + \mathbf{e} \]
+</p>
+
+<p>
+\[ b = \mathbf{\gamma} \beta \]
+</p>
+
+<p>
+\[ \mathbf{\gamma} \sim \mathrm{Mult}(1, \mathbf{\pi}) \]
+</p>
+
+<p>
+Then, posterior computations are easy:
+</p>
+
+<p>
+\[ \mathbf{\gamma} \mid \mathbf{X}, \mathbf{y} \sim \mathrm{Mult}(1, \mathbf{\alpha}) \]
+</p>
+
+<p>
+\[ \alpha_j = \frac{\pi_j BF_j}{\sum_k \pi_k BF_k} \]
+</p>
+
+<p>
+To allow more than one causal variant, a typical approach is to change the
+prior, factorizing \(\gamma_1, \ldots, \gamma_p\). In <i>susie</i>, we take a
+different approach:
+</p>
+
+<p>
+\[ \mathbf{y} = \sum_l \mathbf{X} \mathbf{b}_l + \mathbf{e} \]
+</p>
+
+<p>
+\[ b = \mathbf{\gamma}_l \beta_l \]
+</p>
+
+<p>
+In this approach, \(\mathbf{\gamma_l}\) does not factorize, and the posterior
+distribution reflects dependencies between the different variables.
+</p>
+
+<p>
+This model can be efficiently fit using variational inference, for which the
+updates outline a Bayesian analogue of stepwise regression.
+</p>
+
+<p>
+To generalize SER to <i>multivariate single effect regression</i> (MSER), we need
+to assume a multivariate prior on \(\beta\):
+</p>
+
+<p>
+\[ \mathbf{y}_k = \mathbf{X} \mathbf{b}_k + \mathbf{e} \]
+</p>
+
+<p>
+\[ \mathbf{b}_k = \mathbf{\gamma}_k \beta_k \]
+</p>
+
+<p>
+\[ \mathbf{\beta} \sim g(\cdot) \]
+</p>
+
+<p>
+If we assume \(\beta \sim \mathcal{N}(0, \tau^{-1} \mathbf{I})\), then we get
+\(K\) independent SER problems, which can simply be solved in parallel.
+</p>
+
+<p>
+We can generalize MSER to multiviarate <i>susie</i> by assuming multiple
+independent effects as above.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgd443a73" class="outline-3">
+<h3 id="orgd443a73">Two step procedure</h3>
+<div class="outline-text-3" id="text-orgd443a73">
+<p>
+Now, we want to incorporate a further constraint, that each SNP can only be
+causal for one phenotype.
+</p>
+
+<p>
+Suppose we fit multivariate <i>susie</i> on a genomic region with \(K\) genes. For
+SNP \(j\), gene \(k\), we estimate \(\lambda_{kj} =
+   \mathrm{logit}(p(\gamma_{kj} = 1 \mid \mathbf{X}, \mathbf{Y}))\). 
+</p>
+
+<p>
+Fix SNP \(j\) and consider \(\lambda_{j} = (\lambda_{1j}, \ldots,
+   \lambda_{Kj})\). If only one entry of \(\lambda_j\) is non-trivial, it
+clearly satisfies the constraint. If more than one entry is, then we can now
+consider an inverse SER problem:
+</p>
+
+<p>
+\[ \lambda_{j} = \mathbf{y}' \mathbf{b} + \mathbf{e} \]
+</p>
+
+<p>
+The posterior inclusion probability for this model quantifies the
+uncertainty in the target gene of SNP \(j\).
+</p>
+
+<p>
+Then, the overall procedure is:
+</p>
+
+<ol class="org-ol">
+<li>Fit multivariate <i>susie</i> regressing expression against genotype, assuming
+\(L\) effects.</li>
+
+<li>For each SNP, fit SER regressing \(\lambda_{j}\) against expression.</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">susie_mg</span>(X, Y, **kwargs):
+  <span class="org-variable-name">pip</span> = []
+  <span class="org-keyword">for</span> x, y <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(X, Y):
+    <span class="org-variable-name">res</span> = susier.susie(x, y, **kwargs)
+    pip.append(np.array(susier.susie_get_PIP(res)))
+  <span class="org-variable-name">lam</span> = sp.expit(np.array(pip))
+  <span class="org-variable-name">target_pip</span> = []
+  <span class="org-keyword">for</span> y, x <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(lam.T, Y.T):
+    <span class="org-variable-name">res</span> = susier.single_effect_regression(y, x, .2)
+    target_pip.append(np.array(res.rx2(<span class="org-string">'alpha'</span>)))
+  <span class="org-keyword">return</span> np.array(target_pip)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgd410bdb" class="outline-3">
+<h3 id="orgd410bdb">Factor graph for variable selection</h3>
+<div class="outline-text-3" id="text-orgd410bdb">
+<p>
+The constraint that a single effect can apply only to one phenotype is not
+directly expressible as a closed-form distribution on \(\gamma\). Suppose we
+only had two phenotypes, and only two SNPs:
+</p>
+
+<p>
+\[ \mathbf{y}_k = \mathbf{X} \mathbf{b}_k + \mathbf{e} \]
+</p>
+
+<p>
+\[ \mathbf{b}_k = \mathbf{\gamma}_k \beta_k \]
+</p>
+
+<p>
+\[ \mathbf{\beta} \sim N(0, \tau_0^{-1} \mathbf{I}) \]
+</p>
+
+<p>
+To characterize the constraint on \(p(\gamma\mid\cdot)\), we need the
+following to hold simultaneously:
+</p>
+
+<ol class="org-ol">
+<li>\(\gamma_{11}, \gamma_{12} \sim \mathrm{Mult}(1, \mathbf{\pi}_a)\)</li>
+<li>\(\gamma_{21}, \gamma_{22} \sim \mathrm{Mult}(1, \mathbf{\pi}_a)\)</li>
+<li>\(\gamma_{11}, \gamma_{21} \sim \mathrm{Mult}(1, \mathbf{\pi}_b)\)</li>
+<li>\(\gamma_{12}, \gamma_{22} \sim \mathrm{Mult}(1, \mathbf{\pi}_b)\)</li>
+</ol>
+
+<p>
+This dependency structure is most readily expressed as a factor graph.
+</p>
+
+<p>
+\[ p(\gamma \mid \cdot) = \frac{1}{Z} \prod_j f_j(\gamma_{1j}, \gamma_{2j})
+   \prod_k g_k(\gamma_{k1}, \gamma_{k2}) \]
+</p>
+
+<p>
+We can recover marginal distributions of \(\gamma_{kj}\) using loopy belief
+propagation.
+</p>
+
+<p>
+\[ m_{f_j \rightarrow \gamma_{1j}}(\gamma_{1j}) = \sum_{\gamma_{2j}}
+   \mathrm{Mult}(\gamma_{1j}, \gamma_{2j}; 1, \mathbf{\pi}_b) m_{\gamma_{2j}\rightarrow
+   f_j}(\gamma_{2j})\]
+</p>
+
+<p>
+\[ m_{g_k \rightarrow \gamma_{k1}}(\gamma_{k1}) = \sum_{\gamma_{k2}}
+   \mathrm{Mult}(\gamma_{k1}, \gamma_{k2}; 1, \mathbf{\pi}_a) m_{\gamma_{k2}\rightarrow g_k}(\gamma_{k2})\]
+</p>
+
+<p>
+\[ m_{\gamma_{kj}\rightarrow f_j} = m_{g_k\rightarrow \gamma_{kj}} \]
+</p>
+
+<p>
+\[ m_{\gamma_{kj}\rightarrow g_k} = m_{f_j\rightarrow \gamma_{kj}} \]
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgee4d4bf" class="outline-2">
+<h2 id="orgee4d4bf">Results</h2>
+<div class="outline-text-2" id="text-orgee4d4bf">
+</div>
+<div id="outline-container-orga1d0dba" class="outline-3">
+<h3 id="orga1d0dba">Toy examples</h3>
+<div class="outline-text-3" id="text-orga1d0dba">
+<p>
+Consider just two genes, and two SNPs. For simplicity, generate bivariate
+normal "genotypes":
+</p>
+
+<p>
+\[ \left[\begin{array}{l}x_{i1}\\x_{i2}\end{array}\right] \sim
+   \mathcal{N}\left(\mathbf{0}, \left[\begin{array}{ll} 1 &\rho\\ \rho &
+   1\end{array}\right]\right) \]
+</p>
+
+<p>
+\[ y_{i1} = x_{i1} \beta_1 + e_1 \]
+</p>
+
+<p>
+\[ y_{i2} = x_{i2} \beta_2 + e_2 \]
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_y</span>(x, pve):
+  <span class="org-variable-name">beta</span> = np.random.normal()
+  <span class="org-variable-name">y</span> = x * beta
+  <span class="org-variable-name">y</span> += np.random.normal(scale=np.sqrt(y.var() * (1 / pve - 1)))
+  <span class="org-keyword">return</span> y
+
+<span class="org-keyword">def</span> <span class="org-function-name">simulate_ex1</span>(rho, n):
+  <span class="org-variable-name">cov</span> = np.array([[1, rho], [rho, 1]])
+  <span class="org-variable-name">x</span> = np.random.multivariate_normal(cov=cov, size=n)
+  <span class="org-variable-name">y1</span> = simulate_y(x[:,0], .1)
+  <span class="org-variable-name">y2</span> = simulate_y(x[:,1], .1)
+  <span class="org-keyword">return</span> x, np.stack([y1, y2])
+</pre>
+</div>
+
+<p>
+When genotypes are uncorrelated, we should expect <i>susie-mg</i> to exactly
+recover the causal SNPs for each phenotype.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex1(0, 1000)
+susie_mg(X, Y)
+</pre>
+</div>
+
+<p>
+As the genotypes become more correlated, we should expect <i>susie-mg</i> to
+divide PIP more equally between the 2 SNPs.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex1(.1, 1000)
+susie_mg(X, Y)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex1(.5, 1000)
+susie_mg(X, Y)
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2018-09-11 Tue 16:29</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

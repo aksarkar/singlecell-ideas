@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-08-21 Tue 11:47 -->
+<!-- 2018-08-23 Thu 11:37 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Factor analysis for single cell data</title>
@@ -257,24 +257,29 @@ for the JavaScript code in this tag.
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org792a4de">Introduction</a></li>
-<li><a href="#org3e1b3c4">Implementation</a>
+<li><a href="#orgf985b55">Introduction</a></li>
+<li><a href="#org3916210">Methods</a>
 <ul>
-<li><a href="#org9050847">Iterative reweighted factor analysis</a></li>
+<li><a href="#org19a6d95">Iterative reweighted factor analysis</a></li>
 <li><a href="#org91d25f2">Srebro and Jaakkola 2003</a></li>
-<li><a href="#org420c835">First order optimization</a></li>
-<li><a href="#org44d3211">Naive factor analysis</a></li>
+<li><a href="#org8354437">First order optimization</a></li>
+<li><a href="#orgce6007b">Naive factor analysis</a></li>
 </ul>
 </li>
-<li><a href="#org17b1019">Simulation</a></li>
-<li><a href="#orgc11fabd">Application to single cell data</a></li>
+<li><a href="#orgd4b277f">Simulation</a>
+<ul>
+<li><a href="#org5c9184c">Gaussian reconstruction</a></li>
+<li><a href="#org1affec1">Poisson matrix completion</a></li>
+</ul>
+</li>
+<li><a href="#org9fe9994">Application to single cell data</a></li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org792a4de" class="outline-2">
-<h2 id="org792a4de">Introduction</h2>
-<div class="outline-text-2" id="text-org792a4de">
+<div id="outline-container-orgf985b55" class="outline-2">
+<h2 id="orgf985b55">Introduction</h2>
+<div class="outline-text-2" id="text-orgf985b55">
 <p>
 Suppose we want to fit a linear model with heteroscedastic errors:
 </p>
@@ -448,13 +453,13 @@ is the auxiliary response:
 </div>
 </div>
 
-<div id="outline-container-org3e1b3c4" class="outline-2">
-<h2 id="org3e1b3c4">Implementation</h2>
-<div class="outline-text-2" id="text-org3e1b3c4">
+<div id="outline-container-org3916210" class="outline-2">
+<h2 id="org3916210">Methods</h2>
+<div class="outline-text-2" id="text-org3916210">
 </div>
-<div id="outline-container-org9050847" class="outline-3">
-<h3 id="org9050847">Iterative reweighted factor analysis</h3>
-<div class="outline-text-3" id="text-org9050847">
+<div id="outline-container-org19a6d95" class="outline-3">
+<h3 id="org19a6d95">Iterative reweighted factor analysis</h3>
+<div class="outline-text-3" id="text-org19a6d95">
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">wsvd</span>(x, s, n_components, prior_prec=1, max_iters=10, verbose=<span class="org-constant">False</span>):
   <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
@@ -514,23 +519,150 @@ low-rank approximation problem:
 </p>
 
 <p>
-\[ \min \sum_{i,j} W_{ij} \left(X_{ij} - [\mathbf{U} \mathbf{V}']_{ij} \right)^2 \]
+\[ \min_{\mathbf{Z}} \sum_{i,j} w_{ij} \left(x_{ij} - z_{ij} \right)^2 \]
 </p>
 
 <p>
-The fundamental iteration is:
+where target matrix \(\mathbf{X}\) and weight matrix \(\mathbf{W}\) are
+given, and \(\mathbf{Z}\) is constrained to some rank.
 </p>
 
 <p>
-\[ [\mathbf{UV}']^{(t + 1)} = \mathrm{LRA}_k(\mathbf{W} \circ \mathbf{X} +
-   (\mathbf{1} - \mathbf{W}) \circ [\mathbf{UV}']^{(t)}) \]
+The algorithm is EM in the following sense: suppose the weights \(w_{ij} \in
+   \{0, 1\}\), corresponding to presence/absence, and suppose \(\mathbf{X} =
+   \mathbf{Z} + \mathbf{E}\), where \(\mathbf{Z}\) is low-rank and elements of
+\(\mathbf{E}\) are Gaussian.
 </p>
+
+<p>
+Then, \(E[x_{ij} \mid w_{ij} = 0] = z_{ij}\), naturally giving an EM
+algorithm. The E-step fills in \(x_{ij}\) with \(z_{ij}\), and the M-step
+estimates \(\mathbf{Z}\) from the filled in \(\mathbf{X}\). The solution to
+the M-step is given by the optimal unweighted rank \(k\) approximation,
+i.e. truncated SVD, because all the non-zero weights are equal to 1.
+</p>
+
+<p>
+Conceptually, the method for arbitrary weights is to suppose instead that we
+have rational \(w_{ij} \in \{0, 1/N, \ldots, 1\}\). 
+</p>
+
+<p>
+Then, we can reduce this problem to a problem in 0/1 weights by supposing we
+have \(X^{(k)} = Z + E^{(k)}\), \(k \in 1, \ldots, N\), and each entry is
+observed in only \(N w_{ij}\) of the \(X^{(k)}\).
+</p>
+
+<p>
+Then, the M-step becomes:
+</p>
+
+<p>
+\[ \mathbf{Z}^{(t + 1)} = \mathrm{LRA}_k(\mathbf{W} \circ \mathbf{X} +
+   (\mathbf{1} - \mathbf{W}) \circ \mathbf{Z}^{(t)}) \]
+</p>
+
+<p>
+where \(\mathrm{LRA}_k\) is the unweighted rank \(k\) approximation and
+\(\circ\) denotes Hadamard product.
+</p>
+
+<p>
+Intuitively, the implied E-step corresponds to taking the expectation of
+\(z_{ij}^{(k)}\) over the targets \(k\). Clearly, the algorithm generalizes
+to any weight matrix where \(0 \leq w_{ij} \leq 1\) are stored in finite
+precision.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">wlra</span>(x, w, rank, max_iters=10, verbose=<span class="org-constant">False</span>):
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
+  <span class="org-variable-name">low_rank</span> = x
+  <span class="org-variable-name">pca</span> = skd.PCA(n_components=rank)
+  <span class="org-variable-name">obj</span> = <span class="org-builtin">float</span>(<span class="org-string">'inf'</span>)
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
+    <span class="org-variable-name">u</span>, <span class="org-variable-name">d</span>, <span class="org-variable-name">vt</span> = pca._fit(w * x + (1 - w) * low_rank)
+    <span class="org-variable-name">low_rank</span> = np.einsum(<span class="org-string">'ij,j,jk-&gt;ik'</span>, u, d, vt)
+    <span class="org-variable-name">update</span> = (w * np.square(x - low_rank)).mean()
+    <span class="org-keyword">if</span> verbose:
+      <span class="org-keyword">print</span>(f<span class="org-string">'wsvd [{i}] = {update}'</span>)
+    <span class="org-keyword">if</span> update &gt; obj <span class="org-keyword">or</span> np.isclose(update, obj):
+      <span class="org-keyword">return</span> low_rank
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">obj</span> = update
+  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge'</span>)
+</pre>
+</div>
+
+<p>
+Srebro and Jaakkola apply this approach to solve low rank approximation
+minimizing the logistic loss (where entries are e.g. probability a user will
+prefer an item).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">logistic_lra</span>(x, rank, max_outer_iters=1000, verbose=<span class="org-constant">False</span>):
+  <span class="org-keyword">pass</span>
+</pre>
+</div>
+
+<p>
+We extend this approach to instead maximize the Poisson log-likelihood.
+</p>
+
+<p>
+\[ \ln p(x \mid \lambda) = l(\lambda) = x \ln \lambda - \lambda +
+   \ln\Gamma(x + 1) \]
+</p>
+
+<p>
+Taking a second-order Taylor expansion:
+</p>
+
+<p>
+\[ l(\lambda) \approx \left(\frac{x}{\lambda_0} - 1\right)(\lambda -
+   \lambda_0) - \frac{x}{2\lambda_0^2}(\lambda - \lambda_0)^2 +
+   \mathrm{const}\]
+</p>
+
+<p>
+where the constant does not depend on \(\lambda\).
+</p>
+
+<p>
+\[ l(\lambda) \approx -\frac{x}{2\lambda_0^2} \left[\lambda - \left(1 +
+   \frac{1}{\lambda_0 x}\right)\right]^2 + \mathrm{const}\]
+</p>
+
+<p>
+Clearly, minimizing the negative of this objective function for each entry
+\(x_{ij}\) is a weighted low-rank approximation problem.  This result
+suggests an iterative algorithm, where we take successive Taylor
+approximations about different parameter estimates for each entry.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">pois_lra</span>(x, n_components, max_outer_iters=10, max_iters=1000, verbose=<span class="org-constant">False</span>):
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
+  <span class="org-variable-name">lam</span> = x.copy()
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_outer_iters):
+    <span class="org-variable-name">w</span> = x / (2 * np.square(lam))
+    <span class="org-variable-name">target</span> = 1 + 1 / (lam * x)
+    <span class="org-variable-name">u</span>, <span class="org-variable-name">d</span>, <span class="org-variable-name">vt</span> = srebro_wsvd(target, w, n_components)
+    <span class="org-variable-name">low_rank</span> = np.einsum(<span class="org-string">'ij,j,jk-&gt;ik'</span>, u, d, vt)
+    <span class="org-variable-name">lam</span> = (target - 1) * x
+    <span class="org-variable-name">update</span> = pois_llik(x, lam).mean()
+    <span class="org-keyword">if</span> verbose:
+      <span class="org-keyword">print</span>(f<span class="org-string">'srebro_pois_svd [{i}]: {update}'</span>)
+  <span class="org-keyword">return</span> lam
+</pre>
+</div>
 </div>
 </div>
 
-<div id="outline-container-org420c835" class="outline-3">
-<h3 id="org420c835">First order optimization</h3>
-<div class="outline-text-3" id="text-org420c835">
+<div id="outline-container-org8354437" class="outline-3">
+<h3 id="org8354437">First order optimization</h3>
+<div class="outline-text-3" id="text-org8354437">
 <p>
 Directly optimize the log likelihood via gradient descent:
 </p>
@@ -581,9 +713,9 @@ For simplicity, don't put any constraints on \(L, F\).
 </div>
 </div>
 
-<div id="outline-container-org44d3211" class="outline-3">
-<h3 id="org44d3211">Naive factor analysis</h3>
-<div class="outline-text-3" id="text-org44d3211">
+<div id="outline-container-orgce6007b" class="outline-3">
+<h3 id="orgce6007b">Naive factor analysis</h3>
+<div class="outline-text-3" id="text-orgce6007b">
 <p>
 The naive approach would be to compute the Poisson MLE \(\hat\lambda_{ij}\)
 once and then factorize the resulting matrix. But without further
@@ -591,7 +723,7 @@ assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython" id="org97eb20d"><span class="org-keyword">def</span> <span class="org-function-name">naive_pois_svd</span>(x, n_components, **kwargs):
+<pre class="src src-ipython" id="org4f04b06"><span class="org-keyword">def</span> <span class="org-function-name">naive_pois_svd</span>(x, n_components, **kwargs):
   <span class="org-keyword">return</span> skd.PCA(n_components=n_components)._fit(x)
 </pre>
 </div>
@@ -599,16 +731,44 @@ assumptions, the MLE is \(\hat\lambda_{ij} = x_{ij}\)
 </div>
 </div>
 
-<div id="outline-container-org17b1019" class="outline-2">
-<h2 id="org17b1019">Simulation</h2>
-<div class="outline-text-2" id="text-org17b1019">
+<div id="outline-container-orgd4b277f" class="outline-2">
+<h2 id="orgd4b277f">Simulation</h2>
+<div class="outline-text-2" id="text-orgd4b277f">
+</div>
+<div id="outline-container-org5c9184c" class="outline-3">
+<h3 id="org5c9184c">Gaussian reconstruction</h3>
+<div class="outline-text-3" id="text-org5c9184c">
+<p>
+Reproduce the experiment of Srebro and Jaakkola 2003.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_gaussian</span>(num_samples, num_features, rank, nsr=1, seed=<span class="org-constant">None</span>):
+  <span class="org-keyword">if</span> seed <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">seed</span> = 0
+  np.random.seed(seed)
+  <span class="org-variable-name">l</span> = np.random.normal(size=(num_samples, rank))
+  <span class="org-variable-name">f</span> = np.random.normal(size=(rank, num_features))
+  <span class="org-variable-name">lf</span> = l.dot(f)
+  <span class="org-variable-name">noise_scale</span> = np.random.uniform(1, nsr, size=(num_samples, num_features))
+  <span class="org-variable-name">e</span> = np.random.normal(scale=noise_scale, size=(num_samples, num_features))
+  <span class="org-variable-name">x</span> = lf + e
+  <span class="org-keyword">return</span> x, lf, noise_scale
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org1affec1" class="outline-3">
+<h3 id="org1affec1">Poisson matrix completion</h3>
+<div class="outline-text-3" id="text-org1affec1">
 <p>
 Generate a Poisson data matrix assuming the rate matrix is low rank. Evaluate
 the quality of the fit using RRMSE.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython" id="orgcde48b8"><span class="org-keyword">def</span> <span class="org-function-name">simulate</span>(num_samples, num_features, rank, seed=<span class="org-constant">None</span>):
+<pre class="src src-ipython" id="org260036f"><span class="org-keyword">def</span> <span class="org-function-name">simulate_poisson</span>(num_samples, num_features, rank, seed=<span class="org-constant">None</span>):
   <span class="org-keyword">if</span> seed <span class="org-keyword">is</span> <span class="org-constant">None</span>:
     <span class="org-variable-name">seed</span> = 0
   np.random.seed(seed)
@@ -670,7 +830,7 @@ Evaluate the methods systematically.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython" id="orgd87ff5d"><span class="org-keyword">def</span> <span class="org-function-name">evaluate</span>(num_trials=10):
+<pre class="src src-ipython" id="org99323d5"><span class="org-keyword">def</span> <span class="org-function-name">evaluate</span>(num_trials=10):
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 4):
     <span class="org-keyword">for</span> n_components <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 4):
@@ -790,10 +950,11 @@ rank  trial  0
 </pre>
 </div>
 </div>
+</div>
 
-<div id="outline-container-orgc11fabd" class="outline-2">
-<h2 id="orgc11fabd">Application to single cell data</h2>
-<div class="outline-text-2" id="text-orgc11fabd">
+<div id="outline-container-org9fe9994" class="outline-2">
+<h2 id="org9fe9994">Application to single cell data</h2>
+<div class="outline-text-2" id="text-org9fe9994">
 <p>
 What are the latent factors we expect to find in single cell data?
 </p>
@@ -890,7 +1051,7 @@ m1.score(scaler.transform(mix), Y)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-08-21 Tue 11:47</p>
+<p class="date">Created: 2018-08-23 Thu 11:37</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

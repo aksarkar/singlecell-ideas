@@ -1,0 +1,255 @@
+#+TITLE: Multivariate fine mapping to identify target genes
+#+SETUPFILE: setup.org
+#+OPTIONS: toc:2
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="16G",venv="singlecell") :dir /scratch/midway2/aksarkar/ideas
+
+  #+RESULTS:
+  : Submitted batch job 46954766
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import rpy2.robjects.numpy2ri
+    import rpy2.robjects.packages
+    import rpy2.robjects.pandas2ri
+    import scipy.stats as st
+
+    rpy2.robjects.numpy2ri.activate()
+    rpy2.robjects.pandas2ri.activate()
+    susier = rpy2.robjects.packages.importr('susier')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+* Introduction
+
+  One of the key challenges in interpreting non-coding variation is linking
+  regulatory variants to their target genes. One natural approach to solve this
+  problem is QTL mapping: directly associating genetic variation with gene
+  expression levels. QTL studies have revealed that genetic variants associated
+  with expression of a gene cluster near the transcription start site of that
+  gene ([[http://dx.doi.org/10.1371/journal.pgen.1000214][Veyrieras et al. 2008]], [[http://dx.doi.org/10.1126/science.1174148][Dimas et al. 2009]], [[https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1002639][Stranger et al. 2012]]). Large
+  scale efforts such as the Gene Tissue Expression Project (GTEx) have
+  systematically profiled gene expression across cell types, and sought to use
+  the insights into gene regulation to make progress on interrogating the
+  genetic basis of disease ([[https://www.nature.com/articles/nature24277][GTEx consortium 2017]]).
+
+  However, recent efforts have shown that causal regulatory variants can be
+  more than 1 megabase from their target gene, and may not even target the
+  closest gene ([[https://www.nejm.org/doi/full/10.1056/NEJMoa1502214][Claussnitzer et al. 2015]]). Similarly, high throughput assays
+  reveal a wealth of regulatory nucleotides distal from their target genes
+  ([[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5438575/][Fulco et al. 2016]]). These results, as well as a wealth of chromatin
+  conformation experiments ([[https://www.nature.com/articles/nature11279][Sanyal et al 2012]]) suggest that it could be
+  possible most /cis/-regulatory variants are not close to the TSS of their
+  target gene.
+
+  We argue that the main evidence supporting the claim that /cis/-regulatory
+  variants are close to the TSS are the results of QTL mapping, which is
+  performed assuming that variants are close to the TSS. This assumption is
+  typically made to reduce the multiple testing burden when controlling the
+  gene-level false discovery rate. To avoid this circular reasoning, we develop
+  a new approach to fine map QTLs which does not make this assumption. The key
+  idea of our approach (/susie-mg/) is to generalize the /sum of single
+  effects/ (/susie/) approach for fine mapping to multiple phenotypes, under
+  the constraint that each genetic effect can only impact up to one phenotype.
+
+* Methods
+** Sum of single effects regression
+
+   Suppose we assume a generative model with exactly one causal variant,
+   denoted /single effect regression/ (SER):
+
+   \[ \mathbf{y} = \mathbf{X b} + \mathbf{e} \]
+
+   \[ b = \mathbf{\gamma} \beta \]
+
+   \[ \mathbf{\gamma} \sim \mathrm{Mult}(1, \mathbf{\pi}) \]
+
+   Then, posterior computations are easy:
+
+   \[ \mathbf{\gamma} \mid \mathbf{X}, \mathbf{y} \sim \mathrm{Mult}(1, \mathbf{\alpha}) \]
+
+   \[ \alpha_j = \frac{\pi_j BF_j}{\sum_k \pi_k BF_k} \]
+
+   To allow more than one causal variant, a typical approach is to change the
+   prior, factorizing \(\gamma_1, \ldots, \gamma_p\). In /susie/, we take a
+   different approach:
+
+   \[ \mathbf{y} = \sum_l \mathbf{X} \mathbf{b}_l + \mathbf{e} \]
+
+   \[ b = \mathbf{\gamma}_l \beta_l \]
+
+   In this approach, \(\mathbf{\gamma_l}\) does not factorize, and the posterior
+   distribution reflects dependencies between the different variables.
+
+   This model can be efficiently fit using variational inference, for which the
+   updates outline a Bayesian analogue of stepwise regression.
+
+   To generalize SER to /multivariate single effect regression/ (MSER), we need
+   to assume a multivariate prior on \(\beta\):
+
+   \[ \mathbf{y}_k = \mathbf{X} \mathbf{b}_k + \mathbf{e} \]
+
+   \[ \mathbf{b}_k = \mathbf{\gamma}_k \beta_k \]
+
+   \[ \mathbf{\beta} \sim g(\cdot) \]
+
+   If we assume \(\beta \sim \mathcal{N}(0, \tau^{-1} \mathbf{I})\), then we get
+   \(K\) independent SER problems, which can simply be solved in parallel.
+
+   We can generalize MSER to multiviarate /susie/ by assuming multiple
+   independent effects as above.
+
+** Two step procedure
+
+   Now, we want to incorporate a further constraint, that each SNP can only be
+   causal for one phenotype.
+
+   Suppose we fit multivariate /susie/ on a genomic region with \(K\) genes. For
+   SNP \(j\), gene \(k\), we estimate \(\lambda_{kj} =
+   \mathrm{logit}(p(\gamma_{kj} = 1 \mid \mathbf{X}, \mathbf{Y}))\). 
+
+   Fix SNP \(j\) and consider \(\lambda_{j} = (\lambda_{1j}, \ldots,
+   \lambda_{Kj})\). If only one entry of \(\lambda_j\) is non-trivial, it
+   clearly satisfies the constraint. If more than one entry is, then we can now
+   consider an inverse SER problem:
+
+   \[ \lambda_{j} = \mathbf{y}' \mathbf{b} + \mathbf{e} \]
+
+   The posterior inclusion probability for this model quantifies the
+   uncertainty in the target gene of SNP \(j\).
+
+   Then, the overall procedure is:
+
+   1. Fit multivariate /susie/ regressing expression against genotype, assuming
+      \(L\) effects.
+
+   2. For each SNP, fit SER regressing \(\lambda_{j}\) against expression.
+
+   #+BEGIN_SRC ipython
+     def susie_mg(X, Y, **kwargs):
+       pip = []
+       for x, y in zip(X, Y):
+         res = susier.susie(x, y, **kwargs)
+         pip.append(np.array(susier.susie_get_PIP(res)))
+       lam = sp.expit(np.array(pip))
+       target_pip = []
+       for y, x in zip(lam.T, Y.T):
+         res = susier.single_effect_regression(y, x, .2)
+         target_pip.append(np.array(res.rx2('alpha')))
+       return np.array(target_pip)
+   #+END_SRC
+
+** Factor graph for variable selection
+
+   The constraint that a single effect can apply only to one phenotype is not
+   directly expressible as a closed-form distribution on \(\gamma\). Suppose we
+   only had two phenotypes, and only two SNPs:
+
+   \[ \mathbf{y}_k = \mathbf{X} \mathbf{b}_k + \mathbf{e} \]
+
+   \[ \mathbf{b}_k = \mathbf{\gamma}_k \beta_k \]
+
+   \[ \mathbf{\beta} \sim N(0, \tau_0^{-1} \mathbf{I}) \]
+
+   To characterize the constraint on \(p(\gamma\mid\cdot)\), we need the
+   following to hold simultaneously:
+
+   1. \(\gamma_{11}, \gamma_{12} \sim \mathrm{Mult}(1, \mathbf{\pi}_a)\)
+   2. \(\gamma_{21}, \gamma_{22} \sim \mathrm{Mult}(1, \mathbf{\pi}_a)\)
+   3. \(\gamma_{11}, \gamma_{21} \sim \mathrm{Mult}(1, \mathbf{\pi}_b)\)
+   4. \(\gamma_{12}, \gamma_{22} \sim \mathrm{Mult}(1, \mathbf{\pi}_b)\)
+
+   This dependency structure is most readily expressed as a factor graph.
+
+   \[ p(\gamma \mid \cdot) = \frac{1}{Z} \prod_j f_j(\gamma_{1j}, \gamma_{2j})
+   \prod_k g_k(\gamma_{k1}, \gamma_{k2}) \]
+
+   We can recover marginal distributions of \(\gamma_{kj}\) using loopy belief
+   propagation.
+
+   \[ m_{f_j \rightarrow \gamma_{1j}}(\gamma_{1j}) = \sum_{\gamma_{2j}}
+   \mathrm{Mult}(\gamma_{1j}, \gamma_{2j}; 1, \mathbf{\pi}_b) m_{\gamma_{2j}\rightarrow
+   f_j}(\gamma_{2j})\]
+
+   \[ m_{g_k \rightarrow \gamma_{k1}}(\gamma_{k1}) = \sum_{\gamma_{k2}}
+   \mathrm{Mult}(\gamma_{k1}, \gamma_{k2}; 1, \mathbf{\pi}_a) m_{\gamma_{k2}\rightarrow g_k}(\gamma_{k2})\]
+
+   \[ m_{\gamma_{kj}\rightarrow f_j} = m_{g_k\rightarrow \gamma_{kj}} \]
+
+   \[ m_{\gamma_{kj}\rightarrow g_k} = m_{f_j\rightarrow \gamma_{kj}} \]
+
+* Results
+** Toy examples
+
+   Consider just two genes, and two SNPs. For simplicity, generate bivariate
+   normal "genotypes":
+
+   \[ \left[\begin{array}{l}x_{i1}\\x_{i2}\end{array}\right] \sim
+   \mathcal{N}\left(\mathbf{0}, \left[\begin{array}{ll} 1 &\rho\\ \rho &
+   1\end{array}\right]\right) \]
+
+   \[ y_{i1} = x_{i1} \beta_1 + e_1 \]
+
+   \[ y_{i2} = x_{i2} \beta_2 + e_2 \]
+
+   #+BEGIN_SRC ipython
+     def simulate_y(x, pve):
+       beta = np.random.normal()
+       y = x * beta
+       y += np.random.normal(scale=np.sqrt(y.var() * (1 / pve - 1)))
+       return y
+
+     def simulate_ex1(rho, n):
+       cov = np.array([[1, rho], [rho, 1]])
+       x = np.random.multivariate_normal(cov=cov, size=n)
+       y1 = simulate_y(x[:,0], .1)
+       y2 = simulate_y(x[:,1], .1)
+       return x, np.stack([y1, y2])
+   #+END_SRC
+
+   When genotypes are uncorrelated, we should expect /susie-mg/ to exactly
+   recover the causal SNPs for each phenotype.
+
+   #+BEGIN_SRC ipython
+     X, Y = simulate_ex1(0, 1000)
+     susie_mg(X, Y)
+   #+END_SRC
+
+   As the genotypes become more correlated, we should expect /susie-mg/ to
+   divide PIP more equally between the 2 SNPs.
+
+   #+BEGIN_SRC ipython
+     X, Y = simulate_ex1(.1, 1000)
+     susie_mg(X, Y)
+   #+END_SRC
+
+   #+BEGIN_SRC ipython
+     X, Y = simulate_ex1(.5, 1000)
+     susie_mg(X, Y)
+   #+END_SRC

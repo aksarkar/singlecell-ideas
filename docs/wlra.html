@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-09-25 Tue 14:22 -->
+<!-- 2018-09-25 Tue 17:07 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weighted low rank approximation</title>
@@ -263,13 +263,13 @@ for the JavaScript code in this tag.
 <li><a href="#org19362fe">EM algorithm</a></li>
 <li><a href="#org7074885">Bernoulli low rank approximation</a></li>
 <li><a href="#org90ac4e1">Poisson low rank approximation</a></li>
-<li><a href="#orgafb113e">Imputing missing values</a></li>
+<li><a href="#org8f29519">Imputing missing values</a></li>
 </ul>
 </li>
 <li><a href="#org23e1a28">Results</a>
 <ul>
 <li><a href="#org56d579d">Recovering planted low rank structure</a></li>
-<li><a href="#org8f29519">Imputing missing values</a></li>
+<li><a href="#org708b026">Imputing missing values</a></li>
 <li><a href="#orgd780580">Explaining held out data</a></li>
 </ul>
 </li>
@@ -433,19 +433,25 @@ where the constant does not depend on \(\eta\).
 <p>
 The weights must be constrained to be between zero and one in the EM
 algorithm, so we scale them by the maximum weight in each outer
-iteration. Our method is implemented in the Python package <i>wlra</i>.
+iteration. Our method is implemented in the Python package <a href="https://www.github.com/aksarkar/wlra">wlra</a>.
 </p>
 </div>
 </div>
 
-<div id="outline-container-orgafb113e" class="outline-3">
-<h3 id="orgafb113e">Imputing missing values</h3>
-<div class="outline-text-3" id="text-orgafb113e">
+<div id="outline-container-org8f29519" class="outline-3">
+<h3 id="org8f29519">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org8f29519">
 <p>
-To support missing values, we need to introduce external weights
-\(\tilde{w}_{ij} \in \{0, 1\}\) to denote presence/absence. We can do this
-by incorporating the weights \(\tilde{\mathbf{W}} \circ \mathbf{W}\) in each
-outer iteration.
+Srebro and Jaakkola derive the EM algorithm for WLRA exactly for the case
+where a weight of zero denotes a missing value (as opposed to an observation
+of zero).
+</p>
+
+<p>
+To support missing values in Poisson LRA, we need to introduce external
+weights \(\tilde{w}_{ij} \in \{0, 1\}\) to denote presence/absence. We can
+do this by incorporating the weights \(\tilde{\mathbf{W}} \circ \mathbf{W}\)
+in each outer iteration.
 </p>
 </div>
 </div>
@@ -458,10 +464,6 @@ outer iteration.
 <div id="outline-container-org56d579d" class="outline-3">
 <h3 id="org56d579d">Recovering planted low rank structure</h3>
 <div class="outline-text-3" id="text-org56d579d">
-</div>
-<div id="outline-container-org89d37d1" class="outline-4">
-<h4 id="org89d37d1">Gaussian noise</h4>
-<div class="outline-text-4" id="text-org89d37d1">
 <p>
 We first consider the problem of recovering a planted low rank matrix after
 convolving with Gaussian noise, assuming we know the rank.
@@ -503,18 +505,17 @@ inverse variances as the weights.
   <span class="org-keyword">return</span> rrmse(res, eta)
 
 <span class="org-keyword">def</span> <span class="org-function-name">score_lra</span>(x, eta, rank):
-  <span class="org-variable-name">u</span>, <span class="org-variable-name">d</span>, <span class="org-variable-name">vt</span> = skd.PCA(n_components=rank)._fit(x)
-  <span class="org-variable-name">res</span> = np.einsum(<span class="org-string">'ij,j,jk-&gt;ik'</span>, u, d, vt)
+  <span class="org-variable-name">res</span> = wlra.lra(x, rank)
   <span class="org-keyword">return</span> rrmse(res, eta)
 
-<span class="org-keyword">def</span> <span class="org-function-name">evaluate_gaussian_known_rank</span>(rank, num_trials=10):
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_gaussian_known_rank</span>(num_trials=10):
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">w</span>, <span class="org-variable-name">eta</span>, <span class="org-variable-name">snr</span> = simulate_gaussian(n=200, p=300, rank=rank, s0=10, seed=trial)
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">w</span>, <span class="org-variable-name">eta</span>, <span class="org-variable-name">snr</span> = simulate_gaussian(n=100, p=1000, rank=1, s0=10, seed=trial)
     result.append([trial,
                    snr,
-                   score_lra(x, eta, rank=rank),
-                   score_wlra(x, w, eta, rank=rank)])
+                   score_lra(x, eta, rank=1),
+                   score_wlra(x, w, eta, rank=1)])
   <span class="org-variable-name">result</span> = pd.DataFrame(result)
   <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'snr'</span>, <span class="org-string">'LRA'</span>, <span class="org-string">'WLRA'</span>]
   <span class="org-keyword">return</span> result
@@ -524,8 +525,8 @@ inverse variances as the weights.
 <div class="org-src-container">
 <pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
 &lt;&lt;gaussian-reconstruction&gt;&gt;
-<span class="org-variable-name">results_gaussian_known_rank</span> = evaluate_gaussian_known_rank(rank=3, num_trials=100)
-results_gaussian_known_rank.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/gaussian-known-rank.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
+<span class="org-variable-name">res</span> = evaluate_gaussian_known_rank(num_trials=100)
+res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/gaussian-known-rank.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
 </pre>
 </div>
 
@@ -537,10 +538,9 @@ python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/gaussian-know
 </pre>
 </div>
 
-<pre class="example">
-Submitted batch job 50097466
-
-</pre>
+<p>
+Submitted batch job 50110869
+</p>
 
 <p>
 Read the results.
@@ -570,12 +570,7 @@ plt.xlabel(<span class="org-string">'Method'</span>)
 <p><img src="figure/wlra.org/gaussian-known-rank.png" alt="gaussian-known-rank.png">
 </p>
 </div>
-</div>
-</div>
 
-<div id="outline-container-orge8a41c6" class="outline-4">
-<h4 id="orge8a41c6">Poisson noise</h4>
-<div class="outline-text-4" id="text-orge8a41c6">
 <p>
 We then consider the problem of recovering a planted low rank matrix, after
 convolving with Poisson noise, assuming we know the rank.
@@ -622,17 +617,16 @@ results_pois_known_rank.to_csv(<span class="org-string">'/project2/mstephens/aks
 </div>
 
 <div class="org-src-container">
-<pre class="src src-sh">sbatch --partition=broadwl --job-name=pois-lra
+<pre class="src src-sh">sbatch --partition=broadwl --job-name=pois-imputation
 <span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
 <span class="org-builtin">source</span> activate singlecell
 python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-known-rank.py
 </pre>
 </div>
 
-<pre class="example">
-Submitted batch job 50100695
-
-</pre>
+<p>
+Submitted batch job 50111778
+</p>
 
 <p>
 Read the results.
@@ -668,10 +662,103 @@ plt.xlabel(<span class="org-string">'Method'</span>)
 </div>
 </div>
 </div>
+
+<div id="outline-container-org708b026" class="outline-3">
+<h3 id="org708b026">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org708b026">
+<p>
+We generate a Poisson data matrix with planted row rank structure as above,
+then truly hold out entries using numpy masked arrays.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="orgc702bc9"><span class="org-keyword">def</span> <span class="org-function-name">rmse</span>(pred, true):
+  <span class="org-keyword">return</span> np.sqrt(np.square(pred - true).mean())
+
+<span class="org-keyword">def</span> <span class="org-function-name">imputation_score_lra</span>(x):
+  <span class="org-keyword">try</span>:
+    <span class="org-variable-name">res</span> = wlra.wlra(x.filled(0), w=(~x.mask).astype(<span class="org-builtin">int</span>), rank=3)
+    <span class="org-keyword">return</span> rmse(res[x.mask], x.data[x.mask])
+  <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
+    <span class="org-keyword">return</span> np.nan
+
+<span class="org-keyword">def</span> <span class="org-function-name">imputation_score_pois_lra</span>(x):
+  <span class="org-keyword">try</span>:
+    <span class="org-variable-name">res</span> = wlra.pois_lra(x, rank=3, max_outer_iters=50)
+    <span class="org-keyword">return</span> rmse(res[x.mask], x.data[x.mask])
+  <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
+    <span class="org-keyword">return</span> np.nan
+
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_pois_imputation</span>(num_trials=10):
+  <span class="org-variable-name">result</span> = []
+  <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">eta</span> = simulate_pois(n=200, p=300, rank=3, seed=trial)
+    <span class="org-variable-name">mask</span> = np.random.uniform(size=(200, 300)) &lt; 0.25
+    <span class="org-variable-name">x</span> = np.ma.masked_array(x, mask=mask)
+    result.append([trial,
+                   imputation_score_lra(x),
+                   imputation_score_pois_lra(x)])
+  <span class="org-variable-name">result</span> = pd.DataFrame(result)
+  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'LRA'</span>, <span class="org-string">'Poisson LRA'</span>]
+  <span class="org-keyword">return</span> result
+</pre>
 </div>
 
-<div id="outline-container-org8f29519" class="outline-3">
-<h3 id="org8f29519">Imputing missing values</h3>
+<div class="org-src-container">
+<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
+&lt;&lt;gaussian-reconstruction&gt;&gt;
+&lt;&lt;poisson-reconstruction&gt;&gt;
+&lt;&lt;poisson-imputation&gt;&gt;
+<span class="org-variable-name">res</span> = evaluate_pois_imputation(num_trials=100)
+res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-imputation.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-sh">sbatch --partition=broadwl --job-name=pois-imputation
+<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
+<span class="org-builtin">source</span> activate singlecell
+python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-imputation.py
+</pre>
+</div>
+
+<p>
+Submitted batch job 50113413
+</p>
+
+<p>
+Read the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">results_pois_imputation</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-imputation.txt.gz'</span>, index_col=0)
+</pre>
+</div>
+
+<p>
+Plot the performance.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">T</span> = results_pois_imputation.dropna()
+
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.boxplot(x=T[<span class="org-string">'Poisson LRA'</span>] - T[<span class="org-string">'LRA'</span>],
+            flierprops={<span class="org-string">'markersize'</span>: 4, <span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markerfacecolor'</span>: <span class="org-string">'k'</span>},
+            medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>})
+plt.xticks([1], [<span class="org-string">'Poisson LRA'</span>])
+plt.xlabel(<span class="org-string">'Method'</span>)
+<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'Difference in RMSE(LRA)'</span>)
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/wlra.org/pois-imputation.png" alt="pois-imputation.png">
+</p>
+</div>
+</div>
 </div>
 
 <div id="outline-container-orgd780580" class="outline-3">
@@ -681,7 +768,7 @@ plt.xlabel(<span class="org-string">'Method'</span>)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-09-25 Tue 14:22</p>
+<p class="date">Created: 2018-09-25 Tue 17:07</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

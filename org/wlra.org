@@ -140,18 +140,21 @@
 
    The weights must be constrained to be between zero and one in the EM
    algorithm, so we scale them by the maximum weight in each outer
-   iteration. Our method is implemented in the Python package /wlra/.
+   iteration. Our method is implemented in the Python package [[https://www.github.com/aksarkar/wlra][wlra]].
 
 ** Imputing missing values
 
-   To support missing values, we need to introduce external weights
-   \(\tilde{w}_{ij} \in \{0, 1\}\) to denote presence/absence. We can do this
-   by incorporating the weights \(\tilde{\mathbf{W}} \circ \mathbf{W}\) in each
-   outer iteration.
+   Srebro and Jaakkola derive the EM algorithm for WLRA exactly for the case
+   where a weight of zero denotes a missing value (as opposed to an observation
+   of zero).
+
+   To support missing values in Poisson LRA, we need to introduce external
+   weights \(\tilde{w}_{ij} \in \{0, 1\}\) to denote presence/absence. We can
+   do this by incorporating the weights \(\tilde{\mathbf{W}} \circ \mathbf{W}\)
+   in each outer iteration.
 
 * Results
 ** Recovering planted low rank structure
-*** Gaussian noise
 
    We first consider the problem of recovering a planted low rank matrix after
    convolving with Gaussian noise, assuming we know the rank.
@@ -189,18 +192,17 @@
        return rrmse(res, eta)
 
      def score_lra(x, eta, rank):
-       u, d, vt = skd.PCA(n_components=rank)._fit(x)
-       res = np.einsum('ij,j,jk->ik', u, d, vt)
+       res = wlra.lra(x, rank)
        return rrmse(res, eta)
 
-     def evaluate_gaussian_known_rank(rank, num_trials=10):
+     def evaluate_gaussian_known_rank(num_trials=10):
        result = []
        for trial in range(num_trials):
-         x, w, eta, snr = simulate_gaussian(n=200, p=300, rank=rank, s0=10, seed=trial)
+         x, w, eta, snr = simulate_gaussian(n=100, p=1000, rank=1, s0=10, seed=trial)
          result.append([trial,
                         snr,
-                        score_lra(x, eta, rank=rank),
-                        score_wlra(x, w, eta, rank=rank)])
+                        score_lra(x, eta, rank=1),
+                        score_wlra(x, w, eta, rank=1)])
        result = pd.DataFrame(result)
        result.columns = ['trial', 'snr', 'LRA', 'WLRA']
        return result
@@ -214,8 +216,8 @@
    #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/gaussian-known-rank.py
      <<imports>>
      <<gaussian-reconstruction>>
-     results_gaussian_known_rank = evaluate_gaussian_known_rank(rank=3, num_trials=100)
-     results_gaussian_known_rank.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/gaussian-known-rank.txt.gz', compression='gzip', sep='\t')
+     res = evaluate_gaussian_known_rank(num_trials=100)
+     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/gaussian-known-rank.txt.gz', compression='gzip', sep='\t')
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
@@ -227,7 +229,7 @@
 
    #+RESULTS:
    :RESULTS:
-   : Submitted batch job 50097466
+   Submitted batch job 50110869
    :END:
 
    Read the results.
@@ -238,7 +240,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[3]:
+   # Out[88]:
    :END:
 
    Plot the performance.
@@ -254,11 +256,9 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[16]:
+   # Out[89]:
    [[file:figure/wlra.org/gaussian-known-rank.png]]
    :END:
-
-*** Poisson noise
 
    We then consider the problem of recovering a planted low rank matrix, after
    convolving with Poisson noise, assuming we know the rank.
@@ -306,7 +306,7 @@
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --partition=broadwl --job-name=pois-lra
+     sbatch --partition=broadwl --job-name=pois-imputation
      #!/bin/bash
      source activate singlecell
      python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-known-rank.py
@@ -314,7 +314,7 @@
 
    #+RESULTS:
    :RESULTS:
-   : Submitted batch job 50100695
+   Submitted batch job 50111778
    :END:
 
    Read the results.
@@ -325,7 +325,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[64]:
+   # Out[90]:
    :END:
 
    Plot the performance.
@@ -345,7 +345,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[82]:
+   # Out[91]:
    [[file:figure/wlra.org/pois-known-rank.png]]
    :END:
 
@@ -392,5 +392,94 @@
    #+END_SRC
 
 ** Imputing missing values
+
+   We generate a Poisson data matrix with planted row rank structure as above,
+   then truly hold out entries using numpy masked arrays.
+
+   #+NAME: poisson-imputation
+   #+BEGIN_SRC ipython
+     def rmse(pred, true):
+       return np.sqrt(np.square(pred - true).mean())
+
+     def imputation_score_lra(x):
+       try:
+         res = wlra.wlra(x.filled(0), w=(~x.mask).astype(int), rank=3)
+         return rmse(res[x.mask], x.data[x.mask])
+       except RuntimeError:
+         return np.nan
+
+     def imputation_score_pois_lra(x):
+       try:
+         res = wlra.pois_lra(x, rank=3, max_outer_iters=50)
+         return rmse(res[x.mask], x.data[x.mask])
+       except RuntimeError:
+         return np.nan
+
+     def evaluate_pois_imputation(num_trials=10):
+       result = []
+       for trial in range(num_trials):
+         x, eta = simulate_pois(n=200, p=300, rank=3, seed=trial)
+         mask = np.random.uniform(size=(200, 300)) < 0.25
+         x = np.ma.masked_array(x, mask=mask)
+         result.append([trial,
+                        imputation_score_lra(x),
+                        imputation_score_pois_lra(x)])
+       result = pd.DataFrame(result)
+       result.columns = ['trial', 'LRA', 'Poisson LRA']
+       return result
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-imputation.py
+     <<imports>>
+     <<gaussian-reconstruction>>
+     <<poisson-reconstruction>>
+     <<poisson-imputation>>
+     res = evaluate_pois_imputation(num_trials=100)
+     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-imputation.txt.gz', compression='gzip', sep='\t')
+   #+END_SRC
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     sbatch --partition=broadwl --job-name=pois-imputation
+     #!/bin/bash
+     source activate singlecell
+     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-imputation.py
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   Submitted batch job 50113413
+   :END:
+
+   Read the results.
+
+   #+BEGIN_SRC ipython
+     results_pois_imputation = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-imputation.txt.gz', index_col=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[94]:
+   :END:
+
+   Plot the performance.
+
+   #+BEGIN_SRC ipython :ipyfile figure/wlra.org/pois-imputation.png
+     T = results_pois_imputation.dropna()
+
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.boxplot(x=T['Poisson LRA'] - T['LRA'],
+                 flierprops={'markersize': 4, 'marker': '.', 'markerfacecolor': 'k'},
+                 medianprops={'color': 'k'})
+     plt.xticks([1], ['Poisson LRA'])
+     plt.xlabel('Method')
+     _ = plt.ylabel('Difference in RMSE(LRA)')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[109]:
+   [[file:figure/wlra.org/pois-imputation.png]]
+   :END:
 
 ** Explaining held out data

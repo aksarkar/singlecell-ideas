@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-09-11 Tue 16:29 -->
+<!-- 2018-09-12 Wed 16:50 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Multivariate fine mapping to identify target genes</title>
@@ -260,14 +260,15 @@ for the JavaScript code in this tag.
 <li><a href="#org5ab2471">Introduction</a></li>
 <li><a href="#org1029da4">Methods</a>
 <ul>
-<li><a href="#orgeb1bbea">Sum of single effects regression</a></li>
-<li><a href="#orgd443a73">Two step procedure</a></li>
-<li><a href="#orgd410bdb">Factor graph for variable selection</a></li>
+<li><a href="#org6a5da6e">Two step fine-mapping approach</a></li>
+<li><a href="#org4b8ab0d">EP approach</a></li>
 </ul>
 </li>
 <li><a href="#orgee4d4bf">Results</a>
 <ul>
 <li><a href="#orga1d0dba">Toy examples</a></li>
+<li><a href="#org28c0c69">Simulation study</a></li>
+<li><a href="#org8b5b2fb">Application to GTEx</a></li>
 </ul>
 </li>
 </ul>
@@ -286,31 +287,28 @@ with expression of a gene cluster near the transcription start site of that
 gene (<a href="http://dx.doi.org/10.1371/journal.pgen.1000214">Veyrieras et al. 2008</a>, <a href="http://dx.doi.org/10.1126/science.1174148">Dimas et al. 2009</a>, <a href="https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1002639">Stranger et al. 2012</a>). Large
 scale efforts such as the Gene Tissue Expression Project (GTEx) have
 systematically profiled gene expression across cell types, and sought to use
-the insights into gene regulation to make progress on interrogating the
-genetic basis of disease (<a href="https://www.nature.com/articles/nature24277">GTEx consortium 2017</a>).
+the insights from QTL mapping to make progress on interrogating the genetic
+basis of disease (<a href="https://www.nature.com/articles/nature24277">GTEx consortium 2017</a>).
 </p>
 
 <p>
-However, recent efforts have shown that causal regulatory variants can be
-more than 1 megabase from their target gene, and may not even target the
-closest gene (<a href="https://www.nejm.org/doi/full/10.1056/NEJMoa1502214">Claussnitzer et al. 2015</a>). Similarly, high throughput assays
-reveal a wealth of regulatory nucleotides distal from their target genes
-(<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5438575/">Fulco et al. 2016</a>). These results, as well as a wealth of chromatin
-conformation experiments (<a href="https://www.nature.com/articles/nature11279">Sanyal et al 2012</a>) suggest that it could be
-possible most <i>cis</i>-regulatory variants are not close to the TSS of their
-target gene.
+However, recent efforts to experimentally fine map GWAS loci have shown that
+causal non-coding variants can be more than 1 megabase from their target
+gene, and may not even target the closest gene (<a href="https://www.nature.com/articles/nature09266">Musunru et al 2010</a>,
+<a href="https://www.nejm.org/doi/full/10.1056/NEJMoa1502214">Claussnitzer et al. 2015</a>, <a href="https://elifesciences.org/articles/10557">Wang et al 2016</a>). Further, enhancer-gene
+interactions have been shown to be limited by topologically associated domain
+boundaries, rather than genomic distance (<a href="https://www.cell.com/cell/fulltext/S0092-8674(15)00377-3">Lupiáñes et al. 2015</a>). These
+handful of examples are supported by systematic profiling of chromatin
+interactions (<a href="https://www.nature.com/articles/nature12716">Zhang et al. 2013</a>) and high throughput perturbation assays
+(<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5438575/">Fulco et al. 2016</a>).
 </p>
 
 <p>
-We argue that the main evidence supporting the claim that <i>cis</i>-regulatory
-variants are close to the TSS are the results of QTL mapping, which is
-performed assuming that variants are close to the TSS. This assumption is
-typically made to reduce the multiple testing burden when controlling the
-gene-level false discovery rate. To avoid this circular reasoning, we develop
-a new approach to fine map QTLs which does not make this assumption. The key
-idea of our approach (<i>susie-mg</i>) is to generalize the <i>sum of single
-effects</i> (<i>susie</i>) approach for fine mapping to multiple phenotypes, under
-the constraint that each genetic effect can only impact up to one phenotype.
+Here, we develop a new method to fine map QTLs which does not assume that
+SNPs target the nearest gene, or are within 1 MB of their target gene. The
+key idea of our approach is to develop a novel multivariate fine mapping
+approach under the prior assumption that any single SNP can have a non-zero
+effect on at most one phenotype.
 </p>
 </div>
 </div>
@@ -319,9 +317,9 @@ the constraint that each genetic effect can only impact up to one phenotype.
 <h2 id="org1029da4">Methods</h2>
 <div class="outline-text-2" id="text-org1029da4">
 </div>
-<div id="outline-container-orgeb1bbea" class="outline-3">
-<h3 id="orgeb1bbea">Sum of single effects regression</h3>
-<div class="outline-text-3" id="text-orgeb1bbea">
+<div id="outline-container-org6a5da6e" class="outline-3">
+<h3 id="org6a5da6e">Two step fine-mapping approach</h3>
+<div class="outline-text-3" id="text-org6a5da6e">
 <p>
 Suppose we assume a generative model with exactly one causal variant,
 denoted <i>single effect regression</i> (SER):
@@ -332,11 +330,11 @@ denoted <i>single effect regression</i> (SER):
 </p>
 
 <p>
-\[ b = \mathbf{\gamma} \beta \]
+\[ b = \mathbf{z} \beta \]
 </p>
 
 <p>
-\[ \mathbf{\gamma} \sim \mathrm{Mult}(1, \mathbf{\pi}) \]
+\[ \mathbf{z} \sim \mathrm{Mult}(1, \mathbf{\pi}) \]
 </p>
 
 <p>
@@ -344,7 +342,7 @@ Then, posterior computations are easy:
 </p>
 
 <p>
-\[ \mathbf{\gamma} \mid \mathbf{X}, \mathbf{y} \sim \mathrm{Mult}(1, \mathbf{\alpha}) \]
+\[ \mathbf{z} \mid \mathbf{X}, \mathbf{y} \sim \mathrm{Mult}(1, \mathbf{\alpha}) \]
 </p>
 
 <p>
@@ -362,12 +360,12 @@ different approach:
 </p>
 
 <p>
-\[ b = \mathbf{\gamma}_l \beta_l \]
+\[ b = \mathbf{z}_l \beta_l \]
 </p>
 
 <p>
-In this approach, \(\mathbf{\gamma_l}\) does not factorize, and the posterior
-distribution reflects dependencies between the different variables.
+In this approach, \(\mathbf{z_l}\) does not factorize, and the posterior
+distribution reflects dependencies between the different variables. 
 </p>
 
 <p>
@@ -385,7 +383,7 @@ to assume a multivariate prior on \(\beta\):
 </p>
 
 <p>
-\[ \mathbf{b}_k = \mathbf{\gamma}_k \beta_k \]
+\[ \mathbf{b}_k = \mathbf{z}_k \beta_k \]
 </p>
 
 <p>
@@ -393,139 +391,88 @@ to assume a multivariate prior on \(\beta\):
 </p>
 
 <p>
-If we assume \(\beta \sim \mathcal{N}(0, \tau^{-1} \mathbf{I})\), then we get
-\(K\) independent SER problems, which can simply be solved in parallel.
+If we assume \(\beta \sim \mathcal{N}(0, \tau^{-1} \mathbf{I})\), then we
+get \(K\) independent SER problems. We can generalize MSER to multiviarate
+<i>susie</i> by assuming multiple independent effects as above.
 </p>
 
-<p>
-We can generalize MSER to multiviarate <i>susie</i> by assuming multiple
-independent effects as above.
-</p>
-</div>
-</div>
-
-<div id="outline-container-orgd443a73" class="outline-3">
-<h3 id="orgd443a73">Two step procedure</h3>
-<div class="outline-text-3" id="text-orgd443a73">
 <p>
 Now, we want to incorporate a further constraint, that each SNP can only be
-causal for one phenotype.
-</p>
-
-<p>
-Suppose we fit multivariate <i>susie</i> on a genomic region with \(K\) genes. For
-SNP \(j\), gene \(k\), we estimate \(\lambda_{kj} =
-   \mathrm{logit}(p(\gamma_{kj} = 1 \mid \mathbf{X}, \mathbf{Y}))\). 
+causal for one phenotype. Suppose we fit multivariate <i>susie</i> on a genomic
+region with \(K\) genes. For SNP \(j\), gene \(k\), we estimate
+\(\lambda_{kj} = \mathrm{logit}(p(z_{kj} = 1 \mid \mathbf{X},
+   \mathbf{Y}))\).
 </p>
 
 <p>
 Fix SNP \(j\) and consider \(\lambda_{j} = (\lambda_{1j}, \ldots,
    \lambda_{Kj})\). If only one entry of \(\lambda_j\) is non-trivial, it
-clearly satisfies the constraint. If more than one entry is, then we can now
-consider an inverse SER problem:
+clearly satisfies the constraint. 
 </p>
 
 <p>
-\[ \lambda_{j} = \mathbf{y}' \mathbf{b} + \mathbf{e} \]
+If more than one entry is, then we need to solve a sparse recovery problem:
+we need to infer which of the signals is truly non-zero. Intuitively, having
+solved this problem, we should go back and refine the solution to the
+multivariate fine mapping.
 </p>
-
-<p>
-The posterior inclusion probability for this model quantifies the
-uncertainty in the target gene of SNP \(j\).
-</p>
-
-<p>
-Then, the overall procedure is:
-</p>
-
-<ol class="org-ol">
-<li>Fit multivariate <i>susie</i> regressing expression against genotype, assuming
-\(L\) effects.</li>
-
-<li>For each SNP, fit SER regressing \(\lambda_{j}\) against expression.</li>
-</ol>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">susie_mg</span>(X, Y, **kwargs):
   <span class="org-variable-name">pip</span> = []
-  <span class="org-keyword">for</span> x, y <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(X, Y):
-    <span class="org-variable-name">res</span> = susier.susie(x, y, **kwargs)
+  <span class="org-keyword">for</span> y <span class="org-keyword">in</span> Y.T:
+    <span class="org-variable-name">res</span> = susier.susie(X, y.reshape(-1, 1), **kwargs)
     pip.append(np.array(susier.susie_get_PIP(res)))
-  <span class="org-variable-name">lam</span> = sp.expit(np.array(pip))
-  <span class="org-variable-name">target_pip</span> = []
-  <span class="org-keyword">for</span> y, x <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(lam.T, Y.T):
-    <span class="org-variable-name">res</span> = susier.single_effect_regression(y, x, .2)
-    target_pip.append(np.array(res.rx2(<span class="org-string">'alpha'</span>)))
-  <span class="org-keyword">return</span> np.array(target_pip)
+  <span class="org-keyword">return</span> np.array(pip)
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-orgd410bdb" class="outline-3">
-<h3 id="orgd410bdb">Factor graph for variable selection</h3>
-<div class="outline-text-3" id="text-orgd410bdb">
+<div id="outline-container-org4b8ab0d" class="outline-3">
+<h3 id="org4b8ab0d">EP approach</h3>
+<div class="outline-text-3" id="text-org4b8ab0d">
 <p>
-The constraint that a single effect can apply only to one phenotype is not
-directly expressible as a closed-form distribution on \(\gamma\). Suppose we
-only had two phenotypes, and only two SNPs:
+In SER, for each phenotype, we encoded the constraint that a single variant
+is causal by assuming the prior \(\mathbf{z} \sim \mathrm{Mult}(1,
+   \mathbf{\pi})\).
 </p>
 
 <p>
-\[ \mathbf{y}_k = \mathbf{X} \mathbf{b}_k + \mathbf{e} \]
-</p>
-
-<p>
-\[ \mathbf{b}_k = \mathbf{\gamma}_k \beta_k \]
-</p>
-
-<p>
-\[ \mathbf{\beta} \sim N(0, \tau_0^{-1} \mathbf{I}) \]
-</p>
-
-<p>
-To characterize the constraint on \(p(\gamma\mid\cdot)\), we need the
-following to hold simultaneously:
+Ideally, in the multivariate case we would encode the constraint that each
+SNP can only be causal for one phenotype in the same way. Suppose we only
+had two phenotypes, only two SNPs, and only one effect per phenotype. We
+need the following to hold simultaneously:
 </p>
 
 <ol class="org-ol">
-<li>\(\gamma_{11}, \gamma_{12} \sim \mathrm{Mult}(1, \mathbf{\pi}_a)\)</li>
-<li>\(\gamma_{21}, \gamma_{22} \sim \mathrm{Mult}(1, \mathbf{\pi}_a)\)</li>
-<li>\(\gamma_{11}, \gamma_{21} \sim \mathrm{Mult}(1, \mathbf{\pi}_b)\)</li>
-<li>\(\gamma_{12}, \gamma_{22} \sim \mathrm{Mult}(1, \mathbf{\pi}_b)\)</li>
+<li>\(z_{11}, z_{12} \sim \mathrm{Mult}(1, \mathbf{\pi}_a)\)</li>
+<li>\(z_{21}, z_{22} \sim \mathrm{Mult}(1, \mathbf{\pi}_a)\)</li>
+<li>\(z_{11}, z_{21} \sim \mathrm{Mult}(1, \mathbf{\pi}_b)\)</li>
+<li>\(z_{12}, z_{22} \sim \mathrm{Mult}(1, \mathbf{\pi}_b)\)</li>
 </ol>
 
 <p>
-This dependency structure is most readily expressed as a factor graph.
+The resulting distribution on \(\mathbf{Z}\) is most readily expressed as a
+factor graph:
 </p>
 
 <p>
-\[ p(\gamma \mid \cdot) = \frac{1}{Z} \prod_j f_j(\gamma_{1j}, \gamma_{2j})
-   \prod_k g_k(\gamma_{k1}, \gamma_{k2}) \]
+\[ p(\mathbf{Z} \mid \cdot) \propto \prod_j f_j(z_{1j}, z_{2j}) \prod_k g_k(z_{k1}, z_{k2}) \]
 </p>
 
 <p>
-We can recover marginal distributions of \(\gamma_{kj}\) using loopy belief
-propagation.
+The remainder of the model is easily converted into a factor graph:
 </p>
 
 <p>
-\[ m_{f_j \rightarrow \gamma_{1j}}(\gamma_{1j}) = \sum_{\gamma_{2j}}
-   \mathrm{Mult}(\gamma_{1j}, \gamma_{2j}; 1, \mathbf{\pi}_b) m_{\gamma_{2j}\rightarrow
-   f_j}(\gamma_{2j})\]
+\[ p(\cdot) \propto \prod_k p(Y_k \mid X_k, B_k, \tau) p(B \mid Z, \tau_0)
+   p(Z \mid \pi_a, \pi_b) \]
 </p>
 
 <p>
-\[ m_{g_k \rightarrow \gamma_{k1}}(\gamma_{k1}) = \sum_{\gamma_{k2}}
-   \mathrm{Mult}(\gamma_{k1}, \gamma_{k2}; 1, \mathbf{\pi}_a) m_{\gamma_{k2}\rightarrow g_k}(\gamma_{k2})\]
-</p>
-
-<p>
-\[ m_{\gamma_{kj}\rightarrow f_j} = m_{g_k\rightarrow \gamma_{kj}} \]
-</p>
-
-<p>
-\[ m_{\gamma_{kj}\rightarrow g_k} = m_{f_j\rightarrow \gamma_{kj}} \]
+We use expectation propagation to perform approximate inference on this
+model (<a href="https://tminka.github.io/papers/ep/">Minka 2001</a>, <a href="10.1007/s10994-014-5475-7">Hernández-Lobato et al 2015</a>).
 </p>
 </div>
 </div>
@@ -550,63 +497,219 @@ normal "genotypes":
 </p>
 
 <p>
-\[ y_{i1} = x_{i1} \beta_1 + e_1 \]
+\[ y_{i1} = x_{i1} \beta_1 + e_{i1} \]
 </p>
 
 <p>
-\[ y_{i2} = x_{i2} \beta_2 + e_2 \]
+\[ y_{i2} = x_{i2} \beta_2 + e_{i2} \]
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_y</span>(x, pve):
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_ser_y</span>(x, pve):
+  <span class="org-variable-name">n</span> = x.shape[0]
   <span class="org-variable-name">beta</span> = np.random.normal()
   <span class="org-variable-name">y</span> = x * beta
-  <span class="org-variable-name">y</span> += np.random.normal(scale=np.sqrt(y.var() * (1 / pve - 1)))
+  <span class="org-variable-name">y</span> += np.random.normal(scale=np.sqrt(y.var() * (1 / pve - 1)), size=n)
+  <span class="org-variable-name">y</span> -= y.mean(axis=0)
   <span class="org-keyword">return</span> y
 
-<span class="org-keyword">def</span> <span class="org-function-name">simulate_ex1</span>(rho, n):
+<span class="org-keyword">def</span> <span class="org-function-name">simulate_ex1</span>(rho, n, pve=0.1, seed=0):
+  np.random.seed(seed)
   <span class="org-variable-name">cov</span> = np.array([[1, rho], [rho, 1]])
-  <span class="org-variable-name">x</span> = np.random.multivariate_normal(cov=cov, size=n)
-  <span class="org-variable-name">y1</span> = simulate_y(x[:,0], .1)
-  <span class="org-variable-name">y2</span> = simulate_y(x[:,1], .1)
-  <span class="org-keyword">return</span> x, np.stack([y1, y2])
+  <span class="org-variable-name">x</span> = np.random.multivariate_normal(mean=np.zeros(2), cov=cov, size=n)
+  <span class="org-variable-name">y1</span> = simulate_ser_y(x[:,0], pve)
+  <span class="org-variable-name">y2</span> = simulate_ser_y(x[:,1], pve)
+  <span class="org-variable-name">x</span> -= x.mean(axis=0)
+  <span class="org-keyword">return</span> x, np.vstack([y1, y2]).T
 </pre>
 </div>
 
 <p>
-When genotypes are uncorrelated, we should expect <i>susie-mg</i> to exactly
-recover the causal SNPs for each phenotype.
+When genotypes are uncorrelated, we should expect <i>susie</i> to exactly recover
+the causal SNP for each gene, and conversely the target gene for each SNP.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex1(0, 1000)
-susie_mg(X, Y)
+<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex1(rho=0, n=100)
+susie_mg(X, Y, L=1)
 </pre>
+</div>
+
+<pre class="example">
+array([[0.97088521, 0.02911479],
+[0.04866922, 0.95133078]])
+</pre>
+
+<p>
+When genotypes are nearly perfectly correlated, the expression will become
+nearly perfectly correlated. We should expect <i>susie</i> to put equal posterior
+probability on each SNP, and therefore be unable to find the target gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex1(rho=0.99, n=100)
+susie_mg(X, Y, L=1)
+</pre>
+</div>
+
+<pre class="example">
+array([[0.37021302, 0.62978698],
+[0.6153817 , 0.3846183 ]])
+</pre>
+
+<p>
+Surprisingly, <i>susie</i> simply gives the wrong answer in this case. Look at
+the distribution of \(p(z_{11} \mid \cdot)\) over many trials.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">get_pip_11</span>(**kwargs):
+  <span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex1(**kwargs)
+  <span class="org-variable-name">res</span> = susie_mg(X, Y, L=1)
+  <span class="org-keyword">return</span> res[0, 0]
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">data</span> = [get_pip_11(rho=0.99, n=100, seed=i) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(100)]
+
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-variable-name">f</span> = st.gaussian_kde(data)
+<span class="org-variable-name">grid</span> = np.linspace(0, 1, 1000)
+plt.plot(grid, f(grid), c=<span class="org-string">'k'</span>, lw=1)
+plt.xlabel(<span class="org-string">'PIP of SNP 1 on gene 1'</span>)
+<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'Density'</span>)
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/susie.org/susie-mg-toy-pip.png" alt="susie-mg-toy-pip.png">
+</p>
 </div>
 
 <p>
-As the genotypes become more correlated, we should expect <i>susie-mg</i> to
-divide PIP more equally between the 2 SNPs.
+Fixing \(\rho\), as the number of samples \(n\) increases, <i>susie</i> gets the
+correct answer on average, but there is still considerable variation.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex1(.1, 1000)
-susie_mg(X, Y)
+<pre class="src src-ipython"><span class="org-variable-name">pip_vs_n</span> = pd.DataFrame([(<span class="org-builtin">int</span>(n), i, get_pip_11(rho=0.99, n=<span class="org-builtin">int</span>(n), seed=i))
+                         <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(50) <span class="org-keyword">for</span> n <span class="org-keyword">in</span> np.logspace(2, 4, 100)],
+                        columns=[<span class="org-string">'n'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'pip_11'</span>])
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex1(.5, 1000)
-susie_mg(X, Y)
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.semilogx()
+plt.ylim(0, 1)
+plt.axhline(y=0.5, c=<span class="org-string">'0.5'</span>, lw=1, ls=<span class="org-string">'--'</span>)
+<span class="org-variable-name">m</span> = pip_vs_n.groupby(<span class="org-string">'n'</span>)[<span class="org-string">'pip_11'</span>].agg(np.mean)
+<span class="org-variable-name">s</span> = pip_vs_n.groupby(<span class="org-string">'n'</span>)[<span class="org-string">'pip_11'</span>].agg(np.std)
+plt.plot(np.logspace(2, 4, 100), m, lw=1, c=<span class="org-string">'k'</span>)
+plt.fill_between(np.logspace(2, 4, 100), m - 1.96 * s, m + 1.96 * s, color=<span class="org-string">'k'</span>, alpha=0.1)
+plt.xlabel(<span class="org-string">'Sample size'</span>)
+<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'PIP of SNP 1 on gene 1'</span>)
 </pre>
 </div>
+
+
+<div class="figure">
+<p><img src="figure/susie.org/susie-mg-toy-vs-n.png" alt="susie-mg-toy-vs-n.png">
+</p>
 </div>
+
+<p>
+Now, consider the case of uncorrelated genotypes, but correlated
+expression. The only way this can arise is if some unobserved factor
+influences both genes.
+</p>
+
+<p>
+\[ \mathbf{X}_i \sim \mathcal{N}(\mathbf{0}, \mathbf{I}) \]
+</p>
+
+<p>
+\[ u_i \sim \mathcal{N}(0, \sigma^2_u) \]
+</p>
+
+<p>
+\[ \beta_k \sim \mathcal{N}(0, \sigma^2_g) \]
+</p>
+
+<p>
+\[ \mathbf{Y} = \mathbf{X}\beta + \left[\mathbf{u}\ \mathbf{u}\right] +
+   \mathbf{E} \]
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_ser_u_y</span>(x, u, pve_x, pve_u):
+  <span class="org-variable-name">n</span> = x.shape[0]
+  <span class="org-variable-name">beta</span> = np.random.normal(scale=np.sqrt(pve_x / x.var()))
+  <span class="org-variable-name">y</span> = x * beta + u
+  <span class="org-variable-name">y</span> += np.random.normal(scale=np.sqrt(y.var() * (1 / (pve_x + pve_u) - 1)), size=n)
+  <span class="org-variable-name">y</span> -= y.mean(axis=0)
+  <span class="org-keyword">return</span> y
+
+<span class="org-keyword">def</span> <span class="org-function-name">simulate_ex2</span>(n, pve_x=0.1, pve_u=0.1, seed=0):
+  np.random.seed(seed)
+  <span class="org-variable-name">x</span> = np.random.multivariate_normal(mean=np.zeros(2), cov=np.eye(2), size=n)
+  <span class="org-variable-name">u</span> = np.random.normal(scale=np.sqrt(pve_u), size=n)
+  <span class="org-variable-name">y1</span> = simulate_ser_u_y(x[:,0], u, pve_x, pve_u)
+  <span class="org-variable-name">y2</span> = simulate_ser_u_y(x[:,1], u, pve_x, pve_u)
+  <span class="org-variable-name">x</span> -= x.mean(axis=0)
+  <span class="org-keyword">return</span> x, np.vstack([y1, y2]).T
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = simulate_ex2(n=100, pve_x=.05, pve_u=.9)
+susie_mg(X, Y, L=1)
+</pre>
+</div>
+
+<pre class="example">
+array([[0.92064932, 0.07935068],
+[0.0102968 , 0.9897032 ]])
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.corrcoef(Y.T)
+</pre>
+</div>
+
+<pre class="example">
+array([[1.       , 0.8488416],
+[0.8488416, 1.       ]])
+</pre>
+
+<p>
+Even when expression is highly correlated due to some unobserved factor
+(e.g., <i>trans</i>-QTL), <i>susie</i> can still recover the <i>cis</i>-eQTLs.
+</p>
+
+<p>
+Overall, the results suggest that simply applying univariate <i>susie</i> over
+large windows will get the correct answer whenever it is possible to get the
+correct answer.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org28c0c69" class="outline-3">
+<h3 id="org28c0c69">Simulation study</h3>
+</div>
+<div id="outline-container-org8b5b2fb" class="outline-3">
+<h3 id="org8b5b2fb">Application to GTEx</h3>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-09-11 Tue 16:29</p>
+<p class="date">Created: 2018-09-12 Wed 16:50</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -1,0 +1,396 @@
+#+TITLE: Weighted low rank approximation
+#+SETUPFILE: setup.org
+#+OPTIONS: toc:2
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="4G",venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  :RESULTS:
+  Submitted batch job 50093550
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+NAME: imports
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import scipy.special as sp
+    import sklearn.decomposition as skd
+    import wlra
+  #+END_SRC
+
+  #+RESULTS: imports
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+* Introduction
+
+  We are interested in solving the /weighted low-rank approximation problem/:
+
+  \[ \min_{\mathbf{Z}} \sum_{i,j} w_{ij} \left(x_{ij} - z_{ij} \right)^2 \]
+
+  where \(n \times p\) target matrix \(\mathbf{X}\) and \(n \times p\) weight
+  matrix \(\mathbf{W}\) are given, and \(\mathbf{Z}\) is constrained to some
+  rank.
+
+  Solving WLRA allows us to solve two main problems:
+
+  1. *Learn low rank structure in non-Gaussian data.* Using Taylor expansion of
+     non-Gaussian likelihoods, we can rewrite the MLE of factor models as the
+     solution to WLRA. The key idea is that the Taylor expansion is performed
+     around a different value for each observation, naturally leading to an
+     iterative approach.
+
+  2. *Handle truly missing data.* By setting weights to zero, we can code
+     missing data. This approach works even in settings where observations can
+     also take the value zero, such as single cell RNA sequencing data.
+
+* Methods
+** EM algorithm
+
+   [[https://www.aaai.org/Papers/ICML/2003/ICML03-094.pdf][Srebro and Jaakkola 2003]] propose an EM algorithm to solve WLRA. The algorithm
+   is EM in the following sense: suppose the weights \(w_{ij} \in \{0, 1\}\),
+   corresponding to presence/absence, and suppose \(\mathbf{X} = \mathbf{Z} +
+   \mathbf{E}\), where \(\mathbf{Z}\) is low-rank and elements of \(\mathbf{E}\)
+   are Gaussian.
+
+   Then, \(E[x_{ij} \mid w_{ij} = 0] = z_{ij}\), naturally giving an EM
+   algorithm. The E-step fills in \(x_{ij}\) with \(z_{ij}\), and the M-step
+   estimates \(\mathbf{Z}\) from the filled in \(\mathbf{X}\). The solution to
+   the M-step is given by the optimal unweighted rank \(k\) approximation,
+   i.e. truncated SVD, because all the non-zero weights are equal to 1.
+
+   Conceptually, the method for arbitrary weights is to suppose instead that we
+   have rational \(w_{ij} \in \{0, 1/N, \ldots, 1\}\). 
+
+   Then, we can reduce this problem to a problem in 0/1 weights by supposing we
+   have \(X^{(k)} = Z + E^{(k)}\), \(k \in 1, \ldots, N\), and each entry is
+   observed in only \(N w_{ij}\) of the \(X^{(k)}\).
+
+   Then, the M-step becomes:
+
+   \[ \mathbf{Z}^{(t + 1)} = \mathrm{LRA}_k(\mathbf{W} \circ \mathbf{X} +
+   (\mathbf{1} - \mathbf{W}) \circ \mathbf{Z}^{(t)}) \]
+
+   where \(\mathrm{LRA}_k\) is the unweighted rank \(k\) approximation and
+   \(\circ\) denotes Hadamard product.
+
+   Intuitively, the implied E-step corresponds to taking the expectation of
+   \(z_{ij}^{(k)}\) over the targets \(k\). Clearly, the algorithm generalizes
+   to any weight matrix where \(0 \leq w_{ij} \leq 1\) are stored in finite
+   precision.
+
+** Bernoulli low rank approximation
+
+   Srebro and Jaakkola apply the EM approach to solve low rank approximation
+   for binary data, where the assumed low rank structure is on the probability
+   a user will prefer an item.
+
+   They seek to minimize the loss function \(l(\eta) = \log\mathrm{sigmoid}(x
+   \eta)\). They take a variational lower bound to the log sigmoid function
+   (Jaakkola and Jordan 2000), then perform second-order Taylor expansion about
+   \(\eta_0\), yielding the objective function:
+
+   \[ l(\eta) \geq -\frac{1}{4} \frac{\tanh(\eta_0 / 2)}{\eta_0} \left(\eta -
+   \frac{y\,\eta_0}{\tanh(\eta_0 / 2)}\right) + \mathrm{const} \]
+
+   where the constant does not depend on \(\eta\). Now, the objective function
+   has the form of WLRA. This result suggests an iterative algorithm, where we
+   take successive Taylor approximations about different parameter estimates
+   for each entry.
+
+** Poisson low rank approximation
+
+   We extend this approach to maximize the Poisson log-likelihood. Dropping
+   indexes, we assume for each entry:
+
+   \[ \ln p(x \mid \eta) = l(\eta) = x \eta - \exp(\eta) +
+   \ln\Gamma(x + 1) \]
+
+   Taking a second-order Taylor expansion about \(\eta_0\):
+
+   \[ l(\eta) \approx \tilde{l}(\eta) = (\eta - \eta_0) [x - \exp(\eta_0)] +
+   \frac{(\eta - \eta_0)^2}{2}[-\exp(\eta_0)] + \mathrm{const}\]
+
+   where the constant does not depend on \(\eta\).
+
+   \[ \tilde{l}(\eta) = -\frac{\exp(\eta_0)}{2} \left[\eta - \left(1 +
+   \eta_0 - \frac{x}{\exp(\eta_0)}\right)\right]^2 + \mathrm{const}\]
+
+   The weights must be constrained to be between zero and one in the EM
+   algorithm, so we scale them by the maximum weight in each outer
+   iteration. Our method is implemented in the Python package /wlra/.
+
+** Imputing missing values
+
+   To support missing values, we need to introduce external weights
+   \(\tilde{w}_{ij} \in \{0, 1\}\) to denote presence/absence. We can do this
+   by incorporating the weights \(\tilde{\mathbf{W}} \circ \mathbf{W}\) in each
+   outer iteration.
+
+* Results
+** Recovering planted low rank structure
+*** Gaussian noise
+
+   We first consider the problem of recovering a planted low rank matrix after
+   convolving with Gaussian noise, assuming we know the rank.
+
+   \[ l_{ik} \sim \mathcal{N}(0, 1) \]
+   \[ f_{kj} \sim \mathcal{N}(0, 1) \]
+   \[ \mu_{ij} = (\mathbf{l}\mathbf{f})_{ij} \]
+   \[ \sigma^2_{ij} \sim \mathrm{Uniform}(1, \sigma^2_0) \]
+   \[ x_{ij} \sim \mathcal{N}(\mu_{ij}, \sigma^2_{ij}) \]
+
+   We assume the noise variances for each observation are known, and use the
+   inverse variances as the weights.
+
+   #+NAME: gaussian-reconstruction
+   #+BEGIN_SRC ipython
+     def wnorm(x, w):
+       return (w * np.square(x)).sum()
+
+     def simulate_gaussian(n, p, rank, s0=10, seed=0):
+       np.random.seed(seed)
+       l = np.random.normal(size=(n, rank))
+       f = np.random.normal(size=(rank, p))
+       eta = l.dot(f)
+       noise = np.random.uniform(1, s0, size=eta.shape)
+       w = 1 / noise
+       x = np.random.normal(loc=eta, scale=noise)
+       snr = wnorm(eta, w) / wnorm(noise, w)
+       return x, w, eta, snr
+
+     def rrmse(pred, true):
+       return np.sqrt(np.linalg.norm(pred - true) / np.linalg.norm(true))
+
+     def score_wlra(x, w, eta, rank):
+       res = wlra.wlra(x, w, rank=rank, max_iters=1000)
+       return rrmse(res, eta)
+
+     def score_lra(x, eta, rank):
+       u, d, vt = skd.PCA(n_components=rank)._fit(x)
+       res = np.einsum('ij,j,jk->ik', u, d, vt)
+       return rrmse(res, eta)
+
+     def evaluate_gaussian_known_rank(rank, num_trials=10):
+       result = []
+       for trial in range(num_trials):
+         x, w, eta, snr = simulate_gaussian(n=200, p=300, rank=rank, s0=10, seed=trial)
+         result.append([trial,
+                        snr,
+                        score_lra(x, eta, rank=rank),
+                        score_wlra(x, w, eta, rank=rank)])
+       result = pd.DataFrame(result)
+       result.columns = ['trial', 'snr', 'LRA', 'WLRA']
+       return result
+   #+END_SRC
+
+   #+RESULTS: gaussian-reconstruction
+   :RESULTS:
+   # Out[29]:
+   :END:
+
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/gaussian-known-rank.py
+     <<imports>>
+     <<gaussian-reconstruction>>
+     results_gaussian_known_rank = evaluate_gaussian_known_rank(rank=3, num_trials=100)
+     results_gaussian_known_rank.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/gaussian-known-rank.txt.gz', compression='gzip', sep='\t')
+   #+END_SRC
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     sbatch --partition=broadwl --job-name=gaussian-wlra
+     #!/bin/bash
+     source activate singlecell
+     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/gaussian-known-rank.py
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   : Submitted batch job 50097466
+   :END:
+
+   Read the results.
+
+   #+BEGIN_SRC ipython
+     results_gaussian_known_rank = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/gaussian-known-rank.txt.gz', index_col=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[3]:
+   :END:
+
+   Plot the performance.
+
+   #+BEGIN_SRC ipython :ipyfile figure/wlra.org/gaussian-known-rank.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.boxplot(x=results_gaussian_known_rank[['LRA', 'WLRA']].T, positions=range(2), medianprops={'color': 'k'})
+     plt.xticks(range(2), ['LRA', 'WLRA'])
+     plt.xlabel('Method')
+     _ = plt.ylabel('RRMSE')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[16]:
+   [[file:figure/wlra.org/gaussian-known-rank.png]]
+   :END:
+
+*** Poisson noise
+
+   We then consider the problem of recovering a planted low rank matrix, after
+   convolving with Poisson noise, assuming we know the rank.
+
+   \[ \eta_{ij} = (\mathbf{l f})_{ij} \]
+   \[ x_{ij} \sim \mathrm{Poisson}(\exp(\eta_{ij})) \]
+
+   #+NAME: poisson-reconstruction
+   #+BEGIN_SRC ipython
+     def simulate_pois(n, p, rank, seed=0):
+       np.random.seed(seed)
+       l = np.random.normal(size=(n, rank))
+       f = np.random.normal(size=(rank, p))
+       eta = l.dot(f)
+       x = np.random.poisson(lam=np.exp(eta))
+       return x, eta
+
+     def score_pois_lra(x, eta, rank):
+       res = wlra.pois_lra(x, rank=1)
+       return rrmse(res, eta)
+
+     def evaluate_pois_known_rank(rank, num_trials=10):
+       result = []
+       for trial in range(num_trials):
+         x, eta = simulate_pois(n=200, p=300, rank=1, seed=trial)
+         result.append([trial,
+                        score_lra(x, eta, rank=1),
+                        score_pois_lra(x, eta, rank=1)])
+       result = pd.DataFrame(result)
+       result.columns = ['trial', 'LRA', 'Poisson LRA']
+       return result
+   #+END_SRC
+
+   #+RESULTS: poisson-reconstruction
+   :RESULTS:
+   # Out[58]:
+   :END:
+
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-known-rank.py
+     <<imports>>
+     <<gaussian-reconstruction>>
+     <<poisson-reconstruction>>
+     results_pois_known_rank = evaluate_pois_known_rank(rank=1, num_trials=100)
+     results_pois_known_rank.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-known-rank.txt.gz', compression='gzip', sep='\t')
+   #+END_SRC
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     sbatch --partition=broadwl --job-name=pois-lra
+     #!/bin/bash
+     source activate singlecell
+     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-known-rank.py
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   : Submitted batch job 50100695
+   :END:
+
+   Read the results.
+
+   #+BEGIN_SRC ipython
+     results_pois_known_rank = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-known-rank.txt.gz', index_col=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[64]:
+   :END:
+
+   Plot the performance.
+
+   #+BEGIN_SRC ipython :ipyfile figure/wlra.org/pois-known-rank.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.semilogy()
+     plt.boxplot(x=results_pois_known_rank[['LRA', 'Poisson LRA']].T,
+                 positions=range(2),
+                 flierprops={'markersize': 4, 'marker': '.', 'markerfacecolor': 'k'},
+                 medianprops={'color': 'k'})
+     plt.xticks(range(2), ['LRA', 'Poisson LRA'])
+     plt.xlabel('Method')
+     _ = plt.ylabel('RRMSE')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[82]:
+   [[file:figure/wlra.org/pois-known-rank.png]]
+   :END:
+
+*** Bernoulli noise                                                :noexport:
+
+    We consider the problem of LRA for binary data.
+
+    \[ x_{ij} \sim \mathrm{Bernoulli}(\mathrm{sigmoid}(\eta_{ij})) \]
+
+    Srebro and Jaakkola propose to use a variational lower bound to the sigmoid
+    function (Jaakkola and Jordan 2000) to improve convergence.
+
+    #+NAME: bernoulli-reconstruction
+    #+BEGIN_SRC ipython
+      def simulate_bern(n, p, rank, seed=0):
+        np.random.seed(seed)
+        l = np.random.normal(size=(n, rank))
+        f = np.random.normal(size=(rank, p))
+        eta = l.dot(f)
+        x = (np.random.uniform(size=(n, p)) < sp.expit(eta)).astype(int)
+        return x, eta
+
+      def score_bern_lra(x, eta, rank):
+        res = wlra.bern_lra(x, rank=1, verbose=True)
+        return rrmse(res, eta)
+
+      def evaluate_bern_known_rank(rank, num_trials=10):
+        result = []
+        for trial in range(num_trials):
+          x, eta = simulate_bern(n=200, p=300, rank=1, seed=trial)
+          result.append([trial,
+                         score_lra(x, eta, rank=1),
+                         score_bern_lra(x, eta, rank=1)])
+        result = pd.DataFrame(result)
+        result.columns = ['trial', 'LRA', 'Bernoulli LRA']
+        return result
+    #+END_SRC
+
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/bern-known-rank.py
+     <<imports>>
+     <<gaussian-reconstruction>>
+     <<bernoulli-reconstruction>>
+     res = evaluate_bern_known_rank(rank=1, num_trials=1)
+   #+END_SRC
+
+** Imputing missing values
+
+** Explaining held out data

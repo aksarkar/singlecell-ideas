@@ -14,9 +14,7 @@
   #+CALL: ipython3(memory="4G",venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  :RESULTS:
-  Submitted batch job 50093550
-  :END:
+  : Submitted batch job 50207591
 
   #+BEGIN_SRC ipython
     %matplotlib inline
@@ -35,13 +33,14 @@
     import numpy as np
     import pandas as pd
     import scipy.special as sp
+    import scipy.stats as st
     import sklearn.decomposition as skd
     import wlra
   #+END_SRC
 
   #+RESULTS: imports
   :RESULTS:
-  # Out[2]:
+  # Out[68]:
   :END:
 
 * Introduction
@@ -54,20 +53,34 @@
   matrix \(\mathbf{W}\) are given, and \(\mathbf{Z}\) is constrained to some
   rank.
 
-  Solving WLRA allows us to solve two main problems:
+  Solving WLRA allows us to solve two main problems. First, we can learn low
+  rank structure in non-Gaussian data. Using Taylor expansion of non-Gaussian
+  likelihoods, we can rewrite the MLE of factor models as the solution to
+  WLRA. The key idea is that the Taylor expansion is performed around a
+  different value for each observation, naturally leading to an iterative
+  approach.
 
-  1. *Learn low rank structure in non-Gaussian data.* Using Taylor expansion of
-     non-Gaussian likelihoods, we can rewrite the MLE of factor models as the
-     solution to WLRA. The key idea is that the Taylor expansion is performed
-     around a different value for each observation, naturally leading to an
-     iterative approach.
+  Prior work has tried to learn low rank structure to solve the /collaborative
+  filtering/ problem: given user \(i\) interacted with item \(j\), predict what
+  other items ([[http://yifanhu.net/PUB/cf.pdf][Hu et al. 2001]]). Low rank structure in this context corresponds
+  to learning patterns of user preferences (factors), and the specific
+  preferences of individual users (loadings). 
 
-  2. *Handle truly missing data.* By setting weights to zero, we can code
-     missing data. This approach works even in settings where observations can
-     also take the value zero, such as single cell RNA sequencing data.
+  One special feature of the problem is that only /implicit feedback/ is
+  assumed: we only have observations \(x_{ij} = 1\) when an interaction is
+  recorded, and \(x_{ij} = 0\) could either reflect negative feedback or
+  missing data. However, this assumption does not make sense for scRNA-Seq
+  data, where observations of 0 are not missing.
+
+  The second problem we can solve usign LRA is true imputation. By setting
+  weights to zero, we can code missing data. This approach works even in
+  settings where observations can also take the value zero, such as single cell
+  RNA sequencing data.
+
+  The methods are implemented in the Python package [[https://www.github.com/aksarkar/wlra][wlra]].
 
 * Methods
-** EM algorithm
+** EM algorithm 
 
    [[https://www.aaai.org/Papers/ICML/2003/ICML03-094.pdf][Srebro and Jaakkola 2003]] propose an EM algorithm to solve WLRA. The algorithm
    is EM in the following sense: suppose the weights \(w_{ij} \in \{0, 1\}\),
@@ -101,60 +114,106 @@
    to any weight matrix where \(0 \leq w_{ij} \leq 1\) are stored in finite
    precision.
 
-** Bernoulli low rank approximation
-
-   Srebro and Jaakkola apply the EM approach to solve low rank approximation
-   for binary data, where the assumed low rank structure is on the probability
-   a user will prefer an item.
-
-   They seek to minimize the loss function \(l(\eta) = \log\mathrm{sigmoid}(x
-   \eta)\). They take a variational lower bound to the log sigmoid function
-   (Jaakkola and Jordan 2000), then perform second-order Taylor expansion about
-   \(\eta_0\), yielding the objective function:
-
-   \[ l(\eta) \geq -\frac{1}{4} \frac{\tanh(\eta_0 / 2)}{\eta_0} \left(\eta -
-   \frac{y\,\eta_0}{\tanh(\eta_0 / 2)}\right) + \mathrm{const} \]
-
-   where the constant does not depend on \(\eta\). Now, the objective function
-   has the form of WLRA. This result suggests an iterative algorithm, where we
-   take successive Taylor approximations about different parameter estimates
-   for each entry.
-
-** Poisson low rank approximation
-
-   We extend this approach to maximize the Poisson log-likelihood. Dropping
-   indexes, we assume for each entry:
-
-   \[ \ln p(x \mid \eta) = l(\eta) = x \eta - \exp(\eta) +
-   \ln\Gamma(x + 1) \]
-
-   Taking a second-order Taylor expansion about \(\eta_0\):
-
-   \[ l(\eta) \approx \tilde{l}(\eta) = (\eta - \eta_0) [x - \exp(\eta_0)] +
-   \frac{(\eta - \eta_0)^2}{2}[-\exp(\eta_0)] + \mathrm{const}\]
-
-   where the constant does not depend on \(\eta\).
-
-   \[ \tilde{l}(\eta) = -\frac{\exp(\eta_0)}{2} \left[\eta - \left(1 +
-   \eta_0 - \frac{x}{\exp(\eta_0)}\right)\right]^2 + \mathrm{const}\]
-
    The weights must be constrained to be between zero and one in the EM
-   algorithm, so we scale them by the maximum weight in each outer
-   iteration. Our method is implemented in the Python package [[https://www.github.com/aksarkar/wlra][wlra]].
+   algorithm, so we scale them by the maximum weight.
+
+** Alternative derivation
+
+   Suppose \(\mathbf{X} = \mathbf{M} + \mathbf{Z} + \mathbf{E}\) where
+   \(\mathbf{M}\) is low rank, and:
+
+   \[ z_{ij} \sim N(0, s_{ij}^2) \]
+
+   \[ e_{ij} \sim N(0, \tau^{-1}) \]
+
+   Let \(\mathbf{R} = \mathbf{X} - \mathbf{M}\). Then:
+
+   \[ r_{ij} \mid z_{ij} \sim N(r_{ij}, \tau^{-1}) \]
+
+   \[ z_{ij} \mid \cdot \sim N(\mu_1, \tau_1^{-1}) \]
+
+   \[ \mu_1 = r_{ij} \tau / \tau_1 \]
+
+   \[ \tau_1 = \tau + 1 / s_{ij}^2 \]
+
+   Therefore,
+
+   \[ E[z_{ij} \mid x_{ij}, m_{ij}, s_{ij}] = \frac{\tau}{\tau + 1 /
+   s_{ij}^2} (x_{ij} - m_{ij}) = w_{ij} (x_{ij} - m_{ij}) \]
+
+   and the solution to the E step is:
+
+   \[ \mathbf{Z}^{(t + 1)} = \mathbf{W} \circ (\mathbf{X} - \mathbf{M}^{(t)}) \]
+
+   Given \(\mathbf{Z}^{(t)}\), the solution to the M step is PCA with
+   homoscedastic errors, i.e. truncated SVD.
+
+   \[ \mathbf{M}^{(t + 1)} = \mathrm{LRA}_k(\mathbf{X} - \mathbf{Z}) \]
+
+   \[ = \mathrm{LRA}_k((1 - \mathbf{W}) \circ \mathbf{X} + \mathbf{W} \circ
+   \mathbf{M^{(t)}}) \]
+
+   To recover the algorithm of Srebro and Jaakkola, we make several
+   observations:
+
+   1. Taking \(\tau \rightarrow 0\), we have \(w_{ij} = 1 / s_{ij}^2\).
+   2. To mark missing values, we set \(s_{ij}^2 = \infty\), in which case
+      \(w_{ij} = 1\), and the M-step takes the value of \(m_{ij}\) instead of
+      \(x_{ij}\).
+   3. Srebro and Jaakkola explicitly require weights to be between zero and
+      one; this derivation only suggests that they should be scaled (because
+      the M step involves the form of a linear interpolation).
+
+** Maximizing non-Gaussian likelihoods
+
+   Suppose \(l(\theta) = \ln p(x \mid \theta)\). Then, taking second-order
+   Taylor expansion about \(\theta_0\):
+
+   \[ l(\theta) \approx l(\theta_0) + (\theta - \theta_0)\,l'(\theta_0) +
+   \frac{(\theta - \theta)^2}{2}\,l''(\theta_0) \]
+
+   \[ = \frac{l''(\theta_0)}{2} \left[ \theta - \left(\theta_0 -
+   \frac{l'(\theta_0)}{l''(\theta_0)}\right)\right]^2 + \mathrm{const}\]
+
+   where the constant does not depend on \(\theta\). Now, maximizing the
+   objective is equivalent to maximizing a Gaussian likelihood:
+
+   \[= \mathcal{N}\left(\theta; \theta_0 -
+   \frac{l'(\theta_0)}{l''(\theta_0)}, -\frac{1}{l''(\theta_0)}\right) +
+   \mathrm{const} \]
+
+   Equivalently, minimizing the negative of the objective function is
+   WLRA. This result makes sense because for fixed \(\sigma^2\), maximizing the
+   Gaussian likelihood is the same as minimizing the Frobenius norm.
+
+   The result suggests we can improve \(l\) by optimizing this objective
+   instead, and suggests an iterative algorithm where we alternate updates
+   between \(\theta_0\) and \(\theta\).
+
+   Because this new objective is written in terms of derivatives of the log
+   likelihood, we can readily write down the required quantities for relevant
+   distributions:
+
+   #+ATTR_HTML: :class table text-left
+   | Distribution | Parameter \(\theta\)  | Target (mean)                                               | Weight (precision)                     |
+   |--------------+-----------------------+-------------------------------------------------------------+----------------------------------------|
+   | Bernoulli    | \(\mathrm{logit}(p)\) | \(\theta + \frac{x - S(\theta)}{S(\theta)(1 - S(\theta))}\) | \(\frac{1}{S(\theta)(1 - S(\theta))}\) |
+   | Poisson      | \(\ln\lambda\)        | \(1 + \theta + x\exp(-\theta)\)                             | \(\exp(-\theta)\)                      |
+
+   where \(S(\cdot)\) denotes the sigmoid function.
 
 ** Imputing missing values
 
-   Srebro and Jaakkola derive the EM algorithm for WLRA exactly for the case
-   where a weight of zero denotes a missing value (as opposed to an observation
-   of zero).
+   The EM algorithm for WLRA supports missing values by setting \(s_{ij}^2 =
+   \infty\).
 
-   To support missing values in Poisson LRA, we need to introduce external
-   weights \(\tilde{w}_{ij} \in \{0, 1\}\) to denote presence/absence. We can
-   do this by incorporating the weights \(\tilde{\mathbf{W}} \circ \mathbf{W}\)
-   in each outer iteration.
+   When maximizing non-Gaussian likelihoods using WLRA, we need to introduce
+   external weights \(\tilde{w}_{ij} \in \{0, 1\}\) to denote
+   presence/absence. We can do this by incorporating the weights
+   \(\tilde{\mathbf{W}} \circ \mathbf{W}\) in each outer iteration.
 
 * Results
-** Recovering planted low rank structure
+** Recovering low rank structure
 
    We first consider the problem of recovering a planted low rank matrix after
    convolving with Gaussian noise, assuming we know the rank.
@@ -181,8 +240,7 @@
        noise = np.random.uniform(1, s0, size=eta.shape)
        w = 1 / noise
        x = np.random.normal(loc=eta, scale=noise)
-       snr = wnorm(eta, w) / wnorm(noise, w)
-       return x, w, eta, snr
+       return x, w, eta
 
      def rrmse(pred, true):
        return np.sqrt(np.linalg.norm(pred - true) / np.linalg.norm(true))
@@ -195,22 +253,26 @@
        res = wlra.lra(x, rank)
        return rrmse(res, eta)
 
+     def score_hsvd(x, w, eta, rank):
+       res = wlra.hsvd(x, w, rank=rank, max_iters=1000)
+       return rrmse(res, eta)
+
      def evaluate_gaussian_known_rank(num_trials=10):
        result = []
        for trial in range(num_trials):
-         x, w, eta, snr = simulate_gaussian(n=100, p=1000, rank=1, s0=10, seed=trial)
+         x, w, eta = simulate_gaussian(n=100, p=1000, rank=1, s0=10, seed=trial)
          result.append([trial,
-                        snr,
                         score_lra(x, eta, rank=1),
-                        score_wlra(x, w, eta, rank=1)])
+                        score_wlra(x, w, eta, rank=1),
+                        score_hsvd(x, 1 / w, eta, rank=1)])
        result = pd.DataFrame(result)
-       result.columns = ['trial', 'snr', 'LRA', 'WLRA']
+       result.columns = ['trial', 'LRA', 'WLRA', 'HSVD']
        return result
    #+END_SRC
 
    #+RESULTS: gaussian-reconstruction
    :RESULTS:
-   # Out[29]:
+   # Out[3]:
    :END:
 
    #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/gaussian-known-rank.py
@@ -228,9 +290,7 @@
    #+END_SRC
 
    #+RESULTS:
-   :RESULTS:
-   Submitted batch job 50110869
-   :END:
+   : Submitted batch job 50149976
 
    Read the results.
 
@@ -260,13 +320,24 @@
    [[file:figure/wlra.org/gaussian-known-rank.png]]
    :END:
 
-   We then consider the problem of recovering a planted low rank matrix, after
-   convolving with Poisson noise, assuming we know the rank.
+** Imputing missing values
+
+   We generate a Poisson data matrix with planted row rank structure.
 
    \[ \eta_{ij} = (\mathbf{l f})_{ij} \]
    \[ x_{ij} \sim \mathrm{Poisson}(\exp(\eta_{ij})) \]
 
-   #+NAME: poisson-reconstruction
+   We then hold out entries using numpy masked arrays, and impute them using
+   the Poisson low rank approximation. We compare the imputation accuracy
+   against non-negative matrix factorization ([[https://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization.pdf][Lee and Seung 2001]],
+   [[https://arxiv.org/abs/1010.1763][Févotte and Idier 2011]]). We consider several loss functions:
+
+   - Frobenius norm (\(\beta=2\) divergence)
+   - KL divergence (after normalizing the factors and loadings; \(\beta=1\)
+     divergence)
+   - \(\beta=0.5\) divergence
+
+   #+NAME: poisson-imputation
    #+BEGIN_SRC ipython
      def simulate_pois(n, p, rank, seed=0):
        np.random.seed(seed)
@@ -276,163 +347,46 @@
        x = np.random.poisson(lam=np.exp(eta))
        return x, eta
 
-     def score_pois_lra(x, eta, rank):
-       res = wlra.pois_lra(x, rank=1)
-       return rrmse(res, eta)
-
-     def evaluate_pois_known_rank(rank, num_trials=10):
-       result = []
-       for trial in range(num_trials):
-         x, eta = simulate_pois(n=200, p=300, rank=1, seed=trial)
-         result.append([trial,
-                        score_lra(x, eta, rank=1),
-                        score_pois_lra(x, eta, rank=1)])
-       result = pd.DataFrame(result)
-       result.columns = ['trial', 'LRA', 'Poisson LRA']
-       return result
-   #+END_SRC
-
-   #+RESULTS: poisson-reconstruction
-   :RESULTS:
-   # Out[58]:
-   :END:
-
-   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-known-rank.py
-     <<imports>>
-     <<gaussian-reconstruction>>
-     <<poisson-reconstruction>>
-     results_pois_known_rank = evaluate_pois_known_rank(rank=1, num_trials=100)
-     results_pois_known_rank.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-known-rank.txt.gz', compression='gzip', sep='\t')
-   #+END_SRC
-
-   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --partition=broadwl --job-name=pois-imputation
-     #!/bin/bash
-     source activate singlecell
-     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-known-rank.py
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   Submitted batch job 50111778
-   :END:
-
-   Read the results.
-
-   #+BEGIN_SRC ipython
-     results_pois_known_rank = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-known-rank.txt.gz', index_col=0)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[90]:
-   :END:
-
-   Plot the performance.
-
-   #+BEGIN_SRC ipython :ipyfile figure/wlra.org/pois-known-rank.png
-     plt.clf()
-     plt.gcf().set_size_inches(3, 3)
-     plt.semilogy()
-     plt.boxplot(x=results_pois_known_rank[['LRA', 'Poisson LRA']].T,
-                 positions=range(2),
-                 flierprops={'markersize': 4, 'marker': '.', 'markerfacecolor': 'k'},
-                 medianprops={'color': 'k'})
-     plt.xticks(range(2), ['LRA', 'Poisson LRA'])
-     plt.xlabel('Method')
-     _ = plt.ylabel('RRMSE')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[91]:
-   [[file:figure/wlra.org/pois-known-rank.png]]
-   :END:
-
-*** Bernoulli noise                                                :noexport:
-
-    We consider the problem of LRA for binary data.
-
-    \[ x_{ij} \sim \mathrm{Bernoulli}(\mathrm{sigmoid}(\eta_{ij})) \]
-
-    Srebro and Jaakkola propose to use a variational lower bound to the sigmoid
-    function (Jaakkola and Jordan 2000) to improve convergence.
-
-    #+NAME: bernoulli-reconstruction
-    #+BEGIN_SRC ipython
-      def simulate_bern(n, p, rank, seed=0):
-        np.random.seed(seed)
-        l = np.random.normal(size=(n, rank))
-        f = np.random.normal(size=(rank, p))
-        eta = l.dot(f)
-        x = (np.random.uniform(size=(n, p)) < sp.expit(eta)).astype(int)
-        return x, eta
-
-      def score_bern_lra(x, eta, rank):
-        res = wlra.bern_lra(x, rank=1, verbose=True)
-        return rrmse(res, eta)
-
-      def evaluate_bern_known_rank(rank, num_trials=10):
-        result = []
-        for trial in range(num_trials):
-          x, eta = simulate_bern(n=200, p=300, rank=1, seed=trial)
-          result.append([trial,
-                         score_lra(x, eta, rank=1),
-                         score_bern_lra(x, eta, rank=1)])
-        result = pd.DataFrame(result)
-        result.columns = ['trial', 'LRA', 'Bernoulli LRA']
-        return result
-    #+END_SRC
-
-   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/bern-known-rank.py
-     <<imports>>
-     <<gaussian-reconstruction>>
-     <<bernoulli-reconstruction>>
-     res = evaluate_bern_known_rank(rank=1, num_trials=1)
-   #+END_SRC
-
-** Imputing missing values
-
-   We generate a Poisson data matrix with planted row rank structure as above,
-   then truly hold out entries using numpy masked arrays.
-
-   #+NAME: poisson-imputation
-   #+BEGIN_SRC ipython
      def rmse(pred, true):
        return np.sqrt(np.square(pred - true).mean())
 
-     def imputation_score_lra(x):
+     def imputation_score_nmf(x, rank, **kwargs):
+       """Non-negative matrix factorization"""
+       if 'max_iter' not in kwargs:
+         kwargs['max_iter'] = 1000
+       if 'tol' not in kwargs:
+         kwargs['tol'] = 1e-3
+       if 'init' not in kwargs:
+         kwargs['init'] = 'random'
+       m = skd.NMF(n_components=rank, **kwargs).fit(x)
+       res = m.transform(x).dot(m.components_)
+       return rmse(res[x.mask], x.data[x.mask])
+
+     def imputation_score_pois_lra(x, rank):
        try:
-         res = wlra.wlra(x.filled(0), w=(~x.mask).astype(int), rank=3)
+         res = wlra.pois_lra(x, rank=rank, max_outer_iters=50)
          return rmse(res[x.mask], x.data[x.mask])
        except RuntimeError:
          return np.nan
 
-     def imputation_score_pois_lra(x):
-       try:
-         res = wlra.pois_lra(x, rank=3, max_outer_iters=50)
-         return rmse(res[x.mask], x.data[x.mask])
-       except RuntimeError:
-         return np.nan
-
-     def evaluate_pois_imputation(num_trials=10):
+     def evaluate_pois_imputation(rank=3, num_trials=10):
        result = []
        for trial in range(num_trials):
-         x, eta = simulate_pois(n=200, p=300, rank=3, seed=trial)
+         x, eta = simulate_pois(n=200, p=300, rank=rank, seed=trial)
          mask = np.random.uniform(size=(200, 300)) < 0.25
          x = np.ma.masked_array(x, mask=mask)
          result.append([trial,
-                        imputation_score_lra(x),
-                        imputation_score_pois_lra(x)])
+                        imputation_score_nmf(x, rank, beta_loss='frobenius'),
+                        imputation_score_nmf(x, rank, solver='mu', beta_loss='kullback-leibler'),
+                        imputation_score_nmf(x, rank, solver='mu', beta_loss=0.5),
+                        imputation_score_pois_lra(x, rank)])
        result = pd.DataFrame(result)
-       result.columns = ['trial', 'LRA', 'Poisson LRA']
+       result.columns = ['trial', 'Poisson LRA', 'NMF-Frob', 'NMF-KL', 'NMF-β=0.5']
        return result
    #+END_SRC
 
    #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-imputation.py
      <<imports>>
-     <<gaussian-reconstruction>>
-     <<poisson-reconstruction>>
      <<poisson-imputation>>
      res = evaluate_pois_imputation(num_trials=100)
      res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-imputation.txt.gz', compression='gzip', sep='\t')
@@ -446,9 +400,7 @@
    #+END_SRC
 
    #+RESULTS:
-   :RESULTS:
-   Submitted batch job 50113413
-   :END:
+   : Submitted batch job 50209831
 
    Read the results.
 
@@ -458,7 +410,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[94]:
+   # Out[55]:
    :END:
 
    Plot the performance.
@@ -468,18 +420,58 @@
 
      plt.clf()
      plt.gcf().set_size_inches(3, 3)
-     plt.boxplot(x=T['Poisson LRA'] - T['LRA'],
-                 flierprops={'markersize': 4, 'marker': '.', 'markerfacecolor': 'k'},
-                 medianprops={'color': 'k'})
-     plt.xticks([1], ['Poisson LRA'])
+     plt.yscale('symlog', linthreshy=10)
+     keys = ['NMF-Frob', 'NMF-KL', 'NMF-β=0.5']
+     for i, k in enumerate(keys):
+       y = T[k] - T['Poisson LRA']
+       f = st.gaussian_kde(y)
+       py = f(y)
+       x = i + .1 / py.max() * np.random.uniform(-py, py)
+       plt.scatter(x, y, c='k', s=4)
+     plt.axhline(y=0, c='k', ls=':', lw=1)
+     plt.xticks(range(len(keys)), keys)
      plt.xlabel('Method')
-     _ = plt.ylabel('Difference in RMSE(LRA)')
+     _ = plt.ylabel('Difference in RMSE (Poisson LRA)')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[109]:
+   # Out[82]:
    [[file:figure/wlra.org/pois-imputation.png]]
    :END:
 
 ** Explaining held out data
+
+   A number of methods have been proposed to estimate low rank structure from
+   count data, including scRNA-Seq data:
+
+   - Non-negative matrix factorization ([[https://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization.pdf][Lee and Seung 2001]], [[https://arxiv.org/abs/1010.1763][Févotte and Idier 2011]])
+   - Hierarchical Bayesian Poisson Factorization ([[http://www.cs.columbia.edu/~blei/papers/GopalanHofmanBlei2015.pdf][Gopalan et al. 2015]])
+   - ZINB-WAVE ([[https://www.nature.com/articles/s41467-017-02554-5][Risso et al. 2018]])
+   - scVI ([[https://www.biorxiv.org/content/early/2018/03/30/292037][Lopez et al 2018]])
+
+   These methods typically make the /implicit feedback/ assumption of
+   collaborative filtering, and treat zeros in the input data as missing
+   data. Clearly, this assumption does not hold for scRNA-Seq data, and
+   therefore we cannot evaluate all of the methods on the true imputation task
+   above.
+
+   Instead, we evaluate the methods on their ability to generalize to new
+   data. We assume:
+
+   \[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+
+   and hold out molecules by randomly thinning the observed counts:
+
+   \[ y_{ij} \sim \mathrm{Binomial}(x_{ij}, 0.5) \]
+
+   \[ \tilde{y}_{ij} = x_{ij} - y_{ij} \]
+
+   This approach leaves the relative abundance of the transcripts unchanged in
+   expectation, implying that the low rank structure learned in \(\mathbf{Y}\)
+   should explain the data in \(\tilde\mathbf{Y}\). Our metric is then the
+   likelihood of the data under the Poisson likelihood.
+
+   #+BEGIN_SRC ipython
+     
+   #+END_SRC

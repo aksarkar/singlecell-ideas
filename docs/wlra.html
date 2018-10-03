@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-10-03 Wed 16:39 -->
+<!-- 2018-10-03 Wed 16:51 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weighted low rank approximation</title>
@@ -263,16 +263,16 @@ for the JavaScript code in this tag.
 <li><a href="#org1010fdb">EM algorithm</a></li>
 <li><a href="#orgdd7ac38">Alternative derivation</a></li>
 <li><a href="#orgb462a31">Maximizing non-Gaussian likelihoods</a></li>
-<li><a href="#orgfd45703">Imputing missing values</a></li>
-<li><a href="#org1ee6cdf">Choosing the rank of the approximation</a></li>
+<li><a href="#orga3a9eb0">Imputing missing values</a></li>
+<li><a href="#org3f6a189">Choosing the rank of the approximation</a></li>
 </ul>
 </li>
 <li><a href="#org643a7f6">Results</a>
 <ul>
 <li><a href="#org31c72cd">Recovering low rank structure</a></li>
-<li><a href="#orga3a9eb0">Imputing missing values</a></li>
+<li><a href="#orgc3378fa">Imputing missing values</a></li>
 <li><a href="#orgb6aef17">Convergence</a></li>
-<li><a href="#org3f6a189">Choosing the rank of the approximation</a></li>
+<li><a href="#org310fe54">Choosing the rank of the approximation</a></li>
 <li><a href="#orgd780580">Explaining held out data</a></li>
 </ul>
 </li>
@@ -532,9 +532,9 @@ where \(S(\cdot)\) denotes the sigmoid function.
 </div>
 </div>
 
-<div id="outline-container-orgfd45703" class="outline-3">
-<h3 id="orgfd45703">Imputing missing values</h3>
-<div class="outline-text-3" id="text-orgfd45703">
+<div id="outline-container-orga3a9eb0" class="outline-3">
+<h3 id="orga3a9eb0">Imputing missing values</h3>
+<div class="outline-text-3" id="text-orga3a9eb0">
 <p>
 The EM algorithm for WLRA supports missing values by setting \(w_{ij} =
    0\).
@@ -549,9 +549,9 @@ presence/absence. We can do this by using weights \(\tilde{\mathbf{W}} \circ
 </div>
 </div>
 
-<div id="outline-container-org1ee6cdf" class="outline-3">
-<h3 id="org1ee6cdf">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org1ee6cdf">
+<div id="outline-container-org3f6a189" class="outline-3">
+<h3 id="org3f6a189">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org3f6a189">
 <p>
 The most obvious way to pick an optimal rank is to use cross-validation:
 hold out some samples, and evaluate the likelihood of the held-out samples
@@ -707,9 +707,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orga3a9eb0" class="outline-3">
-<h3 id="orga3a9eb0">Imputing missing values</h3>
-<div class="outline-text-3" id="text-orga3a9eb0">
+<div id="outline-container-orgc3378fa" class="outline-3">
+<h3 id="orgc3378fa">Imputing missing values</h3>
+<div class="outline-text-3" id="text-orgc3378fa">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -850,19 +850,20 @@ Plot the performance.
 <pre class="src src-ipython"><span class="org-variable-name">T</span> = results_pois_imputation.dropna()
 
 plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
-fig.set_size_inches(6, 3)
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(5.5, 3)
 <span class="org-variable-name">methods</span> = [<span class="org-string">'nmf'</span>, <span class="org-string">'plra'</span>]
 <span class="org-keyword">for</span> i, (loss_, name) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>([<span class="org-string">'rmse'</span>, <span class="org-string">'pois_loss'</span>], [<span class="org-string">'RMSE'</span>, <span class="org-string">'Poisson loss'</span>])):
   <span class="org-keyword">for</span> j, method <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(methods):
-    <span class="org-variable-name">y</span> = T[f<span class="org-string">'{loss_}_{method}'</span>] - T[f<span class="org-string">'{loss}_mean'</span>]
+    <span class="org-variable-name">y</span> = T[f<span class="org-string">'{loss_}_{method}'</span>] - T[f<span class="org-string">'{loss_}_mean'</span>]
     <span class="org-variable-name">f</span> = st.gaussian_kde(y)
     <span class="org-variable-name">py</span> = f(y)
-    <span class="org-variable-name">x</span> = j + .1 / py.<span class="org-builtin">max</span>() * np.random.uniform(-py, py)
+    <span class="org-variable-name">x</span> = j + .2 / py.<span class="org-builtin">max</span>() * np.random.uniform(-py, py)
     ax[i].scatter(x, y, c=<span class="org-string">'k'</span>, s=4)
   ax[i].axhline(y=0, c=<span class="org-string">'k'</span>, ls=<span class="org-string">':'</span>, lw=1)
   ax[i].set_xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(methods)))
   ax[i].set_xticklabels([x.upper() <span class="org-keyword">for</span> x <span class="org-keyword">in</span> methods])
+  ax[i].set_xlim(-.5, 1.5)
   ax[i].set_title(name)
   ax[i].set_xlabel(<span class="org-string">'Method'</span>)
 ax[0].set_ylabel(<span class="org-string">'Difference in loss from baseline'</span>)
@@ -897,7 +898,7 @@ Extract one of the cases where the algorithm fails to converge.
   <span class="org-keyword">with</span> <span class="org-builtin">open</span>(case, <span class="org-string">'rb'</span>) <span class="org-keyword">as</span> f:
     <span class="org-variable-name">x</span> = pickle.load(f)
   <span class="org-keyword">try</span>:
-    <span class="org-variable-name">_</span> = wlra.pois_lra(x, rank=3, max_outer_iters=10)
+    <span class="org-variable-name">_</span> = wlra.pois_lra(x, rank=3, max_outer_iters=50)
   <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
     <span class="org-variable-name">n</span> += 1
 n
@@ -905,15 +906,15 @@ n
 </div>
 
 <pre class="example">
-1
+23
 
 </pre>
 </div>
 </div>
 
-<div id="outline-container-org3f6a189" class="outline-3">
-<h3 id="org3f6a189">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org3f6a189">
+<div id="outline-container-org310fe54" class="outline-3">
+<h3 id="org310fe54">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org310fe54">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1168,7 +1169,7 @@ Submitted batch job 50422053
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-10-03 Wed 16:39</p>
+<p class="date">Created: 2018-10-03 Wed 16:51</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

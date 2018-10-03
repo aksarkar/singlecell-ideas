@@ -454,7 +454,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[42]:
+   # Out[61]:
    :END:
 
    Plot the performance.
@@ -463,19 +463,20 @@
      T = results_pois_imputation.dropna()
 
      plt.clf()
-     fig, ax = plt.subplots(1, 2)
-     fig.set_size_inches(6, 3)
+     fig, ax = plt.subplots(1, 2, sharey=True)
+     fig.set_size_inches(5.5, 3)
      methods = ['nmf', 'plra']
      for i, (loss_, name) in enumerate(zip(['rmse', 'pois_loss'], ['RMSE', 'Poisson loss'])):
        for j, method in enumerate(methods):
-         y = T[f'{loss_}_{method}'] - T[f'{loss}_mean']
+         y = T[f'{loss_}_{method}'] - T[f'{loss_}_mean']
          f = st.gaussian_kde(y)
          py = f(y)
-         x = j + .1 / py.max() * np.random.uniform(-py, py)
+         x = j + .2 / py.max() * np.random.uniform(-py, py)
          ax[i].scatter(x, y, c='k', s=4)
        ax[i].axhline(y=0, c='k', ls=':', lw=1)
        ax[i].set_xticks(range(len(methods)))
        ax[i].set_xticklabels([x.upper() for x in methods])
+       ax[i].set_xlim(-.5, 1.5)
        ax[i].set_title(name)
        ax[i].set_xlabel('Method')
      ax[0].set_ylabel('Difference in loss from baseline')
@@ -484,7 +485,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[43]:
+   # Out[68]:
    [[file:figure/wlra.org/pois-imputation.png]]
    :END:
 
@@ -499,7 +500,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
+   # Out[59]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -508,7 +509,7 @@
        with open(case, 'rb') as f:
          x = pickle.load(f)
        try:
-         _ = wlra.pois_lra(x, rank=3, max_outer_iters=10)
+         _ = wlra.pois_lra(x, rank=3, max_outer_iters=50)
        except RuntimeError:
          n += 1
      n
@@ -516,8 +517,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
-   : 1
+   # Out[60]:
+   : 23
    :END:
 
 ** Choosing the rank of the approximation

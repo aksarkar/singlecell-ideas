@@ -300,23 +300,28 @@
      T = results_gaussian_known_rank.dropna()
 
      plt.clf()
-     plt.gcf().set_size_inches(3, 3)
-     G = T.groupby(['rank', 's0'])
-     for i, (k, g) in enumerate(G):
-       y = g['WLRA'] - g['LRA']
-       f = st.gaussian_kde(y)
-       py = f(y)
-       x = i + .1 / py.max() * np.random.uniform(-py, py)
-       plt.scatter(x, y, c='k', s=4)
-     plt.axhline(y=0, c='k', ls=':', lw=1)
-     plt.xticks(range(len(G)), ['({}, {:.2f})'.format(*x) for x in G.groups.keys()], rotation=90)
-     plt.xlabel('(Rank, $\sigma_0$)')
-     _ = plt.ylabel('Difference in RMSE (LRA)')
+     fig, ax = plt.subplots(1, len(set(T['rank'])), sharey=True)
+     fig.set_size_inches(8, 3)
+     for i, (rank, data_by_rank) in enumerate(T.groupby(['rank'])):
+       groups = data_by_rank.groupby(['s0'])
+       for j, (_, data) in enumerate(groups):
+         y = data['WLRA'] - data['LRA']
+         f = st.gaussian_kde(y)
+         py = f(y)
+         x = j + .1 / py.max() * np.random.uniform(-py, py)
+         ax[i].scatter(x, y, c='k', s=4)
+       ax[i].axhline(y=0, c='k', ls=':', lw=1)
+       ax[i].set_title(f'Rank = {rank}')
+       ax[i].set_xticks(range(len(groups)))
+       ax[i].set_xticklabels(['{:.2f}'.format(x) for x in groups.groups.keys()])
+       ax[i].set_xlabel('$\sigma_0$')
+       ax[i].set_ylabel('Difference in RMSE (LRA)')
+     fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[22]:
+   # Out[117]:
    [[file:figure/wlra.org/gaussian-known-rank.png]]
    :END:
 

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-10-02 Tue 15:28 -->
+<!-- 2018-10-03 Wed 16:39 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weighted low rank approximation</title>
@@ -263,15 +263,16 @@ for the JavaScript code in this tag.
 <li><a href="#org1010fdb">EM algorithm</a></li>
 <li><a href="#orgdd7ac38">Alternative derivation</a></li>
 <li><a href="#orgb462a31">Maximizing non-Gaussian likelihoods</a></li>
-<li><a href="#org5779845">Imputing missing values</a></li>
-<li><a href="#orga7f671d">Choosing the rank of the approximation</a></li>
+<li><a href="#orgfd45703">Imputing missing values</a></li>
+<li><a href="#org1ee6cdf">Choosing the rank of the approximation</a></li>
 </ul>
 </li>
 <li><a href="#org643a7f6">Results</a>
 <ul>
 <li><a href="#org31c72cd">Recovering low rank structure</a></li>
-<li><a href="#org05ad203">Imputing missing values</a></li>
-<li><a href="#org63561ff">Choosing the rank of the approximation</a></li>
+<li><a href="#orga3a9eb0">Imputing missing values</a></li>
+<li><a href="#orgb6aef17">Convergence</a></li>
+<li><a href="#org3f6a189">Choosing the rank of the approximation</a></li>
 <li><a href="#orgd780580">Explaining held out data</a></li>
 </ul>
 </li>
@@ -531,9 +532,9 @@ where \(S(\cdot)\) denotes the sigmoid function.
 </div>
 </div>
 
-<div id="outline-container-org5779845" class="outline-3">
-<h3 id="org5779845">Imputing missing values</h3>
-<div class="outline-text-3" id="text-org5779845">
+<div id="outline-container-orgfd45703" class="outline-3">
+<h3 id="orgfd45703">Imputing missing values</h3>
+<div class="outline-text-3" id="text-orgfd45703">
 <p>
 The EM algorithm for WLRA supports missing values by setting \(w_{ij} =
    0\).
@@ -548,9 +549,9 @@ presence/absence. We can do this by using weights \(\tilde{\mathbf{W}} \circ
 </div>
 </div>
 
-<div id="outline-container-orga7f671d" class="outline-3">
-<h3 id="orga7f671d">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-orga7f671d">
+<div id="outline-container-org1ee6cdf" class="outline-3">
+<h3 id="org1ee6cdf">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org1ee6cdf">
 <p>
 The most obvious way to pick an optimal rank is to use cross-validation:
 hold out some samples, and evaluate the likelihood of the held-out samples
@@ -678,18 +679,23 @@ Plot the performance.
 <pre class="src src-ipython"><span class="org-variable-name">T</span> = results_gaussian_known_rank.dropna()
 
 plt.clf()
-plt.gcf().set_size_inches(3, 3)
-<span class="org-variable-name">G</span> = T.groupby([<span class="org-string">'rank'</span>, <span class="org-string">'s0'</span>])
-<span class="org-keyword">for</span> i, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(G):
-  <span class="org-variable-name">y</span> = g[<span class="org-string">'WLRA'</span>] - g[<span class="org-string">'LRA'</span>]
-  <span class="org-variable-name">f</span> = st.gaussian_kde(y)
-  <span class="org-variable-name">py</span> = f(y)
-  <span class="org-variable-name">x</span> = i + .1 / py.<span class="org-builtin">max</span>() * np.random.uniform(-py, py)
-  plt.scatter(x, y, c=<span class="org-string">'k'</span>, s=4)
-plt.axhline(y=0, c=<span class="org-string">'k'</span>, ls=<span class="org-string">':'</span>, lw=1)
-plt.xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(G)), [<span class="org-string">'({}, {:.2f})'</span>.<span class="org-builtin">format</span>(*x) <span class="org-keyword">for</span> x <span class="org-keyword">in</span> G.groups.keys()], rotation=90)
-plt.xlabel(<span class="org-string">'(Rank, $\sigma_0$)'</span>)
-<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'Difference in RMSE (LRA)'</span>)
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, <span class="org-builtin">len</span>(<span class="org-builtin">set</span>(T[<span class="org-string">'rank'</span>])), sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(8, 3)
+<span class="org-keyword">for</span> i, (rank, data_by_rank) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(T.groupby([<span class="org-string">'rank'</span>])):
+  <span class="org-variable-name">groups</span> = data_by_rank.groupby([<span class="org-string">'s0'</span>])
+  <span class="org-keyword">for</span> j, (_, data) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(groups):
+    <span class="org-variable-name">y</span> = data[<span class="org-string">'WLRA'</span>] - data[<span class="org-string">'LRA'</span>]
+    <span class="org-variable-name">f</span> = st.gaussian_kde(y)
+    <span class="org-variable-name">py</span> = f(y)
+    <span class="org-variable-name">x</span> = j + .1 / py.<span class="org-builtin">max</span>() * np.random.uniform(-py, py)
+    ax[i].scatter(x, y, c=<span class="org-string">'k'</span>, s=4)
+  ax[i].axhline(y=0, c=<span class="org-string">'k'</span>, ls=<span class="org-string">':'</span>, lw=1)
+  ax[i].set_title(f<span class="org-string">'Rank = {rank}'</span>)
+  ax[i].set_xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(groups)))
+  ax[i].set_xticklabels([<span class="org-string">'{:.2f}'</span>.<span class="org-builtin">format</span>(x) <span class="org-keyword">for</span> x <span class="org-keyword">in</span> groups.groups.keys()])
+  ax[i].set_xlabel(<span class="org-string">'$\sigma_0$'</span>)
+  ax[i].set_ylabel(<span class="org-string">'Difference in RMSE (LRA)'</span>)
+fig.tight_layout()
 </pre>
 </div>
 
@@ -701,9 +707,9 @@ plt.xlabel(<span class="org-string">'(Rank, $\sigma_0$)'</span>)
 </div>
 </div>
 
-<div id="outline-container-org05ad203" class="outline-3">
-<h3 id="org05ad203">Imputing missing values</h3>
-<div class="outline-text-3" id="text-org05ad203">
+<div id="outline-container-orga3a9eb0" class="outline-3">
+<h3 id="orga3a9eb0">Imputing missing values</h3>
+<div class="outline-text-3" id="text-orga3a9eb0">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -738,42 +744,77 @@ against non-negative matrix factorization (<a href="https://papers.nips.cc/paper
 <span class="org-keyword">def</span> <span class="org-function-name">rmse</span>(pred, true):
   <span class="org-keyword">return</span> np.sqrt(np.square(pred - true).mean())
 
+<span class="org-keyword">def</span> <span class="org-function-name">pois_loss</span>(pred, true):
+  <span class="org-keyword">return</span> (pred - true * np.log(pred + 1e-8)).mean()
+
+<span class="org-variable-name">losses</span> = [rmse, pois_loss]
+
+<span class="org-keyword">def</span> <span class="org-function-name">loss</span>(pred, true):
+  <span class="org-keyword">return</span> [f(pred, true) <span class="org-keyword">for</span> f <span class="org-keyword">in</span> losses]
+
 <span class="org-keyword">def</span> <span class="org-function-name">imputation_score_mean</span>(x):
   <span class="org-doc">"""Mean-impute the data"""</span>
-  <span class="org-keyword">return</span> rmse(x.mean(), x.data[x.mask])
+  <span class="org-keyword">return</span> loss(x.mean(), x.data[x.mask])
 
 <span class="org-keyword">def</span> <span class="org-function-name">imputation_score_nmf</span>(x, rank):
   <span class="org-keyword">try</span>:
     <span class="org-variable-name">res</span> = nmf(x, rank, atol=1e-3)
-    <span class="org-keyword">return</span> rmse(res[x.mask], x.data[x.mask])
+    <span class="org-keyword">return</span> loss(res[x.mask], x.data[x.mask])
   <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
-    <span class="org-keyword">return</span> np.nan
+    <span class="org-keyword">return</span> [np.nan <span class="org-keyword">for</span> f <span class="org-keyword">in</span> losses]
 
-<span class="org-keyword">def</span> <span class="org-function-name">imputation_score_pois_lra</span>(x, rank):
-  <span class="org-keyword">try</span>:
-    <span class="org-variable-name">res</span> = np.exp(wlra.pois_lra(x, rank=rank))
-    <span class="org-keyword">return</span> rmse(res[x.mask], x.data[x.mask])
-  <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
-    <span class="org-keyword">return</span> np.nan
+<span class="org-keyword">def</span> <span class="org-function-name">imputation_score_pois_lra</span>(x, rank, max_retries=10):
+  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_retries):
+    <span class="org-keyword">try</span>:
+      <span class="org-variable-name">res</span> = np.exp(wlra.pois_lra(x, rank=rank, max_outer_iters=100))
+      <span class="org-keyword">return</span> loss(res[x.mask], x.data[x.mask])
+    <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span> <span class="org-keyword">as</span> e:
+      <span class="org-keyword">continue</span>
+  <span class="org-keyword">import</span> uuid
+  x.dump(f<span class="org-string">'trace/{uuid.uuid1()}.pkl'</span>)
+  <span class="org-keyword">return</span> [np.nan <span class="org-keyword">for</span> f <span class="org-keyword">in</span> losses]
 
 <span class="org-keyword">def</span> <span class="org-function-name">evaluate_pois_imputation</span>(rank=3, holdout=0.25, eta_max=<span class="org-constant">None</span>, num_trials=10):
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">eta</span> = simulate_pois(n=200, p=300, rank=rank, eta_max=eta_max, holdout=holdout, seed=trial)
-    result.append([trial,
-                   imputation_score_mean(x),
-                   imputation_score_nmf(x, rank),
-                   imputation_score_pois_lra(x, rank)])
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">eta</span> = simulate_pois(n=200, p=300, rank=rank, eta_max=eta_max,
+                           holdout=holdout, seed=trial)
+    result.append(<span class="org-builtin">list</span>(itertools.chain.from_iterable(
+      [[trial],
+       imputation_score_mean(x),
+       imputation_score_nmf(x, rank),
+       imputation_score_pois_lra(x, rank, max_retries=1),
+      ])))
   <span class="org-variable-name">result</span> = pd.DataFrame(result)
-  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'Mean'</span>, <span class="org-string">'NMF'</span>, <span class="org-string">'PLRA'</span>]
+  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'rmse_mean'</span>, <span class="org-string">'pois_loss_mean'</span>, <span class="org-string">'rmse_nmf'</span>,
+                    <span class="org-string">'pois_loss_nmf'</span>, <span class="org-string">'rmse_plra'</span>, <span class="org-string">'pois_loss_plra'</span>]
   <span class="org-keyword">return</span> result
 </pre>
 </div>
 
+<p>
+Importantly, we assume \(\eta\) is low rank, and not that \(\exp(\eta)\) is
+low rank. It is not the case that if \(\eta\) is low rank, then
+\(\exp(\eta)\) is also always low rank.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.array([(~np.isclose(np.linalg.svd(np.exp(simulate_pois(n=200, p=300, rank=rank, eta_max=3, seed=i)[1]), compute_uv=<span class="org-constant">False</span>), 0)).<span class="org-builtin">sum</span>()
+          <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 5) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(10)]).reshape(-1, 10)
+</pre>
+</div>
+
+<pre class="example">
+array([[ 12,  12,  11,  12,  12,  11,  11,  12,  12,  12],
+[ 66,  56,  60,  59,  50,  62,  58,  55,  50,  64],
+[171, 164, 151, 172, 154, 170, 164, 168, 151, 172],
+[200, 200, 200, 200, 200, 200, 200, 200, 200, 200]])
+</pre>
+
 <div class="org-src-container">
 <pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
 &lt;&lt;poisson-imputation&gt;&gt;
-<span class="org-variable-name">res</span> = evaluate_pois_imputation(eta_max=3, num_trials=100)
+<span class="org-variable-name">res</span> = evaluate_pois_imputation(eta_max=2.5, num_trials=100)
 res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-imputation.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
 </pre>
 </div>
@@ -782,12 +823,13 @@ res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singl
 <pre class="src src-sh">sbatch --partition=broadwl --job-name=pois-imputation -n1 -c8
 <span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
 <span class="org-builtin">source</span> activate singlecell
+rm -f /scratch/midway2/aksarkar/ideas/trace/*.pkl
 python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-imputation.py
 </pre>
 </div>
 
 <pre class="example">
-Submitted batch job 50421191
+Submitted batch job 50501585
 
 </pre>
 
@@ -808,18 +850,23 @@ Plot the performance.
 <pre class="src src-ipython"><span class="org-variable-name">T</span> = results_pois_imputation.dropna()
 
 plt.clf()
-plt.gcf().set_size_inches(3, 3)
-<span class="org-variable-name">keys</span> = [<span class="org-string">'NMF'</span>, <span class="org-string">'PLRA'</span>]
-<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(keys):
-  <span class="org-variable-name">y</span> = T[k] - T[<span class="org-string">'Mean'</span>]
-  <span class="org-variable-name">f</span> = st.gaussian_kde(y)
-  <span class="org-variable-name">py</span> = f(y)
-  <span class="org-variable-name">x</span> = i + .1 / py.<span class="org-builtin">max</span>() * np.random.uniform(-py, py)
-  plt.scatter(x, y, c=<span class="org-string">'k'</span>, s=4)
-plt.axhline(y=0, c=<span class="org-string">'k'</span>, ls=<span class="org-string">':'</span>, lw=1)
-plt.xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(keys)), keys)
-plt.xlabel(<span class="org-string">'Method'</span>)
-<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'Difference in RMSE (mean)'</span>)
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
+fig.set_size_inches(6, 3)
+<span class="org-variable-name">methods</span> = [<span class="org-string">'nmf'</span>, <span class="org-string">'plra'</span>]
+<span class="org-keyword">for</span> i, (loss_, name) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>([<span class="org-string">'rmse'</span>, <span class="org-string">'pois_loss'</span>], [<span class="org-string">'RMSE'</span>, <span class="org-string">'Poisson loss'</span>])):
+  <span class="org-keyword">for</span> j, method <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(methods):
+    <span class="org-variable-name">y</span> = T[f<span class="org-string">'{loss_}_{method}'</span>] - T[f<span class="org-string">'{loss}_mean'</span>]
+    <span class="org-variable-name">f</span> = st.gaussian_kde(y)
+    <span class="org-variable-name">py</span> = f(y)
+    <span class="org-variable-name">x</span> = j + .1 / py.<span class="org-builtin">max</span>() * np.random.uniform(-py, py)
+    ax[i].scatter(x, y, c=<span class="org-string">'k'</span>, s=4)
+  ax[i].axhline(y=0, c=<span class="org-string">'k'</span>, ls=<span class="org-string">':'</span>, lw=1)
+  ax[i].set_xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(methods)))
+  ax[i].set_xticklabels([x.upper() <span class="org-keyword">for</span> x <span class="org-keyword">in</span> methods])
+  ax[i].set_title(name)
+  ax[i].set_xlabel(<span class="org-string">'Method'</span>)
+ax[0].set_ylabel(<span class="org-string">'Difference in loss from baseline'</span>)
+fig.tight_layout()
 </pre>
 </div>
 
@@ -831,9 +878,42 @@ plt.xlabel(<span class="org-string">'Method'</span>)
 </div>
 </div>
 
-<div id="outline-container-org63561ff" class="outline-3">
-<h3 id="org63561ff">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org63561ff">
+<div id="outline-container-orgb6aef17" class="outline-3">
+<h3 id="orgb6aef17">Convergence</h3>
+<div class="outline-text-3" id="text-orgb6aef17">
+<p>
+Extract one of the cases where the algorithm fails to converge.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> pathlib
+<span class="org-variable-name">failure_cases</span> = <span class="org-builtin">list</span>(pathlib.Path(<span class="org-string">'/scratch/midway2/aksarkar/ideas/trace/'</span>).glob(<span class="org-string">'*.pkl'</span>))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n</span> = 0
+<span class="org-keyword">for</span> case <span class="org-keyword">in</span> failure_cases:
+  <span class="org-keyword">with</span> <span class="org-builtin">open</span>(case, <span class="org-string">'rb'</span>) <span class="org-keyword">as</span> f:
+    <span class="org-variable-name">x</span> = pickle.load(f)
+  <span class="org-keyword">try</span>:
+    <span class="org-variable-name">_</span> = wlra.pois_lra(x, rank=3, max_outer_iters=10)
+  <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
+    <span class="org-variable-name">n</span> += 1
+n
+</pre>
+</div>
+
+<pre class="example">
+1
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org3f6a189" class="outline-3">
+<h3 id="org3f6a189">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org3f6a189">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -864,10 +944,10 @@ for one simulated data set.
 
 plt.clf()
 plt.gcf().set_size_inches(3, 3)
-plt.plot(query, lra_scores, c=<span class="org-string">'r'</span>, lw=1, label=<span class="org-string">'PLRA'</span>)
-plt.plot(query, nmf_scores, c=<span class="org-string">'k'</span>, lw=1, label=<span class="org-string">'NMF'</span>)
+plt.plot(query, lra_scores[:,1], c=<span class="org-string">'r'</span>, lw=1, label=<span class="org-string">'PLRA'</span>)
+plt.plot(query, nmf_scores[:,1], c=<span class="org-string">'k'</span>, lw=1, label=<span class="org-string">'NMF'</span>)
 
-plt.axhline(y=imputation_score_mean(x), c=<span class="org-string">'b'</span>, lw=1, ls=<span class="org-string">':'</span>, label=<span class="org-string">'Mean'</span>)
+plt.axhline(y=imputation_score_mean(x)[:,1], c=<span class="org-string">'b'</span>, lw=1, ls=<span class="org-string">':'</span>, label=<span class="org-string">'Mean'</span>)
 plt.axvline(x=1 + np.argmin(lra_scores), c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
 plt.axhline(y=lra_scores.<span class="org-builtin">min</span>(), c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
 plt.axvline(x=1 + np.argmin(nmf_scores), c=<span class="org-string">'k'</span>, lw=1, ls=<span class="org-string">':'</span>)
@@ -875,7 +955,7 @@ plt.axhline(y=nmf_scores.<span class="org-builtin">min</span>(), c=<span class="
 
 plt.legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, 0.5))
 plt.xlabel(<span class="org-string">'Assumed rank'</span>)
-<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'Imputation RMSE'</span>)
+<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'Poisson loss of imputed values'</span>)
 </pre>
 </div>
 
@@ -1088,7 +1168,7 @@ Submitted batch job 50422053
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-10-02 Tue 15:28</p>
+<p class="date">Created: 2018-10-03 Wed 16:39</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

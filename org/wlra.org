@@ -173,7 +173,7 @@
    | Distribution | Parameter \(\theta\)  | Target (mean)                                               | Weight (precision)                     |
    |--------------+-----------------------+-------------------------------------------------------------+----------------------------------------|
    | Bernoulli    | \(\mathrm{logit}(p)\) | \(\theta + \frac{x - S(\theta)}{S(\theta)(1 - S(\theta))}\) | \(\frac{1}{S(\theta)(1 - S(\theta))}\) |
-   | Poisson      | \(\ln\lambda\)        | \(1 + \theta + x\exp(-\theta)\)                             | \(\exp(-\theta)\)                      |
+   | Poisson      | \(\ln\lambda\)        | \(\theta + x\exp(-\theta) - 1\)                             | \(\exp(-\theta)\)                      |
 
    where \(S(\cdot)\) denotes the sigmoid function.
 

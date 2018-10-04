@@ -14,7 +14,7 @@
   #+CALL: ipython3(memory="4G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 50500167
+  : Submitted batch job 50544389
 
   #+BEGIN_SRC ipython
     %matplotlib inline
@@ -405,7 +405,7 @@
 
    #+RESULTS: poisson-imputation
    :RESULTS:
-   # Out[51]:
+   # Out[3]:
    :END:
 
    Importantly, we assume \(\eta\) is low rank, and not that \(\exp(\eta)\) is
@@ -500,7 +500,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[59]:
+   # Out[109]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -612,6 +612,76 @@
 
    #+RESULTS:
    : Submitted batch job 50422249
+
+** Explaining training data
+
+   Evaluate the Poisson likelihood of the fitted models.
+
+   #+BEGIN_SRC ipython
+     def training_score_mean(x):
+       return st.poisson(mu=x.mean()).logpmf(x).sum()
+
+     def training_score_nmf(x, rank):
+       return st.poisson(mu=nmf(x, rank)).logpmf(x).sum()
+
+     def training_score_plra(x, rank):
+       try:
+         return st.poisson(mu=np.exp(wlra.pois_lra(x, rank))).logpmf(x).sum()
+       except RuntimeError:
+         return np.nan
+
+     def evaluate_training(rank=3, eta_max=2, num_trials=10):
+       result = []
+       for trial in range(num_trials):
+         x, eta = simulate_pois(n=200, p=300, rank=rank, eta_max=eta_max, seed=trial)
+         result.append([
+           trial,
+           training_score_mean(x),
+           training_score_nmf(x, rank),
+           training_score_nmf(x, 100),
+           training_score_plra(x, rank),
+         ])
+       result = pd.DataFrame(result)
+       result.columns = ['trial', 'Mean', 'NMF', 'NMF-100', 'PLRA']
+       return result
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[37]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     res = evaluate_training(eta_max=2, num_trials=100)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/wlra.org/training-llik.png
+     methods = ['Mean', 'NMF', 'NMF-100', 'PLRA']
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.semilogy()
+     for j, method in enumerate(methods):
+       y = -res[method].dropna()
+       f = st.gaussian_kde(y)
+       py = f(y)
+       x = j + .2 / py.max() * np.random.uniform(-py, py)
+       plt.scatter(x, y, c='k', s=4)
+     plt.xticks(range(len(methods)), methods)
+     plt.xlim(-.5, len(methods) - .5)
+     plt.xlabel('Method')
+     _ = plt.ylabel('Poisson negative log likelihood')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[43]:
+   [[file:figure/wlra.org/training-llik.png]]
+   :END:
 
 ** Explaining held out data
 

@@ -769,24 +769,55 @@
        lam *= test.sum(axis=1, keepdims=True) / train.sum(axis=1, keepdims=True)
        return st.poisson(mu=lam).logpmf(test).mean()
 
-     def generalization_score_mean(train, test, rank):
+     def generalization_score_mean(train, test):
        lam = np.ones(train.shape) * train.mean(axis=0, keepdims=True)
        return pois_llik(lam, train, test)
 
-     def generalization_score_nmf(train, test, rank):
-       lam = nmf(train, rank)
+     def rank_select(train, imputation_score, max_rank, holdout=0.1):
+       """Search for the rank which minimizes imputation loss"""
+       obj = np.inf
+       opt = 1
+       for rank in range(1, 100):
+         # Randomly hold out 10% of entries to impute
+         x = np.ma.masked_array(train, np.random.uniform(size=train.shape) < holdout)
+         res = imputation_score(x, rank)[1]
+         if res < obj:
+           opt = rank
+           obj = res
+         else:
+           break
+       return opt
+
+     def generalization_score_plra(train, test):
+       opt_rank = rank_select(train, imputation_score_pois_lra, max_rank=10)
+       lam = np.exp(wlra.pois_lra(train, opt_rank))
+       return pois_llik(lam, train, test)
+
+     def generalization_score_nmf(train, test):
+       opt_rank = rank_select(train, imputation_score_nmf, max_rank=100)
+       lam = nmf(train, opt_rank)
        return pois_llik(lam, train, test)
 
      def generalization_score_hpf(train, test, rank):
+       import hpfrec
        x = pd.DataFrame(train).reset_index().melt(id_vars=['index'])
        x.columns = ['UserId', 'ItemId', 'Count']
-       m = hpfrec.HPF(k=rank, produce_dicts=False, users_per_batch=10).fit(x)
+       m = hpfrec.HPF(k=rank, produce_dicts=False, verbose=False).fit(x)
        lam = m.Theta.dot(m.Beta.T)
        return pois_llik(lam, train, test)
 
-     def generalization_score_lra(train, test, rank):
-       eta = wlra.pois_lra(train, rank)
-       lam = np.where(eta < 60, np.exp(eta), eta)
+     def generalization_score_scvi(train, test):
+       from scvi.dataset import GeneExpressionDataset
+       from scvi.inference import UnsupervisedTrainer
+       from scvi.models import VAE
+       data = GeneExpressionDataset(*GeneExpressionDataset.get_attributes_from_matrix(train))
+       vae = VAE(n_input=train.shape[1])
+       m = UnsupervisedTrainer(vae, data, verbose=False)
+       m.train()
+       # Training permuted the data for minibatching. Unpermute before "imputing"
+       # (estimating lambda)
+       lam = np.vstack([m.train_set.sequential().imputation(),
+                        m.test_set.sequential().imputation()])
        return pois_llik(lam, train, test)
 
      def train_test_split(x, p=0.5):
@@ -799,39 +830,41 @@
        keep_genes = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/genes-pass-filter.txt', index_col=0, header=None)
        x = (pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-counts.txt.gz', index_col=0)
             .loc[keep_genes.values.ravel(),keep_samples.values.ravel()]
-            .values)
+            .values.T)
        return x
 
      def evaluate_generalization(data, num_trials):
        result = []
        x = data()
-       for rank in (1,):
-         for trial in range(num_trials):
-           train, test = train_test_split(x)
-           result.append([trial,
-                          generalization_score_mean(train, test, rank),
-                          generalization_score_nmf(train, test, rank),
-                          generalization_score_hpf(train, test, rank),
-                          generalization_score_lra(train, test, rank)])
+       for trial in range(num_trials):
+         train, test = train_test_split(x)
+         result.append([trial,
+                        generalization_score_mean(train, test),
+                        generalization_score_nmf(train, test),
+                        # generalization_score_hpf(train, test, rank=50),
+                        # generalization_score_plra(train, test),
+                        generalization_score_scvi(train, test)
+         ])
        result = pd.DataFrame(result)
-       result.columns = ['trial', 'NMF', 'HPF', 'PLRA']
+       result.columns = ['trial', 'Mean', 'NMF', 'HBPF', 'scVI']
        return result
    #+END_SRC
 
    #+RESULTS: generalization
    :RESULTS:
-   # Out[83]:
+   # Out[87]:
    :END:
 
    #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
      <<imports>>
-     import hpfrec
+     <<poisson-imputation>>
      <<generalization>>
      res = evaluate_generalization(read_ipsc, 1)
-     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization.txt.gz', sep='\t')
+     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization.txt.gz', sep='\t', compression='gzip')
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     # sbatch --partition=gpu2 --gres=gpu:1 --job-name=pois-generalization --mem=16G --time=60:00 -c4
      sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=60:00 -n1 -c28 --exclusive
      #!/bin/bash
      source activate singlecell
@@ -839,4 +872,15 @@
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 50422053
+   : Submitted batch job 50561129
+   
+   #+BEGIN_SRC sh
+     sacct -j 50550386 -o Elapsed
+   #+END_SRC
+
+   #+RESULTS:
+   :    Elapsed 
+   : ---------- 
+   :   00:04:49 
+   :   00:04:49 
+   :   00:04:49 

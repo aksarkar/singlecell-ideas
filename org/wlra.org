@@ -14,7 +14,7 @@
   #+CALL: ipython3(memory="4G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 50544389
+  : Submitted batch job 50562648
 
   #+BEGIN_SRC ipython
     %matplotlib inline
@@ -640,83 +640,28 @@
    for one simulated data set.
 
    #+BEGIN_SRC ipython :ipyfile figure/wlra.org/select-rank-example.png
-     x, eta = simulate_pois(n=200, p=300, rank=3, eta_max=3, seed=0)
+     x, eta = simulate_pois(n=200, p=300, rank=3, eta_max=2, seed=0)
      mask = np.random.uniform(size=x.shape) < 0.25
      x = np.ma.masked_array(x, mask=mask)
 
      query = range(1, 10)
      lra_scores = np.array([imputation_score_pois_lra(x, rank) for rank in query])
-     nmf_scores = np.array([imputation_score_nmf(x, rank) for rank in query])
 
      plt.clf()
      plt.gcf().set_size_inches(3, 3)
-     plt.plot(query, lra_scores[:,1], c='r', lw=1, label='PLRA')
-     plt.plot(query, nmf_scores[:,1], c='k', lw=1, label='NMF')
+     plt.plot(query, lra_scores[:,1], c='k', lw=1, label='PLRA')
+     plt.axvline(x=1 + np.argmin(lra_scores[:,1]), c='k', lw=1, ls=':')
+     plt.axhline(y=lra_scores.min(), c='k', lw=1, ls=':')
 
-     plt.axhline(y=imputation_score_mean(x)[:,1], c='b', lw=1, ls=':', label='Mean')
-     plt.axvline(x=1 + np.argmin(lra_scores), c='r', lw=1, ls=':')
-     plt.axhline(y=lra_scores.min(), c='r', lw=1, ls=':')
-     plt.axvline(x=1 + np.argmin(nmf_scores), c='k', lw=1, ls=':')
-     plt.axhline(y=nmf_scores.min(), c='k', lw=1, ls=':')
-
-     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, 0.5))
      plt.xlabel('Assumed rank')
      _ = plt.ylabel('Poisson loss of imputed values')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[99]:
+   # Out[7]:
    [[file:figure/wlra.org/select-rank-example.png]]
    :END:
-
-   Now evaluate the method more systematically.
-
-   #+NAME: poisson-rank
-   #+BEGIN_SRC ipython
-     def select_rank(x, holdout, seed=0):
-       np.random.seed(seed)
-       mask = np.random.uniform(size=x.shape) < holdout
-       y = np.ma.masked_array(x, mask=mask)
-       scores = np.array([imputation_score_pois_lra(y, rank) for rank in range(1, 10)])
-       return np.argmin(scores) + 1
-
-     def evaluate_select_rank(num_trials):
-       result = []
-       for true_rank in range(1, 5):
-         for trial in range(num_trials):
-           x, eta = simulate_pois(n=200, p=300, rank=true_rank, eta_max=2, seed=trial)
-           result.append([true_rank,
-                          trial,
-                          select_rank(x, holdout=0.1, seed=trial)
-           ])
-       result = pd.DataFrame(result)
-       result.columns = ['rank', 'trial', 'est_rank']
-       return result
-   #+END_SRC
-
-   #+RESULTS: poisson-rank
-   :RESULTS:
-   # Out[100]:
-   :END:
-
-   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-select-rank.py
-     <<imports>>
-     <<poisson-imputation>>
-     <<poisson-rank>>
-     res = evaluate_select_rank(num_trials=1)
-     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-select-rank.txt.gz', compression='gzip', sep='\t')
-   #+END_SRC
-
-   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --partition=broadwl --job-name=pois-imputation -n1 -c8
-     #!/bin/bash
-     source activate singlecell
-     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-select-rank.py
-   #+END_SRC
-
-   #+RESULTS:
-   : Submitted batch job 50422249
 
 ** Explaining held out data
 
@@ -868,11 +813,11 @@
      sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=60:00 -n1 -c28 --exclusive
      #!/bin/bash
      source activate singlecell
-     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py     
+     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 50561129
+   : Submitted batch job 50562987
    
    #+BEGIN_SRC sh
      sacct -j 50550386 -o Elapsed

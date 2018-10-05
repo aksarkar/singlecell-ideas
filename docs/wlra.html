@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-10-04 Thu 19:16 -->
+<!-- 2018-10-04 Thu 19:39 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weighted low rank approximation</title>
@@ -263,17 +263,17 @@ for the JavaScript code in this tag.
 <li><a href="#org1010fdb">EM algorithm</a></li>
 <li><a href="#orgdd7ac38">Alternative derivation</a></li>
 <li><a href="#orgb462a31">Maximizing non-Gaussian likelihoods</a></li>
-<li><a href="#org3d31068">Imputing missing values</a></li>
-<li><a href="#org935a787">Choosing the rank of the approximation</a></li>
+<li><a href="#org51fbb42">Imputing missing values</a></li>
+<li><a href="#org0c5c866">Choosing the rank of the approximation</a></li>
 </ul>
 </li>
 <li><a href="#org643a7f6">Results</a>
 <ul>
 <li><a href="#org31c72cd">Recovering low rank structure</a></li>
 <li><a href="#org64afc90">Explaining training data</a></li>
-<li><a href="#org51fbb42">Imputing missing values</a></li>
+<li><a href="#orgaae9208">Imputing missing values</a></li>
 <li><a href="#orgb6aef17">Convergence</a></li>
-<li><a href="#org0c5c866">Choosing the rank of the approximation</a></li>
+<li><a href="#org8b1c6ce">Choosing the rank of the approximation</a></li>
 <li><a href="#orgd780580">Explaining held out data</a></li>
 </ul>
 </li>
@@ -533,9 +533,9 @@ where \(S(\cdot)\) denotes the sigmoid function.
 </div>
 </div>
 
-<div id="outline-container-org3d31068" class="outline-3">
-<h3 id="org3d31068">Imputing missing values</h3>
-<div class="outline-text-3" id="text-org3d31068">
+<div id="outline-container-org51fbb42" class="outline-3">
+<h3 id="org51fbb42">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org51fbb42">
 <p>
 The EM algorithm for WLRA supports missing values by setting \(w_{ij} =
    0\).
@@ -550,9 +550,9 @@ presence/absence. We can do this by using weights \(\tilde{\mathbf{W}} \circ
 </div>
 </div>
 
-<div id="outline-container-org935a787" class="outline-3">
-<h3 id="org935a787">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org935a787">
+<div id="outline-container-org0c5c866" class="outline-3">
+<h3 id="org0c5c866">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org0c5c866">
 <p>
 The most obvious way to pick an optimal rank is to use cross-validation:
 hold out some samples, and evaluate the likelihood of the held-out samples
@@ -822,9 +822,9 @@ plt.xlabel(<span class="org-string">'Method'</span>)
 </div>
 </div>
 
-<div id="outline-container-org51fbb42" class="outline-3">
-<h3 id="org51fbb42">Imputing missing values</h3>
-<div class="outline-text-3" id="text-org51fbb42">
+<div id="outline-container-orgaae9208" class="outline-3">
+<h3 id="orgaae9208">Imputing missing values</h3>
+<div class="outline-text-3" id="text-orgaae9208">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1027,9 +1027,9 @@ n
 </div>
 </div>
 
-<div id="outline-container-org0c5c866" class="outline-3">
-<h3 id="org0c5c866">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org0c5c866">
+<div id="outline-container-org8b1c6ce" class="outline-3">
+<h3 id="org8b1c6ce">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org8b1c6ce">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1050,26 +1050,19 @@ for one simulated data set.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">eta</span> = simulate_pois(n=200, p=300, rank=3, eta_max=3, seed=0)
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">eta</span> = simulate_pois(n=200, p=300, rank=3, eta_max=2, seed=0)
 <span class="org-variable-name">mask</span> = np.random.uniform(size=x.shape) &lt; 0.25
 <span class="org-variable-name">x</span> = np.ma.masked_array(x, mask=mask)
 
 <span class="org-variable-name">query</span> = <span class="org-builtin">range</span>(1, 10)
 <span class="org-variable-name">lra_scores</span> = np.array([imputation_score_pois_lra(x, rank) <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> query])
-<span class="org-variable-name">nmf_scores</span> = np.array([imputation_score_nmf(x, rank) <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> query])
 
 plt.clf()
 plt.gcf().set_size_inches(3, 3)
-plt.plot(query, lra_scores[:,1], c=<span class="org-string">'r'</span>, lw=1, label=<span class="org-string">'PLRA'</span>)
-plt.plot(query, nmf_scores[:,1], c=<span class="org-string">'k'</span>, lw=1, label=<span class="org-string">'NMF'</span>)
+plt.plot(query, lra_scores[:,1], c=<span class="org-string">'k'</span>, lw=1, label=<span class="org-string">'PLRA'</span>)
+plt.axvline(x=1 + np.argmin(lra_scores[:,1]), c=<span class="org-string">'k'</span>, lw=1, ls=<span class="org-string">':'</span>)
+plt.axhline(y=lra_scores.<span class="org-builtin">min</span>(), c=<span class="org-string">'k'</span>, lw=1, ls=<span class="org-string">':'</span>)
 
-plt.axhline(y=imputation_score_mean(x)[:,1], c=<span class="org-string">'b'</span>, lw=1, ls=<span class="org-string">':'</span>, label=<span class="org-string">'Mean'</span>)
-plt.axvline(x=1 + np.argmin(lra_scores), c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
-plt.axhline(y=lra_scores.<span class="org-builtin">min</span>(), c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
-plt.axvline(x=1 + np.argmin(nmf_scores), c=<span class="org-string">'k'</span>, lw=1, ls=<span class="org-string">':'</span>)
-plt.axhline(y=nmf_scores.<span class="org-builtin">min</span>(), c=<span class="org-string">'k'</span>, lw=1, ls=<span class="org-string">':'</span>)
-
-plt.legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, 0.5))
 plt.xlabel(<span class="org-string">'Assumed rank'</span>)
 <span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'Poisson loss of imputed values'</span>)
 </pre>
@@ -1080,55 +1073,6 @@ plt.xlabel(<span class="org-string">'Assumed rank'</span>)
 <p><img src="figure/wlra.org/select-rank-example.png" alt="select-rank-example.png">
 </p>
 </div>
-
-<p>
-Now evaluate the method more systematically.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython" id="org1bc3a6b"><span class="org-keyword">def</span> <span class="org-function-name">select_rank</span>(x, holdout, seed=0):
-  np.random.seed(seed)
-  <span class="org-variable-name">mask</span> = np.random.uniform(size=x.shape) &lt; holdout
-  <span class="org-variable-name">y</span> = np.ma.masked_array(x, mask=mask)
-  <span class="org-variable-name">scores</span> = np.array([imputation_score_pois_lra(y, rank) <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 10)])
-  <span class="org-keyword">return</span> np.argmin(scores) + 1
-
-<span class="org-keyword">def</span> <span class="org-function-name">evaluate_select_rank</span>(num_trials):
-  <span class="org-variable-name">result</span> = []
-  <span class="org-keyword">for</span> true_rank <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 5):
-    <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
-      <span class="org-variable-name">x</span>, <span class="org-variable-name">eta</span> = simulate_pois(n=200, p=300, rank=true_rank, eta_max=2, seed=trial)
-      result.append([true_rank,
-                     trial,
-                     select_rank(x, holdout=0.1, seed=trial)
-      ])
-  <span class="org-variable-name">result</span> = pd.DataFrame(result)
-  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'rank'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'est_rank'</span>]
-  <span class="org-keyword">return</span> result
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
-&lt;&lt;poisson-imputation&gt;&gt;
-&lt;&lt;poisson-rank&gt;&gt;
-<span class="org-variable-name">res</span> = evaluate_select_rank(num_trials=1)
-res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-select-rank.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-sh">sbatch --partition=broadwl --job-name=pois-imputation -n1 -c8
-<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
-<span class="org-builtin">source</span> activate singlecell
-python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-select-rank.py
-</pre>
-</div>
-
-<pre class="example">
-Submitted batch job 50422249
-
-</pre>
 </div>
 </div>
 
@@ -1303,12 +1247,12 @@ res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singl
 sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=60:00 -n1 -c28 --exclusive
 <span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
 <span class="org-builtin">source</span> activate singlecell
-python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py     
+python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
 </pre>
 </div>
 
 <pre class="example">
-Submitted batch job 50561129
+Submitted batch job 50562987
 
 </pre>
 
@@ -1331,7 +1275,7 @@ Submitted batch job 50561129
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-10-04 Thu 19:16</p>
+<p class="date">Created: 2018-10-04 Thu 19:39</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

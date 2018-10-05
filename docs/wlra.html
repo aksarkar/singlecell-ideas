@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-10-03 Wed 16:51 -->
+<!-- 2018-10-04 Thu 19:16 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weighted low rank approximation</title>
@@ -263,16 +263,17 @@ for the JavaScript code in this tag.
 <li><a href="#org1010fdb">EM algorithm</a></li>
 <li><a href="#orgdd7ac38">Alternative derivation</a></li>
 <li><a href="#orgb462a31">Maximizing non-Gaussian likelihoods</a></li>
-<li><a href="#orga3a9eb0">Imputing missing values</a></li>
-<li><a href="#org3f6a189">Choosing the rank of the approximation</a></li>
+<li><a href="#org3d31068">Imputing missing values</a></li>
+<li><a href="#org935a787">Choosing the rank of the approximation</a></li>
 </ul>
 </li>
 <li><a href="#org643a7f6">Results</a>
 <ul>
 <li><a href="#org31c72cd">Recovering low rank structure</a></li>
-<li><a href="#orgc3378fa">Imputing missing values</a></li>
+<li><a href="#org64afc90">Explaining training data</a></li>
+<li><a href="#org51fbb42">Imputing missing values</a></li>
 <li><a href="#orgb6aef17">Convergence</a></li>
-<li><a href="#org310fe54">Choosing the rank of the approximation</a></li>
+<li><a href="#org0c5c866">Choosing the rank of the approximation</a></li>
 <li><a href="#orgd780580">Explaining held out data</a></li>
 </ul>
 </li>
@@ -520,7 +521,7 @@ distributions:
 <tr>
 <td class="org-left">Poisson</td>
 <td class="org-left">\(\ln\lambda\)</td>
-<td class="org-left">\(1 + \theta + x\exp(-\theta)\)</td>
+<td class="org-left">\(\theta + x\exp(-\theta) - 1\)</td>
 <td class="org-left">\(\exp(-\theta)\)</td>
 </tr>
 </tbody>
@@ -532,9 +533,9 @@ where \(S(\cdot)\) denotes the sigmoid function.
 </div>
 </div>
 
-<div id="outline-container-orga3a9eb0" class="outline-3">
-<h3 id="orga3a9eb0">Imputing missing values</h3>
-<div class="outline-text-3" id="text-orga3a9eb0">
+<div id="outline-container-org3d31068" class="outline-3">
+<h3 id="org3d31068">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org3d31068">
 <p>
 The EM algorithm for WLRA supports missing values by setting \(w_{ij} =
    0\).
@@ -549,9 +550,9 @@ presence/absence. We can do this by using weights \(\tilde{\mathbf{W}} \circ
 </div>
 </div>
 
-<div id="outline-container-org3f6a189" class="outline-3">
-<h3 id="org3f6a189">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org3f6a189">
+<div id="outline-container-org935a787" class="outline-3">
+<h3 id="org935a787">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org935a787">
 <p>
 The most obvious way to pick an optimal rank is to use cross-validation:
 hold out some samples, and evaluate the likelihood of the held-out samples
@@ -707,9 +708,123 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orgc3378fa" class="outline-3">
-<h3 id="orgc3378fa">Imputing missing values</h3>
-<div class="outline-text-3" id="text-orgc3378fa">
+<div id="outline-container-org64afc90" class="outline-3">
+<h3 id="org64afc90">Explaining training data</h3>
+<div class="outline-text-3" id="text-org64afc90">
+<p>
+We generate a Poisson data matrix with planted row rank structure.
+</p>
+
+<p>
+\[ \eta_{ij} = (\mathbf{L F})_{ij} \]
+\[ x_{ij} \sim \mathrm{Poisson}(\exp(\eta_{ij})) \]
+</p>
+
+<p>
+We then evaluate the Poisson likelihood of the generated data given the
+estimated parameters.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org89714ae"><span class="org-keyword">def</span> <span class="org-function-name">training_score_oracle</span>(x, eta):
+  <span class="org-keyword">return</span> st.poisson(mu=np.exp(eta)).logpmf(x).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">training_score_nmf</span>(x, rank):
+  <span class="org-keyword">return</span> st.poisson(mu=nmf(x, rank)).logpmf(x).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">training_score_grad</span>(x, rank):
+  <span class="org-keyword">import</span> wlra.pois
+  <span class="org-variable-name">m</span> = (wlra.pois.PoissonFA(n_samples=200, n_features=300, n_components=3)
+       .fit(x, atol=1e-2, max_epochs=10000))
+  <span class="org-keyword">return</span> st.poisson(mu=np.exp(m.L.dot(m.F))).logpmf(x).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">training_score_plra</span>(x, rank):
+  <span class="org-keyword">try</span>:
+    <span class="org-keyword">return</span> st.poisson(mu=np.exp(wlra.pois_lra(x, rank))).logpmf(x).<span class="org-builtin">sum</span>()
+  <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
+    <span class="org-keyword">return</span> np.nan
+
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_training</span>(rank=3, eta_max=2, num_trials=10):
+  <span class="org-variable-name">result</span> = []
+  <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">eta</span> = simulate_pois(n=200, p=300, rank=rank, eta_max=eta_max, seed=trial)
+    result.append([
+      trial,
+      training_score_oracle(x, eta),
+      training_score_nmf(x, rank),
+      training_score_grad(x, rank),
+      training_score_plra(x, rank),
+    ])
+  <span class="org-variable-name">result</span> = pd.DataFrame(result)
+  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'Oracle'</span>, <span class="org-string">'NMF'</span>, <span class="org-string">'Grad'</span>, <span class="org-string">'PLRA'</span>]
+  <span class="org-keyword">return</span> result
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
+&lt;&lt;poisson-imputation&gt;&gt;
+&lt;&lt;pois-training&gt;&gt;
+<span class="org-variable-name">res</span> = evaluate_training(num_trials=100)
+res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-train-llik.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-sh">sbatch --partition=mstephens --mem=4G --job-name=pois-train-llik --time=60:00 -n1 -c8
+<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
+<span class="org-builtin">source</span> activate singlecell
+python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-train-llik.py
+</pre>
+</div>
+
+<pre class="example">
+Submitted batch job 50561930
+
+</pre>
+
+<p>
+Read the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">pois_train_llik</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-train-llik.txt.gz'</span>, index_col=0)
+</pre>
+</div>
+
+<p>
+Plot the performance.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">methods</span> = [<span class="org-string">'NMF'</span>, <span class="org-string">'Grad'</span>, <span class="org-string">'PLRA'</span>]
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-keyword">for</span> j, method <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(methods):
+  <span class="org-variable-name">y</span> = (pois_train_llik[method] - pois_train_llik[<span class="org-string">'Oracle'</span>]).dropna()
+  <span class="org-variable-name">f</span> = st.gaussian_kde(y)
+  <span class="org-variable-name">py</span> = f(y)
+  <span class="org-variable-name">x</span> = j + .2 / py.<span class="org-builtin">max</span>() * np.random.uniform(-py, py)
+  plt.scatter(x, y, c=<span class="org-string">'k'</span>, s=4)
+plt.axhline(y=0, c=<span class="org-string">'k'</span>, ls=<span class="org-string">':'</span>, lw=1)
+plt.xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(methods)), methods)
+plt.xlim(-.5, <span class="org-builtin">len</span>(methods) - .5)
+plt.xlabel(<span class="org-string">'Method'</span>)
+<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'$\ln\,p(x \mid \hat\eta) - \ln\,p(x \mid \eta)$'</span>)
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/wlra.org/training-llik.png" alt="training-llik.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org51fbb42" class="outline-3">
+<h3 id="org51fbb42">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org51fbb42">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -912,9 +1027,9 @@ n
 </div>
 </div>
 
-<div id="outline-container-org310fe54" class="outline-3">
-<h3 id="org310fe54">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org310fe54">
+<div id="outline-container-org0c5c866" class="outline-3">
+<h3 id="org0c5c866">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org0c5c866">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1092,24 +1207,55 @@ re-scale to account for different size factors \(R_i\).
   <span class="org-variable-name">lam</span> *= test.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>) / train.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
   <span class="org-keyword">return</span> st.poisson(mu=lam).logpmf(test).mean()
 
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_mean</span>(train, test, rank):
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_mean</span>(train, test):
   <span class="org-variable-name">lam</span> = np.ones(train.shape) * train.mean(axis=0, keepdims=<span class="org-constant">True</span>)
   <span class="org-keyword">return</span> pois_llik(lam, train, test)
 
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_nmf</span>(train, test, rank):
-  <span class="org-variable-name">lam</span> = nmf(train, rank)
+<span class="org-keyword">def</span> <span class="org-function-name">rank_select</span>(train, imputation_score, max_rank, holdout=0.1):
+  <span class="org-doc">"""Search for the rank which minimizes imputation loss"""</span>
+  <span class="org-variable-name">obj</span> = np.inf
+  <span class="org-variable-name">opt</span> = 1
+  <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 100):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Randomly hold out 10% of entries to impute</span>
+    <span class="org-variable-name">x</span> = np.ma.masked_array(train, np.random.uniform(size=train.shape) &lt; holdout)
+    <span class="org-variable-name">res</span> = imputation_score(x, rank)[1]
+    <span class="org-keyword">if</span> res &lt; obj:
+      <span class="org-variable-name">opt</span> = rank
+      <span class="org-variable-name">obj</span> = res
+    <span class="org-keyword">else</span>:
+      <span class="org-keyword">break</span>
+  <span class="org-keyword">return</span> opt
+
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_plra</span>(train, test):
+  <span class="org-variable-name">opt_rank</span> = rank_select(train, imputation_score_pois_lra, max_rank=10)
+  <span class="org-variable-name">lam</span> = np.exp(wlra.pois_lra(train, opt_rank))
+  <span class="org-keyword">return</span> pois_llik(lam, train, test)
+
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_nmf</span>(train, test):
+  <span class="org-variable-name">opt_rank</span> = rank_select(train, imputation_score_nmf, max_rank=100)
+  <span class="org-variable-name">lam</span> = nmf(train, opt_rank)
   <span class="org-keyword">return</span> pois_llik(lam, train, test)
 
 <span class="org-keyword">def</span> <span class="org-function-name">generalization_score_hpf</span>(train, test, rank):
+  <span class="org-keyword">import</span> hpfrec
   <span class="org-variable-name">x</span> = pd.DataFrame(train).reset_index().melt(id_vars=[<span class="org-string">'index'</span>])
   <span class="org-variable-name">x.columns</span> = [<span class="org-string">'UserId'</span>, <span class="org-string">'ItemId'</span>, <span class="org-string">'Count'</span>]
-  <span class="org-variable-name">m</span> = hpfrec.HPF(k=rank, produce_dicts=<span class="org-constant">False</span>, users_per_batch=10).fit(x)
+  <span class="org-variable-name">m</span> = hpfrec.HPF(k=rank, produce_dicts=<span class="org-constant">False</span>, verbose=<span class="org-constant">False</span>).fit(x)
   <span class="org-variable-name">lam</span> = m.Theta.dot(m.Beta.T)
   <span class="org-keyword">return</span> pois_llik(lam, train, test)
 
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_lra</span>(train, test, rank):
-  <span class="org-variable-name">eta</span> = wlra.pois_lra(train, rank)
-  <span class="org-variable-name">lam</span> = np.where(eta &lt; 60, np.exp(eta), eta)
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_scvi</span>(train, test):
+  <span class="org-keyword">from</span> scvi.dataset <span class="org-keyword">import</span> GeneExpressionDataset
+  <span class="org-keyword">from</span> scvi.inference <span class="org-keyword">import</span> UnsupervisedTrainer
+  <span class="org-keyword">from</span> scvi.models <span class="org-keyword">import</span> VAE
+  <span class="org-variable-name">data</span> = GeneExpressionDataset(*GeneExpressionDataset.get_attributes_from_matrix(train))
+  <span class="org-variable-name">vae</span> = VAE(n_input=train.shape[1])
+  <span class="org-variable-name">m</span> = UnsupervisedTrainer(vae, data, verbose=<span class="org-constant">False</span>)
+  m.train()
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Training permuted the data for minibatching. Unpermute before "imputing"</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">(estimating lambda)</span>
+  <span class="org-variable-name">lam</span> = np.vstack([m.train_set.sequential().imputation(),
+                   m.test_set.sequential().imputation()])
   <span class="org-keyword">return</span> pois_llik(lam, train, test)
 
 <span class="org-keyword">def</span> <span class="org-function-name">train_test_split</span>(x, p=0.5):
@@ -1122,37 +1268,39 @@ re-scale to account for different size factors \(R_i\).
   <span class="org-variable-name">keep_genes</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/genes-pass-filter.txt'</span>, index_col=0, header=<span class="org-constant">None</span>)
   <span class="org-variable-name">x</span> = (pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-counts.txt.gz'</span>, index_col=0)
        .loc[keep_genes.values.ravel(),keep_samples.values.ravel()]
-       .values)
+       .values.T)
   <span class="org-keyword">return</span> x
 
 <span class="org-keyword">def</span> <span class="org-function-name">evaluate_generalization</span>(data, num_trials):
   <span class="org-variable-name">result</span> = []
   <span class="org-variable-name">x</span> = data()
-  <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> (1,):
-    <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
-      <span class="org-variable-name">train</span>, <span class="org-variable-name">test</span> = train_test_split(x)
-      result.append([trial,
-                     generalization_score_mean(train, test, rank),
-                     generalization_score_nmf(train, test, rank),
-                     generalization_score_hpf(train, test, rank),
-                     generalization_score_lra(train, test, rank)])
+  <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
+    <span class="org-variable-name">train</span>, <span class="org-variable-name">test</span> = train_test_split(x)
+    result.append([trial,
+                   generalization_score_mean(train, test),
+                   generalization_score_nmf(train, test),
+                   <span class="org-comment-delimiter"># </span><span class="org-comment">generalization_score_hpf(train, test, rank=50),</span>
+                   <span class="org-comment-delimiter"># </span><span class="org-comment">generalization_score_plra(train, test),</span>
+                   generalization_score_scvi(train, test)
+    ])
   <span class="org-variable-name">result</span> = pd.DataFrame(result)
-  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'NMF'</span>, <span class="org-string">'HPF'</span>, <span class="org-string">'PLRA'</span>]
+  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'Mean'</span>, <span class="org-string">'NMF'</span>, <span class="org-string">'HBPF'</span>, <span class="org-string">'scVI'</span>]
   <span class="org-keyword">return</span> result
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
-<span class="org-keyword">import</span> hpfrec
+&lt;&lt;poisson-imputation&gt;&gt;
 &lt;&lt;generalization&gt;&gt;
 <span class="org-variable-name">res</span> = evaluate_generalization(read_ipsc, 1)
-res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-sh">sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=60:00 -n1 -c28 --exclusive
+<pre class="src src-sh"><span class="org-comment-delimiter"># </span><span class="org-comment">sbatch --partition=gpu2 --gres=gpu:1 --job-name=pois-generalization --mem=16G --time=60:00 -c4</span>
+sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=60:00 -n1 -c28 --exclusive
 <span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
 <span class="org-builtin">source</span> activate singlecell
 python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py     
@@ -1160,7 +1308,21 @@ python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generali
 </div>
 
 <pre class="example">
-Submitted batch job 50422053
+Submitted batch job 50561129
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-sh">sacct -j 50550386 -o Elapsed
+</pre>
+</div>
+
+<pre class="example">
+   Elapsed 
+---------- 
+  00:04:49 
+  00:04:49 
+  00:04:49 
 
 </pre>
 </div>
@@ -1169,7 +1331,7 @@ Submitted batch job 50422053
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-10-03 Wed 16:51</p>
+<p class="date">Created: 2018-10-04 Thu 19:16</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

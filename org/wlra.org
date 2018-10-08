@@ -862,12 +862,20 @@
        return pois_llik(lam, train, test)
 
      def generalization_score_hpf(train, test, rank):
-       import hpfrec
-       x = pd.DataFrame(train).reset_index().melt(id_vars=['index'])
-       x.columns = ['UserId', 'ItemId', 'Count']
-       m = hpfrec.HPF(k=rank, produce_dicts=False, verbose=False).fit(x)
-       lam = m.Theta.dot(m.Beta.T)
-       return pois_llik(lam, train, test)
+       import scHPF.preprocessing
+       import scHPF.train
+       import tempfile
+       with tempfile.TemporaryDirectory(prefix='/scratch/midway2/aksarkar/ideas/') as d:
+         # scHPF assumes genes x cells
+         scHPF.preprocessing.split_dataset_hpf(train.T, outdir=d)
+         opt = scHPF.train.run_trials(
+           indir=d, outdir=d, prefix='',
+           nfactors=rank, a=0.3, ap=1, bp=1, c=0.3, cp=1, dp=1,
+           # This is broken when we call the API directly
+           logging_options={'log_phi': False})
+         L = np.load(f'{opt}/beta_invrate.npy') * np.load(f'{opt}/beta_shape.npy')
+         F = np.load(f'{opt}/theta_invrate.npy') * np.load(f'{opt}/theta_shape.npy')
+         return pois_llik(L.dot(F.T), train, test)
 
      def generalization_score_scvi(train, test):
        from scvi.dataset import GeneExpressionDataset
@@ -913,7 +921,7 @@
          result.append([trial,
                         generalization_score_mean(train, test),
                         generalization_score_nmf(train, test),
-                        # generalization_score_hpf(train, test, rank=50),
+                        generalization_score_hpf(train, test, rank=50),
                         # generalization_score_plra(train, test),
                         generalization_score_scvi(train, test)
          ])

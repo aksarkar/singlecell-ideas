@@ -14,7 +14,7 @@
   #+CALL: ipython3(memory="4G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 50819640
+  : Submitted batch job 50871731
 
   #+BEGIN_SRC ipython
     %matplotlib inline
@@ -344,22 +344,19 @@
        return st.poisson(mu=nmf(x, rank)).logpmf(x).sum()
 
      def training_score_grad(x, rank):
-       import wlra.pois
-       m = (wlra.pois.PoissonFA(n_samples=200, n_features=300, n_components=rank)
-            .fit(x, atol=1e-2, max_epochs=10000))
+       import wlra.grad
+       m = (wlra.grad.PoissonFA(n_samples=200, n_features=300, n_components=rank)
+            .fit(x, atol=1e-3, max_epochs=10000))
        return st.poisson(mu=np.exp(m.L.dot(m.F))).logpmf(x).sum()
 
      def training_score_plra(x, rank):
        try:
-         return st.poisson(mu=np.exp(wlra.pois_lra(x, rank))).logpmf(x).sum()
+         return st.poisson(mu=np.exp(wlra.plra(x, rank=rank, max_outer_iters=100, check_converged=True))).logpmf(x).sum()
        except RuntimeError:
          return np.nan
 
-     def training_score_plra1(x, rank, eps=.5):
-       eta0 = np.where(x > 0, np.log(x), np.log(eps))
-       w = np.exp(-eta0)
-       target = eta0 + x * w - 1
-       return st.poisson(mu=np.exp(wlra.wlra(target, w, rank=rank))).logpmf(x).sum()
+     def training_score_plra1(x, rank):
+       return st.poisson(mu=np.exp(wlra.plra(x, rank=rank, max_outer_iters=1))).logpmf(x).sum()
 
      def evaluate_training(rank=3, eta_max=2, num_trials=10):
        result = []
@@ -399,7 +396,7 @@
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 50813277
+   : Submitted batch job 50865668
 
    Read the results.
 
@@ -409,7 +406,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[49]:
+   # Out[3]:
    :END:
 
    Plot the performance.
@@ -418,6 +415,7 @@
      methods = ['NMF', 'Grad', 'PLRA', 'PLRA1']
      plt.clf()
      plt.gcf().set_size_inches(3, 3)
+     plt.yscale('symlog', linthreshy=100)
      for j, method in enumerate(methods):
        y = (pois_train_llik[method] - pois_train_llik['Oracle']).dropna()
        f = st.gaussian_kde(y)
@@ -433,7 +431,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[51]:
+   # Out[9]:
    [[file:figure/wlra.org/training-llik.png]]
    :END:
 
@@ -487,16 +485,16 @@
        except RuntimeError:
          return [np.nan for f in losses]
 
-     def imputation_score_pois_lra(x, rank, max_retries=10):
-       for _ in range(max_retries):
-         try:
-           res = np.exp(wlra.pois_lra(x, rank=rank, max_outer_iters=100))
-           return loss(res[x.mask], x.data[x.mask])
-         except RuntimeError as e:
-           continue
-       import uuid
-       x.dump(f'trace/{uuid.uuid1()}.pkl')
-       return [np.nan for f in losses]
+     def imputation_score_plra1(x, rank):
+       res = np.exp(wlra.pois_lra(x, rank=rank, max_outer_iters=1))
+       return loss(res[x.mask], x.data[x.mask])
+
+     def imputation_score_plra(x, rank):
+       try:
+         res = np.exp(wlra.pois_lra(x, rank=rank, max_outer_iters=100, check_converged=True))
+         return loss(res[x.mask], x.data[x.mask])
+       except RuntimeError:
+         return [np.nan for f in losses]
 
      def evaluate_pois_imputation(rank=3, holdout=0.25, eta_max=None, num_trials=10):
        result = []
@@ -517,7 +515,7 @@
 
    #+RESULTS: poisson-imputation
    :RESULTS:
-   # Out[4]:
+   # Out[11]:
    :END:
 
    Importantly, we assume \(\eta\) is low rank, and not that \(\exp(\eta)\) is
@@ -543,20 +541,19 @@
    #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-imputation.py
      <<imports>>
      <<poisson-imputation>>
-     res = evaluate_pois_imputation(eta_max=2.5, num_trials=100)
+     res = evaluate_pois_imputation(eta_max=2, num_trials=100)
      res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-imputation.txt.gz', compression='gzip', sep='\t')
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --partition=broadwl --job-name=pois-imputation -n1 -c8
+     sbatch --partition=broadwl --job-name=pois-imputation -n1 -c28 --exclusive
      #!/bin/bash
      source activate singlecell
-     rm -f /scratch/midway2/aksarkar/ideas/trace/*.pkl
      python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-imputation.py
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 50501585
+   : Submitted batch job 50872498
 
    Read the results.
 
@@ -673,27 +670,20 @@
 
    #+BEGIN_SRC ipython
      x, eta = simulate_pois(n=200, p=300, rank=3, eta_max=4)
-     eta0 = np.where(x > 0, np.log(x), np.log(0.5))
-     w = np.exp(-eta0)
-     target = eta0 + x * w - 1
-     etahat = wlra.wlra(target, w, rank=3)
+     etahat_plra1 = wlra.plra(x, rank=3, max_outer_iters=1)
+     etahat_plra2 = wlra.plra(x, rank=3, max_outer_iters=2)
+     etahat_plra = wlra.plra(x, rank=3, max_outer_iters=100, check_converged=True)
 
-     w = np.exp(-etahat)
-     target = etahat + x * w - 1
-     etahat1 = wlra.wlra(target, w, rank=3)
-
-     etahat2 = wlra.pois_lra(x, rank=3)
-
-     import wlra.pois
-     m = wlra.pois.PoissonFA(n_samples=200, n_features=300, n_components=3, log_link=True).fit(x, atol=1e-2, max_epochs=10000)
-     etahat3 = m.L.dot(m.F)
+     import wlra.grad
+     m = wlra.grad.PoissonFA(n_samples=200, n_features=300, n_components=3, log_link=True).fit(x, atol=1e-2, max_epochs=10000)
+     etahat_grad = m.L.dot(m.F)
 
      lamhat = nmf(x, 3)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[47]:
+   # Out[13]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/wlra.org/etahat.png
@@ -711,16 +701,16 @@
      for a in ax.ravel()[:-2]:
        a.plot([-lim, lim], [-lim, lim], c='r', lw=1, ls=':')
 
-     ax[0][0].scatter(eta, etahat, c='k', s=4, alpha=0.1)
+     ax[0][0].scatter(eta, etahat_plra1, c='k', s=4, alpha=0.1)
      ax[0][0].set_title('PLRA1')
 
-     ax[0][1].scatter(eta, etahat1, c='k', s=4, alpha=0.1)
+     ax[0][1].scatter(eta, etahat_plra2, c='k', s=4, alpha=0.1)
      ax[0][1].set_title('PLRA2')
 
-     ax[0][2].scatter(eta, etahat2, c='k', s=4, alpha=0.1)
+     ax[0][2].scatter(eta, etahat_plra, c='k', s=4, alpha=0.1)
      ax[0][2].set_title('PLRA')
 
-     ax[1][0].scatter(eta, etahat3, c='k', s=4, alpha=0.1)
+     ax[1][0].scatter(eta, etahat_grad, c='k', s=4, alpha=0.1)
      ax[1][0].set_title('Grad')
 
      min_ = lamhat.min()
@@ -740,7 +730,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[67]:
+   # Out[15]:
    [[file:figure/wlra.org/etahat.png]]
    :END:
 

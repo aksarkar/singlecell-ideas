@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-10-08 Mon 18:14 -->
+<!-- 2018-10-09 Tue 16:04 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weighted low rank approximation</title>
@@ -263,17 +263,17 @@ for the JavaScript code in this tag.
 <li><a href="#org1010fdb">EM algorithm</a></li>
 <li><a href="#orgdd7ac38">Alternative derivation</a></li>
 <li><a href="#orgb462a31">Maximizing non-Gaussian likelihoods</a></li>
-<li><a href="#orgda41c3a">Imputing missing values</a></li>
-<li><a href="#org315bd15">Choosing the rank of the approximation</a></li>
+<li><a href="#orgc035e15">Imputing missing values</a></li>
+<li><a href="#org15db90d">Choosing the rank of the approximation</a></li>
 </ul>
 </li>
 <li><a href="#org643a7f6">Results</a>
 <ul>
 <li><a href="#org31c72cd">Recovering low rank structure</a></li>
 <li><a href="#org64afc90">Explaining training data</a></li>
-<li><a href="#orgc035e15">Imputing missing values</a></li>
+<li><a href="#org622533c">Imputing missing values</a></li>
 <li><a href="#orgb6aef17">Convergence</a></li>
-<li><a href="#org15db90d">Choosing the rank of the approximation</a></li>
+<li><a href="#orgc1ad970">Choosing the rank of the approximation</a></li>
 <li><a href="#orgd780580">Explaining held out data</a></li>
 </ul>
 </li>
@@ -533,9 +533,9 @@ where \(S(\cdot)\) denotes the sigmoid function.
 </div>
 </div>
 
-<div id="outline-container-orgda41c3a" class="outline-3">
-<h3 id="orgda41c3a">Imputing missing values</h3>
-<div class="outline-text-3" id="text-orgda41c3a">
+<div id="outline-container-orgc035e15" class="outline-3">
+<h3 id="orgc035e15">Imputing missing values</h3>
+<div class="outline-text-3" id="text-orgc035e15">
 <p>
 The EM algorithm for WLRA supports missing values by setting \(w_{ij} =
    0\).
@@ -550,9 +550,9 @@ presence/absence. We can do this by using weights \(\tilde{\mathbf{W}} \circ
 </div>
 </div>
 
-<div id="outline-container-org315bd15" class="outline-3">
-<h3 id="org315bd15">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org315bd15">
+<div id="outline-container-org15db90d" class="outline-3">
+<h3 id="org15db90d">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org15db90d">
 <p>
 The most obvious way to pick an optimal rank is to use cross-validation:
 hold out some samples, and evaluate the likelihood of the held-out samples
@@ -733,22 +733,19 @@ estimated parameters.
   <span class="org-keyword">return</span> st.poisson(mu=nmf(x, rank)).logpmf(x).<span class="org-builtin">sum</span>()
 
 <span class="org-keyword">def</span> <span class="org-function-name">training_score_grad</span>(x, rank):
-  <span class="org-keyword">import</span> wlra.pois
-  <span class="org-variable-name">m</span> = (wlra.pois.PoissonFA(n_samples=200, n_features=300, n_components=rank)
-       .fit(x, atol=1e-2, max_epochs=10000))
+  <span class="org-keyword">import</span> wlra.grad
+  <span class="org-variable-name">m</span> = (wlra.grad.PoissonFA(n_samples=200, n_features=300, n_components=rank)
+       .fit(x, atol=1e-3, max_epochs=10000))
   <span class="org-keyword">return</span> st.poisson(mu=np.exp(m.L.dot(m.F))).logpmf(x).<span class="org-builtin">sum</span>()
 
 <span class="org-keyword">def</span> <span class="org-function-name">training_score_plra</span>(x, rank):
   <span class="org-keyword">try</span>:
-    <span class="org-keyword">return</span> st.poisson(mu=np.exp(wlra.pois_lra(x, rank))).logpmf(x).<span class="org-builtin">sum</span>()
+    <span class="org-keyword">return</span> st.poisson(mu=np.exp(wlra.plra(x, rank=rank, max_outer_iters=100, check_converged=<span class="org-constant">True</span>))).logpmf(x).<span class="org-builtin">sum</span>()
   <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
     <span class="org-keyword">return</span> np.nan
 
-<span class="org-keyword">def</span> <span class="org-function-name">training_score_plra1</span>(x, rank, eps=.5):
-  <span class="org-variable-name">eta0</span> = np.where(x &gt; 0, np.log(x), np.log(eps))
-  <span class="org-variable-name">w</span> = np.exp(-eta0)
-  <span class="org-variable-name">target</span> = eta0 + x * w - 1
-  <span class="org-keyword">return</span> st.poisson(mu=np.exp(wlra.wlra(target, w, rank=rank))).logpmf(x).<span class="org-builtin">sum</span>()
+<span class="org-keyword">def</span> <span class="org-function-name">training_score_plra1</span>(x, rank):
+  <span class="org-keyword">return</span> st.poisson(mu=np.exp(wlra.plra(x, rank=rank, max_outer_iters=1))).logpmf(x).<span class="org-builtin">sum</span>()
 
 <span class="org-keyword">def</span> <span class="org-function-name">evaluate_training</span>(rank=3, eta_max=2, num_trials=10):
   <span class="org-variable-name">result</span> = []
@@ -786,7 +783,7 @@ python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-train-ll
 </div>
 
 <pre class="example">
-Submitted batch job 50813277
+Submitted batch job 50865668
 
 </pre>
 
@@ -807,6 +804,7 @@ Plot the performance.
 <pre class="src src-ipython"><span class="org-variable-name">methods</span> = [<span class="org-string">'NMF'</span>, <span class="org-string">'Grad'</span>, <span class="org-string">'PLRA'</span>, <span class="org-string">'PLRA1'</span>]
 plt.clf()
 plt.gcf().set_size_inches(3, 3)
+plt.yscale(<span class="org-string">'symlog'</span>, linthreshy=100)
 <span class="org-keyword">for</span> j, method <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(methods):
   <span class="org-variable-name">y</span> = (pois_train_llik[method] - pois_train_llik[<span class="org-string">'Oracle'</span>]).dropna()
   <span class="org-variable-name">f</span> = st.gaussian_kde(y)
@@ -829,9 +827,9 @@ plt.xlabel(<span class="org-string">'Method'</span>)
 </div>
 </div>
 
-<div id="outline-container-orgc035e15" class="outline-3">
-<h3 id="orgc035e15">Imputing missing values</h3>
-<div class="outline-text-3" id="text-orgc035e15">
+<div id="outline-container-org622533c" class="outline-3">
+<h3 id="org622533c">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org622533c">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -885,16 +883,16 @@ against non-negative matrix factorization (<a href="https://papers.nips.cc/paper
   <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
     <span class="org-keyword">return</span> [np.nan <span class="org-keyword">for</span> f <span class="org-keyword">in</span> losses]
 
-<span class="org-keyword">def</span> <span class="org-function-name">imputation_score_pois_lra</span>(x, rank, max_retries=10):
-  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_retries):
-    <span class="org-keyword">try</span>:
-      <span class="org-variable-name">res</span> = np.exp(wlra.pois_lra(x, rank=rank, max_outer_iters=100))
-      <span class="org-keyword">return</span> loss(res[x.mask], x.data[x.mask])
-    <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span> <span class="org-keyword">as</span> e:
-      <span class="org-keyword">continue</span>
-  <span class="org-keyword">import</span> uuid
-  x.dump(f<span class="org-string">'trace/{uuid.uuid1()}.pkl'</span>)
-  <span class="org-keyword">return</span> [np.nan <span class="org-keyword">for</span> f <span class="org-keyword">in</span> losses]
+<span class="org-keyword">def</span> <span class="org-function-name">imputation_score_plra1</span>(x, rank):
+  <span class="org-variable-name">res</span> = np.exp(wlra.pois_lra(x, rank=rank, max_outer_iters=1))
+  <span class="org-keyword">return</span> loss(res[x.mask], x.data[x.mask])
+
+<span class="org-keyword">def</span> <span class="org-function-name">imputation_score_plra</span>(x, rank):
+  <span class="org-keyword">try</span>:
+    <span class="org-variable-name">res</span> = np.exp(wlra.pois_lra(x, rank=rank, max_outer_iters=100, check_converged=<span class="org-constant">True</span>))
+    <span class="org-keyword">return</span> loss(res[x.mask], x.data[x.mask])
+  <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
+    <span class="org-keyword">return</span> [np.nan <span class="org-keyword">for</span> f <span class="org-keyword">in</span> losses]
 
 <span class="org-keyword">def</span> <span class="org-function-name">evaluate_pois_imputation</span>(rank=3, holdout=0.25, eta_max=<span class="org-constant">None</span>, num_trials=10):
   <span class="org-variable-name">result</span> = []
@@ -936,22 +934,21 @@ array([[ 12,  12,  11,  12,  12,  11,  11,  12,  12,  12],
 <div class="org-src-container">
 <pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
 &lt;&lt;poisson-imputation&gt;&gt;
-<span class="org-variable-name">res</span> = evaluate_pois_imputation(eta_max=2.5, num_trials=100)
+<span class="org-variable-name">res</span> = evaluate_pois_imputation(eta_max=2, num_trials=100)
 res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-imputation.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-sh">sbatch --partition=broadwl --job-name=pois-imputation -n1 -c8
+<pre class="src src-sh">sbatch --partition=broadwl --job-name=pois-imputation -n1 -c28 --exclusive
 <span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
 <span class="org-builtin">source</span> activate singlecell
-rm -f /scratch/midway2/aksarkar/ideas/trace/*.pkl
 python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-imputation.py
 </pre>
 </div>
 
 <pre class="example">
-Submitted batch job 50501585
+Submitted batch job 50872498
 
 </pre>
 
@@ -1077,20 +1074,13 @@ Look at the estimates against the true eta for a simple problem.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">eta</span> = simulate_pois(n=200, p=300, rank=3, eta_max=4)
-<span class="org-variable-name">eta0</span> = np.where(x &gt; 0, np.log(x), np.log(0.5))
-<span class="org-variable-name">w</span> = np.exp(-eta0)
-<span class="org-variable-name">target</span> = eta0 + x * w - 1
-<span class="org-variable-name">etahat</span> = wlra.wlra(target, w, rank=3)
+<span class="org-variable-name">etahat_plra1</span> = wlra.plra(x, rank=3, max_outer_iters=1)
+<span class="org-variable-name">etahat_plra2</span> = wlra.plra(x, rank=3, max_outer_iters=2)
+<span class="org-variable-name">etahat_plra</span> = wlra.plra(x, rank=3, max_outer_iters=100, check_converged=<span class="org-constant">True</span>)
 
-<span class="org-variable-name">w</span> = np.exp(-etahat)
-<span class="org-variable-name">target</span> = etahat + x * w - 1
-<span class="org-variable-name">etahat1</span> = wlra.wlra(target, w, rank=3)
-
-<span class="org-variable-name">etahat2</span> = wlra.pois_lra(x, rank=3)
-
-<span class="org-keyword">import</span> wlra.pois
-<span class="org-variable-name">m</span> = wlra.pois.PoissonFA(n_samples=200, n_features=300, n_components=3, log_link=<span class="org-constant">True</span>).fit(x, atol=1e-2, max_epochs=10000)
-<span class="org-variable-name">etahat3</span> = m.L.dot(m.F)
+<span class="org-keyword">import</span> wlra.grad
+<span class="org-variable-name">m</span> = wlra.grad.PoissonFA(n_samples=200, n_features=300, n_components=3, log_link=<span class="org-constant">True</span>).fit(x, atol=1e-2, max_epochs=10000)
+<span class="org-variable-name">etahat_grad</span> = m.L.dot(m.F)
 
 <span class="org-variable-name">lamhat</span> = nmf(x, 3)
 </pre>
@@ -1111,16 +1101,16 @@ plt.gcf().set_size_inches(9, 5)
 <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.ravel()[:-2]:
   a.plot([-lim, lim], [-lim, lim], c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
 
-ax[0][0].scatter(eta, etahat, c=<span class="org-string">'k'</span>, s=4, alpha=0.1)
+ax[0][0].scatter(eta, etahat_plra1, c=<span class="org-string">'k'</span>, s=4, alpha=0.1)
 ax[0][0].set_title(<span class="org-string">'PLRA1'</span>)
 
-ax[0][1].scatter(eta, etahat1, c=<span class="org-string">'k'</span>, s=4, alpha=0.1)
+ax[0][1].scatter(eta, etahat_plra2, c=<span class="org-string">'k'</span>, s=4, alpha=0.1)
 ax[0][1].set_title(<span class="org-string">'PLRA2'</span>)
 
-ax[0][2].scatter(eta, etahat2, c=<span class="org-string">'k'</span>, s=4, alpha=0.1)
+ax[0][2].scatter(eta, etahat_plra, c=<span class="org-string">'k'</span>, s=4, alpha=0.1)
 ax[0][2].set_title(<span class="org-string">'PLRA'</span>)
 
-ax[1][0].scatter(eta, etahat3, c=<span class="org-string">'k'</span>, s=4, alpha=0.1)
+ax[1][0].scatter(eta, etahat_grad, c=<span class="org-string">'k'</span>, s=4, alpha=0.1)
 ax[1][0].set_title(<span class="org-string">'Grad'</span>)
 
 <span class="org-variable-name">min_</span> = lamhat.<span class="org-builtin">min</span>()
@@ -1147,9 +1137,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org15db90d" class="outline-3">
-<h3 id="org15db90d">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org15db90d">
+<div id="outline-container-orgc1ad970" class="outline-3">
+<h3 id="orgc1ad970">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-orgc1ad970">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1412,7 +1402,7 @@ Submitted batch job 50610089
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-10-08 Mon 18:14</p>
+<p class="date">Created: 2018-10-09 Tue 16:04</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

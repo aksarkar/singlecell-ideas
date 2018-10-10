@@ -14,7 +14,7 @@
   #+CALL: ipython3(memory="4G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 50871731
+  : Submitted batch job 50904131
 
   #+BEGIN_SRC ipython
     %matplotlib inline
@@ -486,12 +486,15 @@
          return [np.nan for f in losses]
 
      def imputation_score_plra1(x, rank):
-       res = np.exp(wlra.pois_lra(x, rank=rank, max_outer_iters=1))
-       return loss(res[x.mask], x.data[x.mask])
+       try:
+         res = np.exp(wlra.plra(x, rank=rank, max_outer_iters=1))
+         return loss(res[x.mask], x.data[x.mask])
+       except RuntimeError:
+         return [np.nan for f in losses]
 
      def imputation_score_plra(x, rank):
        try:
-         res = np.exp(wlra.pois_lra(x, rank=rank, max_outer_iters=100, check_converged=True))
+         res = np.exp(wlra.plra(x, rank=rank, max_outer_iters=100, check_converged=True))
          return loss(res[x.mask], x.data[x.mask])
        except RuntimeError:
          return [np.nan for f in losses]
@@ -505,11 +508,13 @@
            [[trial],
             imputation_score_mean(x),
             imputation_score_nmf(x, rank),
-            imputation_score_pois_lra(x, rank, max_retries=1),
+            imputation_score_plra(x, rank),
+            imputation_score_plra1(x, rank),
            ])))
        result = pd.DataFrame(result)
        result.columns = ['trial', 'rmse_mean', 'pois_loss_mean', 'rmse_nmf',
-                         'pois_loss_nmf', 'rmse_plra', 'pois_loss_plra']
+                         'pois_loss_nmf', 'rmse_plra', 'pois_loss_plra',
+                         'rmse_plra1', 'pois_loss_plra1']
        return result
    #+END_SRC
 
@@ -541,7 +546,7 @@
    #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-imputation.py
      <<imports>>
      <<poisson-imputation>>
-     res = evaluate_pois_imputation(eta_max=2, num_trials=100)
+     res = evaluate_pois_imputation(eta_max=5, num_trials=100)
      res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-imputation.txt.gz', compression='gzip', sep='\t')
    #+END_SRC
 
@@ -553,7 +558,7 @@
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 50872498
+   : Submitted batch job 50884739
 
    Read the results.
 
@@ -563,18 +568,18 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[61]:
+   # Out[3]:
    :END:
 
    Plot the performance.
 
    #+BEGIN_SRC ipython :ipyfile figure/wlra.org/pois-imputation.png
      T = results_pois_imputation.dropna()
+     methods = ['nmf', 'plra', 'plra1']
 
      plt.clf()
      fig, ax = plt.subplots(1, 2, sharey=True)
      fig.set_size_inches(5.5, 3)
-     methods = ['nmf', 'plra']
      for i, (loss_, name) in enumerate(zip(['rmse', 'pois_loss'], ['RMSE', 'Poisson loss'])):
        for j, method in enumerate(methods):
          y = T[f'{loss_}_{method}'] - T[f'{loss_}_mean']
@@ -585,7 +590,7 @@
        ax[i].axhline(y=0, c='k', ls=':', lw=1)
        ax[i].set_xticks(range(len(methods)))
        ax[i].set_xticklabels([x.upper() for x in methods])
-       ax[i].set_xlim(-.5, 1.5)
+       ax[i].set_xlim(-.5, len(methods) - .5)
        ax[i].set_title(name)
        ax[i].set_xlabel('Method')
      ax[0].set_ylabel('Difference in loss from baseline')
@@ -594,8 +599,31 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[68]:
+   # Out[9]:
    [[file:figure/wlra.org/pois-imputation.png]]
+   :END:
+
+   Look at the difference between PLRA and PLRA1.
+
+   #+BEGIN_SRC ipython :ipyfile figure/wlra.org/plra-plra1-imputation.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     y = T['pois_loss_plra1'] - T['pois_loss_plra']
+     f = st.gaussian_kde(y)
+     py = f(y)
+     x = .2 / py.max() * np.random.uniform(-py, py)
+     plt.scatter(x, y, c='k', s=4)
+     plt.axhline(y=0, c='k', lw=1, ls=':')
+     plt.xticks([0], ['PLRA1'])
+     plt.xlim(-.5, .5)
+     plt.xlabel('Method')
+     _ = plt.ylabel('Difference in Poisson loss from PLRA')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   [[file:figure/wlra.org/plra-plra1-imputation.png]]
    :END:
 
 ** Convergence

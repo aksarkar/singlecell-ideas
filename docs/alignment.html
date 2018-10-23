@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-08-21 Tue 11:46 -->
+<!-- 2018-10-22 Mon 16:59 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Single cell alignment</title>
@@ -227,6 +227,28 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
@@ -236,7 +258,19 @@ for the JavaScript code in this tag.
 <div id="text-table-of-contents">
 <ul>
 <li><a href="#org5813f56">Introduction</a></li>
+<li><a href="#org780c4ed">Methods</a>
+<ul>
+<li><a href="#org7261250">Variational auto-encoder</a></li>
+<li><a href="#orgc1db25f">Adversarial autoencoder</a></li>
+<li><a href="#orgb69abeb">Generator network for incremental training</a></li>
+</ul>
+</li>
+<li><a href="#org0ee2847">Results</a>
+<ul>
+<li><a href="#org6ee49a5">Sanity checks</a></li>
 <li><a href="#org08dd0b0">Download the data</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -281,7 +315,7 @@ the quality of the alignment. Intuitively, after aligning the data (in low
 dimensional space), it should not be possible to successfully classify
 points as coming from different data sets.</li>
 
-<li>We propose an adversarial auto-encoding architecture (Makzhani et al 2015)
+<li>We propose an adversarial auto-encoding architecture (<a href="https://arxiv.org/abs/1511.05644">Makhzani et al 2015</a>)
 which simultaneously: (1) explains the observed data (by maximizing the
 evidence lower bound) and removes data-set specific differences (by
 maximizing the cross-entropy loss), (2) learns a separate generative model
@@ -302,9 +336,307 @@ as the basis for other researchers to align novel experimental data.</li>
 </div>
 </div>
 
-<div id="outline-container-org08dd0b0" class="outline-2">
-<h2 id="org08dd0b0">Download the data</h2>
-<div class="outline-text-2" id="text-org08dd0b0">
+<div id="outline-container-org780c4ed" class="outline-2">
+<h2 id="org780c4ed">Methods</h2>
+<div class="outline-text-2" id="text-org780c4ed">
+</div>
+<div id="outline-container-org7261250" class="outline-3">
+<h3 id="org7261250">Variational auto-encoder</h3>
+<div class="outline-text-3" id="text-org7261250">
+<p>
+Suppose we want to fit a latent variable model:
+</p>
+
+<p>
+\[ \mathbf{x}_i \mid \mathbf{z}_i, \theta \sim g(\mathbf{z}_i, \theta) \]
+</p>
+
+<p>
+\[ \mathbf{z}_i \sim N(0, \sigma^2 \mathbf{I}) \]
+</p>
+
+<p>
+where \(\mathbf{x}_i \in \mathbb{R}^p\), \(\mathbf{z}_i \in \mathbb{R}^d\),
+\(d \ll p\).
+</p>
+
+<p>
+Assuming \(g(\mathbf{z_i}) = \mathbf{W z}_i\) and marginalizing over
+\(\mathbf{z}_i\), we recover PPCA (Tipping 1999).
+</p>
+
+<p>
+Here, we instead pursue an approach where \(g\) is parameterized by a neural
+network (<a href="https://arxiv.org/abs/1312.6114">Kingma and Welling 2014</a>,
+<a href="https://arxiv.org/abs/1401.4082">Rezende et al 2014</a>,
+<a href="http://proceedings.mlr.press/v32/titsias14.pdf">Titsias and
+Lázaro-Gredilla 2014</a>). There are several reasons to do this:
+</p>
+
+<ol class="org-ol">
+<li><b>We want to learn a nonlinear embedding of the data.</b> This is achieved by
+replacing the affine transform \(\mathbf{W Z}\) with a feed forward
+neural network, which is a recursive generalized linear model
+(<a href="http://blog.shakirm.com/2015/01/a-statistical-view-of-deep-learning-i-recursive-glms/">Mohammed
+2015</a>).</li>
+
+<li><b>We want to operate on data which cannot fit in memory.</b> This is achieved
+by using an inference network
+(<a href="http://www.cs.utoronto.ca/~hinton/absps/ws.pdf">Dayan et al
+1995</a>). The key idea is that we replace the \(n \times d\) matrix
+\(\mathbf{W}\) and \(d \times p\) matrix \(\mathbf{Z}\) with a neural
+network. The parameters of the neural network take the place of
+\(\mathbf{W}\), and the output of the neural network is
+\(\mathbf{z}_i\). Then, the size of the network is constant in the size
+of the data, and we can optimize the loss function using stochastic
+optimization over minibatches of data.</li>
+
+<li><b>We want to impose non-trivial constraints on the posterior.</b> In our
+setting, we assume we have labels \(y_i\), and the goal is to impose the
+constraint that the points with different labels are <i>not</i>
+distinguishable from each other. This is not readily expressed as a prior
+distribution on \((\mathbf{z}_i, y_i)\).</li>
+</ol>
+
+<p>
+We assume the following generative model:
+</p>
+
+<p>
+\[ x_{ij} \mid \lambda_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+</p>
+
+<p>
+\[ \lambda_{ij} \mid z_i \sim [\pi(\mathbf{z}_i)]_j \delta_0(\cdot) + (1 - [\pi(\mathbf{z}_i)]_j)[\mu(\mathbf{z}_i)]_j \]
+</p>
+
+<p>
+where \(\pi(\cdot), \mu(\cdot)\) are \(p\)-vector outputs of a neural
+network, termed the <i>decoder</i>.
+</p>
+
+<p>
+This is a zero-inflated Poisson variational autoencoder (ZIPVAE). Previous
+studies have instead chosen the zero-inflated negative binomial likelihood,
+yielding a ZINBVAE (Lopez et al 2018, Grønbech et al 2018). This choice
+assumes unexplained technical heterogeneity beyond Poisson sampling noise,
+and needs to be justified from the data.
+</p>
+
+<p>
+The inference goal of the fitted model is to estimate \(p(\mathbf{z}_i \mid
+   \mathbf{x}_i)\). This posterior is non-conjugate to the likelihood, so we
+use variational inference to estimate an approximate posterior. Importantly,
+the model was parameterized using a neural network, so we need to
+also parameterize the approximate posterior using a neural network.
+</p>
+
+<p>
+\[ q(\mathbf{z}_i \mid \mathbf{x}_i) = \mathrm{N}(\mu(\mathbf{x}_i),
+   \sigma^2(\mathbf{x}_i) \mathbf{I}) \]
+</p>
+
+<p>
+where \(\mu(\cdot), \sigma^2(\cdot)\) are \(d\)-vector outputs of a neural
+network, termed the <i>encoder</i>.
+</p>
+
+<p>
+The evidence lower bound (ELBO) is:
+</p>
+
+<p>
+\[ p(\mathbf{X}) \geq \sum_i \mathbb{E}_q[\ln p(x_i \mid z_i)] -
+   \mathcal{KL}\left(q(z_i \mid x_i) \Vert p(z_i)\right) \]
+</p>
+
+<p>
+We use the <i>reparameterization trick</i> to rewrite the expectations over \(q\)
+as sums over samples from standard Gaussians, yielding a stochastic
+objective function. We optimize the objective using gradient descent.
+</p>
+
+<p>
+The resulting model is known as a <i>variational autoencoder</i> (VAE). In the
+case where both the encoder and decoder are affine transforms, we recover
+PPCA (as described above). In the case where the encoder is affine but the
+decoder is a neural network, we recover Robust PCA
+(<a href="https://statweb.stanford.edu/~candes/papers/RobustPCA.pdf">Candés et
+al. 2009</a>, <a href="https://arxiv.org/pdf/1706.05148">Dai et al 2017</a>).
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc1db25f" class="outline-3">
+<h3 id="orgc1db25f">Adversarial autoencoder</h3>
+<div class="outline-text-3" id="text-orgc1db25f">
+<p>
+We want to enforce the constraint that data which reflect the same
+underlying biological state are not distinguishable on the basis of which
+data set they came from. This means the model must simultaneously learn the
+underlying biological state as well as "forget" systematic differences
+between different data sets.
+</p>
+
+<p>
+To achieve this goal, we take an adversarial approach. The encoder network
+in the VAE described above learns a non-linear mapping from observed data
+\(\mathbf{x}_i\) to a low dimensional latent variable \(\mathbf{z}_i\)
+describing the biological state. We need the encoder to not use systematic
+differences between data sets in this mapping. This constraint is not
+expressible as a prior on \(\mathbf{z}_i\), but it is expressible as the
+opposite of a classification problem on \(\mathbf{z}_i\). In essence, rather
+than minimizing the cross-entropy loss:
+</p>
+
+<p>
+\[ l(\mathbf{z}_i, y_i) = y_i \ln(f(\mathbf{z}_i)) \]
+</p>
+
+<p>
+where \(f\) is the classifier, we want to maximize it.
+</p>
+
+<p>
+This suggests jointly optimizing a combined loss function:
+</p>
+
+<p>
+\[ \mathcal{L} = \sum_i \mathrm{ELBO}(\mathbf{x}_i) - l(\mathbf{z}_i, y_i)
+   \]
+</p>
+
+<p>
+There is one major challenge in optimizing this loss function: we need to
+balance the two parts of the objective function. The optimal way to fool the
+discriminator is to randomly place points in the low dimensional space, but
+the optimal way to describe the data is to model the systematic technical
+differences between data sets.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb69abeb" class="outline-3">
+<h3 id="orgb69abeb">Generator network for incremental training</h3>
+<div class="outline-text-3" id="text-orgb69abeb">
+<p>
+One remaining challenge is how to update the model with new data (e.g., a
+new experimental data set). After successfully fooling the adversary, the
+resulting low dimensional representation is "one dataset", reducing the
+problem into aligning two data sets. However, all of the original data would
+be required to train the model from scratch.
+</p>
+
+<p>
+Instead, our key idea is to add to use a <i>generative adversarial network</i>
+(GAN; <a href="https://arxiv.org/abs/1406.2661">Goodfellow 2014</a>) in the
+architecture. In a GAN, a <i>generator network</i> \(G\) and <i>discriminator
+network</i> \(D\) are trained to optimize a minimax game:
+</p>
+
+<p>
+\[ \min_G \max_D E_{\hat{p}} [\ln D(\mathbf{x})] + E_p [\ln(1 -
+   D(G(\mathbf{z})))] \]
+</p>
+
+<p>
+where \(\hat{p}\) is the empirical distribution of the data, and \(p\) is
+the distribution of data generated by \(G\). Typically, \(G\) maps isotropic
+Gaussian noise to generated data points. The inference goal is to learn
+\(G\), and the <i>adversary</i> \(D\) is used to push it towards the distribution
+\(\hat{p}\).
+</p>
+
+<p>
+Here, we use the encoder network of the VAE as the generator, and use the
+dataset of origin as the labels for the adversary, yielding a simple
+adversarial autoencoder (<a href="https://arxiv.org/abs/1511.05644">Makhzani et al
+2015</a>). We can then train the model in phases in each minibatch:
+</p>
+
+<ol class="org-ol">
+<li>Train the encoder and decoder to learn the low dimensional manifold
+describing the data</li>
+<li>Train the adversary to classify the latent points based on the labels</li>
+<li>Train the encoder to fool the adversary</li>
+</ol>
+
+<p>
+Simultaneouly, we can train a generator network which can generate latent
+samples matching the encoder. To train this network, we add a further
+discriminator network which tries to distinguish real outputs from the
+encoder network \(q(\mathbf{z} \mid \mathbf{z})\) from the generator
+outputs.
+</p>
+
+<p>
+With the trained generator network, we can incrementally train the model on
+new data sets without needing the original data.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org0ee2847" class="outline-2">
+<h2 id="org0ee2847">Results</h2>
+<div class="outline-text-2" id="text-org0ee2847">
+</div>
+<div id="outline-container-org6ee49a5" class="outline-3">
+<h3 id="org6ee49a5">Sanity checks</h3>
+<div class="outline-text-3" id="text-org6ee49a5">
+<p>
+First, check that the ZIPVAE works. Simulate some low-rank Poisson data and
+evaluate training and validation likelihood.
+</p>
+
+<p>
+\[ \mathbf{l}_{ik} \sim \mathcal{N}(0, \sigma^2) \]
+\[ \mathbf{f}_{kj} \sim \mathcal{N}(0, \sigma^2) \]
+\[ \ln\lambda_{ij} = l_{ik} f_{kj} \]
+\[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_pois</span>(n, p, rank, eta_max=<span class="org-constant">None</span>, seed=0):
+  np.random.seed(seed)
+  <span class="org-variable-name">l</span> = np.random.normal(size=(n, rank))
+  <span class="org-variable-name">f</span> = np.random.normal(size=(rank, p))
+  <span class="org-variable-name">eta</span> = l.dot(f)
+  <span class="org-keyword">if</span> eta_max <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Scale the maximum value</span>
+    <span class="org-variable-name">eta</span> *= eta_max / eta.<span class="org-builtin">max</span>()
+  <span class="org-variable-name">x</span> = np.random.poisson(lam=np.exp(eta))
+  <span class="org-keyword">return</span> x, eta
+
+<span class="org-keyword">def</span> <span class="org-function-name">train_test_split</span>(x, p=0.5):
+  <span class="org-variable-name">train</span> = np.random.binomial(n=x, p=p, size=x.shape)
+  <span class="org-variable-name">test</span> = x - train
+  <span class="org-keyword">return</span> train, test
+
+<span class="org-keyword">def</span> <span class="org-function-name">pois_llik</span>(lam, train, test):
+  <span class="org-variable-name">lam</span> *= test.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>) / train.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
+  <span class="org-keyword">return</span> st.poisson(mu=lam).logpmf(test).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_mle</span>(train, test):
+  <span class="org-keyword">return</span> pois_llik(train, train, test)
+
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_zipvae</span>(train, test):
+  <span class="org-keyword">import</span> scaa
+  <span class="org-keyword">import</span> torch
+  <span class="org-keyword">import</span> torch.utils.data
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = train.shape
+  <span class="org-variable-name">training_data</span> = torch.utils.data.DataLoader(torch.tensor(train, dtype=torch.<span class="org-builtin">float</span>), batch_size=n, shuffle=<span class="org-constant">False</span>)
+  <span class="org-variable-name">model</span> = scaa.modules.ZIPVAE(p, 10).fit(training_data, max_epochs=1000)
+  <span class="org-variable-name">lam</span> = model.denoise(training_data)
+  <span class="org-keyword">return</span> pois_llik(lam, train, test)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org08dd0b0" class="outline-3">
+<h3 id="org08dd0b0">Download the data</h3>
+<div class="outline-text-3" id="text-org08dd0b0">
 <p>
 <a href="https://www.nature.com/articles/nbt.4042">Kang et al 2018</a> studied control against stimulated CD4+ T cells. The Satija
 lab provided the processed count matrices.
@@ -369,9 +701,10 @@ unzip pancreas_multialignment_expression_matrices.zip
 </div>
 </div>
 </div>
+</div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-08-21 Tue 11:46</p>
+<p class="date">Created: 2018-10-22 Mon 16:59</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

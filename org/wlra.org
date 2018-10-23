@@ -14,7 +14,7 @@
   #+CALL: ipython3(memory="4G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 50904131
+  : Submitted batch job 50911327
 
   #+BEGIN_SRC ipython
     %matplotlib inline
@@ -333,7 +333,8 @@
    \[ x_{ij} \sim \mathrm{Poisson}(\exp(\eta_{ij})) \]
 
    We then evaluate the Poisson likelihood of the generated data given the
-   estimated parameters.
+   estimated parameters. For comparison, we also evaluate the oracle log
+   likelihood (achieved at the true parameter values).
 
    #+NAME: pois-training
    #+BEGIN_SRC ipython
@@ -377,7 +378,7 @@
 
    #+RESULTS: pois-training
    :RESULTS:
-   # Out[3]:
+   # Out[4]:
    :END:
 
    #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-train-llik.py
@@ -389,14 +390,14 @@
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --partition=mstephens --mem=4G --job-name=pois-train-llik --time=60:00 -n1 -c8
+     sbatch --partition=broadwl --mem=4G --job-name=pois-train-llik --time=60:00 -n1 -c28
      #!/bin/bash
      source activate singlecell
      python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-train-llik.py
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 50865668
+   : Submitted batch job 50912178
 
    Read the results.
 
@@ -406,7 +407,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[3]:
+   # Out[26]:
    :END:
 
    Plot the performance.
@@ -431,9 +432,12 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[27]:
    [[file:figure/wlra.org/training-llik.png]]
    :END:
+
+   The results suggest that PLRA1 already does well enough to overfit, and that
+   iterating PLRA to convergence only has little value.
 
 ** Imputing missing values
 
@@ -520,7 +524,7 @@
 
    #+RESULTS: poisson-imputation
    :RESULTS:
-   # Out[11]:
+   # Out[3]:
    :END:
 
    Importantly, we assume \(\eta\) is low rank, and not that \(\exp(\eta)\) is
@@ -847,7 +851,7 @@
    #+NAME: generalization
    #+BEGIN_SRC ipython
      def pois_llik(lam, train, test):
-       lam *= test.sum(axis=1, keepdims=True) / train.sum(axis=1, keepdims=True)
+       lam *= test.sum(axis=0, keepdims=True) / train.sum(axis=0, keepdims=True)
        return st.poisson(mu=lam).logpmf(test).sum()
 
      def generalization_score_mean(train, test):
@@ -869,26 +873,27 @@
            break
        return opt
 
-     def generalization_score_plra(train, test):
-       opt_rank = rank_select(train, imputation_score_pois_lra, max_rank=10)
-       lam = np.exp(wlra.pois_lra(train, opt_rank))
+     def generalization_score_plra1(train, test, rank=10):
+       lam = np.exp(wlra.plra(train, rank))
        return pois_llik(lam, train, test)
 
-     def generalization_score_nmf(train, test):
-       opt_rank = rank_select(train, imputation_score_nmf, max_rank=100)
-       lam = nmf(train, opt_rank)
+     def generalization_score_nmf(train, test, rank=50):
+       lam = nmf(train, rank)
        return pois_llik(lam, train, test)
 
-     def generalization_score_hpf(train, test, rank):
+     def generalization_score_hpf(train, test, rank=50):
        import scHPF.preprocessing
        import scHPF.train
        import tempfile
        with tempfile.TemporaryDirectory(prefix='/scratch/midway2/aksarkar/ideas/') as d:
          # scHPF assumes genes x cells
          scHPF.preprocessing.split_dataset_hpf(train.T, outdir=d)
+         # Set bp, dp as in scHPF.train
+         bp = train.sum(axis=1).mean() / train.sum(axis=1).var()
+         dp = train.sum(axis=0).mean() / train.sum(axis=0).var()
          opt = scHPF.train.run_trials(
            indir=d, outdir=d, prefix='',
-           nfactors=rank, a=0.3, ap=1, bp=1, c=0.3, cp=1, dp=1,
+           nfactors=rank, a=0.3, ap=1, bp=bp, c=0.3, cp=1, dp=dp,
            # This is broken when we call the API directly
            logging_options={'log_phi': False})
          L = np.load(f'{opt}/beta_invrate.npy') * np.load(f'{opt}/beta_shape.npy')
@@ -902,7 +907,7 @@
        data = GeneExpressionDataset(*GeneExpressionDataset.get_attributes_from_matrix(train))
        vae = VAE(n_input=train.shape[1])
        m = UnsupervisedTrainer(vae, data, verbose=False)
-       m.train()
+       m.train(n_epochs=100)
        # Training permuted the data for minibatching. Unpermute before "imputing"
        # (estimating lambda)
        lam = np.vstack([m.train_set.sequential().imputation(),
@@ -939,12 +944,12 @@
          result.append([trial,
                         generalization_score_mean(train, test),
                         generalization_score_nmf(train, test),
-                        generalization_score_hpf(train, test, rank=50),
-                        # generalization_score_plra(train, test),
+                        generalization_score_plra1(train, test),
+                        generalization_score_hpf(train, test),
                         generalization_score_scvi(train, test)
          ])
        result = pd.DataFrame(result)
-       result.columns = ['trial', 'Mean', 'NMF', 'HBPF', 'scVI']
+       result.columns = ['trial', 'Mean', 'NMF', 'PLRA1', 'scHPF', 'scVI']
        return result
    #+END_SRC
 
@@ -962,23 +967,12 @@
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     # sbatch --partition=gpu2 --gres=gpu:1 --job-name=pois-generalization --mem=16G --time=60:00 -c4
-     sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=60:00 -n1 -c28 --exclusive
+     sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=30:00 -n1 -c28
      #!/bin/bash
      source activate singlecell
      python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 50610089
+   : Submitted batch job 50949735
    
-   #+BEGIN_SRC sh
-     sacct -j 50550386 -o Elapsed
-   #+END_SRC
-
-   #+RESULTS:
-   :    Elapsed 
-   : ---------- 
-   :   00:04:49 
-   :   00:04:49 
-   :   00:04:49 

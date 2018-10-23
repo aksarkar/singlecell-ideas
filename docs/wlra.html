@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-10-10 Wed 12:19 -->
+<!-- 2018-10-22 Mon 13:23 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weighted low rank approximation</title>
@@ -263,17 +263,17 @@ for the JavaScript code in this tag.
 <li><a href="#org1010fdb">EM algorithm</a></li>
 <li><a href="#orgdd7ac38">Alternative derivation</a></li>
 <li><a href="#orgb462a31">Maximizing non-Gaussian likelihoods</a></li>
-<li><a href="#org622533c">Imputing missing values</a></li>
-<li><a href="#orgc1ad970">Choosing the rank of the approximation</a></li>
+<li><a href="#org762312f">Imputing missing values</a></li>
+<li><a href="#orga964d7a">Choosing the rank of the approximation</a></li>
 </ul>
 </li>
 <li><a href="#org643a7f6">Results</a>
 <ul>
 <li><a href="#org31c72cd">Recovering low rank structure</a></li>
 <li><a href="#org64afc90">Explaining training data</a></li>
-<li><a href="#org762312f">Imputing missing values</a></li>
+<li><a href="#orge60d243">Imputing missing values</a></li>
 <li><a href="#orgb6aef17">Convergence</a></li>
-<li><a href="#orga964d7a">Choosing the rank of the approximation</a></li>
+<li><a href="#org2a84ef6">Choosing the rank of the approximation</a></li>
 <li><a href="#orgd780580">Explaining held out data</a></li>
 </ul>
 </li>
@@ -533,9 +533,9 @@ where \(S(\cdot)\) denotes the sigmoid function.
 </div>
 </div>
 
-<div id="outline-container-org622533c" class="outline-3">
-<h3 id="org622533c">Imputing missing values</h3>
-<div class="outline-text-3" id="text-org622533c">
+<div id="outline-container-org762312f" class="outline-3">
+<h3 id="org762312f">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org762312f">
 <p>
 The EM algorithm for WLRA supports missing values by setting \(w_{ij} =
    0\).
@@ -550,9 +550,9 @@ presence/absence. We can do this by using weights \(\tilde{\mathbf{W}} \circ
 </div>
 </div>
 
-<div id="outline-container-orgc1ad970" class="outline-3">
-<h3 id="orgc1ad970">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-orgc1ad970">
+<div id="outline-container-orga964d7a" class="outline-3">
+<h3 id="orga964d7a">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-orga964d7a">
 <p>
 The most obvious way to pick an optimal rank is to use cross-validation:
 hold out some samples, and evaluate the likelihood of the held-out samples
@@ -722,7 +722,8 @@ We generate a Poisson data matrix with planted row rank structure.
 
 <p>
 We then evaluate the Poisson likelihood of the generated data given the
-estimated parameters.
+estimated parameters. For comparison, we also evaluate the oracle log
+likelihood (achieved at the true parameter values).
 </p>
 
 <div class="org-src-container">
@@ -775,7 +776,7 @@ res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singl
 </div>
 
 <div class="org-src-container">
-<pre class="src src-sh">sbatch --partition=mstephens --mem=4G --job-name=pois-train-llik --time=60:00 -n1 -c8
+<pre class="src src-sh">sbatch --partition=broadwl --mem=4G --job-name=pois-train-llik --time=60:00 -n1 -c28
 <span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
 <span class="org-builtin">source</span> activate singlecell
 python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-train-llik.py
@@ -783,7 +784,7 @@ python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-train-ll
 </div>
 
 <pre class="example">
-Submitted batch job 50865668
+Submitted batch job 50912178
 
 </pre>
 
@@ -824,12 +825,17 @@ plt.xlabel(<span class="org-string">'Method'</span>)
 <p><img src="figure/wlra.org/training-llik.png" alt="training-llik.png">
 </p>
 </div>
+
+<p>
+The results suggest that PLRA1 already does well enough to overfit, and that
+iterating PLRA to convergence only has little value.
+</p>
 </div>
 </div>
 
-<div id="outline-container-org762312f" class="outline-3">
-<h3 id="org762312f">Imputing missing values</h3>
-<div class="outline-text-3" id="text-org762312f">
+<div id="outline-container-orge60d243" class="outline-3">
+<h3 id="orge60d243">Imputing missing values</h3>
+<div class="outline-text-3" id="text-orge60d243">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1168,9 +1174,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orga964d7a" class="outline-3">
-<h3 id="orga964d7a">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-orga964d7a">
+<div id="outline-container-org2a84ef6" class="outline-3">
+<h3 id="org2a84ef6">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org2a84ef6">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1289,7 +1295,7 @@ re-scale to account for different size factors \(R_i\).
 
 <div class="org-src-container">
 <pre class="src src-ipython" id="orgb77a649"><span class="org-keyword">def</span> <span class="org-function-name">pois_llik</span>(lam, train, test):
-  <span class="org-variable-name">lam</span> *= test.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>) / train.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+  <span class="org-variable-name">lam</span> *= test.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>) / train.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
   <span class="org-keyword">return</span> st.poisson(mu=lam).logpmf(test).<span class="org-builtin">sum</span>()
 
 <span class="org-keyword">def</span> <span class="org-function-name">generalization_score_mean</span>(train, test):
@@ -1311,26 +1317,27 @@ re-scale to account for different size factors \(R_i\).
       <span class="org-keyword">break</span>
   <span class="org-keyword">return</span> opt
 
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_plra</span>(train, test):
-  <span class="org-variable-name">opt_rank</span> = rank_select(train, imputation_score_pois_lra, max_rank=10)
-  <span class="org-variable-name">lam</span> = np.exp(wlra.pois_lra(train, opt_rank))
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_plra1</span>(train, test, rank=10):
+  <span class="org-variable-name">lam</span> = np.exp(wlra.plra(train, rank))
   <span class="org-keyword">return</span> pois_llik(lam, train, test)
 
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_nmf</span>(train, test):
-  <span class="org-variable-name">opt_rank</span> = rank_select(train, imputation_score_nmf, max_rank=100)
-  <span class="org-variable-name">lam</span> = nmf(train, opt_rank)
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_nmf</span>(train, test, rank=50):
+  <span class="org-variable-name">lam</span> = nmf(train, rank)
   <span class="org-keyword">return</span> pois_llik(lam, train, test)
 
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_hpf</span>(train, test, rank):
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_hpf</span>(train, test, rank=50):
   <span class="org-keyword">import</span> scHPF.preprocessing
   <span class="org-keyword">import</span> scHPF.train
   <span class="org-keyword">import</span> tempfile
   <span class="org-keyword">with</span> tempfile.TemporaryDirectory(prefix=<span class="org-string">'/scratch/midway2/aksarkar/ideas/'</span>) <span class="org-keyword">as</span> d:
     <span class="org-comment-delimiter"># </span><span class="org-comment">scHPF assumes genes x cells</span>
     scHPF.preprocessing.split_dataset_hpf(train.T, outdir=d)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Set bp, dp as in scHPF.train</span>
+    <span class="org-variable-name">bp</span> = train.<span class="org-builtin">sum</span>(axis=1).mean() / train.<span class="org-builtin">sum</span>(axis=1).var()
+    <span class="org-variable-name">dp</span> = train.<span class="org-builtin">sum</span>(axis=0).mean() / train.<span class="org-builtin">sum</span>(axis=0).var()
     <span class="org-variable-name">opt</span> = scHPF.train.run_trials(
       indir=d, outdir=d, prefix=<span class="org-string">''</span>,
-      nfactors=rank, a=0.3, ap=1, bp=1, c=0.3, cp=1, dp=1,
+      nfactors=rank, a=0.3, ap=1, bp=bp, c=0.3, cp=1, dp=dp,
       <span class="org-comment-delimiter"># </span><span class="org-comment">This is broken when we call the API directly</span>
       logging_options={<span class="org-string">'log_phi'</span>: <span class="org-constant">False</span>})
     <span class="org-variable-name">L</span> = np.load(f<span class="org-string">'{opt}/beta_invrate.npy'</span>) * np.load(f<span class="org-string">'{opt}/beta_shape.npy'</span>)
@@ -1344,7 +1351,7 @@ re-scale to account for different size factors \(R_i\).
   <span class="org-variable-name">data</span> = GeneExpressionDataset(*GeneExpressionDataset.get_attributes_from_matrix(train))
   <span class="org-variable-name">vae</span> = VAE(n_input=train.shape[1])
   <span class="org-variable-name">m</span> = UnsupervisedTrainer(vae, data, verbose=<span class="org-constant">False</span>)
-  m.train()
+  m.train(n_epochs=100)
   <span class="org-comment-delimiter"># </span><span class="org-comment">Training permuted the data for minibatching. Unpermute before "imputing"</span>
   <span class="org-comment-delimiter"># </span><span class="org-comment">(estimating lambda)</span>
   <span class="org-variable-name">lam</span> = np.vstack([m.train_set.sequential().imputation(),
@@ -1381,12 +1388,12 @@ re-scale to account for different size factors \(R_i\).
     result.append([trial,
                    generalization_score_mean(train, test),
                    generalization_score_nmf(train, test),
-                   generalization_score_hpf(train, test, rank=50),
-                   <span class="org-comment-delimiter"># </span><span class="org-comment">generalization_score_plra(train, test),</span>
+                   generalization_score_plra1(train, test),
+                   generalization_score_hpf(train, test),
                    generalization_score_scvi(train, test)
     ])
   <span class="org-variable-name">result</span> = pd.DataFrame(result)
-  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'Mean'</span>, <span class="org-string">'NMF'</span>, <span class="org-string">'HBPF'</span>, <span class="org-string">'scVI'</span>]
+  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'Mean'</span>, <span class="org-string">'NMF'</span>, <span class="org-string">'PLRA1'</span>, <span class="org-string">'scHPF'</span>, <span class="org-string">'scVI'</span>]
   <span class="org-keyword">return</span> result
 </pre>
 </div>
@@ -1401,8 +1408,7 @@ res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singl
 </div>
 
 <div class="org-src-container">
-<pre class="src src-sh"><span class="org-comment-delimiter"># </span><span class="org-comment">sbatch --partition=gpu2 --gres=gpu:1 --job-name=pois-generalization --mem=16G --time=60:00 -c4</span>
-sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=60:00 -n1 -c28 --exclusive
+<pre class="src src-sh">sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=30:00 -n1 -c28
 <span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
 <span class="org-builtin">source</span> activate singlecell
 python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
@@ -1410,21 +1416,7 @@ python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generali
 </div>
 
 <pre class="example">
-Submitted batch job 50610089
-
-</pre>
-
-<div class="org-src-container">
-<pre class="src src-sh">sacct -j 50550386 -o Elapsed
-</pre>
-</div>
-
-<pre class="example">
-   Elapsed 
----------- 
-  00:04:49 
-  00:04:49 
-  00:04:49 
+Submitted batch job 50949735
 
 </pre>
 </div>
@@ -1433,7 +1425,7 @@ Submitted batch job 50610089
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-10-10 Wed 12:19</p>
+<p class="date">Created: 2018-10-22 Mon 13:23</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

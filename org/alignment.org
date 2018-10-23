@@ -1,5 +1,6 @@
 #+TITLE: Single cell alignment
 #+SETUPFILE: setup.org
+#+OPTIONS: toc:2
 
 * Setup                                                            :noexport:
 
@@ -11,11 +12,12 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="16G",venv="singlecell") :dir /scratch/midway2/aksarkar/ideas
+  #+CALL: ipython3(memory="4G",partition="gpu2",venv="singlecell") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
   : Submitted batch job 46954766
 
+  #+NAME: imports
   #+BEGIN_SRC ipython
     import numpy as np
     import pandas as pd
@@ -68,7 +70,7 @@
      dimensional space), it should not be possible to successfully classify
      points as coming from different data sets.
 
-  2. We propose an adversarial auto-encoding architecture (Makzhani et al 2015)
+  2. We propose an adversarial auto-encoding architecture ([[https://arxiv.org/abs/1511.05644][Makhzani et al 2015]])
      which simultaneously: (1) explains the observed data (by maximizing the
      evidence lower bound) and removes data-set specific differences (by
      maximizing the cross-entropy loss), (2) learns a separate generative model
@@ -86,7 +88,263 @@
      then aligning held out datasets to them. We provide our pre-trained models
      as the basis for other researchers to align novel experimental data.
 
-* Download the data
+* Methods
+** Variational auto-encoder
+
+   Suppose we want to fit a latent variable model:
+
+   \[ \mathbf{x}_i \mid \mathbf{z}_i, \theta \sim g(\mathbf{z}_i, \theta) \]
+
+   \[ \mathbf{z}_i \sim N(0, \sigma^2 \mathbf{I}) \]
+
+   where \(\mathbf{x}_i \in \mathbb{R}^p\), \(\mathbf{z}_i \in \mathbb{R}^d\),
+   \(d \ll p\).
+
+   Assuming \(g(\mathbf{z_i}) = \mathbf{W z}_i\) and marginalizing over
+   \(\mathbf{z}_i\), we recover PPCA (Tipping 1999).
+
+   Here, we instead pursue an approach where \(g\) is parameterized by a neural
+   network ([[https://arxiv.org/abs/1312.6114][Kingma and Welling 2014]],
+   [[https://arxiv.org/abs/1401.4082][Rezende et al 2014]],
+   [[http://proceedings.mlr.press/v32/titsias14.pdf][Titsias and
+   Lázaro-Gredilla 2014]]). There are several reasons to do this:
+
+   1. *We want to learn a nonlinear embedding of the data.* This is achieved by
+      replacing the affine transform \(\mathbf{W Z}\) with a feed forward
+      neural network, which is a recursive generalized linear model
+      ([[http://blog.shakirm.com/2015/01/a-statistical-view-of-deep-learning-i-recursive-glms/][Mohammed
+      2015]]).
+
+   2. *We want to operate on data which cannot fit in memory.* This is achieved
+      by using an inference network
+      ([[http://www.cs.utoronto.ca/~hinton/absps/ws.pdf][Dayan et al
+      1995]]). The key idea is that we replace the \(n \times d\) matrix
+      \(\mathbf{W}\) and \(d \times p\) matrix \(\mathbf{Z}\) with a neural
+      network. The parameters of the neural network take the place of
+      \(\mathbf{W}\), and the output of the neural network is
+      \(\mathbf{z}_i\). Then, the size of the network is constant in the size
+      of the data, and we can optimize the loss function using stochastic
+      optimization over minibatches of data.
+
+   3. *We want to impose non-trivial constraints on the posterior.* In our
+      setting, we assume we have labels \(y_i\), and the goal is to impose the
+      constraint that the points with different labels are /not/
+      distinguishable from each other. This is not readily expressed as a prior
+      distribution on \((\mathbf{z}_i, y_i)\).
+
+   We assume the following generative model:
+
+   \[ x_{ij} \mid \lambda_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+
+   \[ \lambda_{ij} \mid z_i \sim [\pi(\mathbf{z}_i)]_j \delta_0(\cdot) + (1 - [\pi(\mathbf{z}_i)]_j)[\mu(\mathbf{z}_i)]_j \]
+
+   where \(\pi(\cdot), \mu(\cdot)\) are \(p\)-vector outputs of a neural
+   network, termed the /decoder/.
+
+   This is a zero-inflated Poisson variational autoencoder (ZIPVAE). Previous
+   studies have instead chosen the zero-inflated negative binomial likelihood,
+   yielding a ZINBVAE (Lopez et al 2018, Grønbech et al 2018). This choice
+   assumes unexplained technical heterogeneity beyond Poisson sampling noise,
+   and needs to be justified from the data.
+
+   The inference goal of the fitted model is to estimate \(p(\mathbf{z}_i \mid
+   \mathbf{x}_i)\). This posterior is non-conjugate to the likelihood, so we
+   use variational inference to estimate an approximate posterior. Importantly,
+   the model was parameterized using a neural network, so we need to
+   also parameterize the approximate posterior using a neural network.
+
+   \[ q(\mathbf{z}_i \mid \mathbf{x}_i) = \mathrm{N}(\mu(\mathbf{x}_i),
+   \sigma^2(\mathbf{x}_i) \mathbf{I}) \]
+
+   where \(\mu(\cdot), \sigma^2(\cdot)\) are \(d\)-vector outputs of a neural
+   network, termed the /encoder/.
+
+   The evidence lower bound (ELBO) is:
+
+   \[ p(\mathbf{X}) \geq \sum_i \mathbb{E}_q[\ln p(x_i \mid z_i)] -
+   \mathcal{KL}\left(q(z_i \mid x_i) \Vert p(z_i)\right) \]
+
+   We use the /reparameterization trick/ to rewrite the expectations over \(q\)
+   as sums over samples from standard Gaussians, yielding a stochastic
+   objective function. We optimize the objective using gradient descent.
+
+   The resulting model is known as a /variational autoencoder/ (VAE). In the
+   case where both the encoder and decoder are affine transforms, we recover
+   PPCA (as described above). In the case where the encoder is affine but the
+   decoder is a neural network, we recover Robust PCA
+   ([[https://statweb.stanford.edu/~candes/papers/RobustPCA.pdf][Candés et
+   al. 2009]], [[https://arxiv.org/pdf/1706.05148][Dai et al 2017]]).
+
+** Adversarial autoencoder
+
+   We want to enforce the constraint that data which reflect the same
+   underlying biological state are not distinguishable on the basis of which
+   data set they came from. This means the model must simultaneously learn the
+   underlying biological state as well as "forget" systematic differences
+   between different data sets.
+
+   To achieve this goal, we take an adversarial approach. The encoder network
+   in the VAE described above learns a non-linear mapping from observed data
+   \(\mathbf{x}_i\) to a low dimensional latent variable \(\mathbf{z}_i\)
+   describing the biological state. We need the encoder to not use systematic
+   differences between data sets in this mapping. This constraint is not
+   expressible as a prior on \(\mathbf{z}_i\), but it is expressible as the
+   opposite of a classification problem on \(\mathbf{z}_i\). In essence, rather
+   than minimizing the cross-entropy loss:
+
+   \[ l(\mathbf{z}_i, y_i) = y_i \ln(f(\mathbf{z}_i)) \]
+
+   where \(f\) is the classifier, we want to maximize it.
+
+   This suggests jointly optimizing a combined loss function:
+
+   \[ \mathcal{L} = \sum_i \mathrm{ELBO}(\mathbf{x}_i) - l(\mathbf{z}_i, y_i)
+   \]
+
+   There is one major challenge in optimizing this loss function: we need to
+   balance the two parts of the objective function. The optimal way to fool the
+   discriminator is to randomly place points in the low dimensional space, but
+   the optimal way to describe the data is to model the systematic technical
+   differences between data sets.
+
+** Generator network for incremental training
+
+   One remaining challenge is how to update the model with new data (e.g., a
+   new experimental data set). After successfully fooling the adversary, the
+   resulting low dimensional representation is "one dataset", reducing the
+   problem into aligning two data sets. However, all of the original data would
+   be required to train the model from scratch.
+
+   Instead, our key idea is to add to use a /generative adversarial network/
+   (GAN; [[https://arxiv.org/abs/1406.2661][Goodfellow 2014]]) in the
+   architecture. In a GAN, a /generator network/ \(G\) and /discriminator
+   network/ \(D\) are trained to optimize a minimax game:
+
+   \[ \min_G \max_D E_{\hat{p}} [\ln D(\mathbf{x})] + E_p [\ln(1 -
+   D(G(\mathbf{z})))] \]
+
+   where \(\hat{p}\) is the empirical distribution of the data, and \(p\) is
+   the distribution of data generated by \(G\). Typically, \(G\) maps isotropic
+   Gaussian noise to generated data points. The inference goal is to learn
+   \(G\), and the /adversary/ \(D\) is used to push it towards the distribution
+   \(\hat{p}\).
+
+   Here, we use the encoder network of the VAE as the generator, and use the
+   dataset of origin as the labels for the adversary, yielding a simple
+   adversarial autoencoder ([[https://arxiv.org/abs/1511.05644][Makhzani et al
+   2015]]). We can then train the model in phases in each minibatch:
+
+   1. Train the encoder and decoder to learn the low dimensional manifold
+      describing the data
+   2. Train the adversary to classify the latent points based on the labels
+   3. Train the encoder to fool the adversary
+
+   Simultaneouly, we can train a generator network which can generate latent
+   samples matching the encoder. To train this network, we add a further
+   discriminator network which tries to distinguish real outputs from the
+   encoder network \(q(\mathbf{z} \mid \mathbf{z})\) from the generator
+   outputs.
+
+   With the trained generator network, we can incrementally train the model on
+   new data sets without needing the original data.
+
+* Results
+** Sanity checks
+
+   First, check that the ZIPVAE works. Simulate some low-rank Poisson data,
+   thin the counts to produce training and validation data, and evaluate the
+   validation likelihood.
+
+   \[ \mathbf{l}_{ik} \sim \mathcal{N}(0, \sigma^2) \]
+   \[ \mathbf{f}_{kj} \sim \mathcal{N}(0, \sigma^2) \]
+   \[ \ln\lambda_{ij} = l_{ik} f_{kj} \]
+   \[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+   \[ y_{ij} \sim Binomial(x_{ij}, 0.5) \]
+   \[ \tilde{y}_{ij} = x_{ij} - y_{ij} \]
+
+   #+NAME: zipvae-sanity-check
+   #+BEGIN_SRC ipython
+     def simulate_pois(n, p, rank, eta_max=None, seed=0):
+       np.random.seed(seed)
+       l = np.random.normal(size=(n, rank))
+       f = np.random.normal(size=(rank, p))
+       eta = l.dot(f)
+       if eta_max is not None:
+         # Scale the maximum value
+         eta *= eta_max / eta.max()
+       x = np.random.poisson(lam=np.exp(eta))
+       return x, eta
+
+     def train_test_split(x, p=0.5):
+       train = np.random.binomial(n=x, p=p, size=x.shape)
+       test = x - train
+       return train, test
+
+     def pois_llik(lam, train, test):
+       lam *= test.sum(axis=0, keepdims=True) / train.sum(axis=0, keepdims=True)
+       return st.poisson(mu=lam).logpmf(test).sum()
+
+     def generalization_score_mle(train, test):
+       return pois_llik(train, train, test)
+
+     def generalization_score_zipvae(train, test):
+       import scaa
+       import torch
+       import torch.utils.data
+       n, p = train.shape
+       training_data = torch.utils.data.DataLoader(torch.tensor(train, dtype=torch.float), batch_size=25, shuffle=False)
+       with torch.cuda.device(0):
+         model = scaa.modules.ZIPVAE(p, 10).fit(training_data, lr=1e-2, max_epochs=10, verbose=False)
+         lam = model.denoise(training_data)
+       return pois_llik(lam, train, test)
+
+     def generalization_score_scvi(train, test):
+       from scvi.dataset import GeneExpressionDataset
+       from scvi.inference import UnsupervisedTrainer
+       from scvi.models import VAE
+       data = GeneExpressionDataset(*GeneExpressionDataset.get_attributes_from_matrix(train))
+       vae = VAE(n_input=train.shape[1])
+       m = UnsupervisedTrainer(vae, data, verbose=False)
+       m.train(n_epochs=100)
+       # Training permuted the data for minibatching. Unpermute before "imputing"
+       # (estimating lambda)
+       lam = np.vstack([m.train_set.sequential().imputation(),
+                        m.test_set.sequential().imputation()])
+       return pois_llik(lam, train, test)
+
+     def evaluate_generalization(num_trials):
+       result = []
+       for trial in range(num_trials):
+         x, eta = simulate_pois(n=500, p=1000, rank=3, eta_max=3, seed=trial)
+         train, test = train_test_split(x)
+         result.append([trial,
+                        generalization_score_mle(train, test),
+                        generalization_score_zipvae(train, test),
+                        generalization_score_scvi(train, test),
+         ])
+       result = pd.DataFrame(result)
+       result.columns = ['trial', 'MLE', 'ZIPVAE', 'scVI']
+       return result
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipvae-generalization.py
+     <<imports>>
+     <<zipvae-sanity-check>>
+     res = evaluate_generalization(num_trials=100)
+     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/generalization.txt.gz', sep='\t', compression='gzip')
+   #+END_SRC
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     sbatch --partition=gpu2 --gres=gpu:1 --time=60:00
+     #!/bin/bash
+     source activate singlecell
+     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipvae-generalization.py
+   #+END_SRC
+
+   #+RESULTS:
+   : Submitted batch job 51270737
+
+** Download the data
 
   [[https://www.nature.com/articles/nbt.4042][Kang et al 2018]] studied control against stimulated CD4+ T cells. The Satija
   lab provided the processed count matrices.

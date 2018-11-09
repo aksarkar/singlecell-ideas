@@ -11,10 +11,10 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="4G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/ideas
+  #+CALL: ipython3(memory="4G",venv="singlecell") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 50911327
+  : Submitted batch job 51768786
 
   #+BEGIN_SRC ipython
     %matplotlib inline
@@ -153,9 +153,8 @@
    where the constant does not depend on \(\theta\). Now, maximizing the
    objective is equivalent to maximizing a Gaussian likelihood:
 
-   \[= \mathcal{N}\left(\theta; \theta_0 -
-   \frac{l'(\theta_0)}{l''(\theta_0)}, -\frac{1}{l''(\theta_0)}\right) +
-   \mathrm{const} \]
+   \[= \mathcal{N}\left(\theta_0 - \frac{l'(\theta_0)}{l''(\theta_0)}; \theta,
+   -\frac{1}{l''(\theta_0)}\right) + \mathrm{const} \]
 
    Equivalently, minimizing the negative of the objective function is
    WLRA. This result makes sense because for fixed \(\sigma^2\), maximizing the
@@ -809,6 +808,8 @@
    count data. 
 
    - Non-negative matrix factorization ([[https://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization.pdf][Lee and Seung 2001]], [[https://arxiv.org/abs/1010.1763][Févotte and Idier 2011]])
+   - Latent dirichlet allocation ([[http://www.jmlr.org/papers/volume3/blei03a/blei03a.pdf][Blei et al 2003]], [[https://papers.nips.cc/paper/3902-online-learning-for-latent-dirichlet-allocation][Hoffman et al. 2010]], [[http://proceedings.mlr.press/v22/taddy12.html][Taddy
+     2012]])
    - Hierarchical Bayesian Poisson Factorization ([[http://www.cs.columbia.edu/~blei/papers/GopalanHofmanBlei2015.pdf][Gopalan et al. 2015]])
    - ZINB-WAVE ([[https://www.nature.com/articles/s41467-017-02554-5][Risso et al. 2018]])
    - scVI ([[https://www.biorxiv.org/content/early/2018/03/30/292037][Lopez et al 2018]])
@@ -848,85 +849,12 @@
    Our metric is then the likelihood of the held-out data. We simply need to
    re-scale to account for different size factors \(R_i\).
 
-   #+NAME: generalization
-   #+BEGIN_SRC ipython
-     def pois_llik(lam, train, test):
-       lam *= test.sum(axis=0, keepdims=True) / train.sum(axis=0, keepdims=True)
-       return st.poisson(mu=lam).logpmf(test).sum()
+   The benchmarks are included in the Python package scaa.
 
-     def generalization_score_mean(train, test):
-       lam = np.ones(train.shape) * train.mean(axis=0, keepdims=True)
-       return pois_llik(lam, train, test)
-
-     def rank_select(train, imputation_score, max_rank, holdout=0.1):
-       """Search for the rank which minimizes imputation loss"""
-       obj = np.inf
-       opt = 1
-       for rank in range(1, 100):
-         # Randomly hold out 10% of entries to impute
-         x = np.ma.masked_array(train, np.random.uniform(size=train.shape) < holdout)
-         res = imputation_score(x, rank)[1]
-         if res < obj:
-           opt = rank
-           obj = res
-         else:
-           break
-       return opt
-
-     def generalization_score_plra1(train, test, rank=10):
-       lam = np.exp(wlra.plra(train, rank))
-       return pois_llik(lam, train, test)
-
-     def generalization_score_nmf(train, test, rank=50):
-       lam = nmf(train, rank)
-       return pois_llik(lam, train, test)
-
-     def generalization_score_hpf(train, test, rank=50):
-       import scHPF.preprocessing
-       import scHPF.train
-       import tempfile
-       with tempfile.TemporaryDirectory(prefix='/scratch/midway2/aksarkar/ideas/') as d:
-         # scHPF assumes genes x cells
-         scHPF.preprocessing.split_dataset_hpf(train.T, outdir=d)
-         # Set bp, dp as in scHPF.train
-         bp = train.sum(axis=1).mean() / train.sum(axis=1).var()
-         dp = train.sum(axis=0).mean() / train.sum(axis=0).var()
-         opt = scHPF.train.run_trials(
-           indir=d, outdir=d, prefix='',
-           nfactors=rank, a=0.3, ap=1, bp=bp, c=0.3, cp=1, dp=dp,
-           # This is broken when we call the API directly
-           logging_options={'log_phi': False})
-         L = np.load(f'{opt}/beta_invrate.npy') * np.load(f'{opt}/beta_shape.npy')
-         F = np.load(f'{opt}/theta_invrate.npy') * np.load(f'{opt}/theta_shape.npy')
-         return pois_llik(L.dot(F.T), train, test)
-
-     def generalization_score_scvi(train, test):
-       from scvi.dataset import GeneExpressionDataset
-       from scvi.inference import UnsupervisedTrainer
-       from scvi.models import VAE
-       data = GeneExpressionDataset(*GeneExpressionDataset.get_attributes_from_matrix(train))
-       vae = VAE(n_input=train.shape[1])
-       m = UnsupervisedTrainer(vae, data, verbose=False)
-       m.train(n_epochs=100)
-       # Training permuted the data for minibatching. Unpermute before "imputing"
-       # (estimating lambda)
-       lam = np.vstack([m.train_set.sequential().imputation(),
-                        m.test_set.sequential().imputation()])
-       return pois_llik(lam, train, test)
-
-     def generalization_score_dca(train, test):
-       import anndata
-       import scanpy.api
-       data = anndata.AnnData(X=train)
-       # "Denoising" is estimating lambda
-       scanpy.api.pp.dca(data, mode='denoise')
-       lam = data.X
-       return pois_llik(lam, train, test)
-
-     def train_test_split(x, p=0.5):
-       train = np.random.binomial(n=x, p=p, size=x.shape)
-       test = x - train
-       return train, test
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
+     <<imports>>
+     import scaa
+     import scipy.io
 
      def read_ipsc():
        keep_samples = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt', index_col=0, header=None)
@@ -934,45 +862,44 @@
        x = (pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-counts.txt.gz', index_col=0)
             .loc[keep_genes.values.ravel(),keep_samples.values.ravel()]
             .values.T)
-       return x
+
+     def cd8_cytotoxic_t_cells(min_detect=0.25):
+       counts = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
+       counts = counts[((counts > 0).mean(axis=1) >= min_detect).A.ravel()].T.A.astype(np.int)
+       return counts
+
+     def cd19_b_cells(min_detect=0.25):
+       counts = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
+       counts = counts[((counts > 0).mean(axis=1) >= min_detect).A.ravel()].T.A.astype(np.int)
+       return counts
 
      def evaluate_generalization(data, num_trials):
-       result = []
        x = data()
-       for trial in range(num_trials):
-         train, test = train_test_split(x)
-         result.append([trial,
-                        generalization_score_mean(train, test),
-                        generalization_score_nmf(train, test),
-                        generalization_score_plra1(train, test),
-                        generalization_score_hpf(train, test),
-                        generalization_score_scvi(train, test)
-         ])
-       result = pd.DataFrame(result)
-       result.columns = ['trial', 'Mean', 'NMF', 'PLRA1', 'scHPF', 'scVI']
+       result = {'train': dict(), 'validation': dict()}
+       for method in ['nmf', 'nmf_frob','hpf', 'plra1', 'lda', 'maptpx', 'hpf']:
+         result['train'][method] = []
+         result['validation'][method] = []
+         for trial in range(num_trials):
+           train, val = scaa.benchmark.train_test_split(x)
+           training_score = getattr(scaa.benchmark, f'training_score_{method}')(train)
+           result['train'][method].append(training_score)
+           validation_score = getattr(scaa.benchmark, f'generalization_score_{method}')(train, val)
+           result['val'][method].append(validation_score)
+       result = pd.DataFrame.from_dict(result)
+       result.index.name = 'trial'
        return result
-   #+END_SRC
 
-   #+RESULTS: generalization
-   :RESULTS:
-   # Out[87]:
-   :END:
-
-   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
-     <<imports>>
-     <<poisson-imputation>>
-     <<generalization>>
-     res = evaluate_generalization(read_ipsc, 1)
-     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization.txt.gz', sep='\t', compression='gzip')
+     res = evaluate_generalization(data=cd19_b_cells, num_trials=1)
+     print(res)
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --partition=broadwl --job-name=pois-generalization --mem=16G --time=30:00 -n1 -c28
+     sbatch --partition=broadwl --job-name=pois-generalization --mem=4G --time=30:00 --partition=gpu2
      #!/bin/bash
      source activate singlecell
      python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 50949735
+   : Submitted batch job 51774785
    

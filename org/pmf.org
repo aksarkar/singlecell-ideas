@@ -1,0 +1,121 @@
+#+TITLE: Models for factorizing count data
+#+SETUPFILE: setup.org
+
+* Non-negative matrix factorization
+
+  /Non-negative matrix factorization/ is proposed in
+  [[http://www.columbia.edu/~jwp2128/Teaching/E4903/papers/nmf_nature.pdf][Lee
+  and Seung 1999]],
+  [[https://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization.pdf][Lee
+  and Seung 2001]].
+
+  \[ L^*, F^* = \arg\,\min_{L, F} \sum_{ij} X_{ij}\ln\frac{X_{ij}}{[LF]_{ij}} -
+  X_{ij} + [LF]_{ij} \]
+
+  \[ \mathrm{s.t.}\ L > 0, F > 0 \]
+
+  It is easy to show this is maximizing the Poisson log likelihood:
+
+  \[ = \arg\,\max_{L, F} X_{ij} \ln[LF]_{ij} - [LF]_{ij} + \mathrm{const} \]
+
+  It is important to note that an alternative definition of NMF is:
+
+  \[ L^*, F^* = \arg\,\min_{L, F} \Vert X - LF \Vert_2 \]
+
+  \[ \mathrm{s.t.}\ L > 0, F > 0 \]
+
+* Poisson matrix factorization
+
+  /Poisson matrix factorization/ is proposed in [[https://arxiv.org/abs/1311.1704][Gopalan et al. 2013]] (fixed
+  \(K\)), [[http://proceedings.mlr.press/v33/gopalan14.pdf][Gopalan et al. 2014]] (Dirichlet process prior on \(K\)). Assume we
+  have data \(x_{ij}\).
+
+  \[ x_{ij} \sim \mathrm{Poisson}([\boldsymbol{\theta} \boldsymbol{\beta}]_{ij}) \]
+
+  \[ \theta_{ik} \sim \mathrm{Gamma}(\cdot) \]
+
+  \[ \beta_{kj} \sim \mathrm{Gamma}(\cdot) \]
+
+  The inference goal is \(p(\boldsymbol{\theta}, \boldsymbol{\beta} \mid
+  \boldsymbol{X})\). The posterior is intractable, so they use mean-field
+  variational inference to get approximate posteriors.
+
+  If the data are sparse, then the algorithm can be sped up by reparameterizing
+  the model:
+
+  \[ x_{ij} = \sum_k z_{ijk} \]
+
+  \[ (z_{ij1}, \ldots, z_{ijK}) \sim \mathrm{Multinomial}(y_{ui}, (\theta_{i1}\beta_{1j}, \ldots, \theta_{iK}\beta_{Kj})) \]
+
+  Now, the algorithm operates on \(z_{ijk}\). But \(z_{ijk} = 0\) when \(x_{ij}
+  = 0\), so coordinate ascent updates can ignore \(z_{ijk}\) for zeros in the
+  data.
+
+* Latent Dirichlet Allocation
+
+  /Latent Dirichlet Allocation/ is proposed in
+  [[https://doi.org/10.1162%252Fjmlr.2003.3.4-5.993][Blei et al. 2003]]. Assume
+  we have \(n \times p\) data \(x_{ij}\), and assume \(K\) topics.
+
+  \[ x_{ij} \sim \mathrm{Categorical}(\phi_{z_{ij}}) \]
+
+  \[ z_{ij} \sim \mathrm{Categorical}(\theta_i) \]
+
+  \[ \boldsymbol{\theta}_i \sim \mathrm{Dirichlet}(\alpha_1, \ldots, \alpha_K) \]
+
+  \[ \boldsymbol{\phi}_k \sim \mathrm{Dirichlet}(\beta_1, \ldots, \beta_p) \]
+
+  [[http://genetics.org/content/155/2/945][Pritchard et al. 2000]] independently propose the same model, with latent
+  \(x_{ij}\) and observed data \(y_{ij}\) distributed as:
+
+  \[ y_{ij} \sim \mathrm{Binomial}(2, x_{ij}) \]
+
+  As suggested by [[https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1001117][Engelhardt and Stephens 2010]], this parameterization is
+  equivalent to:
+
+  \[ \mathbb{E}[x_{ij}] = LF \]
+
+  \[ 0 \leq l_{ik} \leq 1 \]
+
+  \[ f_{kj} \geq 0 \]
+
+  \[ \sum_{k} f_{kj} = 1 \]
+
+  To prove these parameterizations are equivalent:
+
+  1. \((\boldsymbol{\phi}_1, \ldots, \boldsymbol{\phi}_K) = L\). By definition
+     \(0 \leq \phi_{kj} \leq 1\).
+
+  2. \((\boldsymbol{\theta}_1, \ldots, \boldsymbol{\theta}_n) = F\). By definition
+     \(\theta_{ik} \geq 0, \sum_k \theta_{ik} = 1\).
+
+  3. \(z_{ij}\) selects an entry of \(\boldsymbol{\theta}_i\) (topic) with
+     probability proportional to \(\theta_{ik}\). \(x_{ij}\) selects an entry
+     of \(\boldsymbol{\phi}_{z_{ij}}\) with probability proportional to
+     \(\phi_{kj}\).
+
+     If \(\phi_{kj}\) denotes allele frequency of variant \(j\) in population
+     \(k\), and \(\theta_{ik}\) denotes fraction of ancestry of sample \(i\)
+     derived from population \(k\), then \(\sum_k \theta_{ik} \phi_{kj}\)
+     denotes the expected allele frequency of variant \(j\) in sample \(i\).
+
+  This reparameterization suggests an alternative algorithm ([[https://www.biorxiv.org/content/early/2017/12/29/240812][Cabreros and
+  Storey 2017]]):
+
+  \[ L*, F* = \arg \min_{L, F} \Vert X - LF \Vert_2 \]
+
+  \[ \mathrm{s.t.}\ 0 \leq l_{ik} \leq 1 \]
+
+  \[ f_{kj} \geq 0 \]
+
+  \[ \sum_{k} f_{kj} = 1 \]
+
+* Conclusions
+
+  1. *We should not expect NMF and LDA to give the same answer.* Even in the
+     case where we fit NMF by minimizing the Frobenius norm, and fit LDA using
+     the parameterization and alternating least squares algorithm of Cabreros
+     and Storey, the constraint on \(F\) is different in the two models.
+  2. *We should not expect NMF and PMF to give the same answer.* Even in the
+     case where we fit NMF by maximizing the Poisson likelihood, in PMF we
+     estimate a posterior mean.

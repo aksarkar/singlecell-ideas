@@ -4,7 +4,7 @@
 <!-- 2018-11-09 Fri 13:01 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell alignment</title>
+<title>Models for factorizing count data</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,10 +227,252 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell alignment</h1>
+<h1 class="title">Models for factorizing count data</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0e122b8">Non-negative matrix factorization</a></li>
+<li><a href="#org5b0a4bb">Poisson matrix factorization</a></li>
+<li><a href="#org3065954">Latent Dirichlet Allocation</a></li>
+<li><a href="#orgbd70ba5">Conclusions</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0e122b8" class="outline-2">
+<h2 id="org0e122b8">Non-negative matrix factorization</h2>
+<div class="outline-text-2" id="text-org0e122b8">
+<p>
+<i>Non-negative matrix factorization</i> is proposed in
+<a href="http://www.columbia.edu/~jwp2128/Teaching/E4903/papers/nmf_nature.pdf">Lee
+and Seung 1999</a>,
+<a href="https://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization.pdf">Lee
+and Seung 2001</a>.
+</p>
+
+<p>
+\[ L^*, F^* = \arg\,\min_{L, F} \sum_{ij} X_{ij}\ln\frac{X_{ij}}{[LF]_{ij}} -
+  X_{ij} + [LF]_{ij} \]
+</p>
+
+<p>
+\[ \mathrm{s.t.}\ L > 0, F > 0 \]
+</p>
+
+<p>
+It is easy to show this is maximizing the Poisson log likelihood:
+</p>
+
+<p>
+\[ = \arg\,\max_{L, F} X_{ij} \ln[LF]_{ij} - [LF]_{ij} + \mathrm{const} \]
+</p>
+
+<p>
+It is important to note that an alternative definition of NMF is:
+</p>
+
+<p>
+\[ L^*, F^* = \arg\,\min_{L, F} \Vert X - LF \Vert_2 \]
+</p>
+
+<p>
+\[ \mathrm{s.t.}\ L > 0, F > 0 \]
+</p>
+</div>
+</div>
+
+<div id="outline-container-org5b0a4bb" class="outline-2">
+<h2 id="org5b0a4bb">Poisson matrix factorization</h2>
+<div class="outline-text-2" id="text-org5b0a4bb">
+<p>
+<i>Poisson matrix factorization</i> is proposed in <a href="https://arxiv.org/abs/1311.1704">Gopalan et al. 2013</a> (fixed
+\(K\)), <a href="http://proceedings.mlr.press/v33/gopalan14.pdf">Gopalan et al. 2014</a> (Dirichlet process prior on \(K\)). Assume we
+have data \(x_{ij}\).
+</p>
+
+<p>
+\[ x_{ij} \sim \mathrm{Poisson}([\boldsymbol{\theta} \boldsymbol{\beta}]_{ij}) \]
+</p>
+
+<p>
+\[ \theta_{ik} \sim \mathrm{Gamma}(\cdot) \]
+</p>
+
+<p>
+\[ \beta_{kj} \sim \mathrm{Gamma}(\cdot) \]
+</p>
+
+<p>
+The inference goal is \(p(\boldsymbol{\theta}, \boldsymbol{\beta} \mid
+  \boldsymbol{X})\). The posterior is intractable, so they use mean-field
+variational inference to get approximate posteriors.
+</p>
+
+<p>
+If the data are sparse, then the algorithm can be sped up by reparameterizing
+the model:
+</p>
+
+<p>
+\[ x_{ij} = \sum_k z_{ijk} \]
+</p>
+
+<p>
+\[ (z_{ij1}, \ldots, z_{ijK}) \sim \mathrm{Multinomial}(y_{ui}, (\theta_{i1}\beta_{1j}, \ldots, \theta_{iK}\beta_{Kj})) \]
+</p>
+
+<p>
+Now, the algorithm operates on \(z_{ijk}\). But \(z_{ijk} = 0\) when \(x_{ij}
+  = 0\), so coordinate ascent updates can ignore \(z_{ijk}\) for zeros in the
+data.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org3065954" class="outline-2">
+<h2 id="org3065954">Latent Dirichlet Allocation</h2>
+<div class="outline-text-2" id="text-org3065954">
+<p>
+<i>Latent Dirichlet Allocation</i> is proposed in
+<a href="https://doi.org/10.1162%2Fjmlr.2003.3.4-5.993">Blei et al. 2003</a>. Assume
+we have \(n \times p\) data \(x_{ij}\), and assume \(K\) topics.
+</p>
+
+<p>
+\[ x_{ij} \sim \mathrm{Categorical}(\phi_{z_{ij}}) \]
+</p>
+
+<p>
+\[ z_{ij} \sim \mathrm{Categorical}(\theta_i) \]
+</p>
+
+<p>
+\[ \boldsymbol{\theta}_i \sim \mathrm{Dirichlet}(\alpha_1, \ldots, \alpha_K) \]
+</p>
+
+<p>
+\[ \boldsymbol{\phi}_k \sim \mathrm{Dirichlet}(\beta_1, \ldots, \beta_p) \]
+</p>
+
+<p>
+<a href="http://genetics.org/content/155/2/945">Pritchard et al. 2000</a> independently propose the same model, with latent
+\(x_{ij}\) and observed data \(y_{ij}\) distributed as:
+</p>
+
+<p>
+\[ y_{ij} \sim \mathrm{Binomial}(2, x_{ij}) \]
+</p>
+
+<p>
+As suggested by <a href="https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1001117">Engelhardt and Stephens 2010</a>, this parameterization is
+equivalent to:
+</p>
+
+<p>
+\[ \mathbb{E}[x_{ij}] = LF \]
+</p>
+
+<p>
+\[ 0 \leq l_{ik} \leq 1 \]
+</p>
+
+<p>
+\[ f_{kj} \geq 0 \]
+</p>
+
+<p>
+\[ \sum_{k} f_{kj} = 1 \]
+</p>
+
+<p>
+To prove these parameterizations are equivalent:
+</p>
+
+<ol class="org-ol">
+<li>\((\boldsymbol{\phi}_1, \ldots, \boldsymbol{\phi}_K) = L\). By definition
+\(0 \leq \phi_{kj} \leq 1\).</li>
+
+<li>\((\boldsymbol{\theta}_1, \ldots, \boldsymbol{\theta}_n) = F\). By definition
+\(\theta_{ik} \geq 0, \sum_k \theta_{ik} = 1\).</li>
+
+<li><p>
+\(z_{ij}\) selects an entry of \(\boldsymbol{\theta}_i\) (topic) with
+probability proportional to \(\theta_{ik}\). \(x_{ij}\) selects an entry
+of \(\boldsymbol{\phi}_{z_{ij}}\) with probability proportional to
+\(\phi_{kj}\).
+</p>
+
+<p>
+If \(\phi_{kj}\) denotes allele frequency of variant \(j\) in population
+\(k\), and \(\theta_{ik}\) denotes fraction of ancestry of sample \(i\)
+derived from population \(k\), then \(\sum_k \theta_{ik} \phi_{kj}\)
+denotes the expected allele frequency of variant \(j\) in sample \(i\).
+</p></li>
+</ol>
+
+<p>
+This reparameterization suggests an alternative algorithm (<a href="https://www.biorxiv.org/content/early/2017/12/29/240812">Cabreros and
+Storey 2017</a>):
+</p>
+
+<p>
+\[ L*, F* = \arg \min_{L, F} \Vert X - LF \Vert_2 \]
+</p>
+
+<p>
+\[ \mathrm{s.t.}\ 0 \leq l_{ik} \leq 1 \]
+</p>
+
+<p>
+\[ f_{kj} \geq 0 \]
+</p>
+
+<p>
+\[ \sum_{k} f_{kj} = 1 \]
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgbd70ba5" class="outline-2">
+<h2 id="orgbd70ba5">Conclusions</h2>
+<div class="outline-text-2" id="text-orgbd70ba5">
+<ol class="org-ol">
+<li><b>We should not expect NMF and LDA to give the same answer.</b> Even in the
+case where we fit NMF by minimizing the Frobenius norm, and fit LDA using
+the parameterization and alternating least squares algorithm of Cabreros
+and Storey, the constraint on \(F\) is different in the two models.</li>
+<li><b>We should not expect NMF and PMF to give the same answer.</b> Even in the
+case where we fit NMF by maximizing the Poisson likelihood, in PMF we
+estimate a posterior mean.</li>
+</ol>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>

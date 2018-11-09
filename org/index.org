@@ -1,6 +1,7 @@
 #+TITLE: Single cell ideas
 #+SETUPFILE: setup.org
 
+- [[file:alignment.org][Single cell alignment]]
 - [[file:wlra.org][Weighted low rank approximation]]
 - [[file:susie.org][Multivariate fine mapping]]
 - [[file:pop-structure.org][Population structure in single cell data]]

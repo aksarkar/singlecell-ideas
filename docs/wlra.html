@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-10-22 Mon 13:23 -->
+<!-- 2018-11-09 Fri 13:01 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weighted low rank approximation</title>
@@ -263,17 +263,17 @@ for the JavaScript code in this tag.
 <li><a href="#org1010fdb">EM algorithm</a></li>
 <li><a href="#orgdd7ac38">Alternative derivation</a></li>
 <li><a href="#orgb462a31">Maximizing non-Gaussian likelihoods</a></li>
-<li><a href="#org762312f">Imputing missing values</a></li>
-<li><a href="#orga964d7a">Choosing the rank of the approximation</a></li>
+<li><a href="#org7d08c23">Imputing missing values</a></li>
+<li><a href="#orgd0aebcc">Choosing the rank of the approximation</a></li>
 </ul>
 </li>
 <li><a href="#org643a7f6">Results</a>
 <ul>
 <li><a href="#org31c72cd">Recovering low rank structure</a></li>
 <li><a href="#org64afc90">Explaining training data</a></li>
-<li><a href="#orge60d243">Imputing missing values</a></li>
+<li><a href="#orgbf1974c">Imputing missing values</a></li>
 <li><a href="#orgb6aef17">Convergence</a></li>
-<li><a href="#org2a84ef6">Choosing the rank of the approximation</a></li>
+<li><a href="#orgd200df2">Choosing the rank of the approximation</a></li>
 <li><a href="#orgd780580">Explaining held out data</a></li>
 </ul>
 </li>
@@ -467,9 +467,8 @@ objective is equivalent to maximizing a Gaussian likelihood:
 </p>
 
 <p>
-\[= \mathcal{N}\left(\theta; \theta_0 -
-   \frac{l'(\theta_0)}{l''(\theta_0)}, -\frac{1}{l''(\theta_0)}\right) +
-   \mathrm{const} \]
+\[= \mathcal{N}\left(\theta_0 - \frac{l'(\theta_0)}{l''(\theta_0)}; \theta,
+   -\frac{1}{l''(\theta_0)}\right) + \mathrm{const} \]
 </p>
 
 <p>
@@ -533,9 +532,9 @@ where \(S(\cdot)\) denotes the sigmoid function.
 </div>
 </div>
 
-<div id="outline-container-org762312f" class="outline-3">
-<h3 id="org762312f">Imputing missing values</h3>
-<div class="outline-text-3" id="text-org762312f">
+<div id="outline-container-org7d08c23" class="outline-3">
+<h3 id="org7d08c23">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org7d08c23">
 <p>
 The EM algorithm for WLRA supports missing values by setting \(w_{ij} =
    0\).
@@ -550,9 +549,9 @@ presence/absence. We can do this by using weights \(\tilde{\mathbf{W}} \circ
 </div>
 </div>
 
-<div id="outline-container-orga964d7a" class="outline-3">
-<h3 id="orga964d7a">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-orga964d7a">
+<div id="outline-container-orgd0aebcc" class="outline-3">
+<h3 id="orgd0aebcc">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-orgd0aebcc">
 <p>
 The most obvious way to pick an optimal rank is to use cross-validation:
 hold out some samples, and evaluate the likelihood of the held-out samples
@@ -833,9 +832,9 @@ iterating PLRA to convergence only has little value.
 </div>
 </div>
 
-<div id="outline-container-orge60d243" class="outline-3">
-<h3 id="orge60d243">Imputing missing values</h3>
-<div class="outline-text-3" id="text-orge60d243">
+<div id="outline-container-orgbf1974c" class="outline-3">
+<h3 id="orgbf1974c">Imputing missing values</h3>
+<div class="outline-text-3" id="text-orgbf1974c">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1174,9 +1173,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org2a84ef6" class="outline-3">
-<h3 id="org2a84ef6">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org2a84ef6">
+<div id="outline-container-orgd200df2" class="outline-3">
+<h3 id="orgd200df2">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-orgd200df2">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1233,6 +1232,8 @@ count data.
 
 <ul class="org-ul">
 <li>Non-negative matrix factorization (<a href="https://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization.pdf">Lee and Seung 2001</a>, <a href="https://arxiv.org/abs/1010.1763">Févotte and Idier 2011</a>)</li>
+<li>Latent dirichlet allocation (<a href="http://www.jmlr.org/papers/volume3/blei03a/blei03a.pdf">Blei et al 2003</a>, <a href="https://papers.nips.cc/paper/3902-online-learning-for-latent-dirichlet-allocation">Hoffman et al. 2010</a>, <a href="http://proceedings.mlr.press/v22/taddy12.html">Taddy
+2012</a>)</li>
 <li>Hierarchical Bayesian Poisson Factorization (<a href="http://www.cs.columbia.edu/~blei/papers/GopalanHofmanBlei2015.pdf">Gopalan et al. 2015</a>)</li>
 <li>ZINB-WAVE (<a href="https://www.nature.com/articles/s41467-017-02554-5">Risso et al. 2018</a>)</li>
 <li>scVI (<a href="https://www.biorxiv.org/content/early/2018/03/30/292037">Lopez et al 2018</a>)</li>
@@ -1293,84 +1294,14 @@ Our metric is then the likelihood of the held-out data. We simply need to
 re-scale to account for different size factors \(R_i\).
 </p>
 
+<p>
+The benchmarks are included in the Python package scaa.
+</p>
+
 <div class="org-src-container">
-<pre class="src src-ipython" id="orgb77a649"><span class="org-keyword">def</span> <span class="org-function-name">pois_llik</span>(lam, train, test):
-  <span class="org-variable-name">lam</span> *= test.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>) / train.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
-  <span class="org-keyword">return</span> st.poisson(mu=lam).logpmf(test).<span class="org-builtin">sum</span>()
-
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_mean</span>(train, test):
-  <span class="org-variable-name">lam</span> = np.ones(train.shape) * train.mean(axis=0, keepdims=<span class="org-constant">True</span>)
-  <span class="org-keyword">return</span> pois_llik(lam, train, test)
-
-<span class="org-keyword">def</span> <span class="org-function-name">rank_select</span>(train, imputation_score, max_rank, holdout=0.1):
-  <span class="org-doc">"""Search for the rank which minimizes imputation loss"""</span>
-  <span class="org-variable-name">obj</span> = np.inf
-  <span class="org-variable-name">opt</span> = 1
-  <span class="org-keyword">for</span> rank <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 100):
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Randomly hold out 10% of entries to impute</span>
-    <span class="org-variable-name">x</span> = np.ma.masked_array(train, np.random.uniform(size=train.shape) &lt; holdout)
-    <span class="org-variable-name">res</span> = imputation_score(x, rank)[1]
-    <span class="org-keyword">if</span> res &lt; obj:
-      <span class="org-variable-name">opt</span> = rank
-      <span class="org-variable-name">obj</span> = res
-    <span class="org-keyword">else</span>:
-      <span class="org-keyword">break</span>
-  <span class="org-keyword">return</span> opt
-
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_plra1</span>(train, test, rank=10):
-  <span class="org-variable-name">lam</span> = np.exp(wlra.plra(train, rank))
-  <span class="org-keyword">return</span> pois_llik(lam, train, test)
-
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_nmf</span>(train, test, rank=50):
-  <span class="org-variable-name">lam</span> = nmf(train, rank)
-  <span class="org-keyword">return</span> pois_llik(lam, train, test)
-
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_hpf</span>(train, test, rank=50):
-  <span class="org-keyword">import</span> scHPF.preprocessing
-  <span class="org-keyword">import</span> scHPF.train
-  <span class="org-keyword">import</span> tempfile
-  <span class="org-keyword">with</span> tempfile.TemporaryDirectory(prefix=<span class="org-string">'/scratch/midway2/aksarkar/ideas/'</span>) <span class="org-keyword">as</span> d:
-    <span class="org-comment-delimiter"># </span><span class="org-comment">scHPF assumes genes x cells</span>
-    scHPF.preprocessing.split_dataset_hpf(train.T, outdir=d)
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Set bp, dp as in scHPF.train</span>
-    <span class="org-variable-name">bp</span> = train.<span class="org-builtin">sum</span>(axis=1).mean() / train.<span class="org-builtin">sum</span>(axis=1).var()
-    <span class="org-variable-name">dp</span> = train.<span class="org-builtin">sum</span>(axis=0).mean() / train.<span class="org-builtin">sum</span>(axis=0).var()
-    <span class="org-variable-name">opt</span> = scHPF.train.run_trials(
-      indir=d, outdir=d, prefix=<span class="org-string">''</span>,
-      nfactors=rank, a=0.3, ap=1, bp=bp, c=0.3, cp=1, dp=dp,
-      <span class="org-comment-delimiter"># </span><span class="org-comment">This is broken when we call the API directly</span>
-      logging_options={<span class="org-string">'log_phi'</span>: <span class="org-constant">False</span>})
-    <span class="org-variable-name">L</span> = np.load(f<span class="org-string">'{opt}/beta_invrate.npy'</span>) * np.load(f<span class="org-string">'{opt}/beta_shape.npy'</span>)
-    <span class="org-variable-name">F</span> = np.load(f<span class="org-string">'{opt}/theta_invrate.npy'</span>) * np.load(f<span class="org-string">'{opt}/theta_shape.npy'</span>)
-    <span class="org-keyword">return</span> pois_llik(L.dot(F.T), train, test)
-
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_scvi</span>(train, test):
-  <span class="org-keyword">from</span> scvi.dataset <span class="org-keyword">import</span> GeneExpressionDataset
-  <span class="org-keyword">from</span> scvi.inference <span class="org-keyword">import</span> UnsupervisedTrainer
-  <span class="org-keyword">from</span> scvi.models <span class="org-keyword">import</span> VAE
-  <span class="org-variable-name">data</span> = GeneExpressionDataset(*GeneExpressionDataset.get_attributes_from_matrix(train))
-  <span class="org-variable-name">vae</span> = VAE(n_input=train.shape[1])
-  <span class="org-variable-name">m</span> = UnsupervisedTrainer(vae, data, verbose=<span class="org-constant">False</span>)
-  m.train(n_epochs=100)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Training permuted the data for minibatching. Unpermute before "imputing"</span>
-  <span class="org-comment-delimiter"># </span><span class="org-comment">(estimating lambda)</span>
-  <span class="org-variable-name">lam</span> = np.vstack([m.train_set.sequential().imputation(),
-                   m.test_set.sequential().imputation()])
-  <span class="org-keyword">return</span> pois_llik(lam, train, test)
-
-<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_dca</span>(train, test):
-  <span class="org-keyword">import</span> anndata
-  <span class="org-keyword">import</span> scanpy.api
-  <span class="org-variable-name">data</span> = anndata.AnnData(X=train)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">"Denoising" is estimating lambda</span>
-  scanpy.api.pp.dca(data, mode=<span class="org-string">'denoise'</span>)
-  <span class="org-variable-name">lam</span> = data.X
-  <span class="org-keyword">return</span> pois_llik(lam, train, test)
-
-<span class="org-keyword">def</span> <span class="org-function-name">train_test_split</span>(x, p=0.5):
-  <span class="org-variable-name">train</span> = np.random.binomial(n=x, p=p, size=x.shape)
-  <span class="org-variable-name">test</span> = x - train
-  <span class="org-keyword">return</span> train, test
+<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
+<span class="org-keyword">import</span> scaa
+<span class="org-keyword">import</span> scipy.io
 
 <span class="org-keyword">def</span> <span class="org-function-name">read_ipsc</span>():
   <span class="org-variable-name">keep_samples</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt'</span>, index_col=0, header=<span class="org-constant">None</span>)
@@ -1378,32 +1309,32 @@ re-scale to account for different size factors \(R_i\).
   <span class="org-variable-name">x</span> = (pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-counts.txt.gz'</span>, index_col=0)
        .loc[keep_genes.values.ravel(),keep_samples.values.ravel()]
        .values.T)
-  <span class="org-keyword">return</span> x
+
+<span class="org-keyword">def</span> <span class="org-function-name">cd8_cytotoxic_t_cells</span>(min_detect=0.25):
+  <span class="org-variable-name">counts</span> = scipy.io.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx.gz'</span>).tocsr()
+  <span class="org-variable-name">counts</span> = counts[((counts &gt; 0).mean(axis=1) &gt;= min_detect).A.ravel()].T.A.astype(np.<span class="org-builtin">int</span>)
+  <span class="org-keyword">return</span> counts
+
+<span class="org-keyword">def</span> <span class="org-function-name">cd19_b_cells</span>(min_detect=0.25):
+  <span class="org-variable-name">counts</span> = scipy.io.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/matrix.mtx.gz'</span>).tocsr()
+  <span class="org-variable-name">counts</span> = counts[((counts &gt; 0).mean(axis=1) &gt;= min_detect).A.ravel()].T.A.astype(np.<span class="org-builtin">int</span>)
+  <span class="org-keyword">return</span> counts
 
 <span class="org-keyword">def</span> <span class="org-function-name">evaluate_generalization</span>(data, num_trials):
-  <span class="org-variable-name">result</span> = []
   <span class="org-variable-name">x</span> = data()
-  <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
-    <span class="org-variable-name">train</span>, <span class="org-variable-name">test</span> = train_test_split(x)
-    result.append([trial,
-                   generalization_score_mean(train, test),
-                   generalization_score_nmf(train, test),
-                   generalization_score_plra1(train, test),
-                   generalization_score_hpf(train, test),
-                   generalization_score_scvi(train, test)
-    ])
-  <span class="org-variable-name">result</span> = pd.DataFrame(result)
-  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'Mean'</span>, <span class="org-string">'NMF'</span>, <span class="org-string">'PLRA1'</span>, <span class="org-string">'scHPF'</span>, <span class="org-string">'scVI'</span>]
+  <span class="org-variable-name">result</span> = <span class="org-builtin">dict</span>()
+  <span class="org-keyword">for</span> method <span class="org-keyword">in</span> [<span class="org-string">'hpf'</span>]:
+    <span class="org-variable-name">result</span>[method] = []
+    <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
+      <span class="org-variable-name">train</span>, <span class="org-variable-name">test</span> = scaa.benchmark.train_test_split(x)
+      <span class="org-variable-name">score</span> = <span class="org-builtin">getattr</span>(scaa.benchmark, f<span class="org-string">'generalization_score_{method}'</span>)(train, test)
+      result[method].append(score)
+  <span class="org-variable-name">result</span> = pd.DataFrame.from_dict(result)
+  <span class="org-variable-name">result.index.name</span> = <span class="org-string">'trial'</span>
   <span class="org-keyword">return</span> result
-</pre>
-</div>
 
-<div class="org-src-container">
-<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
-&lt;&lt;poisson-imputation&gt;&gt;
-&lt;&lt;generalization&gt;&gt;
-<span class="org-variable-name">res</span> = evaluate_generalization(read_ipsc, 1)
-res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
+<span class="org-variable-name">res</span> = evaluate_generalization(data=cd19_b_cells, num_trials=1)
+<span class="org-keyword">print</span>(res)
 </pre>
 </div>
 
@@ -1425,7 +1356,7 @@ Submitted batch job 50949735
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-10-22 Mon 13:23</p>
+<p class="date">Created: 2018-11-09 Fri 13:01</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

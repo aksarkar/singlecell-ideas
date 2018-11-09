@@ -12,16 +12,24 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="4G",partition="gpu2",venv="singlecell") :dir /scratch/midway2/aksarkar/ideas
+  #+CALL: ipython3(memory="4G",partition="gpu2",venv="singlecell",opts="--gres=gpu:1") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 46954766
+  : Submitted batch job 51480571
 
   #+NAME: imports
   #+BEGIN_SRC ipython
     import numpy as np
     import pandas as pd
+    import scaa
+    import scipy.io
+    import scipy.stats as st
   #+END_SRC
+
+  #+RESULTS: imports
+  :RESULTS:
+  # Out[8]:
+  :END:
 
   #+RESULTS:
   :RESULTS:
@@ -70,12 +78,13 @@
      dimensional space), it should not be possible to successfully classify
      points as coming from different data sets.
 
-  2. We propose an adversarial auto-encoding architecture ([[https://arxiv.org/abs/1511.05644][Makhzani et al 2015]])
-     which simultaneously: (1) explains the observed data (by maximizing the
-     evidence lower bound) and removes data-set specific differences (by
-     maximizing the cross-entropy loss), (2) learns a separate generative model
-     of the data to allow incremental alignment of novel datasets without using
-     the original training data.
+  2. We propose an adversarial auto-encoding architecture
+     ([[https://arxiv.org/abs/1511.05644][Makhzani et al. 2015]]) which
+     simultaneously: (1) explains the observed data (by maximizing the evidence
+     lower bound) and removes data-set specific differences (by maximizing the
+     cross-entropy loss), (2) learns a separate generative model of the data to
+     allow incremental alignment of novel datasets without using the original
+     training data.
 
   3. We show that our method performs well using the alignment score proposed
      by Butler et al 2018, and outperforms it in terms of negative
@@ -175,7 +184,7 @@
    ([[https://statweb.stanford.edu/~candes/papers/RobustPCA.pdf][Candés et
    al. 2009]], [[https://arxiv.org/pdf/1706.05148][Dai et al 2017]]).
 
-** Adversarial autoencoder
+** Adversarial alignment
 
    We want to enforce the constraint that data which reflect the same
    underlying biological state are not distinguishable on the basis of which
@@ -183,34 +192,48 @@
    underlying biological state as well as "forget" systematic differences
    between different data sets.
 
-   To achieve this goal, we take an adversarial approach. The encoder network
-   in the VAE described above learns a non-linear mapping from observed data
-   \(\mathbf{x}_i\) to a low dimensional latent variable \(\mathbf{z}_i\)
-   describing the biological state. We need the encoder to not use systematic
-   differences between data sets in this mapping. This constraint is not
-   expressible as a prior on \(\mathbf{z}_i\), but it is expressible as the
-   opposite of a classification problem on \(\mathbf{z}_i\). In essence, rather
-   than minimizing the cross-entropy loss:
+   To achieve this goal, we observe that the VAE described above learns a
+   non-linear mapping from observed data \(\mathbf{x}_i\) to a low dimensional
+   latent variable \(\mathbf{z}_i\) describing the biological state. We need
+   the encoder to not use systematic differences between data sets in this
+   mapping. 
+
+   This constraint is not readily expressible as a prior on \(\mathbf{z}_i\),
+   but it is expressible as the opposite of a classification problem on
+   \(\mathbf{z}_i\). In essence, rather than minimizing the cross-entropy loss:
 
    \[ l(\mathbf{z}_i, y_i) = y_i \ln(f(\mathbf{z}_i)) \]
 
-   where \(f\) is the classifier, we want to maximize it.
+   where \(f\) is the classifier, we want to maximize it. This is related to
+   maximum entropy ([[http://bayes.wustl.edu/etj/articles/theory.1.pdf][Jaynes
+   1957a]], [[http://bayes.wustl.edu/etj/articles/theory.2.pdf][Jaynes 1957b]])
+   and minimum discrimination information
+   ([[https://doi.org/10.1214%252Faoms%252F1177729694][Kullback and Liebler
+   1951]]).
 
    This suggests jointly optimizing a combined loss function:
 
    \[ \mathcal{L} = \sum_i \mathrm{ELBO}(\mathbf{x}_i) - l(\mathbf{z}_i, y_i)
    \]
 
-   There is one major challenge in optimizing this loss function: we need to
-   balance the two parts of the objective function. The optimal way to fool the
-   discriminator is to randomly place points in the low dimensional space, but
-   the optimal way to describe the data is to model the systematic technical
-   differences between data sets.
+   There are two major challenge in optimizing this loss function:
 
-** Generator network for incremental training
+   1. We need to jointly train the classifier \(f\) and the the VAE \(p,
+      q\). In principle, this could be done by simply performing gradient
+      descent on the full objective function wrt. the parameters of \(f, p,
+      q\). This approach is related to adversarial autoencoders (Makhzani et
+      al. 2015), where an adversarial discriminator network is used to enforce
+      constraints on a deep generative model.
+   2. We need to balance the two parts of the objective function. The optimal
+      way to fool the discriminator is to randomly place points in the low
+      dimensional space, but the optimal way to describe the data is to model
+      the systematic technical differences between data sets. In previous work,
+      this was done by training each component alternately.
 
-   One remaining challenge is how to update the model with new data (e.g., a
-   new experimental data set). After successfully fooling the adversary, the
+** Incremental training
+
+   One further challenge is how to update the model with new data (e.g., a new
+   experimental data set). After successfully fooling the adversary, the
    resulting low dimensional representation is "one dataset", reducing the
    problem into aligning two data sets. However, all of the original data would
    be required to train the model from scratch.
@@ -249,17 +272,17 @@
    new data sets without needing the original data.
 
 * Results
-** Sanity checks
+** ZIPVAE sanity check
 
    First, check that the ZIPVAE works. Simulate some low-rank Poisson data,
    thin the counts to produce training and validation data, and evaluate the
-   validation likelihood.
+   validation set log likelihood.
 
    \[ \mathbf{l}_{ik} \sim \mathcal{N}(0, \sigma^2) \]
    \[ \mathbf{f}_{kj} \sim \mathcal{N}(0, \sigma^2) \]
    \[ \ln\lambda_{ij} = l_{ik} f_{kj} \]
    \[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
-   \[ y_{ij} \sim Binomial(x_{ij}, 0.5) \]
+   \[ y_{ij} \sim \mathrm{Binomial}(x_{ij}, 0.5) \]
    \[ \tilde{y}_{ij} = x_{ij} - y_{ij} \]
 
    #+NAME: zipvae-sanity-check
@@ -284,10 +307,10 @@
        lam *= test.sum(axis=0, keepdims=True) / train.sum(axis=0, keepdims=True)
        return st.poisson(mu=lam).logpmf(test).sum()
 
-     def generalization_score_mle(train, test):
-       return pois_llik(train, train, test)
+     def generalization_score_oracle(train, test, eta):
+       return pois_llik(np.exp(eta), train, test)
 
-     def generalization_score_zipvae(train, test):
+     def generalization_score_zipvae(train, test, *args):
        import scaa
        import torch
        import torch.utils.data
@@ -298,34 +321,24 @@
          lam = model.denoise(training_data)
        return pois_llik(lam, train, test)
 
-     def generalization_score_scvi(train, test):
-       from scvi.dataset import GeneExpressionDataset
-       from scvi.inference import UnsupervisedTrainer
-       from scvi.models import VAE
-       data = GeneExpressionDataset(*GeneExpressionDataset.get_attributes_from_matrix(train))
-       vae = VAE(n_input=train.shape[1])
-       m = UnsupervisedTrainer(vae, data, verbose=False)
-       m.train(n_epochs=100)
-       # Training permuted the data for minibatching. Unpermute before "imputing"
-       # (estimating lambda)
-       lam = np.vstack([m.train_set.sequential().imputation(),
-                        m.test_set.sequential().imputation()])
-       return pois_llik(lam, train, test)
-
      def evaluate_generalization(num_trials):
-       result = []
-       for trial in range(num_trials):
-         x, eta = simulate_pois(n=500, p=1000, rank=3, eta_max=3, seed=trial)
-         train, test = train_test_split(x)
-         result.append([trial,
-                        generalization_score_mle(train, test),
-                        generalization_score_zipvae(train, test),
-                        generalization_score_scvi(train, test),
-         ])
-       result = pd.DataFrame(result)
-       result.columns = ['trial', 'MLE', 'ZIPVAE', 'scVI']
+       result = dict()
+       for method in ['oracle', 'zipvae']:
+         result[method] = []
+         for trial in range(num_trials):
+           x, eta = simulate_pois(n=500, p=1000, rank=3, eta_max=3, seed=trial)
+           train, test = train_test_split(x)
+           score = globals()[f'generalization_score_{method}'](train, test, eta)
+           result[method].append(score)
+       result = pd.DataFrame.from_dict(result)
+       result.index.name = 'trial'
        return result
    #+END_SRC
+
+   #+RESULTS: zipvae-sanity-check
+   :RESULTS:
+   # Out[27]:
+   :END:
 
    #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipvae-generalization.py
      <<imports>>
@@ -342,29 +355,193 @@
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 51270737
+   : Submitted batch job 51311689
 
-** Download the data
+   Read the results.
 
-  [[https://www.nature.com/articles/nbt.4042][Kang et al 2018]] studied control against stimulated CD4+ T cells. The Satija
-  lab provided the processed count matrices.
+   #+BEGIN_SRC ipython
+     res = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/generalization.txt.gz', index_col=0)
+   #+END_SRC
 
-  #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas
-    curl -sLO https://www.dropbox.com/s/79q6dttg8yl20zg/immune_alignment_expression_matrices.zip
-    unzip immune_alignment_expression_matrices.zip
-  #+END_SRC
+   #+RESULTS:
+   :RESULTS:
+   # Out[34]:
+   :END:
 
-  #+RESULTS:
-  | Archive:   | immune_alignment_expression_matrices.zip              |
-  | inflating: | immune_control_expression_matrix.txt.gz               |
-  | creating:  | __MACOSX/                                             |
-  | inflating: | __MACOSX/._immune_control_expression_matrix.txt.gz    |
-  | inflating: | immune_stimulated_expression_matrix.txt.gz            |
-  | inflating: | __MACOSX/._immune_stimulated_expression_matrix.txt.gz |
+   Plot the results.
 
-  The Satija lab provided data for four pancreatic alignment data sets.
+   #+BEGIN_SRC ipython :ipyfile figure/alignment.org/zipvae-generalization.png
+     methods = ['oracle', 'zipvae']
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     for j, method in enumerate(methods):
+       y = res[method]
+       f = st.gaussian_kde(y)
+       py = f(y)
+       x = j + .2 / py.max() * np.random.uniform(-py, py)
+       plt.scatter(x, y, c='k', s=4)
+     plt.xticks(range(len(methods)), methods)
+     plt.xlim(-.5, len(methods) - .5)
+     plt.xlabel('Method')
+     _ = plt.ylabel('Validation set log likelihood')
+   #+END_SRC
 
-  #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas
-    curl -O https://www.dropbox.com/s/vdtz4kkodpe8kw3/pancreas_multialignment_expression_matrices.zip
-    unzip pancreas_multialignment_expression_matrices.zip
-  #+END_SRC
+   #+RESULTS:
+   :RESULTS:
+   # Out[41]:
+   [[file:figure/alignment.org/zipvae-generalization.png]]
+   :END:
+
+** ZIPVAE on known mixture
+
+   Embed a known mixtures of sorted cells, then look at whether they are
+   linearly separable in the embedding space.
+
+   #+BEGIN_SRC ipython
+   
+   #+END_SRC
+
+** ZIPAAE sanity check
+
+   Simulate homogeneous low rank data and randomly split it into two groups (so
+   differences are just sampling variation). The AAE should still be able to
+   accurately model the data.
+
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipaae-generalization.py
+     <<imports>>
+
+     def evaluate(num_trials):
+       result = []
+       for trial in range(num_trials):
+         train, test = scaa.benchmark.train_test_split(x)
+         y = (np.random.uniform(size=x.shape[0]) < 0.5).astype(np.int)
+         result.append([trial,
+                        scaa.benchmark.generalization_score_oracle(train, test, eta=eta),
+                        scaa.benchmark.generalization_score_zipvae(train, test),
+                        scaa.benchmark.generalization_score_zipaae(train, test, y=y),
+         ])
+       result = pd.DataFrame(result)
+       result.columns = ['trial', 'Oracle', 'ZIPVAE', 'ZIPAAE']
+       return result
+
+     res = evaluate(num_trials=20)
+     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/zipaae-generalization.txt.gz', compression='gzip', sep='\t')
+   #+END_SRC
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     sbatch --partition=gpu2 --gres=gpu:1 --time=60:00 --job-name=zipaae
+     #!/bin/bash
+     source activate singlecell
+     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipaae-generalization.py
+   #+END_SRC
+
+   #+RESULTS:
+   : Submitted batch job 51428443
+
+   Read the results.   
+
+   #+BEGIN_SRC ipython
+     res = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/zipaae-generalization.txt.gz', index_col=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[3]:
+   :END:
+
+   Plot the results.
+
+   #+BEGIN_SRC ipython :ipyfile figure/alignment.org/zipaae-generalization.png
+     methods = ['Oracle', 'ZIPVAE', 'ZIPAAE']
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     for j, method in enumerate(methods):
+       y = res[method]
+       f = st.gaussian_kde(y)
+       py = f(y)
+       x = j + .2 / py.max() * np.random.uniform(-py, py)
+       plt.scatter(x, y, c='k', s=4)
+     plt.xticks(range(len(methods)), methods)
+     plt.xlim(-.5, len(methods) - .5)
+     plt.xlabel('Method')
+     _ = plt.ylabel('Validation set log likelihood')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   [[file:figure/alignment.org/zipaae-generalization.png]]
+   :END:
+
+   Use real sorted cells, and repeat the benchmark.
+
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipaae-cd8.py
+     <<imports>>
+
+     def cd8_cytotoxic_t_cells(min_detect=0.25):
+       counts = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
+       counts = counts[((counts > 0).mean(axis=1) >= min_detect).A.ravel()].T.A.astype(np.int)
+       return counts
+
+     def evaluate(data, num_trials):
+       x = data()
+       result = []
+       for trial in range(num_trials):
+         train, test = scaa.benchmark.train_test_split(x)
+         y = (np.random.uniform(size=x.shape[0]) < 0.5).astype(np.int)
+         result.append([trial,
+                        scaa.benchmark.generalization_score_plra1(train, test),
+                        scaa.benchmark.generalization_score_zipvae(train, test),
+                        scaa.benchmark.generalization_score_zipaae(train, test, y=y),
+         ])
+       result = pd.DataFrame(result)
+       result.columns = ['trial', 'PLRA1', 'ZIPVAE', 'ZIPAAE']
+       return result
+
+     res = evaluate(cd8_cytotoxic_t_cells, num_trials=1)
+     # res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/zipaae-generalization2.txt.gz', compression='gzip', sep='\t')
+   #+END_SRC
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     sbatch --partition=gpu2 --gres=gpu:1 --time=60:00 --job-name=zipaae
+     #!/bin/bash
+     source activate singlecell
+     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipaae-cd8.py
+   #+END_SRC
+
+   #+RESULTS:
+   : Submitted batch job 51508003
+
+** ZIPAAE on known mixtures
+** Comparison to existing methods
+
+   Look at control versus stimulated CD4+ T cells from
+   [[https://www.nature.com/articles/nbt.4042][Kang et al 2018]].
+
+   Download the data.
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas
+     mkdir -p GSE96583
+     cd GSE96583
+     curl "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE96583&format=file" | tar xf -
+     curl "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE96583&format=file&file=GSE96583_genes.txt.gz" -o GSE96583_genes.txt.gz
+   #+END_SRC
+
+   Read the data.
+
+   #+BEGIN_SRC ipython
+     control = scipy.io.mmread("/scratch/midway2/aksarkar/ideas/GSE96583/GSM2560248_2.1.mtx.gz")
+     stim = scipy.io.mmread("/scratch/midway2/aksarkar/ideas/GSE96583/GSM2560248_2.2.mtx.gz")
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[9]:
+   :END:
+
+   First, ask whether batches can be classified. (Aside: this seems like a case
+   where proper experimental design would eliminate the problem.)
+
+   #+BEGIN_SRC ipython
+     
+   #+END_SRC

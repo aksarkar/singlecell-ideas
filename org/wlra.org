@@ -876,7 +876,7 @@
      def evaluate_generalization(data, num_trials):
        x = data()
        result = {'train': dict(), 'validation': dict()}
-       for method in ['nmf', 'nmf_frob','hpf', 'plra1', 'lda', 'maptpx', 'hpf']:
+       for method in ['plra1', 'nmf', 'nmf_frob', 'hpf', 'lda', 'maptpx', 'scvi', 'zipvae']:
          result['train'][method] = []
          result['validation'][method] = []
          for trial in range(num_trials):
@@ -884,7 +884,7 @@
            training_score = getattr(scaa.benchmark, f'training_score_{method}')(train)
            result['train'][method].append(training_score)
            validation_score = getattr(scaa.benchmark, f'generalization_score_{method}')(train, val)
-           result['val'][method].append(validation_score)
+           result['validation'][method].append(validation_score)
        result = pd.DataFrame.from_dict(result)
        result.index.name = 'trial'
        return result
@@ -894,12 +894,12 @@
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --partition=broadwl --job-name=pois-generalization --mem=4G --time=30:00 --partition=gpu2
+     sbatch --job-name=pois-generalization --mem=8G --time=60:00 --partition=gpu2 --gres=gpu:1
      #!/bin/bash
      source activate singlecell
      python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 51774785
+   : Submitted batch job 51818956
    

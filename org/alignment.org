@@ -12,10 +12,10 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="4G",venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :dir /scratch/midway2/aksarkar/ideas
+  #+CALL: ipython3(memory="32G",venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 51829818
+  : Submitted batch job 51849776
 
   #+NAME: imports
   #+BEGIN_SRC ipython
@@ -25,13 +25,16 @@
     import scipy.io
     import scipy.sparse as ss
     import scipy.stats as st
+    import sklearn.decomposition as skd
+    import sklearn.linear_model as sklm
     import sklearn.manifold as skm
     import torch
+    import umap
   #+END_SRC
 
   #+RESULTS: imports
   :RESULTS:
-  # Out[13]:
+  # Out[53]:
   :END:
 
   #+RESULTS:
@@ -485,14 +488,14 @@
      plt.gcf().set_size_inches(3, 3)
      plt.scatter(embed[y,0], embed[y,1], s=1, c='r', label='CD19', alpha=0.25)
      plt.scatter(embed[~y,0], embed[~y,1], s=1, c='b', label='CD8', alpha=0.25)
+     plt.legend(frameon=False, handletextpad=0, markerscale=4)
      plt.xlabel('UMAP 1')
-     plt.ylabel('UMAP 2')
+     _ = plt.ylabel('UMAP 2')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[36]:
-   : Text(0,0.5,'UMAP 2')
+   # Out[39]:
    [[file:figure/alignment.org/zipvae-cd8-cd19-umap.png]]
    :END:
 
@@ -568,50 +571,141 @@
    [[file:figure/alignment.org/zipaae-generalization.png]]
    :END:
 
-   Use real sorted cells, and repeat the benchmark.
+** ZIPAAE on known mixtures
 
-   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipaae-cd8.py
-     <<imports>>
+   Randomly split a knowm mixture of sorted cells into two groups, then fit the
+   AAE to embed them.
 
-     def cd8_cytotoxic_t_cells(min_detect=0.25):
-       counts = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
-       counts = counts[((counts > 0).mean(axis=1) >= min_detect).A.ravel()].T.A.astype(np.int)
-       return counts
-
-     def evaluate(data, num_trials):
-       x = data()
-       result = []
-       for trial in range(num_trials):
-         train, test = scaa.benchmark.train_test_split(x)
-         y = (np.random.uniform(size=x.shape[0]) < 0.5).astype(np.int)
-         result.append([trial,
-                        scaa.benchmark.generalization_score_plra1(train, test),
-                        scaa.benchmark.generalization_score_zipvae(train, test),
-                        scaa.benchmark.generalization_score_zipaae(train, test, y=y),
-         ])
-       result = pd.DataFrame(result)
-       result.columns = ['trial', 'PLRA1', 'ZIPVAE', 'ZIPAAE']
-       return result
-
-     res = evaluate(cd8_cytotoxic_t_cells, num_trials=1)
-     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/zipaae-generalization2.txt.gz', compression='gzip', sep='\t')
-   #+END_SRC
-
-   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --partition=gpu2 --gres=gpu:1 --time=60:00 --job-name=zipaae
-     #!/bin/bash
-     source activate singlecell
-     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipaae-cd8.py
+   #+BEGIN_SRC ipython
+     cd8 = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
+     cd19 = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 51508003
+   :RESULTS:
+   # Out[3]:
+   :END:
 
-** ZIPAAE on known mixtures
+   Mix the cells and filter lowly expressed genes.
+
+   #+BEGIN_SRC ipython
+     mix = ss.hstack((cd8, cd19)).tocsr()
+     mix = mix[((mix > 0).mean(axis=1) >= 0.25).A.ravel()].T.astype(np.int)
+     mix.shape
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   : (20294, 404)
+   :END:
+
+   Label the cells.
+
+   #+BEGIN_SRC ipython
+     y = np.zeros(mix.shape[0])
+     y[:cd8.shape[1]] = 1
+     y = y.astype(bool)
+
+     batch = (np.random.uniform(size=mix.shape[0]) < 0.5).astype(int)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   Load the data.
+
+   #+BEGIN_SRC ipython
+     training_data = torch.utils.data.DataLoader(
+       scaa.dataset.SparseDataset(mix),
+       batch_size=100,
+       num_workers=4,
+       pin_memory=True,
+       shuffle=True,
+     )
+     batch_data = torch.utils.data.DataLoader(
+       torch.tensor(batch, dtype=torch.long),
+       batch_size=100,
+       num_workers=4,
+       pin_memory=True,
+       shuffle=True,
+     )
+     eval_data = torch.utils.data.DataLoader(
+       scaa.dataset.SparseDataset(mix),
+       batch_size=100,
+       num_workers=1,
+       pin_memory=True,
+       shuffle=False,
+     )
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
+
+   Fit the model.
+
+   #+BEGIN_SRC ipython :async t
+     with torch.cuda.device(0):
+       model = scaa.modules.ZIPAAE(input_dim=mix.shape[1], latent_dim=10, num_classes=2).fit(x=training_data, y=batch_data, max_epochs=2, verbose=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   :END:
+
+   Get the embedding.
+
+   #+BEGIN_SRC ipython
+     with torch.set_grad_enabled(False):
+       q = model.vae.encoder.cpu()
+       z = torch.cat([q.forward(batch)[0] for batch in eval_data]).numpy()
+   #+END_SRC
+
+   Plot UMAP of the latent space.
+
+   #+BEGIN_SRC ipython
+     embed = umap.UMAP(n_neighbors=5, metric='euclidean').fit_transform(z)
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :ipyfile figure/alignment.org/zipaae-cd8-cd19-umap.png
+     plt.clf()
+     plt.set_cmap('Dark2')
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(6, 3)
+
+     ax[0].scatter(embed[y,0], embed[y,1], s=1, c='C0', label='CD19', alpha=0.25)
+     ax[0].scatter(embed[~y,0], embed[~y,1], s=1, c='C1', label='CD8', alpha=0.25)
+     leg = ax[0].legend(frameon=False, handletextpad=0, markerscale=4)
+     for h in leg.legendHandles: 
+       h.set_alpha(1)
+
+     b = batch.astype(bool)
+     ax[1].scatter(embed[b,0], embed[b,1], s=1, c='C2', label='Batch 1', alpha=0.25)
+     ax[1].scatter(embed[~b,0], embed[~b,1], s=1, c='C3', label='Batch 2', alpha=0.25)
+     leg = ax[1].legend(frameon=False, handletextpad=0, markerscale=4)
+     for h in leg.legendHandles: 
+       h.set_alpha(1)
+
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+       a.set_ylabel('UMAP 2')
+
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[32]:
+   [[file:figure/alignment.org/zipaae-cd8-cd19-umap.png]]
+   :END:
+   
 ** Comparison to existing methods
 
-   Look at control versus stimulated CD4+ T cells from
-   [[https://www.nature.com/articles/nbt.4042][Kang et al 2018]].
+   Look at control versus stimulated CD4+ T cells from [[https://www.nature.com/articles/nbt.4042][Kang et al 2018]].
 
    Download the data.
 
@@ -625,18 +719,134 @@
    Read the data.
 
    #+BEGIN_SRC ipython
-     control = scipy.io.mmread("/scratch/midway2/aksarkar/ideas/GSE96583/GSM2560248_2.1.mtx.gz")
-     stim = scipy.io.mmread("/scratch/midway2/aksarkar/ideas/GSE96583/GSM2560248_2.2.mtx.gz")
+     control = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/GSE96583/GSM2560248_2.1.mtx.gz')
+     stim = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/GSE96583/GSM2560249_2.2.mtx.gz')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[34]:
    :END:
 
    First, ask whether batches can be classified. (Aside: this seems like a case
    where proper experimental design would eliminate the problem.)
 
    #+BEGIN_SRC ipython
-     
+     mix = ss.hstack([control, stim]).tocsr()
+     mix = mix[((mix > 0).mean(axis=1) >= 0.25).A.ravel()].T.astype(np.int)
+     mix.shape
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[45]:
+   : (29065, 482)
+   :END:
+
+   Label the cells.
+
+   #+BEGIN_SRC ipython
+     y = np.zeros(mix.shape[0])
+     y[:control.shape[1]] = 1
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[50]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     m = sklm.LogisticRegressionCV(cv=4, fit_intercept=True, n_jobs=-1,).fit(mix, y)
+     m.score(mix, y)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[52]:
+   : 0.9883708928264235
+   :END:
+
+   Look at the embedding.
+
+   #+BEGIN_SRC ipython
+     log_counts = ss.csr_matrix((np.log(mix.data), mix.indices, mix.indptr))
+     z = skd.TruncatedSVD(n_components=20).fit_transform(log_counts.T)
+     embed = umap.UMAP(n_neighbors=10, metric='euclidean').fit_transform(z)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[65]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/alignment.org/kang-et-al-control-stim-umap.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     b = y.astype(bool)
+     plt.scatter(embed[b,0], embed[b,1], s=1, c='C0', label='Control', alpha=0.25)
+     plt.scatter(embed[~b,0], embed[~b,1], s=1, c='C1', label='Stimulated', alpha=0.25)
+     leg = plt.legend(frameon=False, handletextpad=0, markerscale=4)
+     for h in leg.legendHandles: 
+       h.set_alpha(1)
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[66]:
+   : Text(0,0.5,'UMAP 2')
+   [[file:figure/alignment.org/kang-et-al-control-stim-umap.png]]
+   :END:
+
+   Align the data using AAE.
+
+   #+BEGIN_SRC ipython
+     qz = align(mix, y, latent_dim=10)
+   #+END_SRC
+
+
+   #+BEGIN_SRC ipython
+     def align(counts, labels, latent_dim, batch_size=100, max_epochs=2, verbose=False):
+       """Align the datasets x1 and x2
+
+       :param x1: Matrix of counts (ndarray-like)
+       :param x2: Matrix of counts (ndarray-like)
+       :param latent_dim: Latent dimension of the embedding
+
+       """
+       training_data = torch.utils.data.DataLoader(
+         scaa.dataset.SparseDataset(counts),
+         batch_size=batch_size,
+         num_workers=2,
+         pin_memory=True,
+         shuffle=True,
+       )
+       batch_data = torch.utils.data.DataLoader(
+         torch.tensor(labels, dtype=torch.long),
+         batch_size=batch_size,
+         num_workers=2,
+         pin_memory=True,
+         shuffle=True,
+       )
+       eval_data = torch.utils.data.DataLoader(
+         scaa.dataset.SparseDataset(counts),
+         batch_size=batch_size,
+         num_workers=2,
+         pin_memory=True,
+         shuffle=False,
+       )
+       # Fit the model
+       with torch.cuda.device(0):
+         model = scaa.modules.ZIPAAE(input_dim=counts.shape[1], latent_dim=latent_dim, num_classes=2).fit(x=training_data, y=batch_data, max_epochs=max_epochs, verbose=verbose)
+       # Recover the embedding
+       with torch.set_grad_enabled(False):
+         q = model.vae.encoder.cpu()
+         z = torch.cat([q.forward(batch)[0] for batch in eval_data]).numpy()
+       return z
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[139]:
+   :END:

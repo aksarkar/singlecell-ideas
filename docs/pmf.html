@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-11-09 Fri 13:01 -->
+<!-- 2018-11-11 Sun 11:28 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Models for factorizing count data</title>
@@ -257,11 +257,28 @@ for the JavaScript code in this tag.
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
+<li><a href="#orgd88cb47">Introduction</a></li>
 <li><a href="#org0e122b8">Non-negative matrix factorization</a></li>
 <li><a href="#org5b0a4bb">Poisson matrix factorization</a></li>
 <li><a href="#org3065954">Latent Dirichlet Allocation</a></li>
 <li><a href="#orgbd70ba5">Conclusions</a></li>
 </ul>
+</div>
+</div>
+
+<div id="outline-container-orgd88cb47" class="outline-2">
+<h2 id="orgd88cb47">Introduction</h2>
+<div class="outline-text-2" id="text-orgd88cb47">
+<p>
+\(
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mf{\mathbf{F}}
+  \newcommand\mlf{\ml\mf}
+  \) Assume we have an \(n \times p\) matrix \(\mx = [x_{ij}]\), and want to
+approximate it as \(\mlf\), where \(\ml\) is \(n \times K\) and \(\mf\) is
+\(K \times p\).
+</p>
 </div>
 </div>
 
@@ -277,12 +294,12 @@ and Seung 2001</a>.
 </p>
 
 <p>
-\[ L^*, F^* = \arg\,\min_{L, F} \sum_{ij} X_{ij}\ln\frac{X_{ij}}{[LF]_{ij}} -
-  X_{ij} + [LF]_{ij} \]
+\[ \ml^*, \mf^* = \arg\,\min_{\ml, \mf} \sum_{ij} x_{ij}\ln\frac{x_{ij}}{[\mlf]_{ij}} -
+  x_{ij} + [\mlf]_{ij} \]
 </p>
 
 <p>
-\[ \mathrm{s.t.}\ L > 0, F > 0 \]
+\[ \mathrm{s.t.}\ \ml > 0, \mf > 0 \]
 </p>
 
 <p>
@@ -290,7 +307,7 @@ It is easy to show this is maximizing the Poisson log likelihood:
 </p>
 
 <p>
-\[ = \arg\,\max_{L, F} X_{ij} \ln[LF]_{ij} - [LF]_{ij} + \mathrm{const} \]
+\[ = \arg\,\max_{\ml, \mf} x_{ij} \ln[\mlf]_{ij} - [\mlf]_{ij} + \mathrm{const} \]
 </p>
 
 <p>
@@ -298,11 +315,11 @@ It is important to note that an alternative definition of NMF is:
 </p>
 
 <p>
-\[ L^*, F^* = \arg\,\min_{L, F} \Vert X - LF \Vert_2 \]
+\[ \ml^*, \mf^* = \arg\,\min_{\ml,\mf} \Vert \mx - \mlf \Vert_2 \]
 </p>
 
 <p>
-\[ \mathrm{s.t.}\ L > 0, F > 0 \]
+\[ \mathrm{s.t.}\ \ml > 0, \mf > 0 \]
 </p>
 </div>
 </div>
@@ -311,32 +328,46 @@ It is important to note that an alternative definition of NMF is:
 <h2 id="org5b0a4bb">Poisson matrix factorization</h2>
 <div class="outline-text-2" id="text-org5b0a4bb">
 <p>
-<i>Poisson matrix factorization</i> is proposed in <a href="https://arxiv.org/abs/1311.1704">Gopalan et al. 2013</a> (fixed
-\(K\)), <a href="http://proceedings.mlr.press/v33/gopalan14.pdf">Gopalan et al. 2014</a> (Dirichlet process prior on \(K\)). Assume we
-have data \(x_{ij}\).
+<i>Poisson matrix factorization</i> is proposed in
+<a href="https://arxiv.org/abs/1311.1704">Gopalan et al. 2013</a> (fixed \(K\)),
+<a href="http://proceedings.mlr.press/v33/gopalan14.pdf">Gopalan et al. 2014</a>
+(Dirichlet process prior on \(K\)).
 </p>
 
 <p>
-\[ x_{ij} \sim \mathrm{Poisson}([\boldsymbol{\theta} \boldsymbol{\beta}]_{ij}) \]
+\[ x_{ij} \sim \mathrm{Poisson}([\mlf]_{ij}) \]
 </p>
 
 <p>
-\[ \theta_{ik} \sim \mathrm{Gamma}(\cdot) \]
+\[ l_{ik} \sim \mathrm{Gamma}(\cdot) \]
 </p>
 
 <p>
-\[ \beta_{kj} \sim \mathrm{Gamma}(\cdot) \]
+\[ f_{kj} \sim \mathrm{Gamma}(\cdot) \]
 </p>
 
 <p>
-The inference goal is \(p(\boldsymbol{\theta}, \boldsymbol{\beta} \mid
-  \boldsymbol{X})\). The posterior is intractable, so they use mean-field
-variational inference to get approximate posteriors.
+The inference goal is \(p(\ml, \mf \mid \mx)\). The posterior is intractable,
+so they use mean-field variational inference to get approximate posteriors.
 </p>
 
 <p>
-If the data are sparse, then the algorithm can be sped up by reparameterizing
-the model:
+It is easy to show the full data likelihood depends only on entries \(x_{ij}
+  > 0\). Dropping the summation over \(k\) for clarity:
+</p>
+
+<p>
+\[ \ln p(x \mid \cdot) = \sum_{i, j} x_{ij} \ln (l_{ik}f_{kj}) -
+  l_{ik}f_{kj} + \ln\Gamma(x_{ij} + 1) \]
+</p>
+
+<p>
+\[ = \left[\sum_{x_{ij} > 0} x_{ij} \ln
+  (l_{ik}f_{kj}) - \ln\Gamma(x_{ij} + 1)\right] - \sum_{i, j} l_{ik}f_{kj} \]
+</p>
+
+<p>
+Starting from this observation, they propose reparameterizing the model:
 </p>
 
 <p>
@@ -344,13 +375,14 @@ the model:
 </p>
 
 <p>
-\[ (z_{ij1}, \ldots, z_{ijK}) \sim \mathrm{Multinomial}(y_{ui}, (\theta_{i1}\beta_{1j}, \ldots, \theta_{iK}\beta_{Kj})) \]
+\[ (z_{ij1}, \ldots, z_{ijK}) \sim \mathrm{Multinomial}(x_{ij}, (l_{i1}f_{1j}, \ldots, l_{iK}f_{Kj})) \]
 </p>
 
 <p>
-Now, the algorithm operates on \(z_{ijk}\). But \(z_{ijk} = 0\) when \(x_{ij}
-  = 0\), so coordinate ascent updates can ignore \(z_{ijk}\) for zeros in the
-data.
+The auxiliary variables \(z\) assign counts to each of the \(K\) components,
+and they propose augmenting the variational approximation with \(q(z \mid
+  \cdot)\). However, \(z_{ijk} = 0\) for \(x_{ij} = 0\). Therefore, coordinate
+ascent updates can also ignore entries \(x_{ij} = 0\).
 </p>
 </div>
 </div>
@@ -381,8 +413,19 @@ we have \(n \times p\) data \(x_{ij}\), and assume \(K\) topics.
 </p>
 
 <p>
-<a href="http://genetics.org/content/155/2/945">Pritchard et al. 2000</a> independently propose the same model, with latent
-\(x_{ij}\) and observed data \(y_{ij}\) distributed as:
+They propose a mean-field variational approximation to this model, and fit
+via coordinate descent. The same approximation admits stochastic optimization
+techniques, speeding up inference
+(<a href="http://www.columbia.edu/~jwp2128/Papers/HoffmanBleiWangPaisley2013.pdf">Hoffman
+et al. 2013</a>,
+<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5127768/">Gopalan et
+al. 2016</a>)
+</p>
+
+<p>
+<a href="http://genetics.org/content/155/2/945">Pritchard et al. 2000</a>
+independently proposed the same model, with latent \(x_{ij}\) and observed
+data \(y_{ij}\) distributed as:
 </p>
 
 <p>
@@ -390,24 +433,24 @@ we have \(n \times p\) data \(x_{ij}\), and assume \(K\) topics.
 </p>
 
 <p>
-As suggested by <a href="https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1001117">Engelhardt and Stephens 2010</a>, this parameterization is
-equivalent to:
+<a href="https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1001117">Engelhardt
+and Stephens 2010</a> show this parameterization is equivalent to:
 </p>
 
 <p>
-\[ \mathbb{E}[x_{ij}] = LF \]
+\[ \mathbb{E}[\mx] = \mlf \]
 </p>
 
 <p>
-\[ 0 \leq l_{ik} \leq 1 \]
+\[ l_{ik} \geq 0 \]
 </p>
 
 <p>
-\[ f_{kj} \geq 0 \]
+\[ \sum_{k} l_{ik} = 1 \]
 </p>
 
 <p>
-\[ \sum_{k} f_{kj} = 1 \]
+\[ 0 \leq f_{kj} \leq 1 \]
 </p>
 
 <p>
@@ -415,11 +458,11 @@ To prove these parameterizations are equivalent:
 </p>
 
 <ol class="org-ol">
-<li>\((\boldsymbol{\phi}_1, \ldots, \boldsymbol{\phi}_K) = L\). By definition
-\(0 \leq \phi_{kj} \leq 1\).</li>
-
-<li>\((\boldsymbol{\theta}_1, \ldots, \boldsymbol{\theta}_n) = F\). By definition
+<li>\((\boldsymbol{\theta}_1, \ldots, \boldsymbol{\theta}_n) = L\). By definition
 \(\theta_{ik} \geq 0, \sum_k \theta_{ik} = 1\).</li>
+
+<li>\((\boldsymbol{\phi}_1, \ldots, \boldsymbol{\phi}_K) = F\). By definition
+\(0 \leq \theta_{ik} \leq 1\).</li>
 
 <li><p>
 \(z_{ij}\) selects an entry of \(\boldsymbol{\theta}_i\) (topic) with
@@ -437,24 +480,60 @@ denotes the expected allele frequency of variant \(j\) in sample \(i\).
 </ol>
 
 <p>
-This reparameterization suggests an alternative algorithm (<a href="https://www.biorxiv.org/content/early/2017/12/29/240812">Cabreros and
-Storey 2017</a>):
+<a href="http://proceedings.mlr.press/v22/taddy12/taddy12.pdf">Taddy 2012</a> propose
+an efficient algorithm to estimate the MAP:
 </p>
 
 <p>
-\[ L*, F* = \arg \min_{L, F} \Vert X - LF \Vert_2 \]
+\[ \ml^*, \mf^* = \arg\max_{\ml,\mf} \sum_{ij} p(x_{ij} \mid \mlf) + p(\ml) +
+  p(\mf) \]
 </p>
 
 <p>
-\[ \mathrm{s.t.}\ 0 \leq l_{ik} \leq 1 \]
+The key idea of their approach are:
+</p>
+
+<ol class="org-ol">
+<li><p>
+Project \(\ml, \mf\) into the softmax basis (<a href="https://link.springer.com/article/10.1023/A:1007558615313">Mackay 1998</a>).
 </p>
 
 <p>
-\[ f_{kj} \geq 0 \]
+\[ \tilde{l}_{i0} = 0 \]
 </p>
 
 <p>
-\[ \sum_{k} f_{kj} = 1 \]
+\[ \tilde{l}_{ik} = \frac{l_{ik}}{\sum_m l_{im}} \]
+</p>
+
+<p>
+Analagous expressions hold for \(\mf\).
+</p></li>
+
+<li>Rewrite \(x_{ij} = \sum_k z_{ijk}\) as above, assume \(z \sim
+     \mathrm{Multinomial}(\cdot)\), then use EM on \(z\).</li>
+</ol>
+
+<p>
+<a href="https://www.biorxiv.org/content/early/2017/12/29/240812">Cabreros and
+Storey 2017</a> propose an alternating least squares algorithm which can
+directly optimize:
+</p>
+
+<p>
+\[ \ml^*, \mf^* = \arg \min_{L, F} \Vert X - LF \Vert_2 \]
+</p>
+
+<p>
+\[ \mathrm{s.t.}\ l_{ik} \geq 0 \]
+</p>
+
+<p>
+\[ \sum_{k} l_{ik} = 1 \]
+</p>
+
+<p>
+\[ 0 \leq f_{kj} \leq 1 \]
 </p>
 </div>
 </div>
@@ -464,9 +543,10 @@ Storey 2017</a>):
 <div class="outline-text-2" id="text-orgbd70ba5">
 <ol class="org-ol">
 <li><b>We should not expect NMF and LDA to give the same answer.</b> Even in the
-case where we fit NMF by minimizing the Frobenius norm, and fit LDA using
-the parameterization and alternating least squares algorithm of Cabreros
-and Storey, the constraint on \(F\) is different in the two models.</li>
+case where we fit NMF by maximizing the Poisson log likelihood, and fit
+LDA using the parameterization and alternating least squares algorithm of
+Cabreros and Storey, the constraint on \(L\) is different in the two
+models.</li>
 <li><b>We should not expect NMF and PMF to give the same answer.</b> Even in the
 case where we fit NMF by maximizing the Poisson likelihood, in PMF we
 estimate a posterior mean.</li>
@@ -476,7 +556,7 @@ estimate a posterior mean.</li>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-11-09 Fri 13:01</p>
+<p class="date">Created: 2018-11-11 Sun 11:28</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

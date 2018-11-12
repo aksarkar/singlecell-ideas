@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-11-09 Fri 13:01 -->
+<!-- 2018-11-11 Sun 20:39 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Single cell alignment</title>
@@ -227,14 +227,767 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
 <h1 class="title">Single cell alignment</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org5e061b9">Introduction</a></li>
+<li><a href="#org3091a8f">Methods</a>
+<ul>
+<li><a href="#orgcdbaec5">Variational auto-encoder</a></li>
+<li><a href="#org35f48d9">Adversarial alignment</a></li>
+<li><a href="#org68ed5a1">Incremental training</a></li>
+</ul>
+</li>
+<li><a href="#org03eb16e">Results</a>
+<ul>
+<li><a href="#orgbe5ea5d">ZIPVAE sanity check</a></li>
+<li><a href="#orge36df8b">ZIPVAE on known mixture</a></li>
+<li><a href="#org98ddd4e">ZIPAAE sanity check</a></li>
+<li><a href="#orge6098c2">ZIPAAE on known mixtures</a></li>
+<li><a href="#orgf263401">Comparison to existing methods</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org5e061b9" class="outline-2">
+<h2 id="org5e061b9">Introduction</h2>
+<div class="outline-text-2" id="text-org5e061b9">
+<p>
+<i>Single cell alignment</i> is the problem of identifying common biological
+variation between different single cell measurements. The goal of alignment
+is to jointly analyze multiple data sets, maximizing power to detect
+biological differences by increasing sample sizes.
+</p>
+
+<p>
+One obvious application of alignment is to perform batch correction, where
+each data set corresponds to a batch. With the advent of large atlases of
+single cells (Zheng et al 2016, Human Cell Atlas), a more pressing
+application is to allow researchers to quickly align novel single cell
+experiments with millions of previously assayed cells.
+</p>
+
+<p>
+<a href="https://www.nature.com/articles/nbt.4096">Butler et al 2018</a> propose a two-step approach to solve the single cell
+alignment problem. First, they project all of the data into a common basis
+using generalized canonical correlation analysis (Hotelling et al 1936,
+Kettenring 1971). Second, they align cells across data sets to each other
+along the canonical correlation vectors using dynamic time warping (Berndt
+and Clifford 1994). DTW is a special case of sequence alignment (Needleman
+and Wunsch 1970), where mismatches/indels are not penalized, and the
+substitution cost is Euclidean distance.
+</p>
+
+<p>
+Here, we develop an alternative approach based on adversarial training of a
+deep generative model. Our main contributions are:
+</p>
+
+<ol class="org-ol">
+<li>We propose the negative cross-entropy loss as a quantitative metric for
+the quality of the alignment. Intuitively, after aligning the data (in low
+dimensional space), it should not be possible to successfully classify
+points as coming from different data sets.</li>
+
+<li>We propose an adversarial auto-encoding architecture
+(<a href="https://arxiv.org/abs/1511.05644">Makhzani et al. 2015</a>) which
+simultaneously: (1) explains the observed data (by maximizing the evidence
+lower bound) and removes data-set specific differences (by maximizing the
+cross-entropy loss), (2) learns a separate generative model of the data to
+allow incremental alignment of novel datasets without using the original
+training data.</li>
+
+<li>We show that our method performs well using the alignment score proposed
+by Butler et al 2018, and outperforms it in terms of negative
+cross-entropy loss.</li>
+
+<li>We show our method is robust to non-overlapping cell subpopulations.</li>
+
+<li>We demonstrate our method scales by training models for &gt;450,000 human
+peripheral blood mononuclear cells and &gt;1,000,000 mouse brain cells, and
+then aligning held out datasets to them. We provide our pre-trained models
+as the basis for other researchers to align novel experimental data.</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org3091a8f" class="outline-2">
+<h2 id="org3091a8f">Methods</h2>
+<div class="outline-text-2" id="text-org3091a8f">
+</div>
+<div id="outline-container-orgcdbaec5" class="outline-3">
+<h3 id="orgcdbaec5">Variational auto-encoder</h3>
+<div class="outline-text-3" id="text-orgcdbaec5">
+<p>
+Suppose we want to fit a latent variable model:
+</p>
+
+<p>
+\[ \mathbf{x}_i \mid \mathbf{z}_i, \theta \sim g(\mathbf{z}_i, \theta) \]
+</p>
+
+<p>
+\[ \mathbf{z}_i \sim N(0, \sigma^2 \mathbf{I}) \]
+</p>
+
+<p>
+where \(\mathbf{x}_i \in \mathbb{R}^p\), \(\mathbf{z}_i \in \mathbb{R}^d\),
+\(d \ll p\).
+</p>
+
+<p>
+Assuming \(g(\mathbf{z_i}) = \mathbf{W z}_i\) and marginalizing over
+\(\mathbf{z}_i\), we recover PPCA (Tipping 1999).
+</p>
+
+<p>
+Here, we instead pursue an approach where \(g\) is parameterized by a neural
+network (<a href="https://arxiv.org/abs/1312.6114">Kingma and Welling 2014</a>,
+<a href="https://arxiv.org/abs/1401.4082">Rezende et al 2014</a>,
+<a href="http://proceedings.mlr.press/v32/titsias14.pdf">Titsias and
+Lázaro-Gredilla 2014</a>). There are several reasons to do this:
+</p>
+
+<ol class="org-ol">
+<li><b>We want to learn a nonlinear embedding of the data.</b> This is achieved by
+replacing the affine transform \(\mathbf{W Z}\) with a feed forward
+neural network, which is a recursive generalized linear model
+(<a href="http://blog.shakirm.com/2015/01/a-statistical-view-of-deep-learning-i-recursive-glms/">Mohammed
+2015</a>).</li>
+
+<li><b>We want to operate on data which cannot fit in memory.</b> This is achieved
+by using an inference network
+(<a href="http://www.cs.utoronto.ca/~hinton/absps/ws.pdf">Dayan et al
+1995</a>). The key idea is that we replace the \(n \times d\) matrix
+\(\mathbf{W}\) and \(d \times p\) matrix \(\mathbf{Z}\) with a neural
+network. The parameters of the neural network take the place of
+\(\mathbf{W}\), and the output of the neural network is
+\(\mathbf{z}_i\). Then, the size of the network is constant in the size
+of the data, and we can optimize the loss function using stochastic
+optimization over minibatches of data.</li>
+
+<li><b>We want to impose non-trivial constraints on the posterior.</b> In our
+setting, we assume we have labels \(y_i\), and the goal is to impose the
+constraint that the points with different labels are <i>not</i>
+distinguishable from each other. This is not readily expressed as a prior
+distribution on \((\mathbf{z}_i, y_i)\).</li>
+</ol>
+
+<p>
+We assume the following generative model:
+</p>
+
+<p>
+\[ x_{ij} \mid \lambda_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+</p>
+
+<p>
+\[ \lambda_{ij} \mid z_i \sim [\pi(\mathbf{z}_i)]_j \delta_0(\cdot) + (1 - [\pi(\mathbf{z}_i)]_j)[\mu(\mathbf{z}_i)]_j \]
+</p>
+
+<p>
+where \(\pi(\cdot), \mu(\cdot)\) are \(p\)-vector outputs of a neural
+network, termed the <i>decoder</i>.
+</p>
+
+<p>
+This is a zero-inflated Poisson variational autoencoder (ZIPVAE). Previous
+studies have instead chosen the zero-inflated negative binomial likelihood,
+yielding a ZINBVAE (Lopez et al 2018, Grønbech et al 2018). This choice
+assumes unexplained technical heterogeneity beyond Poisson sampling noise,
+and needs to be justified from the data.
+</p>
+
+<p>
+The inference goal of the fitted model is to estimate \(p(\mathbf{z}_i \mid
+   \mathbf{x}_i)\). This posterior is non-conjugate to the likelihood, so we
+use variational inference to estimate an approximate posterior. Importantly,
+the model was parameterized using a neural network, so we need to
+also parameterize the approximate posterior using a neural network.
+</p>
+
+<p>
+\[ q(\mathbf{z}_i \mid \mathbf{x}_i) = \mathrm{N}(\mu(\mathbf{x}_i),
+   \sigma^2(\mathbf{x}_i) \mathbf{I}) \]
+</p>
+
+<p>
+where \(\mu(\cdot), \sigma^2(\cdot)\) are \(d\)-vector outputs of a neural
+network, termed the <i>encoder</i>.
+</p>
+
+<p>
+The evidence lower bound (ELBO) is:
+</p>
+
+<p>
+\[ p(\mathbf{X}) \geq \sum_i \mathbb{E}_q[\ln p(x_i \mid z_i)] -
+   \mathcal{KL}\left(q(z_i \mid x_i) \Vert p(z_i)\right) \]
+</p>
+
+<p>
+We use the <i>reparameterization trick</i> to rewrite the expectations over \(q\)
+as sums over samples from standard Gaussians, yielding a stochastic
+objective function. We optimize the objective using gradient descent.
+</p>
+
+<p>
+The resulting model is known as a <i>variational autoencoder</i> (VAE). In the
+case where both the encoder and decoder are affine transforms, we recover
+PPCA (as described above). In the case where the encoder is affine but the
+decoder is a neural network, we recover Robust PCA
+(<a href="https://statweb.stanford.edu/~candes/papers/RobustPCA.pdf">Candés et
+al. 2009</a>, <a href="https://arxiv.org/pdf/1706.05148">Dai et al 2017</a>).
+</p>
+</div>
+</div>
+
+<div id="outline-container-org35f48d9" class="outline-3">
+<h3 id="org35f48d9">Adversarial alignment</h3>
+<div class="outline-text-3" id="text-org35f48d9">
+<p>
+We want to enforce the constraint that data which reflect the same
+underlying biological state are not distinguishable on the basis of which
+data set they came from. This means the model must simultaneously learn the
+underlying biological state as well as "forget" systematic differences
+between different data sets.
+</p>
+
+<p>
+To achieve this goal, we observe that the VAE described above learns a
+non-linear mapping from observed data \(\mathbf{x}_i\) to a low dimensional
+latent variable \(\mathbf{z}_i\) describing the biological state. We need
+the encoder to not use systematic differences between data sets in this
+mapping. 
+</p>
+
+<p>
+This constraint is not readily expressible as a prior on \(\mathbf{z}_i\),
+but it is expressible as the opposite of a classification problem on
+\(\mathbf{z}_i\). In essence, rather than minimizing the cross-entropy loss:
+</p>
+
+<p>
+\[ l(\mathbf{z}_i, y_i) = y_i \ln(f(\mathbf{z}_i)) \]
+</p>
+
+<p>
+where \(f\) is the classifier, we want to maximize it. This is related to
+maximum entropy (<a href="http://bayes.wustl.edu/etj/articles/theory.1.pdf">Jaynes
+1957a</a>, <a href="http://bayes.wustl.edu/etj/articles/theory.2.pdf">Jaynes 1957b</a>)
+and minimum discrimination information
+(<a href="https://doi.org/10.1214%2Faoms%2F1177729694">Kullback and Liebler
+1951</a>).
+</p>
+
+<p>
+This suggests jointly optimizing a combined loss function:
+</p>
+
+<p>
+\[ \mathcal{L} = \sum_i \mathrm{ELBO}(\mathbf{x}_i) - l(\mathbf{z}_i, y_i)
+   \]
+</p>
+
+<p>
+There are two major challenge in optimizing this loss function:
+</p>
+
+<ol class="org-ol">
+<li>We need to jointly train the classifier \(f\) and the the VAE \(p,
+      q\). In principle, this could be done by simply performing gradient
+descent on the full objective function wrt. the parameters of \(f, p,
+      q\). This approach is related to adversarial autoencoders (Makhzani et
+al. 2015), where an adversarial discriminator network is used to enforce
+constraints on a deep generative model.</li>
+<li>We need to balance the two parts of the objective function. The optimal
+way to fool the discriminator is to randomly place points in the low
+dimensional space, but the optimal way to describe the data is to model
+the systematic technical differences between data sets. In previous work,
+this was done by training each component alternately.</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org68ed5a1" class="outline-3">
+<h3 id="org68ed5a1">Incremental training</h3>
+<div class="outline-text-3" id="text-org68ed5a1">
+<p>
+One further challenge is how to update the model with new data (e.g., a new
+experimental data set). After successfully fooling the adversary, the
+resulting low dimensional representation is "one dataset", reducing the
+problem into aligning two data sets. However, all of the original data would
+be required to train the model from scratch.
+</p>
+
+<p>
+Instead, our key idea is to add to use a <i>generative adversarial network</i>
+(GAN; <a href="https://arxiv.org/abs/1406.2661">Goodfellow 2014</a>) in the
+architecture. In a GAN, a <i>generator network</i> \(G\) and <i>discriminator
+network</i> \(D\) are trained to optimize a minimax game:
+</p>
+
+<p>
+\[ \min_G \max_D E_{\hat{p}} [\ln D(\mathbf{x})] + E_p [\ln(1 -
+   D(G(\mathbf{z})))] \]
+</p>
+
+<p>
+where \(\hat{p}\) is the empirical distribution of the data, and \(p\) is
+the distribution of data generated by \(G\). Typically, \(G\) maps isotropic
+Gaussian noise to generated data points. The inference goal is to learn
+\(G\), and the <i>adversary</i> \(D\) is used to push it towards the distribution
+\(\hat{p}\).
+</p>
+
+<p>
+Here, we use the encoder network of the VAE as the generator, and use the
+dataset of origin as the labels for the adversary, yielding a simple
+adversarial autoencoder (<a href="https://arxiv.org/abs/1511.05644">Makhzani et al
+2015</a>). We can then train the model in phases in each minibatch:
+</p>
+
+<ol class="org-ol">
+<li>Train the encoder and decoder to learn the low dimensional manifold
+describing the data</li>
+<li>Train the adversary to classify the latent points based on the labels</li>
+<li>Train the encoder to fool the adversary</li>
+</ol>
+
+<p>
+Simultaneouly, we can train a generator network which can generate latent
+samples matching the encoder. To train this network, we add a further
+discriminator network which tries to distinguish real outputs from the
+encoder network \(q(\mathbf{z} \mid \mathbf{z})\) from the generator
+outputs.
+</p>
+
+<p>
+With the trained generator network, we can incrementally train the model on
+new data sets without needing the original data.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org03eb16e" class="outline-2">
+<h2 id="org03eb16e">Results</h2>
+<div class="outline-text-2" id="text-org03eb16e">
+</div>
+<div id="outline-container-orgbe5ea5d" class="outline-3">
+<h3 id="orgbe5ea5d">ZIPVAE sanity check</h3>
+<div class="outline-text-3" id="text-orgbe5ea5d">
+<p>
+First, check that the ZIPVAE works. Simulate some low-rank Poisson data,
+thin the counts to produce training and validation data, and evaluate the
+validation set log likelihood.
+</p>
+
+<p>
+\[ \mathbf{l}_{ik} \sim \mathcal{N}(0, \sigma^2) \]
+\[ \mathbf{f}_{kj} \sim \mathcal{N}(0, \sigma^2) \]
+\[ \ln\lambda_{ij} = l_{ik} f_{kj} \]
+\[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+\[ y_{ij} \sim \mathrm{Binomial}(x_{ij}, 0.5) \]
+\[ \tilde{y}_{ij} = x_{ij} - y_{ij} \]
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="orgac87db0"><span class="org-keyword">def</span> <span class="org-function-name">simulate_pois</span>(n, p, rank, eta_max=<span class="org-constant">None</span>, seed=0):
+  np.random.seed(seed)
+  <span class="org-variable-name">l</span> = np.random.normal(size=(n, rank))
+  <span class="org-variable-name">f</span> = np.random.normal(size=(rank, p))
+  <span class="org-variable-name">eta</span> = l.dot(f)
+  <span class="org-keyword">if</span> eta_max <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Scale the maximum value</span>
+    <span class="org-variable-name">eta</span> *= eta_max / eta.<span class="org-builtin">max</span>()
+  <span class="org-variable-name">x</span> = np.random.poisson(lam=np.exp(eta))
+  <span class="org-keyword">return</span> x, eta
+
+<span class="org-keyword">def</span> <span class="org-function-name">train_test_split</span>(x, p=0.5):
+  <span class="org-variable-name">train</span> = np.random.binomial(n=x, p=p, size=x.shape)
+  <span class="org-variable-name">test</span> = x - train
+  <span class="org-keyword">return</span> train, test
+
+<span class="org-keyword">def</span> <span class="org-function-name">pois_llik</span>(lam, train, test):
+  <span class="org-variable-name">lam</span> *= test.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>) / train.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
+  <span class="org-keyword">return</span> st.poisson(mu=lam).logpmf(test).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_oracle</span>(train, test, eta):
+  <span class="org-keyword">return</span> pois_llik(np.exp(eta), train, test)
+
+<span class="org-keyword">def</span> <span class="org-function-name">generalization_score_zipvae</span>(train, test, *args):
+  <span class="org-keyword">import</span> scaa
+  <span class="org-keyword">import</span> torch
+  <span class="org-keyword">import</span> torch.utils.data
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = train.shape
+  <span class="org-variable-name">training_data</span> = torch.utils.data.DataLoader(torch.tensor(train, dtype=torch.<span class="org-builtin">float</span>), batch_size=25, shuffle=<span class="org-constant">False</span>)
+  <span class="org-keyword">with</span> torch.cuda.device(0):
+    <span class="org-variable-name">model</span> = scaa.modules.ZIPVAE(p, 10).fit(training_data, lr=1e-2, max_epochs=10, verbose=<span class="org-constant">False</span>)
+    <span class="org-variable-name">lam</span> = model.denoise(training_data)
+  <span class="org-keyword">return</span> pois_llik(lam, train, test)
+
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_generalization</span>(num_trials):
+  <span class="org-variable-name">result</span> = <span class="org-builtin">dict</span>()
+  <span class="org-keyword">for</span> method <span class="org-keyword">in</span> [<span class="org-string">'oracle'</span>, <span class="org-string">'zipvae'</span>]:
+    <span class="org-variable-name">result</span>[method] = []
+    <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
+      <span class="org-variable-name">x</span>, <span class="org-variable-name">eta</span> = simulate_pois(n=500, p=1000, rank=3, eta_max=3, seed=trial)
+      <span class="org-variable-name">train</span>, <span class="org-variable-name">test</span> = train_test_split(x)
+      <span class="org-variable-name">score</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'generalization_score_{method}'</span>](train, test, eta)
+      result[method].append(score)
+  <span class="org-variable-name">result</span> = pd.DataFrame.from_dict(result)
+  <span class="org-variable-name">result.index.name</span> = <span class="org-string">'trial'</span>
+  <span class="org-keyword">return</span> result
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
+&lt;&lt;zipvae-sanity-check&gt;&gt;
+<span class="org-variable-name">res</span> = evaluate_generalization(num_trials=100)
+res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/generalization.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-sh">sbatch --partition=gpu2 --gres=gpu:1 --time=60:00
+<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
+<span class="org-builtin">source</span> activate singlecell
+python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipvae-generalization.py
+</pre>
+</div>
+
+<pre class="example">
+Submitted batch job 51311689
+
+</pre>
+
+<p>
+Read the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/generalization.txt.gz'</span>, index_col=0)
+</pre>
+</div>
+
+<p>
+Plot the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">methods</span> = [<span class="org-string">'oracle'</span>, <span class="org-string">'zipvae'</span>]
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-keyword">for</span> j, method <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(methods):
+  <span class="org-variable-name">y</span> = res[method]
+  <span class="org-variable-name">f</span> = st.gaussian_kde(y)
+  <span class="org-variable-name">py</span> = f(y)
+  <span class="org-variable-name">x</span> = j + .2 / py.<span class="org-builtin">max</span>() * np.random.uniform(-py, py)
+  plt.scatter(x, y, c=<span class="org-string">'k'</span>, s=4)
+plt.xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(methods)), methods)
+plt.xlim(-.5, <span class="org-builtin">len</span>(methods) - .5)
+plt.xlabel(<span class="org-string">'Method'</span>)
+<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'Validation set log likelihood'</span>)
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/alignment.org/zipvae-generalization.png" alt="zipvae-generalization.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge36df8b" class="outline-3">
+<h3 id="orge36df8b">ZIPVAE on known mixture</h3>
+<div class="outline-text-3" id="text-orge36df8b">
+<p>
+Embed a known mixture of sorted cells, then look at whether they are
+linearly separable in the embedding space.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cd8</span> = scipy.io.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx.gz'</span>).tocsr()
+<span class="org-variable-name">cd19</span> = scipy.io.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/matrix.mtx.gz'</span>).tocsr()
+</pre>
+</div>
+
+<p>
+Mix the cells and filter lowly expressed genes.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mix</span> = ss.hstack((cd8, cd19)).tocsr()
+<span class="org-variable-name">mix</span> = mix[((mix &gt; 0).mean(axis=1) &gt;= 0.25).A.ravel()].T.astype(np.<span class="org-builtin">int</span>)
+mix.shape
+</pre>
+</div>
+
+<pre class="example">
+(20294, 404)
+
+</pre>
+
+<p>
+Load the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">training_data</span> = torch.utils.data.DataLoader(
+  scaa.dataset.SparseDataset(mix),
+  batch_size=100,
+  num_workers=1,
+  pin_memory=<span class="org-constant">True</span>,
+  shuffle=<span class="org-constant">True</span>,
+)
+<span class="org-variable-name">eval_data</span> = torch.utils.data.DataLoader(
+  scaa.dataset.SparseDataset(mix),
+  batch_size=100,
+  num_workers=1,
+  pin_memory=<span class="org-constant">True</span>,
+  shuffle=<span class="org-constant">False</span>,
+)
+</pre>
+</div>
+
+<p>
+Fit the model and get the embedding.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> torch.cuda.device(0):
+  <span class="org-variable-name">model</span> = scaa.modules.ZIPVAE(mix.shape[1], 10).fit(training_data, max_epochs=2, verbose=<span class="org-constant">True</span>)
+  <span class="org-keyword">with</span> torch.set_grad_enabled(<span class="org-constant">False</span>):
+    <span class="org-variable-name">z</span> = torch.cat([model.encoder.forward(x)[0] <span class="org-keyword">for</span> x <span class="org-keyword">in</span> eval_data]).numpy()
+</pre>
+</div>
+
+<p>
+Plot t-SNE of the latent space.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(3, 1)
+fig.set_size_inches(8.5, 3)
+<span class="org-keyword">for</span> i, perp <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>([10, 30, 50]):
+  ax[i].plot(skm.TSNE(perplexity=perp).fit_transform(z))
+  ax[i].set_title(f<span class="org-string">'Perplexity = {perp}'</span>)
+  ax[i].set_xlabel(<span class="org-string">'tSNE 1'</span>)
+  ax[i].set_ylabel(<span class="org-string">'tSNE 2'</span>)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org98ddd4e" class="outline-3">
+<h3 id="org98ddd4e">ZIPAAE sanity check</h3>
+<div class="outline-text-3" id="text-org98ddd4e">
+<p>
+Simulate homogeneous low rank data and randomly split it into two groups (so
+differences are just sampling variation). The AAE should still be able to
+accurately model the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
+
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate</span>(num_trials):
+  <span class="org-variable-name">result</span> = []
+  <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
+    <span class="org-variable-name">train</span>, <span class="org-variable-name">test</span> = scaa.benchmark.train_test_split(x)
+    <span class="org-variable-name">y</span> = (np.random.uniform(size=x.shape[0]) &lt; 0.5).astype(np.<span class="org-builtin">int</span>)
+    result.append([trial,
+                   scaa.benchmark.generalization_score_oracle(train, test, eta=eta),
+                   scaa.benchmark.generalization_score_zipvae(train, test),
+                   scaa.benchmark.generalization_score_zipaae(train, test, y=y),
+    ])
+  <span class="org-variable-name">result</span> = pd.DataFrame(result)
+  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'Oracle'</span>, <span class="org-string">'ZIPVAE'</span>, <span class="org-string">'ZIPAAE'</span>]
+  <span class="org-keyword">return</span> result
+
+<span class="org-variable-name">res</span> = evaluate(num_trials=20)
+res.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/zipaae-generalization.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-sh">sbatch --partition=gpu2 --gres=gpu:1 --time=60:00 --job-name=zipaae
+<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
+<span class="org-builtin">source</span> activate singlecell
+python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipaae-generalization.py
+</pre>
+</div>
+
+<pre class="example">
+Submitted batch job 51428443
+
+</pre>
+
+<p>
+Read the results.   
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/zipaae-generalization.txt.gz'</span>, index_col=0)
+</pre>
+</div>
+
+<p>
+Plot the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">methods</span> = [<span class="org-string">'Oracle'</span>, <span class="org-string">'ZIPVAE'</span>, <span class="org-string">'ZIPAAE'</span>]
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-keyword">for</span> j, method <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(methods):
+  <span class="org-variable-name">y</span> = res[method]
+  <span class="org-variable-name">f</span> = st.gaussian_kde(y)
+  <span class="org-variable-name">py</span> = f(y)
+  <span class="org-variable-name">x</span> = j + .2 / py.<span class="org-builtin">max</span>() * np.random.uniform(-py, py)
+  plt.scatter(x, y, c=<span class="org-string">'k'</span>, s=4)
+plt.xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(methods)), methods)
+plt.xlim(-.5, <span class="org-builtin">len</span>(methods) - .5)
+plt.xlabel(<span class="org-string">'Method'</span>)
+<span class="org-variable-name">_</span> = plt.ylabel(<span class="org-string">'Validation set log likelihood'</span>)
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/alignment.org/zipaae-generalization.png" alt="zipaae-generalization.png">
+</p>
+</div>
+
+<p>
+Use real sorted cells, and repeat the benchmark.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
+
+<span class="org-keyword">def</span> <span class="org-function-name">cd8_cytotoxic_t_cells</span>(min_detect=0.25):
+  <span class="org-variable-name">counts</span> = scipy.io.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx.gz'</span>).tocsr()
+  <span class="org-variable-name">counts</span> = counts[((counts &gt; 0).mean(axis=1) &gt;= min_detect).A.ravel()].T.A.astype(np.<span class="org-builtin">int</span>)
+  <span class="org-keyword">return</span> counts
+
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate</span>(data, num_trials):
+  <span class="org-variable-name">x</span> = data()
+  <span class="org-variable-name">result</span> = []
+  <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_trials):
+    <span class="org-variable-name">train</span>, <span class="org-variable-name">test</span> = scaa.benchmark.train_test_split(x)
+    <span class="org-variable-name">y</span> = (np.random.uniform(size=x.shape[0]) &lt; 0.5).astype(np.<span class="org-builtin">int</span>)
+    result.append([trial,
+                   scaa.benchmark.generalization_score_plra1(train, test),
+                   scaa.benchmark.generalization_score_zipvae(train, test),
+                   scaa.benchmark.generalization_score_zipaae(train, test, y=y),
+    ])
+  <span class="org-variable-name">result</span> = pd.DataFrame(result)
+  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'trial'</span>, <span class="org-string">'PLRA1'</span>, <span class="org-string">'ZIPVAE'</span>, <span class="org-string">'ZIPAAE'</span>]
+  <span class="org-keyword">return</span> result
+
+<span class="org-variable-name">res</span> = evaluate(cd8_cytotoxic_t_cells, num_trials=1)
+<span class="org-comment-delimiter"># </span><span class="org-comment">res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/zipaae-generalization2.txt.gz', compression='gzip', sep='\t')</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-sh">sbatch --partition=gpu2 --gres=gpu:1 --time=60:00 --job-name=zipaae
+<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
+<span class="org-builtin">source</span> activate singlecell
+python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/zipaae-cd8.py
+</pre>
+</div>
+
+<pre class="example">
+Submitted batch job 51508003
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orge6098c2" class="outline-3">
+<h3 id="orge6098c2">ZIPAAE on known mixtures</h3>
+</div>
+<div id="outline-container-orgf263401" class="outline-3">
+<h3 id="orgf263401">Comparison to existing methods</h3>
+<div class="outline-text-3" id="text-orgf263401">
+<p>
+Look at control versus stimulated CD4+ T cells from
+<a href="https://www.nature.com/articles/nbt.4042">Kang et al 2018</a>.
+</p>
+
+<p>
+Download the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">mkdir -p GSE96583
+<span class="org-builtin">cd</span> GSE96583
+curl <span class="org-string">"https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE96583&amp;format=file"</span> | tar xf -
+curl <span class="org-string">"https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE96583&amp;format=file&amp;file=GSE96583_genes.txt.gz"</span> -o GSE96583_genes.txt.gz
+</pre>
+</div>
+
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">control</span> = scipy.io.mmread(<span class="org-string">"/scratch/midway2/aksarkar/ideas/GSE96583/GSM2560248_2.1.mtx.gz"</span>)
+<span class="org-variable-name">stim</span> = scipy.io.mmread(<span class="org-string">"/scratch/midway2/aksarkar/ideas/GSE96583/GSM2560248_2.2.mtx.gz"</span>)
+</pre>
+</div>
+
+<p>
+First, ask whether batches can be classified. (Aside: this seems like a case
+where proper experimental design would eliminate the problem.)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">
+</pre>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-11-09 Fri 13:01</p>
+<p class="date">Created: 2018-11-11 Sun 20:39</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

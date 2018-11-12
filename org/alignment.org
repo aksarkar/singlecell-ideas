@@ -12,10 +12,10 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="4G",partition="gpu2",venv="singlecell",opts="--gres=gpu:1") :dir /scratch/midway2/aksarkar/ideas
+  #+CALL: ipython3(memory="4G",venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 51480571
+  : Submitted batch job 51829818
 
   #+NAME: imports
   #+BEGIN_SRC ipython
@@ -23,12 +23,15 @@
     import pandas as pd
     import scaa
     import scipy.io
+    import scipy.sparse as ss
     import scipy.stats as st
+    import sklearn.manifold as skm
+    import torch
   #+END_SRC
 
   #+RESULTS: imports
   :RESULTS:
-  # Out[8]:
+  # Out[13]:
   :END:
 
   #+RESULTS:
@@ -394,12 +397,104 @@
 
 ** ZIPVAE on known mixture
 
-   Embed a known mixtures of sorted cells, then look at whether they are
+   Embed a known mixture of sorted cells, then look at whether they are
    linearly separable in the embedding space.
 
    #+BEGIN_SRC ipython
-   
+     cd8 = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
+     cd19 = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[3]:
+   :END:
+
+   Mix the cells and filter lowly expressed genes.
+
+   #+BEGIN_SRC ipython
+     mix = ss.hstack((cd8, cd19)).tocsr()
+     mix = mix[((mix > 0).mean(axis=1) >= 0.25).A.ravel()].T.astype(np.int)
+     mix.shape
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   : (20294, 404)
+   :END:
+
+   Load the data.
+
+   #+BEGIN_SRC ipython
+     training_data = torch.utils.data.DataLoader(
+       scaa.dataset.SparseDataset(mix),
+       batch_size=100,
+       num_workers=1,
+       pin_memory=True,
+       shuffle=True,
+     )
+     eval_data = torch.utils.data.DataLoader(
+       scaa.dataset.SparseDataset(mix),
+       batch_size=100,
+       num_workers=1,
+       pin_memory=True,
+       shuffle=False,
+     )
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   Fit the model and get the embedding.
+
+   #+BEGIN_SRC ipython :async t
+     with torch.cuda.device(0):
+       model = scaa.modules.ZIPVAE(mix.shape[1], 10).fit(training_data, max_epochs=2, verbose=True)
+       with torch.set_grad_enabled(False):
+         z = torch.cat([model.encoder.forward(x)[0] for x in eval_data]).numpy()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   :END:
+
+   Label the cells.
+
+   #+BEGIN_SRC ipython
+     y = np.zeros(mix.shape[0])
+     y[:cd8.shape[1]] = 1
+     y = y.astype(bool)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[26]:
+   :END:
+
+   Plot UMAP of the latent space.
+
+   #+BEGIN_SRC ipython
+     embed = umap.UMAP(n_neighbors=5, metric='euclidean').fit_transform(z)
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :ipyfile figure/alignment.org/zipvae-cd8-cd19-umap.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.scatter(embed[y,0], embed[y,1], s=1, c='r', label='CD19', alpha=0.25)
+     plt.scatter(embed[~y,0], embed[~y,1], s=1, c='b', label='CD8', alpha=0.25)
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[36]:
+   : Text(0,0.5,'UMAP 2')
+   [[file:figure/alignment.org/zipvae-cd8-cd19-umap.png]]
+   :END:
 
 ** ZIPAAE sanity check
 
@@ -499,7 +594,7 @@
        return result
 
      res = evaluate(cd8_cytotoxic_t_cells, num_trials=1)
-     # res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/zipaae-generalization2.txt.gz', compression='gzip', sep='\t')
+     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/alignment/zipaae-generalization2.txt.gz', compression='gzip', sep='\t')
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/

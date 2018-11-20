@@ -1,0 +1,344 @@
+#+TITLE: Cardiac trajectory prediction
+#+SETUPFILE: setup.org
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="8G",venv="singlecell",partition="gpu2",opts="--gres:gpu=1") :dir /scratch/midway2/aksarkar/ideas
+
+  #+RESULTS:
+  : Submitted batch job 52126035
+
+  #+NAME: imports
+  #+BEGIN_SRC ipython
+    import anndata
+    import numpy as np
+    import pandas as pd
+    import scanpy.api as sc
+    import scipy.io as si
+    import scipy.sparse as ss
+    import scipy.stats as st
+    import umap
+    import wlra
+    import scaa
+  #+END_SRC
+
+  #+RESULTS: imports
+  :RESULTS:
+  # Out[86]:
+  :END:
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+* Introduction
+
+  Here, we investigate analogues of principal curves ([[https://www.tandfonline.com/doi/abs/10.1080/01621459.1989.10478797][Hastie and Stuetzle 1989]])
+  in other embeddings. 
+
+  The goal is to qualitatively evaluate the ability to follow gene expression
+  in the observed space by walking along trajectories in the embedding space,
+  to recover key events in differentiation time courses.
+
+* Results
+** iPSC-derived cardiomyocyte differentiation time course data
+
+   Read the raw data.
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     cp /project2/onibasu/data/project_CZI/DROP_combined_counts.tsv.zip /scratch/midway2/aksarkar/ideas/
+     unzip DROP_combined_counts.tsv.zip
+   #+END_SRC
+
+   #+RESULTS:
+
+   Compress the data.
+
+   #+BEGIN_SRC ipython :async t
+     data = pd.read_table('/scratch/midway2/aksarkar/ideas/DROP_combined_counts.txt')
+     sparse_counts = ss.csr_matrix(data.values)
+     with open('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop-seq-counts.mtx', 'wb') as f:
+       si.mmwrite(f, sparse_counts)
+     data.index.to_series().to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/genes.txt', index=None)
+     data.columns.to_series().to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/cells.txt', index=None)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   :END:
+
+   #+BEGIN_SRC sh
+     gzip /project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop-seq-counts.mtx
+   #+END_SRC
+
+   Read the compressed data.
+
+   #+BEGIN_SRC ipython
+     counts = si.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop-seq-counts.mtx.gz')
+     genes = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/genes.txt', header=None)
+     cells = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/cells.txt', header=None)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   :END:
+
+   Filter out all-zero genes.
+
+   #+BEGIN_SRC ipython
+     adata = anndata.AnnData(counts.T.tocsr(), obs=cells, var=genes)
+     sc.pp.filter_genes(adata, min_cells=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[12]:
+   :END:
+
+** NMF
+   
+   Our benchmarking suggests NMF learns the best low rank structure of the
+   rates.
+
+   #+BEGIN_SRC ipython :async t
+     import sklearn.decomposition
+     m = sklearn.decomposition.NMF(n_components=10, solver='mu', beta_loss=1).fit(adata.X)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[14]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     loadings = m.transform(adata.X)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[15]:
+   :END:
+
+   Remove the library size from the loadings.
+
+   #+BEGIN_SRC ipython
+     scaled_loadings = (loadings / adata.X.sum(axis=1)).A
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[143]:
+   :END:
+
+   Look at the embedding space.
+
+   #+BEGIN_SRC ipython :async t
+     embed = umap.UMAP(n_neighbors=15, metric='euclidean').fit_transform(scaled_loadings)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[144]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     labels = cells[0].apply(lambda x: x.split('_')[1])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[89]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-umap.png
+     plt.clf()
+     plt.set_cmap('Dark2')
+     plt.gcf().set_size_inches(3, 3)
+     for i, (k, g) in enumerate(pd.DataFrame(embed).groupby(labels)):
+       plt.scatter(embed[labels == k,0], embed[labels == k,1], c=f'C{i}', s=1, alpha=.1, label=k)
+     leg = plt.legend(frameon=False, handletextpad=0, markerscale=4, loc='center left', bbox_to_anchor=(1, .5))
+     for h in leg.legendHandles: 
+       h.set_alpha(1)
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[145]:
+   : Text(0,0.5,'UMAP 2')
+   [[file:figure/trajectory.org/drop-seq-umap.png]]
+   :END:
+
+   Walk on straight lines between day 0 and day 15, and look at the expression
+   of [[https://www.nature.com/articles/srep15014/figures/11][marker genes]].
+
+   #+BEGIN_SRC ipython
+     gene_info = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-genes.txt.gz')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[61]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     start = cells[0].apply(lambda x: x.endswith('day0'))
+     end = cells[0].apply(lambda x: x.endswith('day15'))
+     grid = np.linspace(0, 1, 200)
+     z = []
+     for g in grid:
+       z.append((1 - g) * scaled_loadings[start][:100] + g * scaled_loadings[end][:100])
+     z = np.array(z)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[183]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     xhat = z.dot(m.components_)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[184]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/tnnt2.png
+     genes = [["GATA4", "NKX2-5"], ["MEF2C", "HAND2"], ["TBX5", "MYH6"]]
+
+     plt.clf()
+     fig, ax = plt.subplots(3, 2)
+     plt.gcf().set_size_inches(8.5, 11)
+
+     for y in range(3):
+       ax[y][0].set_ylabel('Latent expression')
+       for x in range(2):
+         gene = genes[y][x]
+         ax[y][x].plot(grid, xhat[:,:,gene_info.query(f'name == "{gene}"').index].squeeze(), c='k', lw=1, alpha=0.1)
+         ax[y][x].set_title(gene)
+
+     for x in range(2):
+       ax[-1][x].set_xlabel('Interpolant')
+
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[185]:
+   [[file:figure/trajectory.org/tnnt2.png]]
+   :END:
+
+   Look at the diffusion maps.
+
+   #+BEGIN_SRC ipython :async t
+     adata.obsm['X_nmf'] = scaled_loadings
+     sc.pp.neighbors(adata, use_rep='X_nmf')
+     sc.tl.diffmap(adata)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[161]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-nmf-diffusion.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 4)
+     for i, (k, g) in enumerate(pd.DataFrame(embed).groupby(labels)):
+       plt.scatter(adata.obsm['X_diffmap'][labels == k,1], adata.obsm['X_diffmap'][labels == k,2], c=f'C{i}', s=1, alpha=.1, label=k)
+
+     plt.xlabel('Diffusion map 1')
+     plt.ylabel('Diffusion map 2')
+
+     leg = plt.legend(frameon=False, handletextpad=0, markerscale=4, loc='center left', bbox_to_anchor=(1, .5))
+     for h in leg.legendHandles: 
+       h.set_alpha(1)
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[187]:
+   [[file:figure/trajectory.org/drop-seq-nmf-diffusion.png]]
+   :END:
+
+** scVI
+
+   Fit scVI to the data.
+
+   #+BEGIN_SRC ipython :async t
+     import scvi.dataset
+     import scvi.models
+     import scvi.inference
+
+     X = scvi.dataset.GeneExpressionDataset(*scvi.dataset.GeneExpressionDataset.get_attributes_from_matrix(adata.X))
+     model = scvi.models.VAE(X.nb_genes, n_batch=X.n_batches, n_latent=2)
+     infer = scvi.inference.UnsupervisedTrainer(model=model, gene_dataset=X)
+     infer.train(n_epochs=10, lr=1e-2)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - 873cb733-75b2-45a1-a7aa-80dcd8e71e02
+   :END:
+
+** Geodesics
+
+   Estimate the geodesic in this space
+   (https://www.springer.com/us/book/9780817634902, https://arxiv.org/pdf/1411.7432
+   https://arxiv.org/abs/1710.11379).
+
+   #+BEGIN_SRC ipython
+     metric = m.components_.dot(m.components_.T)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[129]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     import scipy.integrate
+
+     def f(x, y):
+       return np.vstack((y[], -.5 * np.linalg.pinv(metric), np.kron(y[1], y[1])))
+
+     def bc(ya, yb):
+       return np.array([ya - loadings[start][0], yb - loadings[end][0]])
+
+     x = np.linspace(0, 1, 5)
+     res = scipy.integrate.solve_bvp(f, bc, x, np.zeros((20, x.size)))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - f554087f-b03a-4574-8613-072c205e5251
+   :END:

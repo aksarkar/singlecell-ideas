@@ -853,6 +853,7 @@
 
    #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
      <<imports>>
+     import collections
      import scaa
      import scipy.io
 
@@ -873,33 +874,50 @@
        counts = counts[((counts > 0).mean(axis=1) >= min_detect).A.ravel()].T.A.astype(np.int)
        return counts
 
+
      def evaluate_generalization(data, num_trials):
        x = data()
-       result = {'train': dict(), 'validation': dict()}
-       for method in ['plra1', 'nmf', 'nmf_frob', 'hpf', 'lda', 'maptpx', 'scvi', 'zipvae']:
-         result['train'][method] = []
-         result['validation'][method] = []
+       result = collections.defaultdict(list)
+       for method in ['plra1', 'nmf', 'nmf_kl', 'hpf', 'lda', 'maptpx', 'scvi', 'zipvae']:
+         result[('train', method)] = []
+         result[('validation', method)] = []
          for trial in range(num_trials):
            train, val = scaa.benchmark.train_test_split(x)
-           training_score = getattr(scaa.benchmark, f'training_score_{method}')(train)
-           result['train'][method].append(training_score)
-           validation_score = getattr(scaa.benchmark, f'generalization_score_{method}')(train, val)
-           result['validation'][method].append(validation_score)
+           try:
+             training_score = getattr(scaa.benchmark, f'training_score_{method}')(train)
+             result[('train', method)].append(training_score)
+           except:
+             result[('train', method)].append(np.nan)
+           try:
+             validation_score = getattr(scaa.benchmark, f'generalization_score_{method}')(train, val)
+             result[('validation', method)].append(validation_score)
+           except:
+             result[('validation', method)].append(np.nan)
        result = pd.DataFrame.from_dict(result)
        result.index.name = 'trial'
        return result
 
-     res = evaluate_generalization(data=cd19_b_cells, num_trials=1)
-     print(res)
+     res = evaluate_generalization(data=cd19_b_cells, num_trials=10)
+     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization.txt.gz', compression='gzip', sep='\t')
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --job-name=pois-generalization --mem=8G --time=60:00 --partition=gpu2 --gres=gpu:1
+     sbatch --job-name=pois-generalization --mem=32G --time=8:00:00 --partition=gpu2 --gres=gpu:1 -n1 -c4
      #!/bin/bash
      source activate singlecell
      python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 51818956
+   : Submitted batch job 52115343
    
+   #+BEGIN_SRC sh
+     sacct -j 51935807 -o Elapsed
+   #+END_SRC
+
+   #+RESULTS:
+   :    Elapsed 
+   : ---------- 
+   :   00:23:52 
+   :   00:23:52 
+   :   00:23:52 

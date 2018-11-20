@@ -12,10 +12,10 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="32G",venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :dir /scratch/midway2/aksarkar/ideas
+  #+CALL: ipython3(memory="4G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 51849776
+  : Submitted batch job 52114840
 
   #+NAME: imports
   #+BEGIN_SRC ipython
@@ -28,16 +28,12 @@
     import sklearn.decomposition as skd
     import sklearn.linear_model as sklm
     import sklearn.manifold as skm
+    import sklearn.metrics as skme
     import torch
     import umap
   #+END_SRC
 
   #+RESULTS: imports
-  :RESULTS:
-  # Out[53]:
-  :END:
-
-  #+RESULTS:
   :RESULTS:
   # Out[1]:
   :END:
@@ -499,6 +495,121 @@
    [[file:figure/alignment.org/zipvae-cd8-cd19-umap.png]]
    :END:
 
+** Discriminator sanity check
+
+   Make sure the discriminator can classify in count space.
+
+   #+BEGIN_SRC ipython
+     cd8 = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd8+_cytotoxic_t_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
+     cd19 = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cd19+_b_cells/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[3]:
+   :END:
+
+   Mix the cells and filter lowly expressed genes.
+
+   #+BEGIN_SRC ipython
+     mix = ss.hstack((cd8, cd19)).tocsr()
+     mix = mix[((mix > 0).mean(axis=1) >= 0.25).A.ravel()].T.astype(np.int)
+     mix.shape
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   : (20294, 404)
+   :END:
+
+   Label the cells.
+
+   #+BEGIN_SRC ipython
+     y = np.zeros(mix.shape[0])
+     y[:cd8.shape[1]] = 1
+     y = y.astype(bool)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   Split the cells.
+
+   #+BEGIN_SRC ipython
+     train = np.zeros(mix.shape[0], dtype=np.bool)
+     train[:int(cd8.shape[1] * .9)] = 1
+     train[cd8.shape[1]:cd8.shape[1] + int((mix.shape[0] - cd8.shape[1]) * .9)] = 1
+     val = ~train
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[40]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     train[y].sum(), train[~y].sum(), val[y].sum(), val[~y].sum()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[41]:
+   : (9188, 9076, 1021, 1009)
+   :END:
+
+   Train the discriminator.
+
+   #+BEGIN_SRC ipython :async t
+     data = torch.tensor(mix.A[train], dtype=torch.float)
+     val_data = torch.tensor(mix.A[val], dtype=torch.float)
+     labels = torch.tensor(y[train].astype(int), dtype=torch.long)
+     val_labels = torch.tensor(y[val].astype(int), dtype=torch.long)
+
+     f = scaa.modules.Discriminator(input_dim=mix.shape[1], num_classes=2)
+     opt = torch.optim.Adam(f.parameters())
+     loss_fn = torch.nn.NLLLoss()
+     for i in range(100):
+       opt.zero_grad()
+       loss = loss_fn(f.forward(data), labels)
+       val_loss = loss_fn(f.forward(val_data), val_labels)
+       print(f'[{i}] {loss} {val_loss}')
+       loss.backward()
+       opt.step()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[42]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     loss.detach().numpy(), val_loss.detach().numpy()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[45]:
+   : (array(4.1733852e-05, dtype=float32), array(0.00011137, dtype=float32))
+   :END:
+
+   Evaluate the discriminator.
+
+   #+BEGIN_SRC ipython
+     with torch.set_grad_enabled(False):
+       ay = f.forward(val_data).numpy()
+       py = ay / ay.sum()
+     skme.average_precision_score(y[val], py[:,0]), skme.roc_auc_score(y[val], py[:,0])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[52]:
+   : (1.0, 1.0)
+   :END:
+
 ** ZIPAAE sanity check
 
    Simulate homogeneous low rank data and randomly split it into two groups (so
@@ -606,15 +717,67 @@
      y = np.zeros(mix.shape[0])
      y[:cd8.shape[1]] = 1
      y = y.astype(bool)
-
-     batch = (np.random.uniform(size=mix.shape[0]) < 0.5).astype(int)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[8]:
    :END:
 
+   To make the problem harder, correlate the "batch" label with cell type.
+
+   #+BEGIN_SRC ipython
+     batch = (np.random.uniform(size=mix.shape[0]) < np.where(y, .25, .75)).astype(int)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
+   :END:
+
+   Embed the data in the ambient space.
+
+   #+BEGIN_SRC ipython :async t
+     embed = umap.UMAP(n_neighbors=5, metric='euclidean').fit_transform(mix)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[54]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/alignment.org/zipaae-cd8-cd19-ambient-umap.png
+     plt.clf()
+     plt.set_cmap('Dark2')
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(6, 3)
+
+     ax[0].scatter(embed[y,0], embed[y,1], s=1, c='C0', label='CD19', alpha=0.25)
+     ax[0].scatter(embed[~y,0], embed[~y,1], s=1, c='C1', label='CD8', alpha=0.25)
+     leg = ax[0].legend(frameon=False, handletextpad=0, markerscale=4)
+     for h in leg.legendHandles: 
+       h.set_alpha(1)
+
+     b = batch.astype(bool)
+     ax[1].scatter(embed[b,0], embed[b,1], s=1, c='C2', label='Batch 1', alpha=0.25)
+     ax[1].scatter(embed[~b,0], embed[~b,1], s=1, c='C3', label='Batch 2', alpha=0.25)
+     leg = ax[1].legend(frameon=False, handletextpad=0, markerscale=4)
+     for h in leg.legendHandles: 
+       h.set_alpha(1)
+
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+       a.set_ylabel('UMAP 2')
+
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[55]:
+   [[file:figure/alignment.org/zipaae-cd8-cd19-ambient-umap.png]]
+   :END:
+   
    Load the data.
 
    #+BEGIN_SRC ipython
@@ -643,7 +806,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[13]:
    :END:
 
    Fit the model.
@@ -655,6 +818,7 @@
 
    #+RESULTS:
    :RESULTS:
+   # Out[14]:
    :END:
 
    Get the embedding.
@@ -665,11 +829,21 @@
        z = torch.cat([q.forward(batch)[0] for batch in eval_data]).numpy()
    #+END_SRC
 
+   #+RESULTS:
+   :RESULTS:
+   # Out[15]:
+   :END:
+
    Plot UMAP of the latent space.
 
    #+BEGIN_SRC ipython
      embed = umap.UMAP(n_neighbors=5, metric='euclidean').fit_transform(z)
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[16]:
+   :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/alignment.org/zipaae-cd8-cd19-umap.png
      plt.clf()
@@ -699,7 +873,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[32]:
+   # Out[17]:
    [[file:figure/alignment.org/zipaae-cd8-cd19-umap.png]]
    :END:
    
@@ -725,21 +899,21 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[34]:
+   # Out[3]:
    :END:
 
    First, ask whether batches can be classified. (Aside: this seems like a case
    where proper experimental design would eliminate the problem.)
 
    #+BEGIN_SRC ipython
-     mix = ss.hstack([control, stim]).tocsr()
+     mix = ss.hstack([control, stim]).tocsc()
      mix = mix[((mix > 0).mean(axis=1) >= 0.25).A.ravel()].T.astype(np.int)
      mix.shape
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[45]:
+   # Out[4]:
    : (29065, 482)
    :END:
 
@@ -752,7 +926,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[50]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -762,8 +936,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[52]:
-   : 0.9883708928264235
+   # Out[59]:
+   : 0.9884741097539996
    :END:
 
    Look at the embedding.
@@ -776,7 +950,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[65]:
+   # Out[60]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/alignment.org/kang-et-al-control-stim-umap.png
@@ -794,59 +968,94 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[66]:
+   # Out[61]:
    : Text(0,0.5,'UMAP 2')
    [[file:figure/alignment.org/kang-et-al-control-stim-umap.png]]
    :END:
 
-   Align the data using AAE.
+   Align the data using scVI.
 
-   #+BEGIN_SRC ipython
-     qz = align(mix, y, latent_dim=10)
-   #+END_SRC
+   #+BEGIN_SRC ipython :async t
+     import scvi.dataset
+     import scvi.models
+     import scvi.inference
 
-
-   #+BEGIN_SRC ipython
-     def align(counts, labels, latent_dim, batch_size=100, max_epochs=2, verbose=False):
-       """Align the datasets x1 and x2
-
-       :param x1: Matrix of counts (ndarray-like)
-       :param x2: Matrix of counts (ndarray-like)
-       :param latent_dim: Latent dimension of the embedding
-
-       """
-       training_data = torch.utils.data.DataLoader(
-         scaa.dataset.SparseDataset(counts),
-         batch_size=batch_size,
-         num_workers=2,
-         pin_memory=True,
-         shuffle=True,
-       )
-       batch_data = torch.utils.data.DataLoader(
-         torch.tensor(labels, dtype=torch.long),
-         batch_size=batch_size,
-         num_workers=2,
-         pin_memory=True,
-         shuffle=True,
-       )
-       eval_data = torch.utils.data.DataLoader(
-         scaa.dataset.SparseDataset(counts),
-         batch_size=batch_size,
-         num_workers=2,
-         pin_memory=True,
-         shuffle=False,
-       )
-       # Fit the model
-       with torch.cuda.device(0):
-         model = scaa.modules.ZIPAAE(input_dim=counts.shape[1], latent_dim=latent_dim, num_classes=2).fit(x=training_data, y=batch_data, max_epochs=max_epochs, verbose=verbose)
-       # Recover the embedding
-       with torch.set_grad_enabled(False):
-         q = model.vae.encoder.cpu()
-         z = torch.cat([q.forward(batch)[0] for batch in eval_data]).numpy()
-       return z
+     X = scvi.dataset.GeneExpressionDataset(*scvi.dataset.GeneExpressionDataset.get_attributes_from_matrix(mix, labels=y))
+     model = scvi.models.VAEC(X.nb_genes, n_batch=X.n_batches, n_labels=X.n_labels)
+     infer = scvi.inference.UnsupervisedTrainer(model=model, gene_dataset=X)
+     infer.train(n_epochs=10, lr=1e-2)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[139]:
+   # Out[23]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     qz = infer.train_set.get_latent()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   :END:
+
+
+   Align the data using AAE.
+
+   #+BEGIN_SRC ipython :async t
+     qz = scaa.align.align(mix, y, latent_dim=10, max_epochs=2, verbose=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[62]:
+   :END:
+
+   Look at the disciminating in the embedding.
+
+   #+BEGIN_SRC ipython :async t
+     m = sklm.LogisticRegressionCV(cv=4, fit_intercept=True, n_jobs=-1,).fit(qz, y)
+     m.score(qz, y)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   : 0.9775331154309307
+   :END:
+
+   Look at the AAE embedding.
+
+   #+BEGIN_SRC ipython
+     embed = umap.UMAP(n_neighbors=5, metric='euclidean').fit_transform(qz)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[40]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/alignment.org/kang-et-al-aae-umap.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 3)
+     plt.set_cmap('Dark2')
+
+     b = y.astype(bool)
+     plt.scatter(embed[b,0], embed[b,1], s=1, c='C0', label='Control', alpha=0.25)
+     plt.scatter(embed[~b,0], embed[~b,1], s=1, c='C1', label='Stimulated', alpha=0.25)
+     leg = plt.legend(frameon=False, handletextpad=0, markerscale=4, loc='center left', bbox_to_anchor=(1, .5))
+     for h in leg.legendHandles: 
+       h.set_alpha(1)
+
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   [[file:figure/alignment.org/kang-et-al-aae-umap.png]]
    :END:

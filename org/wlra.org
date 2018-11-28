@@ -11,10 +11,10 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="4G",venv="singlecell") :dir /scratch/midway2/aksarkar/ideas
+  #+CALL: ipython3(memory="4G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 51768786
+  : Submitted batch job 53392928
 
   #+BEGIN_SRC ipython
     %matplotlib inline
@@ -874,6 +874,15 @@
        counts = counts[((counts > 0).mean(axis=1) >= min_detect).A.ravel()].T.A.astype(np.int)
        return counts
 
+     def pbmcs_68k(min_detect=0.25):
+       counts = scipy.io.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/68k_pbmcs/filtered_matrices_mex/hg19/matrix.mtx.gz').tocsr()
+       counts = counts[((counts > 0).mean(axis=1) >= min_detect).A.ravel()].T.A.astype(np.int)
+       return counts
+
+     def cortex():
+       counts = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/zeisel-2015/GSE60361_C1-3005-Expression.txt.gz', index_col=0)
+       # Follow scVI here
+       return counts.loc[counts.var(axis=1).sort_values(ascending=False).head(n=500).index].values.T
 
      def evaluate_generalization(data, num_trials):
        x = data()
@@ -897,27 +906,59 @@
        result.index.name = 'trial'
        return result
 
-     res = evaluate_generalization(data=cd19_b_cells, num_trials=10)
-     res.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization.txt.gz', compression='gzip', sep='\t')
+     for data in ['pbmcs_68k']:
+       res = evaluate_generalization(data=globals()[data], num_trials=10)
+       res.to_csv(f'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization/{data}.txt.gz', compression='gzip', sep='\t')
    #+END_SRC
 
    #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --job-name=pois-generalization --mem=32G --time=8:00:00 --partition=gpu2 --gres=gpu:1 -n1 -c4
+     sbatch --job-name=pois-generalization --time=24:00:00 --partition=gpu2 --mem=32G -n1 -c8
      #!/bin/bash
      source activate singlecell
      python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/pois-generalization.py
    #+END_SRC
 
    #+RESULTS:
-   : Submitted batch job 52115343
+   : Submitted batch job 53393176
    
-   #+BEGIN_SRC sh
-     sacct -j 51935807 -o Elapsed
+   Plot the results.
+
+   #+BEGIN_SRC ipython :ipyfile figure/wlra.org/pois-gen-cd19.png
+     res = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization/cd19_b_cells.txt.gz', sep='\t', header=[0, 1], index_col=0)
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharey=True)
+     res['train'].boxplot(ax=ax[0], grid=False, rot=90)
+     res['validation'].boxplot(ax=ax[1], grid=False, rot=90)
+     ax[0].set_ylabel('Log likelihood')
+     ax[0].set_title('Training set')
+     ax[1].set_title('Validation set')
+     for a in ax:
+       a.set_xlabel('Method')
+     fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
-   :    Elapsed 
-   : ---------- 
-   :   00:23:52 
-   :   00:23:52 
-   :   00:23:52 
+   :RESULTS:
+   # Out[3]:
+   [[file:figure/wlra.org/pois-gen-cd19.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/wlra.org/pois-gen-cortex.png
+     res = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/wlra/pois-generalization/cortex.txt.gz', sep='\t', header=[0, 1], index_col=0)
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharey=True)
+     res['train'].boxplot(ax=ax[0], grid=False, rot=90)
+     res['validation'].boxplot(ax=ax[1], grid=False, rot=90)
+     ax[0].set_ylabel('Log likelihood')
+     ax[0].set_title('Training set')
+     ax[1].set_title('Validation set')
+     for a in ax:
+       a.set_xlabel('Method')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   [[file:figure/wlra.org/pois-gen-cortex.png]]
+   :END:

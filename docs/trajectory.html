@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2018-11-28 Wed 01:17 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cardiac trajectory prediction</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="https://maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cosmo/bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="https://www.pirilampo.org/styles/readtheorg/css/htmlize.css"/>
+<style type="text/css">body {width: 60em; margin:auto} pre.src {overflow:auto}</style>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Cardiac trajectory prediction</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgf17561b">Introduction</a></li>
+<li><a href="#orgcfb7f09">Materials and methods</a>
+<ul>
+<li><a href="#orga1eaf62">iPSC-derived cardiomyocyte differentiation time course data</a></li>
+</ul>
+</li>
+<li><a href="#org2a6603e">Results</a>
+<ul>
+<li><a href="#org8ca986d">scVI</a></li>
+<li><a href="#org74318a5">NMF</a></li>
+<li><a href="#org909dc25">Geodesics</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgf17561b" class="outline-2">
+<h2 id="orgf17561b">Introduction</h2>
+<div class="outline-text-2" id="text-orgf17561b">
+<p>
+Here, we investigate analogues of principal curves (<a href="https://www.tandfonline.com/doi/abs/10.1080/01621459.1989.10478797">Hastie and Stuetzle 1989</a>)
+in other embeddings. 
+</p>
+
+<p>
+The goal is to qualitatively evaluate the ability to follow gene expression
+in the observed space by walking along trajectories in the embedding space,
+to recover key events in differentiation time courses.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgcfb7f09" class="outline-2">
+<h2 id="orgcfb7f09">Materials and methods</h2>
+<div class="outline-text-2" id="text-orgcfb7f09">
+</div>
+<div id="outline-container-orga1eaf62" class="outline-3">
+<h3 id="orga1eaf62">iPSC-derived cardiomyocyte differentiation time course data</h3>
+<div class="outline-text-3" id="text-orga1eaf62">
+<p>
+We differentiated iPSCs into cardiomyocytes from two individuals, and
+performed Drop-Seq and DroNC-Seq at 4 and 5 time points respectively: 0, 1,
+3, 7, and 15 days.
+</p>
+
+<p>
+Read and compress the Drop-Seq data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">data</span> = pd.read_table(<span class="org-string">'/project2/onibasu/data/project_CZI/DROP_combined_counts.tsv.gz'</span>, index_col=0)
+<span class="org-variable-name">counts</span> = ss.csr_matrix(data.values)
+<span class="org-keyword">with</span> gzip.<span class="org-builtin">open</span>(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/counts.mtx.gz'</span>, <span class="org-string">'wb'</span>) <span class="org-keyword">as</span> f:
+  si.mmwrite(f, counts)
+data.index.to_series().to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/genes.txt'</span>, index=<span class="org-constant">None</span>)
+pd.DataFrame(data.columns.to_series().<span class="org-builtin">apply</span>(<span class="org-keyword">lambda</span> x: pd.Series(x.split(<span class="org-string">'_'</span>)))).to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/cells.txt'</span>, index=<span class="org-constant">None</span>, sep=<span class="org-string">' '</span>)
+</pre>
+</div>
+
+<p>
+Read the compressed data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">counts</span> = si.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/counts.mtx.gz'</span>)
+<span class="org-variable-name">genes</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/genes.txt'</span>, header=<span class="org-constant">None</span>, index_col=0)
+<span class="org-variable-name">cells</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/cells.txt'</span>, sep=<span class="org-string">' '</span>)
+<span class="org-variable-name">cells.columns</span> = [<span class="org-string">'barcode'</span>, <span class="org-string">'day'</span>, <span class="org-string">'ind'</span>]
+</pre>
+</div>
+
+<p>
+Keep genes detected in at least 10% of cells.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">adata</span> = anndata.AnnData(counts.T.tocsr(), obs=cells, var=genes)
+sc.pp.filter_genes(adata, min_cells=.1 * adata.shape[0])
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2a6603e" class="outline-2">
+<h2 id="org2a6603e">Results</h2>
+<div class="outline-text-2" id="text-org2a6603e">
+</div>
+<div id="outline-container-org8ca986d" class="outline-3">
+<h3 id="org8ca986d">scVI</h3>
+<div class="outline-text-3" id="text-org8ca986d">
+<p>
+Fit scVI to the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">X</span> = scvi.dataset.GeneExpressionDataset(
+   *scvi.dataset.GeneExpressionDataset.get_attributes_from_matrix(
+    adata.X,
+    batch_indices=np.array([i == <span class="org-string">'rep1'</span> <span class="org-keyword">for</span> i <span class="org-keyword">in</span> adata.obs[<span class="org-string">'ind'</span>]]).astype(<span class="org-builtin">int</span>),
+    labels=adata.obs[<span class="org-string">'day'</span>].values,
+  ))
+<span class="org-variable-name">model</span> = scvi.models.VAE(X.nb_genes, n_batch=X.n_batches, n_latent=10)
+<span class="org-variable-name">infer</span> = scvi.inference.UnsupervisedTrainer(model=model, gene_dataset=X)
+infer.train(n_epochs=200, lr=1e-2)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">adata.obsm</span>[<span class="org-string">'X_scvi'</span>] = 
+sc.pp.neighbors(adata, use_rep=<span class="org-string">'X_nmf'</span>)
+sc.tl.diffmap(adata)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org74318a5" class="outline-3">
+<h3 id="org74318a5">NMF</h3>
+<div class="outline-text-3" id="text-org74318a5">
+<p>
+Our benchmarking suggests NMF learns the best low rank structure of the
+rates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">m</span> = skd.NMF(n_components=10, solver=<span class="org-string">'mu'</span>, beta_loss=1).fit(adata.X)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">loadings</span> = m.transform(adata.X)
+</pre>
+</div>
+
+<p>
+Remove the library size.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">L</span> = loadings / adata.X.<span class="org-builtin">sum</span>(axis=1)
+</pre>
+</div>
+
+<p>
+Look at the diffusion maps.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">adata.obsm</span>[<span class="org-string">'X_nmf'</span>] = L
+<span class="org-variable-name">rep1</span> = adata[adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>]
+sc.pp.neighbors(rep1, use_rep=<span class="org-string">'X_nmf'</span>)
+sc.tl.diffmap(rep1)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rep2</span> = adata[adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep2'</span>]
+sc.pp.neighbors(rep2, use_rep=<span class="org-string">'X_nmf'</span>)
+sc.tl.diffmap(rep2)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">from</span> mpl_toolkits.mplot3d <span class="org-keyword">import</span> Axes3D
+
+plt.clf()
+plt.gcf().set_size_inches(4, 4)
+<span class="org-variable-name">ax</span> = plt.gcf().add_subplot(111, projection=<span class="org-string">'3d'</span>)
+<span class="org-keyword">for</span> i, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(rep2.obs.groupby(<span class="org-string">'day'</span>)):
+  ax.scatter(rep2.obsm[<span class="org-string">'X_diffmap'</span>][rep2.obs[<span class="org-string">'day'</span>] == k,1],
+              rep2.obsm[<span class="org-string">'X_diffmap'</span>][rep2.obs[<span class="org-string">'day'</span>] == k,2],
+              rep2.obsm[<span class="org-string">'X_diffmap'</span>][rep2.obs[<span class="org-string">'day'</span>] == k,3],
+              c=f<span class="org-string">'C{i}'</span>, s=1, alpha=.1, label=k)
+
+ax.set_xlabel(<span class="org-string">'Diffusion map 1'</span>)
+ax.set_ylabel(<span class="org-string">'Diffusion map 2'</span>)
+ax.set_zlabel(<span class="org-string">'Diffusion map 3'</span>)
+
+<span class="org-variable-name">leg</span> = plt.legend(frameon=<span class="org-constant">False</span>, handletextpad=0, markerscale=4, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+<span class="org-keyword">for</span> h <span class="org-keyword">in</span> leg.legendHandles: 
+  h.set_alpha(1)
+
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/trajectory.org/drop-seq-nmf-diffusion.png" alt="drop-seq-nmf-diffusion.png">
+</p>
+</div>
+
+<p>
+Compute diffusion psuedotime.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(1)
+<span class="org-variable-name">dpt</span> = []
+<span class="org-keyword">for</span> root <span class="org-keyword">in</span> np.random.choice(rep1.obs[rep1.obs[<span class="org-string">'day'</span>] == 0].index, 200):
+  <span class="org-variable-name">rep1.uns</span>[<span class="org-string">'iroot'</span>] = root
+  sc.tl.dpt(rep1, n_dcs=15)
+  dpt.append(rep1.obs[<span class="org-string">'dpt_pseudotime'</span>])
+<span class="org-variable-name">dpt</span> = np.array(dpt).T
+</pre>
+</div>
+
+<p>
+Look at pseudotime vs. real time.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 6)
+<span class="org-keyword">for</span> i, (k, _) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(rep1.obs.groupby(<span class="org-string">'day'</span>)):
+  plt.errorbar(x=dpt[rep1.obs[<span class="org-string">'day'</span>] == k].mean(axis=1),
+               y=np.arange(rep1.shape[0])[rep1.obs[<span class="org-string">'day'</span>] == k],
+               yerr=dpt[rep1.obs[<span class="org-string">'day'</span>] == k].std(axis=1),
+               c=f<span class="org-string">'C{i}'</span>,
+               label=k)
+plt.xlabel(<span class="org-string">'Diffusion pseudotime'</span>)
+plt.ylabel(<span class="org-string">'Cell'</span>)
+<span class="org-variable-name">leg</span> = plt.legend()
+leg.set_title(<span class="org-string">'Day'</span>)
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/trajectory.org/drop-seq-nmf-dpt.png" alt="drop-seq-nmf-dpt.png">
+</p>
+</div>
+
+<p>
+Read off gene expression over DPT trajectories.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lam</span> = L.dot(m.components_)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.scatter(dpt.mean(axis=1), lam[adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>,np.where(rep1.var_names == <span class="org-string">'MYL7'</span>)[0]].A.ravel(), s=1)
+plt.xlabel(<span class="org-string">'Diffusion pseudotime'</span>)
+plt.ylabel(<span class="org-string">'Latent expression'</span>)
+plt.title(<span class="org-string">'MYL7'</span>)
+</pre>
+</div>
+
+<pre class="example">
+Text(0.5,1,'MYL7')
+
+</pre>
+
+<div class="figure">
+<p><img src="figure/trajectory.org/drop-seq-nmf-dpt-markers.png" alt="drop-seq-nmf-dpt-markers.png">
+</p>
+</div>
+
+<p>
+Investigate whether reverse pseudotime will perform better. First, see if we
+can confidently separate terminal cardiomyocytes.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">m.components_[:,np.where(rep1.var_names == <span class="org-string">'MYL7'</span>)[0]]
+</pre>
+</div>
+
+<pre class="example">
+array([[ 0.0430656473],
+[ 3.7637520339],
+[ 0.          ],
+[ 0.0259073463],
+[18.4579867492],
+[ 0.          ],
+[ 0.          ],
+[ 0.0441971002],
+[ 0.          ],
+[ 0.          ]])
+</pre>
+
+<p>
+Look at linear separability in the largest latent factors.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.semilogx()
+plt.semilogy()
+<span class="org-variable-name">expr</span> = lam[adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>,np.where(rep1.var_names == <span class="org-string">'MYL7'</span>)[0]].A.ravel()
+plt.scatter(L[adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>,0].A, L[adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>,4].A, s=1, c=colorcet.cm[<span class="org-string">'fire'</span>](expr / expr.<span class="org-builtin">max</span>()))
+plt.xlabel(<span class="org-string">'Factor 1'</span>)
+plt.ylabel(<span class="org-string">'Factor 5'</span>)
+</pre>
+</div>
+
+<pre class="example">
+Text(0,0.5,'Factor 5')
+
+</pre>
+
+<div class="figure">
+<p><img src="figure/trajectory.org/drop-seq-nmf-dpt-terminal.png" alt="drop-seq-nmf-dpt-terminal.png">
+</p>
+</div>
+
+<p>
+Look at factor 5 vs. DPT.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.scatter(dpt.mean(axis=1), L[adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>,4].A, s=1)
+plt.xlabel(<span class="org-string">'Diffusion pseudotime'</span>)
+plt.ylabel(<span class="org-string">'Loading on factor 5'</span>)
+</pre>
+</div>
+
+<pre class="example">
+Text(0,0.5,'Loading on factor 5')
+
+</pre>
+
+<div class="figure">
+<p><img src="figure/trajectory.org/drop-seq-nmf-dpt-factor5.png" alt="drop-seq-nmf-dpt-factor5.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org909dc25" class="outline-3">
+<h3 id="org909dc25">Geodesics</h3>
+<div class="outline-text-3" id="text-org909dc25">
+<p>
+Estimate the geodesic in this space
+(<a href="https://www.springer.com/us/book/9780817634902">https://www.springer.com/us/book/9780817634902</a>, <a href="https://arxiv.org/pdf/1411.7432">https://arxiv.org/pdf/1411.7432</a>
+<a href="https://arxiv.org/abs/1710.11379">https://arxiv.org/abs/1710.11379</a>).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">metric</span> = m.components_.dot(m.components_.T)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> scipy.integrate
+
+<span class="org-keyword">def</span> <span class="org-function-name">f</span>(x, y):
+  <span class="org-keyword">return</span> np.vstack((y[], -.5 * np.linalg.pinv(metric), np.kron(y[1], y[1])))
+
+<span class="org-keyword">def</span> <span class="org-function-name">bc</span>(ya, yb):
+  <span class="org-keyword">return</span> np.array([ya - loadings[start][0], yb - loadings[end][0]])
+
+<span class="org-variable-name">x</span> = np.linspace(0, 1, 5)
+<span class="org-variable-name">res</span> = scipy.integrate.solve_bvp(f, bc, x, np.zeros((20, x.size)))
+</pre>
+</div>
+
+<p>
+0 - f554087f-b03a-4574-8613-072c205e5251
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2018-11-28 Wed 01:17</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

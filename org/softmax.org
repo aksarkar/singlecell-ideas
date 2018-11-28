@@ -1,0 +1,111 @@
+#+TITLE: Softmax basis for MAP estimation
+#+SETUPFILE: setup.org
+
+* Setup                                                            :noexport:
+
+  #+BEGIN_SRC emacs-lisp
+    (setq python-shell-prompt-detect-failure-warning nil)
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="4G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/ideas
+
+  #+RESULTS:
+  : Submitted batch job 52072974
+
+  #+NAME: imports
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import scipy.special as sp
+    import scipy.stats as st
+  #+END_SRC
+
+  #+RESULTS: imports
+  :RESULTS:
+  # Out[50]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+* Beta in two bases
+
+  #+BEGIN_SRC ipython
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[54]:
+  :END:
+
+  #+BEGIN_SRC ipython :ipyfile figure/softmax.org/beta-hist.png
+    plt.clf()
+    plt.set_cmap('Dark2')
+    fig, ax = plt.subplots(1, 2)
+    fig.set_size_inches(5, 3)
+
+    for i, conc in enumerate((0.25, 0.5, 1)):
+      p = np.random.beta(conc, conc, size=10000)
+      a = np.clip(sp.logit(p), -10, 10)
+      fp = st.gaussian_kde(p)
+      fa = st.gaussian_kde(a)
+
+      grid = np.linspace(0, 1, 100)
+      ax[0].plot(grid, fp(grid), lw=1, c=f'C{i}')
+
+      grid = np.linspace(-3, 3, 100)
+      ax[1].plot(grid, fa(grid), lw=1, c=f'C{i}')
+
+    ax[0].set_title('Simplex')
+    ax[1].set_title('Softmax')
+    # ax[1].legend(loc='center left', bbox_to_anchor=(1, .5))
+    for a in ax:
+      a.set_xlabel('x')
+      a.set_ylabel('Density')
+
+    fig.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[61]:
+  [[file:figure/softmax.org/beta-hist.png]]
+  :END:
+
+* Dirichlet in two bases
+
+  #+BEGIN_SRC ipython :ipyfile figure/softmax.org/beta-hist.png
+    p = np.random.dirichlet(np.ones(4), size=100)
+    z = np.cumsum(p, axis=1)
+    idx = np.lexsort(p.T)
+
+    plt.clf()
+    plt.set_cmap('Dark2')
+    for j in range(p.shape[1]):
+      if j > 0:
+        bot = z[idx,j - 1]
+      else:
+        bot = None
+      plt.bar(np.arange(p.shape[0]), p[idx,j], bottom=bot, color=f'C{j}')
+    plt.xlabel('Sample')
+    plt.ylabel('Probability')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[48]:
+  : Text(0,0.5,'Probability')
+  [[file:figure/softmax.org/beta-hist.png]]
+  :END:

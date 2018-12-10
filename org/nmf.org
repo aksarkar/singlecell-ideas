@@ -1,0 +1,243 @@
+#+TITLE: Investigate sklearn NMF
+#+SETUPFILE: setup.org
+
+* Setup
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+    (org-babel-lob-ingest "zinb.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 0
+
+  #+CALL: ipython3(memory="16G",venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/singlecell :exports none
+
+  #+RESULTS:
+  : Submitted batch job 55495477
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import scipy.linalg as sl
+    import scipy.stats as st
+    import sklearn.decomposition as skd
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+* Illustration of the problem
+
+  Simulate a small problem.
+
+  #+BEGIN_SRC ipython
+    N = 200
+    P = 1000
+    K = 3
+
+    np.random.seed(1)
+    L = np.exp(np.random.normal(size=(N, K)))
+    F = np.exp(np.random.normal(size=(K, P)))
+    lam = L.dot(F)
+    x = np.random.poisson(lam=lam)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+  Fit NMF to the simulated data.
+
+  #+BEGIN_SRC ipython
+    m0 = skd.NMF(solver='mu', beta_loss='kullback-leibler', n_components=3)
+    lhat0 = m0.fit_transform(x)
+    fhat0 = m0.components_
+
+    m1 = skd.NMF(solver='mu', beta_loss='kullback-leibler', n_components=3).fit(x)
+    lhat1 = m1.transform(x)
+    fhat1 = m1.components_
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[14]:
+  :END:
+
+  The data are Poisson, and the model is a Poisson MLE. But the Poisson MLE is
+  equal to the data, so we should have close to zero reconstruction error in
+  the samples.
+
+  #+BEGIN_SRC ipython
+    np.isclose((x - lhat0.dot(fhat0)).sum(axis=1), 0).all()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[43]:
+  : False
+  :END:
+
+  #+BEGIN_SRC ipython
+    np.isclose((x - lhat1.dot(fhat1)).sum(axis=1), 0).all()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[44]:
+  : True
+  :END:
+
+  Check whether the two ways of fitting the model give the same result.
+
+  #+BEGIN_SRC ipython
+    np.isclose(lhat0, lhat1).all()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[15]:
+  : False
+  :END:
+
+  #+BEGIN_SRC ipython
+    np.isclose(fhat0, fhat1).all()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[16]:
+  : True
+  :END:
+
+  Check whether one model gets a better objective function value.
+
+  #+BEGIN_SRC ipython
+    np.isclose(m0.reconstruction_err_, m1.reconstruction_err_)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[21]:
+  : True
+  :END:
+
+* Implementation details
+
+  Under the hood, ~sklearn~ is fitting the two models above like so:
+
+  #+BEGIN_SRC ipython
+    W0, H0, _ = skd.non_negative_factorization(X=x, n_components=3, init=None, solver='mu', beta_loss='kullback-leibler')
+    dummy, H1, _ = skd.non_negative_factorization(X=x, n_components=3, init=None, solver='mu', beta_loss='kullback-leibler')
+    W1, _, _ = skd.non_negative_factorization(X=x, H=H1, update_H=False, init=None, n_components=3, solver='mu', beta_loss='kullback-leibler')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[19]:
+  :END:
+
+  Now, ask whether the first solution for ~m1~ matches the solution for ~m0~.
+
+  #+BEGIN_SRC ipython
+    np.isclose(H0, H1).all()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[22]:
+  : True
+  :END:
+
+  #+BEGIN_SRC ipython
+    np.isclose(W0, dummy).all()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[23]:
+  : True
+  :END:
+
+  The NMF problem is biconvex (Lee and Seung 2001). So why do we have ~H0 ==
+  H1~, but ~W0 != W1~?  Look at the [[https://github.com/scikit-learn/scikit-learn/blob/55bf5d9/sklearn/decomposition/nmf.py#L1012][implementation of NMF initialization]]:
+
+  #+BEGIN_SRC ipython :eval never
+    # check W and H, or initialize them
+    if init == 'custom' and update_H:
+        _check_init(H, (n_components, n_features), "NMF (input H)")
+        _check_init(W, (n_samples, n_components), "NMF (input W)")
+    elif not update_H:
+        _check_init(H, (n_components, n_features), "NMF (input H)")
+        # 'mu' solver should not be initialized by zeros
+        if solver == 'mu':
+            avg = np.sqrt(X.mean() / n_components)
+            W = np.full((n_samples, n_components), avg)
+        else:
+            W = np.zeros((n_samples, n_components))
+    else:
+        W, H = _initialize_nmf(X, n_components, init=init,
+                               random_state=random_state)
+
+  #+END_SRC
+
+  By default, ~init=None~, so ~sklearn~ uses [[https://github.com/scikit-learn/scikit-learn/blob/55bf5d9/sklearn/decomposition/nmf.py#L308][a heuristic]] to determine the
+  initialization strategy
+
+  #+BEGIN_SRC ipython :eval never
+    if init is None:
+        if n_components < n_features:
+            init = 'nndsvd'
+        else:
+            init = 'random'
+  #+END_SRC
+
+  NNDSVD is described in [[http://scgroup.hpclab.ceid.upatras.gr/faculty/stratis/Papers/HPCLAB020107.pdf][Boutsidis et al. 2007]]. The important point is that it
+  is deterministic, which explains how ~H0 == H1~ and ~W0 == dummy~. (The
+  multiplicative updates of Lee and Seung 2001 are also deterministic.)
+
+  So the remaining question is: why does ~W0 != W1~, but the objective function
+  value is the same?
+
+  If the problem is convex in ~W~ holding ~H~ fixed, then we should get the
+  same solution from a different random initialization.
+
+  #+BEGIN_SRC ipython
+    W2, _, _ = skd.non_negative_factorization(X=x, H=H1, update_H=False, init='random', n_components=3, solver='mu', beta_loss='kullback-leibler')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[26]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    np.isclose(W1, W2).all()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[27]:
+  : True
+  :END:
+
+  Compare the objective function values.
+
+  #+BEGIN_SRC ipython
+    from sklearn.decomposition.nmf import _beta_divergence
+    _beta_divergence(x, W0, H0, 1), _beta_divergence(x, W1, H1, 1)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[36]:
+  : (125414.13467899823, 120542.29484854601)
+  :END:
+
+  Why is ~sklearn~ reporting the reconstruction error is the same for ~m0~ and
+  ~m1~? The answer is that ~sklearn~ only estimates the reconstruction error in
+  training (~fit~), not for test (~transform~). This means it reports the
+  reconstruction error for ~m0~ based on ~W0~ and ~m1~ based on ~dummy~, and we
+  confirmed that ~W0 == dummy~.

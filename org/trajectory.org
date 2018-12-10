@@ -10,10 +10,10 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="4G",venv="singlecell",opts="-c4") :dir /scratch/midway2/aksarkar/ideas
+  #+CALL: ipython3(memory="16G",venv="singlecell",opts="-c4") :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 53706819
+  : Submitted batch job 53981202
 
   #+NAME: imports
   #+BEGIN_SRC ipython
@@ -29,6 +29,7 @@
     import scvi.models
     import scvi.inference
     import sklearn.decomposition as skd
+    import sklearn.linear_model as sklm
     import umap
   #+END_SRC
 
@@ -41,6 +42,7 @@
     %matplotlib inline
     %config InlineBackend.figure_formats = set(['retina'])
     import colorcet
+    import matplotlib
     import matplotlib.pyplot as plt
   #+END_SRC
 
@@ -98,64 +100,37 @@
 
    #+BEGIN_SRC ipython
      adata = anndata.AnnData(counts.T.tocsr(), obs=cells, var=genes)
-     sc.pp.filter_genes(adata, min_cells=.1 * adata.shape[0])
+     sc.pp.filter_genes(adata, min_cells=.05 * adata.shape[0])
+     adata.shape
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[16]:
+   # Out[4]:
+   : (25311, 4161)
    :END:
 
 * Results
-** scVI
-
-   Fit scVI to the data.
-
-   #+BEGIN_SRC ipython :async t
-     X = scvi.dataset.GeneExpressionDataset(
-        ,*scvi.dataset.GeneExpressionDataset.get_attributes_from_matrix(
-         adata.X,
-         batch_indices=np.array([i == 'rep1' for i in adata.obs['ind']]).astype(int),
-         labels=adata.obs['day'].values,
-       ))
-     model = scvi.models.VAE(X.nb_genes, n_batch=X.n_batches, n_latent=10)
-     infer = scvi.inference.UnsupervisedTrainer(model=model, gene_dataset=X)
-     infer.train(n_epochs=200, lr=1e-2)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   :END:
-
-   #+BEGIN_SRC ipython
-     adata.obsm['X_scvi'] = 
-     sc.pp.neighbors(adata, use_rep='X_nmf')
-     sc.tl.diffmap(adata)
-   #+END_SRC
-
 ** NMF
    
-   Our benchmarking suggests NMF learns the best low rank structure of the
-   rates.
+   Learn a low-rank representation of the data under the model:
 
-   #+BEGIN_SRC ipython
-     m = skd.NMF(n_components=10, solver='mu', beta_loss=1).fit(adata.X)
+   \[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+   \[ \lambda_{ij} = [\mathbf{LF}]_{ij} \]
+
+   This corresponds to NMF.
+
+   #+BEGIN_SRC ipython :async t
+     nmf = skd.NMF(n_components=10, solver='mu', beta_loss=1)
+     loadings = nmf.fit_transform(adata.X)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
    :END:
 
-   #+BEGIN_SRC ipython
-     loadings = m.transform(adata.X)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[15]:
-   :END:
-
-   Remove the library size.
+   In this model, the total number of molecules detected is included in
+   \(\lambda\), so we scale to remove the library size.
 
    #+BEGIN_SRC ipython
      L = loadings / adata.X.sum(axis=1)
@@ -163,60 +138,27 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[23]:
+   # Out[13]:
    :END:
 
-   Look at the diffusion maps.
+** Diffusion pseudotime
 
-   #+BEGIN_SRC ipython :async t
-     adata.obsm['X_nmf'] = L
-     rep1 = adata[adata.obs['ind'] == 'Rep1']
-     sc.pp.neighbors(rep1, use_rep='X_nmf')
-     sc.tl.diffmap(rep1)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   :END:
+   By default, diffusion pseudotime embeds the data in principal component
+   space to compute distances.
 
    #+BEGIN_SRC ipython
+     rep1 = adata[adata.obs['ind'] == 'Rep1']
+     sc.pp.neighbors(rep1)
+     sc.tl.diffmap(rep1)
+
      rep2 = adata[adata.obs['ind'] == 'Rep2']
-     sc.pp.neighbors(rep2, use_rep='X_nmf')
+     sc.pp.neighbors(rep2)
      sc.tl.diffmap(rep2)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[100]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-nmf-diffusion.png
-     from mpl_toolkits.mplot3d import Axes3D
-
-     plt.clf()
-     plt.gcf().set_size_inches(4, 4)
-     ax = plt.gcf().add_subplot(111, projection='3d')
-     for i, (k, g) in enumerate(rep2.obs.groupby('day')):
-       ax.scatter(rep2.obsm['X_diffmap'][rep2.obs['day'] == k,1],
-                   rep2.obsm['X_diffmap'][rep2.obs['day'] == k,2],
-                   rep2.obsm['X_diffmap'][rep2.obs['day'] == k,3],
-                   c=f'C{i}', s=1, alpha=.1, label=k)
-
-     ax.set_xlabel('Diffusion map 1')
-     ax.set_ylabel('Diffusion map 2')
-     ax.set_zlabel('Diffusion map 3')
-
-     leg = plt.legend(frameon=False, handletextpad=0, markerscale=4, loc='center left', bbox_to_anchor=(1, .5))
-     for h in leg.legendHandles: 
-       h.set_alpha(1)
-
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[101]:
-   [[file:figure/trajectory.org/drop-seq-nmf-diffusion.png]]
+   # Out[7]:
    :END:
 
    Compute diffusion psuedotime.
@@ -228,25 +170,29 @@
        rep1.uns['iroot'] = root
        sc.tl.dpt(rep1, n_dcs=15)
        dpt.append(rep1.obs['dpt_pseudotime'])
+       del rep1.obs['dpt_pseudotime']
      dpt = np.array(dpt).T
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[130]:
+   # Out[9]:
    :END:
 
-   Look at pseudotime vs. real time.
-
-   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-nmf-dpt.png
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-dpt.png
      plt.clf()
-     plt.gcf().set_size_inches(3, 6)
+     plt.gcf().set_size_inches(3, 8)
+     mean_dpt = dpt.mean(axis=1)
+     order = np.array([i for k, i in sorted([(k, i) for i, k in enumerate(np.argsort(mean_dpt))])])
      for i, (k, _) in enumerate(rep1.obs.groupby('day')):
-       plt.errorbar(x=dpt[rep1.obs['day'] == k].mean(axis=1),
-                    y=np.arange(rep1.shape[0])[rep1.obs['day'] == k],
-                    yerr=dpt[rep1.obs['day'] == k].std(axis=1),
-                    c=f'C{i}',
-                    label=k)
+       plt.errorbar(x=mean_dpt[rep1.obs['day'] == k],
+                y=order[rep1.obs['day'] == k],
+                xerr=dpt[rep1.obs['day'] == k].std(axis=1),
+                fmt='o',
+                elinewidth=1,
+                markersize=1,
+                c=f'C{i}',
+                label=k,)
      plt.xlabel('Diffusion pseudotime')
      plt.ylabel('Cell')
      leg = plt.legend()
@@ -255,58 +201,333 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[131]:
-   [[file:figure/trajectory.org/drop-seq-nmf-dpt.png]]
+   # Out[11]:
+   [[file:figure/trajectory.org/drop-seq-dpt.png]]
    :END:
 
-   Read off gene expression over DPT trajectories.
+   Read off gene expression of marker genes ([[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4546707/][Karakikes et al. 2016]]) over DPT
+   trajectories.
 
    #+BEGIN_SRC ipython
-     lam = L.dot(m.components_)
+     lam = L.dot(nmf.components_)
+     lam.shape
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[132]:
+   # Out[23]:
+   : (25311, 4161)
+   :END:
+
+   #+BEGIN_SRC ipython
+     markers = [
+       # iPSC
+       'POU5F1',  # Oct-4
+       'SOX2',
+       'NANOG',
+       # mesoderm formation
+       'T',  # BRY/TBXT
+       'MIXL1',
+       # cardiogenic mesoderm
+       'MESP1',
+       'ISL1',
+       'KDR',
+       # cardiac progenitor
+       'NKX2-5',
+       'GATA4',
+       'TBX5',
+       'MEF2C',
+       'HAND1',
+       'HAND2',
+       # cardiomyocyte
+       'MYL2',
+       'MYL7',
+       'MYH6',
+       'TNNT2'
+       ]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[15]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-dpt-markers.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(11, 3)
+     for i, name in enumerate(['GATA4', 'MIXL1', 'T', 'MYL7']):
+       for j, (k, g) in enumerate(rep1.obs.groupby('day')):
+         ax[i].set_yscale('log')
+         ax[i].scatter(dpt.mean(axis=1)[rep1.obs['day'] == k], lam[(adata.obs['ind'] == 'Rep1').values,np.where(rep1.var_names == name)].A.ravel()[rep1.obs['day'] == k], s=1, c=f'C{j}')
+       ax[i].set_xlabel('Diffusion pseudotime')
+       ax[i].set_title(name)
+     ax[0].set_ylabel('Latent expression')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[41]:
+   [[file:figure/trajectory.org/drop-seq-dpt-markers.png]]
+   :END:
+
+   Do the same for the second donor, who has one extra time point.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(1)
+     dpt = []
+     for root in np.random.choice(rep2.obs[rep2.obs['day'] == 0].index, 200):
+       rep2.uns['iroot'] = root
+       sc.tl.dpt(rep2, n_dcs=15)
+       dpt.append(rep2.obs['dpt_pseudotime'])
+       del rep2.obs['dpt_pseudotime']
+     dpt = np.array(dpt).T
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-dpt-rep2.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 8)
+     mean_dpt = dpt.mean(axis=1)
+     order = np.array([i for k, i in sorted([(k, i) for i, k in enumerate(np.argsort(mean_dpt))])])
+     for i, (k, _) in enumerate(rep2.obs.groupby('day')):
+       plt.errorbar(x=mean_dpt[rep2.obs['day'] == k],
+                y=order[rep2.obs['day'] == k],
+                xerr=dpt[rep2.obs['day'] == k].std(axis=1),
+                fmt='o',
+                elinewidth=1,
+                markersize=1,
+                c=f'C{i}',
+                label=k,)
+     plt.xlabel('Diffusion pseudotime')
+     plt.ylabel('Cell')
+     leg = plt.legend()
+     leg.set_title('Day')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   [[file:figure/trajectory.org/drop-seq-dpt-rep2.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-dpt-markers-rep2.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(11, 3)
+     for i, name in enumerate(['GATA4', 'MIXL1', 'T', 'MYL7']):
+       for j, (k, g) in enumerate(rep2.obs.groupby('day')):
+         ax[i].set_yscale('log')
+         ax[i].scatter(dpt.mean(axis=1)[rep2.obs['day'] == k], lam[(adata.obs['ind'] == 'Rep2').values,np.where(rep2.var_names == name)].A.ravel()[rep2.obs['day'] == k], s=1, c=f'C{j}')
+       ax[i].set_xlabel('Diffusion pseudotime')
+       ax[i].set_title(name)
+     ax[0].set_ylabel('Latent expression')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[42]:
+   [[file:figure/trajectory.org/drop-seq-dpt-markers-rep2.png]]
+   :END:
+
+** NMF-based pseudotime
+
+   Look at the diffusion maps.
+
+   #+BEGIN_SRC ipython
+     adata.obsm['X_nmf'] = L
+     rep1 = adata[adata.obs['ind'] == 'Rep1']
+     sc.pp.neighbors(rep1, use_rep='X_nmf')
+     sc.tl.diffmap(rep1)
+
+     rep2 = adata[adata.obs['ind'] == 'Rep2']
+     sc.pp.neighbors(rep2, use_rep='X_nmf')
+     sc.tl.diffmap(rep2)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[30]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-nmf-diffusion.png
+     from mpl_toolkits.mplot3d import Axes3D
+
+     plt.clf()
+     plt.gcf().set_size_inches(8, 5)
+
+     ax = plt.gcf().add_subplot(121, projection='3d')
+     ax.grid(False)
+     for i, (k, g) in enumerate(rep1.obs.groupby('day')):
+       ax.scatter(rep1.obsm['X_diffmap'][rep1.obs['day'] == k,1],
+                   rep1.obsm['X_diffmap'][rep1.obs['day'] == k,2],
+                   rep1.obsm['X_diffmap'][rep1.obs['day'] == k,3],
+                   c=f'C{i}', s=1, alpha=.1, label=k)
+
+     ax.set_xlabel('Diffusion map 1')
+     ax.set_ylabel('Diffusion map 2')
+     ax.set_zlabel('Diffusion map 3')
+
+     ax = plt.gcf().add_subplot(122, projection='3d')
+     ax.grid(False)
+     for i, (k, g) in enumerate(rep2.obs.groupby('day')):
+       ax.scatter(rep2.obsm['X_diffmap'][rep2.obs['day'] == k,1],
+                   rep2.obsm['X_diffmap'][rep2.obs['day'] == k,2],
+                   rep2.obsm['X_diffmap'][rep2.obs['day'] == k,3],
+                   c=f'C{i}', s=1, alpha=.1, label=k)
+
+     ax.set_xlabel('Diffusion map 1')
+     ax.set_ylabel('Diffusion map 2')
+     ax.set_zlabel('Diffusion map 3')
+
+     leg = plt.legend(frameon=False, handletextpad=0, markerscale=4, loc='center left', bbox_to_anchor=(1, .5))
+     leg.set_title('Day')
+     for h in leg.legendHandles: 
+       h.set_alpha(1)
+
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[16]:
+   [[file:figure/trajectory.org/drop-seq-nmf-diffusion.png]]
+   :END:
+
+   Compute diffusion psuedotime.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(1)
+     dpt = []
+     for root in np.random.choice(rep1.obs[rep1.obs['day'] == 0].index, 200):
+       rep1.uns['iroot'] = root
+       del rep1.obs['dpt_pseudotime']
+       sc.tl.dpt(rep1, n_dcs=15)
+       dpt.append(rep1.obs['dpt_pseudotime'])
+     dpt = np.array(dpt).T
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[51]:
+   :END:
+
+   Look at pseudotime vs. real time.
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-nmf-dpt.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 8)
+     mean_dpt = dpt.mean(axis=1)
+     order = np.array([i for k, i in sorted([(k, i) for i, k in enumerate(np.argsort(m))])])
+     for i, (k, _) in enumerate(rep1.obs.groupby('day')):
+       plt.errorbar(x=mean_dpt[rep1.obs['day'] == k],
+                y=order[rep1.obs['day'] == k],
+                xerr=dpt[rep1.obs['day'] == k].std(axis=1),
+                fmt='o',
+                elinewidth=1,
+                markersize=1,
+                c=f'C{i}',
+                label=k,)
+     plt.xlabel('Diffusion pseudotime')
+     plt.ylabel('Cell')
+     leg = plt.legend()
+     leg.set_title('Day')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[97]:
+   [[file:figure/trajectory.org/drop-seq-nmf-dpt.png]]
+   :END:
+
+   Read off gene expression of marker genes ([[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4546707/][Karakikes et al. 2016]]) over DPT
+   trajectories.
+
+   #+BEGIN_SRC ipython
+     lam = L.dot(nmf.components_)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[105]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     markers = [
+       # iPSC
+       'POU5F1',  # Oct-4
+       'SOX2',
+       'NANOG',
+       # mesoderm formation
+       'T',  # BRY/TBXT
+       'MIXL1',
+       # cardiogenic mesoderm
+       'MESP1',
+       'ISL1',
+       'KDR',
+       # cardiac progenitor
+       'NKX2-5',
+       'GATA4',
+       'TBX5',
+       'MEF2C',
+       'HAND1',
+       'HAND2',
+       # cardiomyocyte
+       'MYL2',
+       'MYL7',
+       'MYH6',
+       'TNNT2'
+       ]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[23]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-nmf-dpt-markers.png
      plt.clf()
-     plt.gcf().set_size_inches(3, 3)
-     plt.scatter(dpt.mean(axis=1), lam[adata.obs['ind'] == 'Rep1',np.where(rep1.var_names == 'MYL7')[0]].A.ravel(), s=1)
-     plt.xlabel('Diffusion pseudotime')
-     plt.ylabel('Latent expression')
-     plt.title('MYL7')
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(11, 3)
+     for i, name in enumerate(['POU5F1', 'MYL7', 'T', 'MIXL1']):
+       ax[i].set_yscale('log')
+       for j, (k, g) in enumerate(rep1.obs.groupby('day')):
+         ax[i].scatter(dpt.mean(axis=1)[rep1.obs['day'] == k], lam[adata.obs['ind'] == 'Rep1',np.where(rep1.var_names == name)].A.ravel()[rep1.obs['day'] == k], s=1, c=f'C{j}')
+       ax[i].set_xlabel('Diffusion pseudotime')
+       ax[i].set_title(name)
+     ax[0].set_ylabel('Latent expression')
+     fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[162]:
-   : Text(0.5,1,'MYL7')
+   # Out[151]:
    [[file:figure/trajectory.org/drop-seq-nmf-dpt-markers.png]]
    :END:
 
-   Investigate whether reverse pseudotime will perform better. First, see if we
-   can confidently separate terminal cardiomyocytes.
+** NMF pseudotime
+
+   First, see if we can confidently separate terminal cardiomyocytes.
 
    #+BEGIN_SRC ipython
-     m.components_[:,np.where(rep1.var_names == 'MYL7')[0]]
+     nmf.components_[:,np.where(rep1.var_names == 'MYL7')[0]]
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[165]:
+   # Out[31]:
    #+BEGIN_EXAMPLE
-     array([[ 0.0430656473],
-     [ 3.7637520339],
-     [ 0.          ],
-     [ 0.0259073463],
-     [18.4579867492],
-     [ 0.          ],
-     [ 0.          ],
-     [ 0.0441971002],
-     [ 0.          ],
-     [ 0.          ]])
+     array([[3.3862978819e-02],
+     [3.5804683534e+00],
+     [0.0000000000e+00],
+     [1.0358071984e-02],
+     [0.0000000000e+00],
+     [1.8786170015e+01],
+     [0.0000000000e+00],
+     [0.0000000000e+00],
+     [6.1099954847e-02],
+     [0.0000000000e+00]])
    #+END_EXAMPLE
    :END:
 
@@ -315,10 +536,14 @@
    #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-nmf-dpt-terminal.png
      plt.clf()
      plt.gcf().set_size_inches(3, 3)
-     plt.semilogx()
-     plt.semilogy()
+     ax = plt.gca()
      expr = lam[adata.obs['ind'] == 'Rep1',np.where(rep1.var_names == 'MYL7')[0]].A.ravel()
-     plt.scatter(L[adata.obs['ind'] == 'Rep1',0].A, L[adata.obs['ind'] == 'Rep1',4].A, s=1, c=colorcet.cm['fire'](expr / expr.max()))
+     norm = matplotlib.colors.Normalize(vmin=0, vmax=expr.max())
+     plt.scatter(1e5 * L[adata.obs['ind'] == 'Rep1',1].A, 1e5 * L[adata.obs['ind'] == 'Rep1',5].A, s=1, c=colorcet.cm['fire'](norm(expr)))
+     sm = matplotlib.cm.ScalarMappable(norm=norm, cmap=colorcet.cm['fire'])
+     sm.set_array([])
+     cb = plt.colorbar(sm)
+     cb.set_label('MYL7')
      plt.xlabel('Factor 1')
      plt.ylabel('Factor 5')
    #+END_SRC
@@ -330,24 +555,101 @@
    [[file:figure/trajectory.org/drop-seq-nmf-dpt-terminal.png]]
    :END:
 
-   Look at factor 5 vs. DPT.
+   Convert to an LDA solution.
 
-   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-nmf-dpt-factor5.png
-     plt.clf()
-     plt.gcf().set_size_inches(3, 3)
-     plt.scatter(dpt.mean(axis=1), L[adata.obs['ind'] == 'Rep1',4].A, s=1)
-     plt.xlabel('Diffusion pseudotime')
-     plt.ylabel('Loading on factor 5')
+   #+BEGIN_SRC ipython
+     docs = L.A * nmf.components_.sum(axis=1)
+     topics = nmf.components_ / nmf.components_.sum(axis=1, keepdims=True)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[178]:
-   : Text(0,0.5,'Loading on factor 5')
-   [[file:figure/trajectory.org/drop-seq-nmf-dpt-factor5.png]]
+   # Out[7]:
+   :END:
+   
+   Read off the solution. Topic 5 is clearly marker genes for mature
+   cardiomyocytes.
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/nmf-to-lda-topics-vs-markers.png
+     idx = np.where(adata.var.index.isin(markers))[0]
+     plt.clf()
+     plt.imshow(nmf.components_[:,idx], cmap=colorcet.cm['bmy'])
+     plt.xticks(np.arange(idx.shape[0]), adata.var.index[idx], rotation=90)
+     plt.xlabel('Marker gene')
+     plt.ylabel('Factor')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
+   : Text(0,0.5,'Factor')
+   [[file:figure/trajectory.org/nmf-to-lda-topics-vs-markers.png]]
    :END:
 
-** Geodesics
+** Per individual analysis
+
+   Try to look at one individual at a time.
+
+   #+BEGIN_SRC ipython :async t
+     rep1 = adata[adata.obs['ind'] == 'Rep1']
+     nmf = skd.NMF(n_components=10, solver='mu', beta_loss=1)
+     loadings = nmf.fit_transform(rep1.X)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/rep1-topics-vs-markers.png
+     idx = np.where(rep1.var.index.isin(markers))[0]
+     plt.clf()
+     plt.imshow(nmf.components_[:,idx], cmap=colorcet.cm['bmy'])
+     plt.xticks(np.arange(idx.shape[0]), rep1.var.index[idx], rotation=90)
+     plt.xlabel('Marker gene')
+     plt.ylabel('Factor')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[59]:
+   : Text(0,0.5,'Factor')
+   [[file:figure/trajectory.org/rep1-topics-vs-markers.png]]
+   :END:
+
+   #+BEGIN_SRC ipython
+     docs = loadings * nmf.components_.sum(axis=1)
+     docs /= docs.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[129]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/rep1-structure.png
+     plt.set_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(1, 4, sharey=True)
+     fig.set_size_inches(11, 5)
+     for j, (day, a) in enumerate(zip([0, 1, 3, 7], ax)):
+       prop = np.cumsum(docs[rep1.obs['day'] == day], axis=1)
+       idx = np.lexsort(docs[rep1.obs['day'] == day].T)
+       for i in range(prop.shape[1]):
+         if i > 0:
+           bot = prop[idx,i - 1]
+         else:
+           bot = None
+         ax[j].bar(np.arange(prop.shape[0]), docs[idx,i], bottom=bot, color=f'C{i}')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[131]:
+   [[file:figure/trajectory.org/rep1-structure.png]]
+   :END:
+
+** Geodesics                                                       :noexport:
 
    Estimate the geodesic in this space
    (https://www.springer.com/us/book/9780817634902, https://arxiv.org/pdf/1411.7432

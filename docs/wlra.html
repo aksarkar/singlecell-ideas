@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-11-28 Wed 01:17 -->
+<!-- 2018-12-09 Sun 19:38 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weighted low rank approximation</title>
@@ -263,17 +263,17 @@ for the JavaScript code in this tag.
 <li><a href="#orgddd0a43">EM algorithm</a></li>
 <li><a href="#orgd5da9e0">Alternative derivation</a></li>
 <li><a href="#org32708e5">Maximizing non-Gaussian likelihoods</a></li>
-<li><a href="#orgd78939f">Imputing missing values</a></li>
-<li><a href="#orgdc00fc3">Choosing the rank of the approximation</a></li>
+<li><a href="#org1a5beeb">Imputing missing values</a></li>
+<li><a href="#org2607f91">Choosing the rank of the approximation</a></li>
 </ul>
 </li>
 <li><a href="#orgeafba66">Results</a>
 <ul>
 <li><a href="#org584c930">Recovering low rank structure</a></li>
 <li><a href="#orgda0e840">Explaining training data</a></li>
-<li><a href="#org1a5beeb">Imputing missing values</a></li>
+<li><a href="#org41d671f">Imputing missing values</a></li>
 <li><a href="#org976c16e">Convergence</a></li>
-<li><a href="#org2607f91">Choosing the rank of the approximation</a></li>
+<li><a href="#org6c7e546">Choosing the rank of the approximation</a></li>
 <li><a href="#orgd780580">Explaining held out data</a></li>
 </ul>
 </li>
@@ -532,9 +532,9 @@ where \(S(\cdot)\) denotes the sigmoid function.
 </div>
 </div>
 
-<div id="outline-container-orgd78939f" class="outline-3">
-<h3 id="orgd78939f">Imputing missing values</h3>
-<div class="outline-text-3" id="text-orgd78939f">
+<div id="outline-container-org1a5beeb" class="outline-3">
+<h3 id="org1a5beeb">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org1a5beeb">
 <p>
 The EM algorithm for WLRA supports missing values by setting \(w_{ij} =
    0\).
@@ -549,9 +549,9 @@ presence/absence. We can do this by using weights \(\tilde{\mathbf{W}} \circ
 </div>
 </div>
 
-<div id="outline-container-orgdc00fc3" class="outline-3">
-<h3 id="orgdc00fc3">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-orgdc00fc3">
+<div id="outline-container-org2607f91" class="outline-3">
+<h3 id="org2607f91">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org2607f91">
 <p>
 The most obvious way to pick an optimal rank is to use cross-validation:
 hold out some samples, and evaluate the likelihood of the held-out samples
@@ -832,9 +832,9 @@ iterating PLRA to convergence only has little value.
 </div>
 </div>
 
-<div id="outline-container-org1a5beeb" class="outline-3">
-<h3 id="org1a5beeb">Imputing missing values</h3>
-<div class="outline-text-3" id="text-org1a5beeb">
+<div id="outline-container-org41d671f" class="outline-3">
+<h3 id="org41d671f">Imputing missing values</h3>
+<div class="outline-text-3" id="text-org41d671f">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1173,9 +1173,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org2607f91" class="outline-3">
-<h3 id="org2607f91">Choosing the rank of the approximation</h3>
-<div class="outline-text-3" id="text-org2607f91">
+<div id="outline-container-org6c7e546" class="outline-3">
+<h3 id="org6c7e546">Choosing the rank of the approximation</h3>
+<div class="outline-text-3" id="text-org6c7e546">
 <p>
 We generate a Poisson data matrix with planted row rank structure.
 </p>
@@ -1423,7 +1423,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-11-28 Wed 01:17</p>
+<p class="date">Created: 2018-12-09 Sun 19:38</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

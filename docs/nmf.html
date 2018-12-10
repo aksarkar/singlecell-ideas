@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2018-12-09 Sun 20:33 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Investigate sklearn NMF</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="https://maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cosmo/bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/styles/readtheorg/css/htmlize.css"/>
+<style type="text/css">body {width: 60em; margin:auto} pre.src {overflow:auto}</style>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Investigate sklearn NMF</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org4273000">Setup</a></li>
+<li><a href="#orged52701">Illustration of the problem</a></li>
+<li><a href="#orgd11fe81">Implementation details</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org4273000" class="outline-2">
+<h2 id="org4273000">Setup</h2>
+<div class="outline-text-2" id="text-org4273000">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> scipy.linalg <span class="org-keyword">as</span> sl
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> sklearn.decomposition <span class="org-keyword">as</span> skd
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orged52701" class="outline-2">
+<h2 id="orged52701">Illustration of the problem</h2>
+<div class="outline-text-2" id="text-orged52701">
+<p>
+Simulate a small problem.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">N</span> = 200
+<span class="org-variable-name">P</span> = 1000
+<span class="org-variable-name">K</span> = 3
+
+np.random.seed(1)
+<span class="org-variable-name">L</span> = np.exp(np.random.normal(size=(N, K)))
+<span class="org-variable-name">F</span> = np.exp(np.random.normal(size=(K, P)))
+<span class="org-variable-name">lam</span> = L.dot(F)
+<span class="org-variable-name">x</span> = np.random.poisson(lam=lam)
+</pre>
+</div>
+
+<p>
+Fit NMF to the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">m0</span> = skd.NMF(solver=<span class="org-string">'mu'</span>, beta_loss=<span class="org-string">'kullback-leibler'</span>, n_components=3)
+<span class="org-variable-name">lhat0</span> = m0.fit_transform(x)
+<span class="org-variable-name">fhat0</span> = m0.components_
+
+<span class="org-variable-name">m1</span> = skd.NMF(solver=<span class="org-string">'mu'</span>, beta_loss=<span class="org-string">'kullback-leibler'</span>, n_components=3).fit(x)
+<span class="org-variable-name">lhat1</span> = m1.transform(x)
+<span class="org-variable-name">fhat1</span> = m1.components_
+</pre>
+</div>
+
+<p>
+The data are Poisson, and the model is a Poisson MLE. But the Poisson MLE is
+equal to the data, so we should have close to zero reconstruction error in
+the samples.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.isclose((x - lhat0.dot(fhat0)).<span class="org-builtin">sum</span>(axis=1), 0).<span class="org-builtin">all</span>()
+</pre>
+</div>
+
+<pre class="example">
+False
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.isclose((x - lhat1.dot(fhat1)).<span class="org-builtin">sum</span>(axis=1), 0).<span class="org-builtin">all</span>()
+</pre>
+</div>
+
+<pre class="example">
+True
+
+</pre>
+
+<p>
+Check whether the two ways of fitting the model give the same result.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.isclose(lhat0, lhat1).<span class="org-builtin">all</span>()
+</pre>
+</div>
+
+<pre class="example">
+False
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.isclose(fhat0, fhat1).<span class="org-builtin">all</span>()
+</pre>
+</div>
+
+<pre class="example">
+True
+
+</pre>
+
+<p>
+Check whether one model gets a better objective function value.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.isclose(m0.reconstruction_err_, m1.reconstruction_err_)
+</pre>
+</div>
+
+<pre class="example">
+True
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgd11fe81" class="outline-2">
+<h2 id="orgd11fe81">Implementation details</h2>
+<div class="outline-text-2" id="text-orgd11fe81">
+<p>
+Under the hood, <code>sklearn</code> is fitting the two models above like so:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">W0</span>, <span class="org-variable-name">H0</span>, <span class="org-variable-name">_</span> = skd.non_negative_factorization(X=x, n_components=3, init=<span class="org-constant">None</span>, solver=<span class="org-string">'mu'</span>, beta_loss=<span class="org-string">'kullback-leibler'</span>)
+<span class="org-variable-name">dummy</span>, <span class="org-variable-name">H1</span>, <span class="org-variable-name">_</span> = skd.non_negative_factorization(X=x, n_components=3, init=<span class="org-constant">None</span>, solver=<span class="org-string">'mu'</span>, beta_loss=<span class="org-string">'kullback-leibler'</span>)
+<span class="org-variable-name">W1</span>, <span class="org-variable-name">_</span>, <span class="org-variable-name">_</span> = skd.non_negative_factorization(X=x, H=H1, update_H=<span class="org-constant">False</span>, init=<span class="org-constant">None</span>, n_components=3, solver=<span class="org-string">'mu'</span>, beta_loss=<span class="org-string">'kullback-leibler'</span>)
+</pre>
+</div>
+
+<p>
+Now, ask whether the first solution for <code>m1</code> matches the solution for <code>m0</code>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.isclose(H0, H1).<span class="org-builtin">all</span>()
+</pre>
+</div>
+
+<pre class="example">
+True
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.isclose(W0, dummy).<span class="org-builtin">all</span>()
+</pre>
+</div>
+
+<pre class="example">
+True
+
+</pre>
+
+<p>
+The NMF problem is biconvex (Lee and Seung 2001). So why do we have <code>H0 ==
+  H1</code>, but <code>W0 != W1</code>?  Look at the <a href="https://github.com/scikit-learn/scikit-learn/blob/55bf5d9/sklearn/decomposition/nmf.py#L1012">implementation of NMF initialization</a>:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">check W and H, or initialize them</span>
+<span class="org-keyword">if</span> init == <span class="org-string">'custom'</span> <span class="org-keyword">and</span> update_H:
+    _check_init(H, (n_components, n_features), <span class="org-string">"NMF (input H)"</span>)
+    _check_init(W, (n_samples, n_components), <span class="org-string">"NMF (input W)"</span>)
+<span class="org-keyword">elif</span> <span class="org-keyword">not</span> update_H:
+    _check_init(H, (n_components, n_features), <span class="org-string">"NMF (input H)"</span>)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">'mu' solver should not be initialized by zeros</span>
+    <span class="org-keyword">if</span> solver == <span class="org-string">'mu'</span>:
+        <span class="org-variable-name">avg</span> = np.sqrt(X.mean() / n_components)
+        <span class="org-variable-name">W</span> = np.full((n_samples, n_components), avg)
+    <span class="org-keyword">else</span>:
+        <span class="org-variable-name">W</span> = np.zeros((n_samples, n_components))
+<span class="org-keyword">else</span>:
+    <span class="org-variable-name">W</span>, <span class="org-variable-name">H</span> = _initialize_nmf(X, n_components, init=init,
+                           random_state=random_state)
+
+</pre>
+</div>
+
+<p>
+By default, <code>init=None</code>, so <code>sklearn</code> uses <a href="https://github.com/scikit-learn/scikit-learn/blob/55bf5d9/sklearn/decomposition/nmf.py#L308">a heuristic</a> to determine the
+initialization strategy
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">if</span> init <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-keyword">if</span> n_components &lt; n_features:
+        <span class="org-variable-name">init</span> = <span class="org-string">'nndsvd'</span>
+    <span class="org-keyword">else</span>:
+        <span class="org-variable-name">init</span> = <span class="org-string">'random'</span>
+</pre>
+</div>
+
+<p>
+NNDSVD is described in <a href="http://scgroup.hpclab.ceid.upatras.gr/faculty/stratis/Papers/HPCLAB020107.pdf">Boutsidis et al. 2007</a>. The important point is that it
+is deterministic, which explains how <code>H0 == H1</code> and <code>W0 == dummy</code>. (The
+multiplicative updates of Lee and Seung 2001 are also deterministic.)
+</p>
+
+<p>
+So the remaining question is: why does <code>W0 != W1</code>, but the objective function
+value is the same?
+</p>
+
+<p>
+If the problem is convex in <code>W</code> holding <code>H</code> fixed, then we should get the
+same solution from a different random initialization.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">W2</span>, <span class="org-variable-name">_</span>, <span class="org-variable-name">_</span> = skd.non_negative_factorization(X=x, H=H1, update_H=<span class="org-constant">False</span>, init=<span class="org-string">'random'</span>, n_components=3, solver=<span class="org-string">'mu'</span>, beta_loss=<span class="org-string">'kullback-leibler'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.isclose(W1, W2).<span class="org-builtin">all</span>()
+</pre>
+</div>
+
+<pre class="example">
+True
+
+</pre>
+
+<p>
+Compare the objective function values.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">from</span> sklearn.decomposition.nmf <span class="org-keyword">import</span> _beta_divergence
+_beta_divergence(x, W0, H0, 1), _beta_divergence(x, W1, H1, 1)
+</pre>
+</div>
+
+<pre class="example">
+(125414.13467899823, 120542.29484854601)
+
+</pre>
+
+<p>
+Why is <code>sklearn</code> reporting the reconstruction error is the same for <code>m0</code> and
+<code>m1</code>? The answer is that <code>sklearn</code> only estimates the reconstruction error in
+training (<code>fit</code>), not for test (<code>transform</code>). This means it reports the
+reconstruction error for <code>m0</code> based on <code>W0</code> and <code>m1</code> based on <code>dummy</code>, and we
+confirmed that <code>W0 == dummy</code>.
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2018-12-09 Sun 20:33</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

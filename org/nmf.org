@@ -28,6 +28,17 @@
   # Out[2]:
   :END:
 
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[79]:
+  :END:
+
 * Illustration of the problem
 
   Simulate a small problem.
@@ -241,3 +252,44 @@
   training (~fit~), not for test (~transform~). This means it reports the
   reconstruction error for ~m0~ based on ~W0~ and ~m1~ based on ~dummy~, and we
   confirmed that ~W0 == dummy~.
+
+* Biconvex problem vs. convex subproblem
+  :PROPERTIES:
+  :CUSTOM_ID: biconvex
+  :END:
+
+  Why is the biconvex solution worse than the convex solution? The biconvex
+  problem has local minima, so investigate whether a random initialization will
+  do better.
+
+  #+BEGIN_SRC ipython
+    delta = []
+    for trial in range(10):
+      m = skd.NMF(solver='mu', beta_loss='kullback-leibler', n_components=3, init='random')
+      what = m.fit_transform(x)
+      loss0 = _beta_divergence(x, w, m.components_, 1)
+      loss1 = _beta_divergence(x, m.transform(x), m.components_, 1)  
+      delta.append(loss0 - loss1)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[73]:
+  :END:
+
+  Plot the difference in the beta divergence achieved at the biconvex (local)
+  optimum against the convex (global) optimum.
+
+  #+BEGIN_SRC ipython :ipyfile figure/nmf.org/obj-fn.png
+    plt.clf()
+    plt.gcf().set_size_inches(3, 3)
+    plt.hist(delta, color='k', bins=10)
+    plt.xlabel('Difference in beta divergence')
+    _ = plt.ylabel('Number of trials')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[92]:
+  [[file:figure/nmf.org/obj-fn.png]]
+  :END:

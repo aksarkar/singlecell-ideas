@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-03-20 Wed 23:13 -->
+<!-- 2019-03-21 Thu 11:04 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skyway test</title>
@@ -231,6 +231,41 @@ for the JavaScript code in this tag.
 <body>
 <div id="content">
 <h1 class="title">Skyway test</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org7bc4d3b">Desired setup</a></li>
+<li><a href="#org2ea52fc">Skyway setup</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org7bc4d3b" class="outline-2">
+<h2 id="org7bc4d3b">Desired setup</h2>
+<div class="outline-text-2" id="text-org7bc4d3b">
+<p>
+On <code>midway2</code>, we rely on the following setup:
+</p>
+
+<ol class="org-ol">
+<li><code>ipython3 kernel</code> runs on a compute node (requesting appropriate resources
+such as memory, cores, GPUs)</li>
+<li><code>jupyter console</code> runs on the login node, and connects to the remote
+kernel</li>
+<li><code>emacs</code> runs on the login node, and <code>org-mode</code> is used to send code blocks
+interactively to the remote kernel (through the console)</li>
+</ol>
+
+<p>
+Currently, (1) and (2) don't work on <code>skyway</code>.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2ea52fc" class="outline-2">
+<h2 id="org2ea52fc">Skyway setup</h2>
+<div class="outline-text-2" id="text-org2ea52fc">
 <p>
 Login to <code>skyway</code>.
 </p>
@@ -240,38 +275,179 @@ Login to <code>skyway</code>.
 </pre>
 </div>
 
-<pre class="example">
+<p>
 
-Last login: Wed Mar 20 22:58:03 2019 from midway2-login1.rcc.uchicago.edu
+</p>
 
-</pre>
+<p>
+Last login: Thu Mar 21 09:34:22 2019 from midway2-login1.rcc.uchicago.edu
+</p>
 
 <p>
 Start the ipython3 kernel.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-sh">sbatch --partition=rcc-aws --constraint=c1 --job-name=ipython3-singlecell
-<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
-module load anaconda3
-<span class="org-builtin">source</span> activate singlecell
-rm -f /cloud/aws/aksarkar/kernel-singlecell.json
-ipython3 kernel --ip=$(<span class="org-sh-quoted-exec">hostname</span> -i | awk <span class="org-string">'{print $2}'</span>) -f /cloud/aws/aksarkar/kernel-singlecell.json
+<pre class="src src-sh">sbatch --partition=rcc-aws --constraint=c1 --time=10:00 --job-name=ipython3-singlecell --output=/cloud/aws/aksarkar/ipython3-singlecell.out &lt;&lt;EOF
+<span class="org-sh-heredoc">#!/bin/bash</span>
+<span class="org-sh-heredoc">module load anaconda3</span>
+<span class="org-sh-heredoc">source activate singlecell</span>
+<span class="org-sh-heredoc">rm -f /cloud/aws/aksarkar/kernel-singlecell.json</span>
+<span class="org-sh-heredoc">ipython3 kernel --ip=$(</span><span class="org-sh-quoted-exec">hostname</span><span class="org-sh-heredoc"> -I | awk '{print $1}') -f /cloud/aws/aksarkar/kernel-singlecell.json</span>
+<span class="org-sh-heredoc">EOF</span>
 </pre>
 </div>
 
 <p>
-Connect to the kernel.
+
+</p>
+
+<p>
+&gt; &gt; &gt; &gt; &gt; Submitted batch job 506
+</p>
+
+<p>
+See what happened to it.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">sacct -j 506
+</pre>
+</div>
+
+<p>
+JobID    JobName  Partition    Account  AllocCPUS      State ExitCode 
+-------&#x2013;&#x2014; -----&#x2013;&#x2014; -----&#x2013;&#x2014; -----&#x2013;&#x2014; -----&#x2013;&#x2014; -----&#x2013;&#x2014; ---&#x2013;&#x2014; 
+506          ipython3-+    rcc-aws    rcc-aws          1     FAILED      1:0 
+506.batch         batch               rcc-aws          1     FAILED      1:0 
+506.extern       extern               rcc-aws          1  COMPLETED      0:0
+</p>
+
+<pre class="example">
+Traceback (most recent call last):
+  File "/software/anaconda3-5.3/envs/singlecell/bin/ipython3", line 11, in &lt;module&gt;
+    sys.exit(start_ipython())
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/IPython/__init__.py", line 125, in start_ipython
+    return launch_new_instance(argv=argv, **kwargs)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/traitlets/config/application.py", line 657, in launch_instance
+    app.initialize(argv)
+  File "&lt;decorator-gen-112&gt;", line 2, in initialize
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/traitlets/config/application.py", line 87, in catch_config_error
+    return method(app, *args, **kwargs)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/IPython/terminal/ipapp.py", line 308, in initialize
+    super(TerminalIPythonApp, self).initialize(argv)
+  File "&lt;decorator-gen-7&gt;", line 2, in initialize
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/traitlets/config/application.py", line 87, in catch_config_error
+    return method(app, *args, **kwargs)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/IPython/core/application.py", line 450, in initialize
+    self.parse_command_line(argv)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/IPython/terminal/ipapp.py", line 303, in parse_command_line
+    return super(TerminalIPythonApp, self).parse_command_line(argv)
+  File "&lt;decorator-gen-4&gt;", line 2, in parse_command_line
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/traitlets/config/application.py", line 87, in catch_config_error
+    return method(app, *args, **kwargs)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/traitlets/config/application.py", line 514, in parse_command_line
+    return self.initialize_subcommand(subc, subargv)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/IPython/core/application.py", line 243, in initialize_subcommand
+    return super(BaseIPythonApplication, self).initialize_subcommand(subc, argv)
+  File "&lt;decorator-gen-3&gt;", line 2, in initialize_subcommand
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/traitlets/config/application.py", line 87, in catch_config_error
+    return method(app, *args, **kwargs)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/traitlets/config/application.py", line 452, in initialize_subcommand
+    self.subapp.initialize(argv)
+  File "&lt;decorator-gen-123&gt;", line 2, in initialize
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/traitlets/config/application.py", line 87, in catch_config_error
+    return method(app, *args, **kwargs)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/ipykernel/kernelapp.py", line 456, in initialize
+    self.init_sockets()
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/ipykernel/kernelapp.py", line 238, in init_sockets
+    self.shell_port = self._bind_socket(self.shell_socket, self.shell_port)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/ipykernel/kernelapp.py", line 178, in _bind_socket
+    port = s.bind_to_random_port(iface)
+  File "/software/anaconda3-5.3/envs/singlecell/lib/python3.6/site-packages/zmq/sugar/socket.py", line 255, in bind_to_random_port
+    self.bind("%s:*" % addr)
+  File "zmq/backend/cython/socket.pyx", line 547, in zmq.backend.cython.socket.Socket.bind
+  File "zmq/backend/cython/checkrc.pxd", line 25, in zmq.backend.cython.checkrc._check_rc
+zmq.error.ZMQError: Cannot assign requested address
+</pre>
+
+<p>
+<b>Important:</b> the kernel successfully starts from inside <code>sinteractive</code>, e.g.:
+</p>
+
+<pre class="example">
+aksarkar@skyway:~$ sinteractive --constraint=c1 --partition=rcc-aws
+salloc: Granted job allocation 496
+salloc: Waiting for resource configuration
+salloc: Nodes rcc-aws-c1-001 are ready for job
+]0;aksarkar@skyway:~[aksarkar@rcc-aws-c1-001 ~]$ !source
+!source
+source activate singlecell
+]0;aksarkar@skyway:~(singlecell) [aksarkar@rcc-aws-c1-001 ~]$ !ipython3
+!ipython3
+ipython3 kernel --ip=$(hostname -i | awk '{print $2}') -f /cloud/aws/aksarkar/kernel-singlecell.json
+NOTE: When using the `ipython kernel` entry point, Ctrl-C will not work.
+
+To exit, you will have to explicitly quit this process, by either sending
+"quit" from a client, or using Ctrl-\ in UNIX-like environments.
+
+To read more about this, see https://github.com/ipython/ipython/issues/2049
+
+
+To connect another client to this kernel, use:
+    --existing /cloud/aws/aksarkar/kernel-singlecell.json
+</pre>
+
+<p>
+Connect to the remote kernel from <code>skyway</code>.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-sh">jupyter-console --existing /cloud/aws/aksarkar/kernel-singlecell.json
 </pre>
 </div>
+
+<pre class="example">
+Traceback (most recent call last):
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/jupyter_console/ptshell.py", line 323, in init_kernel_info
+    reply = self.client.get_shell_msg(timeout=1)
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/jupyter_client/client.py", line 77, in get_shell_msg
+    return self.shell_channel.get_msg(*args, **kwargs)
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/jupyter_client/blocking/channels.py", line 57, in get_msg
+    raise Empty
+_queue.Empty
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/software/anaconda3-5.3/bin/jupyter-console", line 11, in &lt;module&gt;
+    sys.exit(main())
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/jupyter_core/application.py", line 266, in launch_instance
+    return super(JupyterApp, cls).launch_instance(argv=argv, **kwargs)
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/traitlets/config/application.py", line 657, in launch_instance
+    app.initialize(argv)
+  File "&lt;decorator-gen-116&gt;", line 2, in initialize
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/traitlets/config/application.py", line 87, in catch_config_error
+    return method(app, *args, **kwargs)
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/jupyter_console/app.py", line 141, in initialize
+    self.init_shell()
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/jupyter_console/app.py", line 114, in init_shell
+    client=self.kernel_client,
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/traitlets/config/configurable.py", line 412, in instance
+    inst = cls(*args, **kwargs)
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/jupyter_console/ptshell.py", line 272, in __init__
+    self.init_kernel_info()
+  File "/software/anaconda3-5.3/lib/python3.7/site-packages/jupyter_console/ptshell.py", line 326, in init_kernel_info
+    raise RuntimeError("Kernel didn't respond to kernel_info_request")
+RuntimeError: Kernel didn't respond to kernel_info_request
+
+</pre>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-03-20 Wed 23:13</p>
+<p class="date">Created: 2019-03-21 Thu 11:04</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

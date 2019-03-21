@@ -1,29 +1,74 @@
 #+TITLE: Skyway test
 #+SETUPFILE: setup.org
+#+PROPERTY: header-args:sh :results output drawer :eval never-export :exports both
 
-Login to ~skyway~.
+* Desired setup
 
-#+BEGIN_SRC sh :session skyway :dir /home/aksarkar/
-  ssh skyway
-#+END_SRC
+  On ~midway2~, we rely on the following setup:
 
-#+RESULTS:
-: 
-: Last login: Wed Mar 20 22:58:03 2019 from midway2-login1.rcc.uchicago.edu
+  1. ~ipython3 kernel~ runs on a compute node (requesting appropriate resources
+     such as memory, cores, GPUs)
+  2. ~jupyter console~ runs on the login node, and connects to the remote
+     kernel
+  3. ~emacs~ runs on the login node, and ~org-mode~ is used to send code blocks
+     interactively to the remote kernel (through the console)
 
-Start the ipython3 kernel.
+  Currently, (1) and (2) don't work on ~skyway~.
 
-#+BEGIN_SRC sh :session skyway
-  sbatch --partition=rcc-aws --constraint=c1 --job-name=ipython3-singlecell
-  #!/bin/bash
-  module load anaconda3
-  source activate singlecell
-  rm -f /cloud/aws/aksarkar/kernel-singlecell.json
-  ipython3 kernel --ip=$(hostname -i | awk '{print $2}') -f /cloud/aws/aksarkar/kernel-singlecell.json
-#+END_SRC
+* Skyway setup
 
-Connect to the kernel.
+  Login to ~skyway~.
 
-#+BEGIN_SRC sh :session skyway
-  jupyter-console --existing /cloud/aws/aksarkar/kernel-singlecell.json
-#+END_SRC
+  #+BEGIN_SRC sh :session skyway :dir /home/aksarkar/
+    ssh skyway
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+
+  Last login: Thu Mar 21 16:58:05 2019 from midway2-login1.rcc.uchicago.edu
+  :END:
+
+  Start the ipython3 kernel.
+
+  #+BEGIN_SRC sh :session skyway
+    sbatch --partition=rcc-aws --constraint=c1 --time=60:00 --job-name=ipython3-singlecell --output=/cloud/aws/aksarkar/ipython3-singlecell.out <<EOF
+    #!/bin/bash
+    module load anaconda3
+    source activate singlecell
+    rm -f /cloud/aws/aksarkar/kernel-singlecell.json
+    ipython3 kernel -f /cloud/aws/aksarkar/kernel-singlecell.json
+    EOF
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+
+  > > > > > Submitted batch job 518
+  :END:
+
+  See what happened to it.
+
+  #+BEGIN_SRC sh :session skyway
+    squeue -u aksarkar
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  JOBID PARTITION     NAME     USER ST       TIME  NODES NODELIST(REASON)
+                 518   rcc-aws ipython3 aksarkar  R       4:06      1 rcc-aws-c1-001
+  :END:
+
+  Connect to the remote kernel from ~skyway~.
+
+  #+BEGIN_SRC sh :eval never
+    jupyter-console --existing /cloud/aws/aksarkar/kernel-singlecell.json --ssh rcc-aws-c1-001
+  #+END_SRC
+
+  #+BEGIN_SRC sh :session skyway
+    scancel -u aksarkar
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  :END:

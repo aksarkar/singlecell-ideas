@@ -1,0 +1,849 @@
+#+TITLE: Paired factor analysis for single cell lineage tracing
+#+SETUPFILE: setup.org
+#+OPTIONS: toc:2
+
+* Introduction
+
+  /Lineage tracing/ is the problem of assigning cells to a branching phylogeny
+  of cell types. A number of approaches have been proposed to solve this
+  problem (for a review, see
+  [[https://www.sciencedirect.com/science/article/pii/S2452310018300131][Grün
+  2018]]).
+
+  Gao Wang and Kushal Dey proposed /paired factor analysis/
+  ([[https://github.com/gaow/pfar][PFA]]) as a new solution to this
+  problem. The intuition behind PFA is to cluster cells, under the constraint
+  that each cell can belong to at most two clusters. Then, the cluster
+  centroids are the nodes of the phylogenetic tree, and the cluster weights for
+  each cell position that cell on a branch of the tree.
+
+  Here, we develop a fast, simple method to find a maximum likelihood solution
+  to PFA.
+
+* Setup
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(memory="16G",venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :dir /scratch/midway2/aksarkar/ideas :exports none
+
+  #+RESULTS:
+  : Submitted batch job 57029877
+
+  #+NAME: imports
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import scipy.stats as st
+    import scqtl
+    import tensorflow as tf
+  #+END_SRC
+
+  #+RESULTS: imports
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+    import colorcet
+    import matplotlib
+    import matplotlib.pyplot as plt
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Methods
+** Paired factor analysis
+   :PROPERTIES:
+   :CUSTOM_ID: gom2
+   :END:
+
+   For modeling scRNA-seq count data, we start from Poisson factorization (PF):
+
+   \[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+
+   \[ \lambda_{ij} = [\mathbf{LF}]_{ij} \]
+
+   The PF MLE can be converted to a grade of membership model by normalizing to
+   satisfy the constraints:
+
+   \[ l_{ik} \geq 0 \]
+
+   \[ \sum_i l_{ik} = 1 \]
+
+   \[ f_{kj} \geq 0 \]
+
+   After normalizing, the interpretation of the model is:
+
+   - \(f_{ik}\) is the centroid of cluster \(k\) (vector of mean expression)
+   - \(l_{ik}\) is the cluster weight of sample \(i\) on cluster \(k\). 
+
+   In this model, sample \(i\) could potentially belong to all clusters. For
+   lineage tracing, we instead model sample \(i\) as belonging to at most two
+   clusters. Then, the interpretation is that sample loadings interpolate
+   between reference points, which are factors.
+
+   We introduce latent indicator variables \(z_{ik}\), which denote whether
+   sample \(i\) belongs to cluster \(k\).
+
+   \[ l_{ik} = \tilde{l}_{ik} z_{ik} \]
+
+   Now, we need to efficiently maximize the likelihood of the observed data and
+   latent variables.
+
+   \[ \max_{\mathbf{L},\mathbf{F},\mathbf{Z}} \ln p(\mathbf{X} \mid \cdot) \]
+
+   \[ \mathrm{s.t.} \sum_k z_{ik} \leq 2\ \forall i \]
+
+   \[ z_{ik} \in \{0, 1\} \]
+
+   This is a /mixed integer non-convex optimization/ problem.
+
+** EM algorithm
+
+   Given \(\mathbf{Z}, \mathbf{F}\), we can update \(\mathbf{L}\) using
+   coordinate descent ([[http://www.bsp.brain.riken.jp/publications/2009/Cichocki-Phan-IEICE_col.pdf][Cichoki et al. 2009]],
+   [[http://www.cs.utexas.edu/~cjhsieh/nmf_kdd11.pdf][Hsieh et al. 2011]],
+   [[https://cran.r-project.org/web/packages/NNLM/vignettes/Fast-And-Versatile-NMF.html#sequential-coordinate-wise-descent-scd][Lin
+   2018]]).
+
+   Given \(\mathbf{L}\), we can update \(\mathbf{F}\) using a multiplicative
+   update ([[https://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization.pdf][Lee and Seung 2001]]).
+
+   Given \(\mathbf{L}, \mathbf{F}\), we can update \(\mathbf{Z}\):
+
+   \[ p(z_{ik} \mid \cdot) \propto p(x_{ik} \mid z_{ik}, \cdot) \]
+
+** Non-convex relaxation
+
+   We will relax the integer constraint to make the problem easier.
+
+   \[ \max_{\mathbf{L},\mathbf{F},\mathbf{Z}} \ln p(\mathbf{X} \mid \cdot) \]
+
+   \[ \mathrm{s.t.} \sum_k z_{ik} \leq 2\ \forall i \]
+
+   \[ 0 \leq z_{ik} \leq 1 \]
+
+   We can re-parameterize to drop one constraint:
+
+   \[ z_{ik} = \mathrm{sigmoid}(\tilde{z}_{ik}) \]
+
+   \[ \max_{\mathbf{L},\mathbf{F},\mathbf{\tilde{Z}}} \ln p(\mathbf{X} \mid \cdot) \]
+
+   \[ \mathrm{s.t.} \sum_k z_{ik} \leq 2\ \forall i \]
+
+   We can solve this problem using the
+   [[http://www.stat.cmu.edu/~ryantibs/convexopt-S15/scribes/15-barr-method-scribed.pdf][barrier
+   method]].
+
+   \[ \max_{\mathbf{L},\mathbf{F},\mathbf{\tilde{Z}}} \ln p(\mathbf{X} \mid
+   \cdot) + \alpha \sum_i \ln\left(2 - \sum_k z_{ik}\right) \]
+
+   This approach can be more readily generalized to more complicated
+   likelihoods (NB, ZINB) through the use of automatic differentiation.
+
+   #+NAME: pfa-impl
+   #+BEGIN_SRC ipython
+     import tensorflow as tf
+
+     def pois_llik(x, mean):
+       return x * tf.log(mean) - mean - tf.lgamma(x + 1)
+
+     def pfa(x, k, size, alpha=None, F=None, learning_rate=1e-2, max_epochs=10000, atol=1e-1, verbose=True):
+       """Return paired factor analysis estimate
+
+       :param x: array-like data ([n, p], tf.float32)
+       :param k: number of factors
+       :param size: size factor per observation
+       :param alpha: increasing sequence of penalty weights (default: np.logspace(-1, 3, 10))
+       :param F: known factors
+       :param learning_rate: base learning rate for RMSProp
+       :param max_epochs: maximum number of iterations per penalty weight
+       :param atol: absolute tolerance for convergence
+       :param verbose: print objective function updates
+
+       :returns loadings: Estimated sample loadings ([n, k])
+       :returns factors: Estimated factors ([k, p])
+
+       """
+       n, p = x.shape
+       if alpha is None:
+         alpha = np.logspace(-1, 3, 10)
+       else:
+         alpha = np.sort(np.atleast_1d(alpha).ravel())
+       graph = tf.Graph()
+       with graph.as_default():
+         x = tf.Variable(x.astype(np.float32), trainable=False)
+         size = tf.Variable(size.reshape(-1, 1).astype(np.float32), trainable=False)
+         if F is not None:
+           assert F.shape == (k, p)
+           factors = tf.Variable(F.astype(np.float32), trainable=False)
+         else:
+           factors = tf.exp(tf.Variable(tf.random_normal([k, p])))
+         Z = tf.sigmoid(tf.Variable(tf.random_normal([n, k])))
+         Z /= tf.reduce_sum(Z, axis=1, keepdims=True)
+         loadings = tf.exp(tf.Variable(tf.random_normal([n, k])))
+         weight = tf.placeholder(tf.float32, [])
+
+         mean = size * tf.matmul(loadings, factors)
+         llik = tf.reduce_sum(pois_llik(x, mean))
+         penalty = weight * tf.reduce_sum(tf.log(2 - tf.reduce_sum(Z, axis=1, keepdims=True)))
+         loss = -llik - penalty
+
+         optim = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+         train = optim.minimize(loss)
+         reset = tf.variables_initializer(optim.variables())
+         trace = [loss, weight, penalty]
+         opt = [loadings, factors]
+         obj = float('-inf')
+         with tf.Session() as sess:
+           sess.run(tf.global_variables_initializer())
+           for a in alpha:
+             sess.run(reset)  # Restart momentum
+             for i in range(max_epochs):
+               _, update = sess.run([train, trace], {weight: a})
+               if not np.isfinite(update[0]):
+                 raise tf.train.NanLossDuringTrainingError
+               elif np.isclose(update[0], obj, atol=atol):
+                 break
+               if verbose and not i % 500:
+                 print(i, *update, end='\r')
+             if verbose:
+               print(i, *update)
+           return sess.run(opt)
+   #+END_SRC
+
+   #+RESULTS: pfa-impl
+   :RESULTS:
+   # Out[187]:
+   :END:
+
+** \(l_1\) penalized PF
+
+   The preliminary simulation results suggest simply penalizing \(Z\) to be
+   sparse could be sufficient to satisfy the relaxed constraint.
+
+   #+NAME: pfa-l1-impl
+   #+BEGIN_SRC ipython
+     def pfa_l1(x, k, size, weight=None, learning_rate=1e-2, max_epochs=10000, atol=1e-1, verbose=True):
+       """Return paired factor analysis estimate
+
+       :param x: array-like data ([n, p], tf.float32)
+       :param k: number of factors
+       :param size: size factor per observation
+       :param weight: l1 penalty weight
+       :param F: known factors
+       :param learning_rate: base learning rate for RMSProp
+       :param max_epochs: maximum number of iterations per penalty weight
+       :param atol: absolute tolerance for convergence
+       :param verbose: print objective function updates
+
+       :returns loadings: Estimated sample loadings ([n, k])
+       :returns factors: Estimated factors ([k, p])
+
+       """
+       n, p = x.shape
+       graph = tf.Graph()
+       with graph.as_default():
+         x = tf.Variable(x.astype(np.float32), trainable=False)
+         size = tf.Variable(size.reshape(-1, 1).astype(np.float32), trainable=False)
+         weight = tf.Variable(np.array(weight).astype(np.float32), trainable=False)
+         if F is not None:
+           assert F.shape == (k, p)
+           factors = tf.Variable(F.astype(np.float32), trainable=False)
+         else:
+           factors = tf.exp(tf.Variable(tf.random_normal([k, p])))
+         Z = tf.sigmoid(tf.Variable(tf.random_normal([n, k])))
+         Z /= tf.reduce_sum(Z, axis=1, keepdims=True)
+         loadings = tf.exp(tf.Variable(tf.random_normal([n, k])))
+
+         mean = size * tf.matmul(loadings, factors)
+         llik = tf.reduce_sum(pois_llik(x, mean))
+         penalty = weight * tf.reduce_sum(Z)
+         loss = -llik - penalty
+
+         train = tf.train.RMSPropOptimizer(learning_rate=learning_rate).minimize(loss)
+         trace = [loss, weight, penalty]
+         opt = [loadings, factors]
+         obj = float('-inf')
+         with tf.Session() as sess:
+           sess.run(tf.global_variables_initializer())
+           for i in range(max_epochs):
+             _, update = sess.run([train, trace])
+             if not np.isfinite(update[0]):
+               raise tf.train.NanLossDuringTrainingError
+             elif np.isclose(update[0], obj, atol=atol):
+               break
+             if verbose and not i % 500:
+               print(i, *update, end='\r')
+           if verbose:
+             print(i, *update)
+           return sess.run(opt)
+   #+END_SRC
+
+   #+RESULTS: pfa-l1-impl
+   :RESULTS:
+   # Out[197]:
+   :END:
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[191]:
+   :END:
+
+** Plotting functions
+
+   Produce a STRUCTURE plot.
+
+   #+BEGIN_SRC ipython
+     def plot_structure(weights, ax=None, idx=None):
+       if ax is None:
+         ax = plt.gca()
+       prop = np.cumsum(weights, axis=1)
+       if idx is None:
+         idx = np.lexsort(weights.T)
+       for i in range(prop.shape[1]):
+         if i > 0:
+           bot = prop[idx,i - 1]
+         else:
+           bot = None
+         ax.bar(np.arange(prop.shape[0]), weights[idx,i], bottom=bot, color=f'C{i}', width=1, label=f'Topic {i + 1}')
+       ax.set_xlim(0, weights.shape[0])
+       ax.set_xticks([])
+       ax.set_ylim(0, 1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[137]:
+   :END:
+
+   Plot estimated against true topics.
+
+   #+BEGIN_SRC ipython
+     def plot_topics(topics, ax=None):
+       if ax is None:
+         ax = plt.gca()
+       z = np.cumsum(topics, axis=1)
+       for row in z:
+         ax.bar()
+   #+END_SRC
+
+* Results
+** Simulation
+   :PROPERTIES:
+   :CUSTOM_ID: simulation
+   :END:
+*** Unconstrained Poisson factorization
+
+   Simulate some Poisson data.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(1)
+     L = np.random.lognormal(size=(100, 3))
+     F = np.random.lognormal(size=(3, 10))
+     size = 100 * np.ones((L.shape[0], 1))
+     X = np.random.poisson(lam=size * L.dot(F)).astype(np.float32)
+     topics = F / F.sum(axis=1, keepdims=True)
+     weights = L * F.sum(axis=1) / size
+     weights /= weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[146]:
+   :END:
+
+   Plot the pairwise correlation of the topics to each other.
+
+   #+NAME: plot-true-corr
+   #+BEGIN_SRC ipython :ipyfile figure/gom.org/pf-true-corr.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.imshow(np.corrcoef(topics), cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
+     cb = plt.colorbar(shrink=0.5)
+     cb.set_label('Correlation')
+     plt.xlabel('True topic')
+     plt.ylabel('True topic')
+     plt.gcf().tight_layout()
+   #+END_SRC
+
+   #+RESULTS: plot-true-corr
+   :RESULTS:
+   # Out[147]:
+   [[file:figure/gom.org/pf-true-corr.png]]
+   :END:
+
+   Fix F and optimize L.
+
+   #+BEGIN_SRC ipython :async t
+     lhat, fhat = pfa(X, 3, alpha=0, F=F, size=size, learning_rate=1e-2)
+     est_topics = fhat / fhat.sum(axis=1, keepdims=True)
+     est_weights = lhat * fhat.sum(axis=1) / size
+     est_weights /= est_weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[125]:
+   :END:
+
+   #+NAME: plot-structure
+   #+BEGIN_SRC ipython :ipyfile figure/gom.org/pf-fixed-f.png
+     plt.clf()
+     plt.set_cmap('Set2')
+     fig, ax = plt.subplots(2, 1, sharex=True)
+     fig.set_size_inches(6, 4)
+
+     plot_structure(weights, ax=ax[0])
+     plot_structure(est_weights, ax=ax[1], idx=np.lexsort(weights.T))
+
+     ax[0].set_ylabel('True topic weight')
+     ax[1].set_ylabel('Estimated topic weight')
+     ax[1].set_xlabel('Sample')
+
+     ax[1].legend(loc='center left', bbox_to_anchor=(1, .5), frameon=False)
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS: plot-structure
+   :RESULTS:
+   # Out[138]:
+   [[file:figure/gom.org/pf-fixed-f.png]]
+   :END:
+
+   Fit PF. This is bi-convex, so we might not expect to recover \(\mathbf{L},
+   \mathbf{F}\).
+
+   #+BEGIN_SRC ipython :async t
+     lhat, fhat = pfa(X, 3, alpha=0, size=size, learning_rate=1e-3)
+     est_topics = fhat / fhat.sum(axis=1, keepdims=True)
+     est_weights = lhat * fhat.sum(axis=1) / size
+     est_weights /= est_weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[139]:
+   :END:
+
+   Plot the pairwise correlation between the estimated topics and the true
+   topics.
+
+   #+NAME: plot-est-corr
+   #+BEGIN_SRC ipython :ipyfile figure/gom.org/pf-corr.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.imshow(np.triu(np.corrcoef(F, fhat)), cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
+     cb = plt.colorbar(shrink=0.5)
+     cb.set_label('Correlation')
+     plt.xticks(np.arange(6), ['True1', 'True2', 'True3', 'Est1', 'Est2', 'Est3'], rotation=90)
+     plt.yticks(np.arange(6), ['True1', 'True2', 'True3', 'Est1', 'Est2', 'Est3'])
+     plt.gcf().tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[141]:
+   [[file:figure/gom.org/pf-corr.png]]
+   :END:
+
+   Reorder the estimated topics to maximally correlate with the true topics.
+
+   #+BEGIN_SRC ipython
+     est_weights = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[142]:
+   :END:
+
+   Plot the corresponding topic model.
+
+   #+CALL: plot-structure() :ipyfile figure/gom.org/pf-full.png
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[143]:
+   [[file:figure/gom.org/pf-full.png]]
+   :END:
+
+*** PFA model
+
+   Simulate some data where each sample interpolates between a pair of factors.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(1)
+     L = np.random.lognormal(size=(100, 3))
+     F = np.random.lognormal(size=(3, 10))
+     Z = np.zeros(L.shape)
+     for i in range(Z.shape[0]):
+       Z[i,np.random.choice(3, size=2).astype(int)] = 1
+     L *= Z
+     L /= L.sum(axis=1, keepdims=True)
+     size = 100 * np.ones((L.shape[0], 1))
+     X = np.random.poisson(lam=size * L.dot(F)).astype(np.float32)
+
+     topics = F / F.sum(axis=1, keepdims=True)
+     weights = L * F.sum(axis=1) / size
+     weights /= weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[160]:
+   :END:
+
+   Plot the pairwise correlation of the topics to each other.
+
+   #+CALL: plot-true-corr() :ipyfile figure/gom.org/pfa-true-corr.png
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[149]:
+   [[file:figure/gom.org/pfa-true-corr.png]]
+   :END:
+
+   Fix \(F\) and fit \(L\) using PF.
+
+   #+BEGIN_SRC ipython :async t
+     lhat, fhat = pfa(X, 3, alpha=0, F=F, size=size, max_epochs=10000, learning_rate=1e-2)
+     est_topics = fhat / fhat.sum(axis=1, keepdims=True)
+     est_weights = lhat * fhat.sum(axis=1) / size
+     est_weights /= est_weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[165]:
+   :END:
+
+   Plot the corresponding topic models.
+
+   #+CALL: plot-structure() :ipyfile figure/gom.org/pfa-pf-fixed-f.png
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[166]:
+   [[file:figure/gom.org/pfa-pf-fixed-f.png]]
+   :END:
+
+   Fix \(F\) to the truth and fit \(L\) using PFA.
+
+   #+BEGIN_SRC ipython :async t
+     lhat, fhat = pfa(X, 3, alpha=1, F=F, size=size, max_epochs=10000, learning_rate=1e-2)
+     est_topics = fhat / fhat.sum(axis=1, keepdims=True)
+     est_weights = lhat * fhat.sum(axis=1) / size
+     est_weights /= est_weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[167]:
+   :END:
+
+   Plot the corresponding topic models.
+
+   #+CALL: plot-structure() :ipyfile figure/gom.org/pfa-fixed-f.png
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[169]:
+   [[file:figure/gom.org/pfa-fixed-f.png]]
+   :END:
+
+   Project the solution onto the hard constraint.
+
+   #+BEGIN_SRC ipython
+     est_weights[np.arange(est_weights.shape[0]),np.argmin(est_weights, axis=1)] = 0
+     est_weights /= est_weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[170]:
+   :END:
+
+   Plot the corresponding topic models.
+
+   #+CALL: plot-structure() :ipyfile figure/gom.org/pfa-fixed-f-hard.png
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[171]:
+   [[file:figure/gom.org/pfa-fixed-f-hard.png]]
+   :END:
+
+   Fit full PFA.
+
+   #+BEGIN_SRC ipython :async t
+     lhat, fhat = pfa(X, 3, size=size, alpha=np.logspace(-1, 8, 10), max_epochs=10000, learning_rate=1e-2)
+     est_topics = fhat / fhat.sum(axis=1, keepdims=True)
+     est_weights = lhat * fhat.sum(axis=1) / size
+     est_weights /= est_weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[188]:
+   :END:
+
+   Plot the pairwise correlation between the estimated topics and the true
+   topics.
+
+   #+BEGIN_SRC ipython :ipyfile figure/gom.org/pfa-corr.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.imshow(np.triu(np.corrcoef(F, fhat)), cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
+     plt.colorbar(shrink=0.5)
+     plt.xticks(np.arange(6), ['True1', 'True2', 'True3', 'Est1', 'Est2', 'Est3'], rotation=90)
+     plt.yticks(np.arange(6), ['True1', 'True2', 'True3', 'Est1', 'Est2', 'Est3'])
+     plt.gcf().tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[155]:
+   [[file:figure/gom.org/pfa-corr.png]]
+   :END:
+
+   Reorder the estimated topics to maximally correlate with the true topics.
+
+   #+BEGIN_SRC ipython
+     est_weights = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[189]:
+   :END:
+
+   Plot the corresponding topic models.
+
+   #+CALL: plot-structure() :ipyfile figure/gom.org/pfa-full.png
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[190]:
+   [[file:figure/gom.org/pfa-full.png]]
+   :END:
+
+   Project the solution onto the hard constraint.
+
+   #+BEGIN_SRC ipython
+     est_weights[np.arange(est_weights.shape[0]),np.argmin(est_weights, axis=1)] = 0
+     est_weights /= est_weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[158]:
+   :END:
+
+   #+CALL: plot-structure() :ipyfile figure/gom.org/pfa-full-hard.png
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[159]:
+   [[file:figure/gom.org/pfa-full-hard.png]]
+   :END:
+
+*** \(l_1\) penalized PF
+
+   Simulate data from PFA.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(1)
+     L = np.random.lognormal(size=(100, 3))
+     F = np.random.lognormal(size=(3, 10))
+     Z = np.zeros(L.shape)
+     for i in range(Z.shape[0]):
+       Z[i,np.random.choice(3, size=2).astype(int)] = 1
+     L *= Z
+     L /= L.sum(axis=1, keepdims=True)
+     size = 100 * np.ones((L.shape[0], 1))
+     X = np.random.poisson(lam=size * L.dot(F)).astype(np.float32)
+
+     topics = F / F.sum(axis=1, keepdims=True)
+     weights = L * F.sum(axis=1) / size
+     weights /= weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[160]:
+   :END:
+
+   Fit \(L\) using sparse PF.
+
+   #+BEGIN_SRC ipython :async t
+     lhat, fhat = pfa_l1(X, 3, weight=0., size=size, max_epochs=10000, learning_rate=1e-2)
+     est_topics = fhat / fhat.sum(axis=1, keepdims=True)
+     est_weights = lhat * fhat.sum(axis=1) / size
+     est_weights /= est_weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[204]:
+   :END:
+
+   Reorder the estimated topics to maximally correlate with the true topics.
+
+   #+BEGIN_SRC ipython
+     est_weights = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[205]:
+   :END:
+
+   Plot the corresponding topic models.
+
+   #+CALL: plot-structure() :ipyfile figure/gom.org/pfa-l1-full.png
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[206]:
+   [[file:figure/gom.org/pfa-l1-full.png]]
+   :END:
+
+   Project the solution onto the hard constraint.
+
+   #+BEGIN_SRC ipython
+     est_weights[np.arange(est_weights.shape[0]),np.argmin(est_weights, axis=1)] = 0
+     est_weights /= est_weights.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[158]:
+   :END:
+
+   Plot the corresponding topic models.
+
+   #+CALL: plot-structure() :ipyfile figure/gom.org/pfa-l1-full-hard.png
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[203]:
+   [[file:figure/gom.org/pfa-full-hard.png]]
+   :END:
+
+*** NB data
+
+    The preliminary results suggest that in the absence of extra-Poisson noise,
+    ordinary PF gives a reasonable solution. Now, try simulating negative
+    binomial data from PFA:
+
+    \[ x_{ij} \sim \mathrm{Poisson}(R_i \lambda_{ij}) \]
+
+    \[ \lambda_{ij} \sim [\mathbf{LF}]_{ij} u_{ij} \]
+
+    \[ u_{ij} \sim \mathrm{Gamma}(\phi_j^{-1}, \phi_j^{-1}) \]
+
+    Now, marginally \(x_{ij} \sim \mathrm{NB}(R_i \lambda_{ij}, \phi_j)\).
+
+    #+BEGIN_SRC ipython
+      np.random.seed(1)
+      L = np.random.lognormal(size=(100, 3))
+      F = np.random.lognormal(size=(3, 10))
+      Z = np.zeros(L.shape)
+      for i in range(Z.shape[0]):
+        Z[i,np.random.choice(3, size=2).astype(int)] = 1
+      L *= Z
+      L /= L.sum(axis=1, keepdims=True)
+      size = 100 * np.ones((L.shape[0], 1))
+      mu = size * L.dot(F)
+      phi = np.random.lognormal(sigma=.1, size=(100, 1))
+      u = np.random.gamma(shape=phi, size=(100, 10))
+      X = np.random.poisson(lam=mu * u).astype(np.float32)
+
+      topics = F / F.sum(axis=1, keepdims=True)
+      weights = L * F.sum(axis=1) / size
+      weights /= weights.sum(axis=1, keepdims=True)
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[219]:
+    :END:
+
+    Fix \(F\) and fit PF.
+
+    #+BEGIN_SRC ipython :async t
+      lhat, fhat = pfa(X, 3, alpha=0, F=F, size=size, learning_rate=1e-2)
+      est_topics = fhat / fhat.sum(axis=1, keepdims=True)
+      est_weights = lhat * fhat.sum(axis=1) / size
+      est_weights /= est_weights.sum(axis=1, keepdims=True)
+      est_weights = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[226]:
+    :END:
+
+    Plot the corresponding topic models.
+
+    #+CALL: plot-structure() :ipyfile figure/gom.org/nb-pf-fixed-f.png
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[227]:
+    [[file:figure/gom.org/nb-pf-fixed-f.png]]
+    :END:
+
+    Fit PF.
+
+    #+BEGIN_SRC ipython :async t
+      lhat, fhat = pfa(X, 3, alpha=0, size=size, learning_rate=1e-2)
+      est_topics = fhat / fhat.sum(axis=1, keepdims=True)
+      est_weights = lhat * fhat.sum(axis=1) / size
+      est_weights /= est_weights.sum(axis=1, keepdims=True)
+      est_weights = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[223]:
+    :END:
+
+    Plot the corresponding topic models.
+
+    #+CALL: plot-structure() :ipyfile figure/gom.org/nb-pf-full.png
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[224]:
+    [[file:figure/gom.org/nb-pf-full.png]]
+    :END:
+
+** Tabula Muris data
+
+   /[[https://tabula-muris.ds.czbiohub.org/][Tabula Muris]]/
+   ([[https://www.nature.com/articles/s41586-018-0590-4][Tabula Muris
+   consortium et al. 2018]]) has collected scRNA-seq from 20 murine tissues. In
+   particular, they collected 53,760 FACS-sorted cells and 55,656 unsorted
+   cells.
+
+   We can place the unsorted cells on lineages in two stages:
+
+   1. Estimate 20 factors (mean vectors) from the FACS-sorted cells.
+   2. Estimate PFA on the unsorted cells, using the fixed factors from (1).
+
+** Human embryoid body data
+
+   [[https://genomebiology.biomedcentral.com/articles/10.1186/s13059-018-1426-0][Han
+   et al. 2018]] study embryoid bodies (EBs) generated by allowing human
+   pluripotent stem cells to spontaneously differentiate.

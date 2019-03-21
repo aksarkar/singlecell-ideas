@@ -1,0 +1,29 @@
+#+TITLE: Skyway test
+#+SETUPFILE: setup.org
+
+Login to ~skyway~.
+
+#+BEGIN_SRC sh :session skyway :dir /home/aksarkar/
+  ssh skyway
+#+END_SRC
+
+#+RESULTS:
+: 
+: Last login: Wed Mar 20 22:58:03 2019 from midway2-login1.rcc.uchicago.edu
+
+Start the ipython3 kernel.
+
+#+BEGIN_SRC sh :session skyway
+  sbatch --partition=rcc-aws --constraint=c1 --job-name=ipython3-singlecell
+  #!/bin/bash
+  module load anaconda3
+  source activate singlecell
+  rm -f /cloud/aws/aksarkar/kernel-singlecell.json
+  ipython3 kernel --ip=$(hostname -i | awk '{print $2}') -f /cloud/aws/aksarkar/kernel-singlecell.json
+#+END_SRC
+
+Connect to the kernel.
+
+#+BEGIN_SRC sh :session skyway
+  jupyter-console --existing /cloud/aws/aksarkar/kernel-singlecell.json
+#+END_SRC

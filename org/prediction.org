@@ -1,0 +1,41 @@
+#+TITLE: Prediction gain of linear models over best eQTL
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Yoav Gilad claimed that for most eQTLs, the majority of cis-heritability is
+  explained by the top eQTL. Therefore, we should not expect TWAS to make
+  significant gains over simply restricting GWAS to top eQTLs.
+
+  Here, we investigate the relative prediction gain of using a multiple
+  regression model over using the best eQTL in GTEx.
+
+* Setup
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(mem="4G",partition="mstephens",venv="txpred") :dir /scratch/midway2/aksarkar/modes
+
+  #+RESULTS:
+  : Submitted batch job 58661517
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+
+    import numpy as np
+    import pandas as pd
+    import sklearn.feature_selection as skfs
+    import sklearn.linear_model as sklm
+  #+END_SRC
+
+* Results
+** Cross-validation performance of best eQTL
+
+   

@@ -1,6 +1,7 @@
 #+TITLE: Single cell ideas
 #+SETUPFILE: setup.org
 
+- [[file:gom.org][Two-group grade of membership model]]
 - [[file:alignment.org][Single cell alignment]]
 - [[file:wlra.org][Weighted low rank approximation]]
 - [[file:susie.org][Multivariate fine mapping]]

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-01-31 Thu 17:38 -->
+<!-- 2019-03-20 Wed 23:13 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Prediction gain of linear models over best eQTL</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -230,21 +230,71 @@ for the JavaScript code in this tag.
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
-<ul class="org-ul">
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html">SCVI</a></li>
-<li><a href="vae.html">VAE for single-cell expression</a></li>
-<li><a href="zinb-vae-gmm.html">ZINB-VAE-GMM</a></li>
+<h1 class="title">Prediction gain of linear models over best eQTL</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org8c70b86">Introduction</a></li>
+<li><a href="#orge4b3f0f">Setup</a></li>
+<li><a href="#org949a813">Results</a>
+<ul>
+<li><a href="#orga9a0ebf">Cross-validation performance of best eQTL</a></li>
 </ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org8c70b86" class="outline-2">
+<h2 id="org8c70b86">Introduction</h2>
+<div class="outline-text-2" id="text-org8c70b86">
+<p>
+Yoav Gilad claimed that for most eQTLs, the majority of cis-heritability is
+explained by the top eQTL. Therefore, we should not expect TWAS to make
+significant gains over simply restricting GWAS to top eQTLs.
+</p>
+
+<p>
+Here, we investigate the relative prediction gain of using a multiple
+regression model over using the best eQTL in GTEx.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orge4b3f0f" class="outline-2">
+<h2 id="orge4b3f0f">Setup</h2>
+<div class="outline-text-2" id="text-orge4b3f0f">
+<pre class="example">
+Submitted batch job 58661517
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> sklearn.feature_selection <span class="org-keyword">as</span> skfs
+<span class="org-keyword">import</span> sklearn.linear_model <span class="org-keyword">as</span> sklm
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org949a813" class="outline-2">
+<h2 id="org949a813">Results</h2>
+<div class="outline-text-2" id="text-org949a813">
+</div>
+<div id="outline-container-orga9a0ebf" class="outline-3">
+<h3 id="orga9a0ebf">Cross-validation performance of best eQTL</h3>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-01-31 Thu 17:38</p>
+<p class="date">Created: 2019-03-20 Wed 23:13</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

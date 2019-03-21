@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2019-02-05 Tue 16:12 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paired factor analysis for single cell lineage tracing</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<style type="text/css">body {width: 60em; margin:auto} pre.src {overflow:auto}</style>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Paired factor analysis for single cell lineage tracing</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org606aff5">Introduction</a></li>
+<li><a href="#org7001dd7">Setup</a></li>
+<li><a href="#orgc7cac1c">Methods</a>
+<ul>
+<li><a href="#gom2">Paired factor analysis</a></li>
+<li><a href="#orgf6432d6">EM algorithm</a></li>
+<li><a href="#org2c57fc5">Non-convex relaxation</a></li>
+<li><a href="#orgdb38b26">\(l_1\) penalized PF</a></li>
+<li><a href="#orgfdb100e">Plotting functions</a></li>
+</ul>
+</li>
+<li><a href="#orga59d4b9">Results</a>
+<ul>
+<li><a href="#simulation">Simulation</a></li>
+<li><a href="#orga45af47">Tabula Muris data</a></li>
+<li><a href="#org1a53fd7">Human embryoid body data</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org606aff5" class="outline-2">
+<h2 id="org606aff5">Introduction</h2>
+<div class="outline-text-2" id="text-org606aff5">
+<p>
+<i>Lineage tracing</i> is the problem of assigning cells to a branching phylogeny
+of cell types. A number of approaches have been proposed to solve this
+problem (for a review, see
+<a href="https://www.sciencedirect.com/science/article/pii/S2452310018300131">Grün
+2018</a>).
+</p>
+
+<p>
+Gao Wang and Kushal Dey proposed <i>paired factor analysis</i>
+(<a href="https://github.com/gaow/pfar">PFA</a>) as a new solution to this
+problem. The intuition behind PFA is to cluster cells, under the constraint
+that each cell can belong to at most two clusters. Then, the cluster
+centroids are the nodes of the phylogenetic tree, and the cluster weights for
+each cell position that cell on a branch of the tree.
+</p>
+
+<p>
+Here, we develop a fast, simple method to find a maximum likelihood solution
+to PFA.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7001dd7" class="outline-2">
+<h2 id="org7001dd7">Setup</h2>
+<div class="outline-text-2" id="text-org7001dd7">
+<div class="org-src-container">
+<pre class="src src-ipython" id="org2f40a8d"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> scqtl
+<span class="org-keyword">import</span> tensorflow <span class="org-keyword">as</span> tf
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+<span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc7cac1c" class="outline-2">
+<h2 id="orgc7cac1c">Methods</h2>
+<div class="outline-text-2" id="text-orgc7cac1c">
+</div>
+<div id="outline-container-org34c12b7" class="outline-3">
+<h3 id="gom2"><a id="org34c12b7"></a>Paired factor analysis</h3>
+<div class="outline-text-3" id="text-gom2">
+<p>
+For modeling scRNA-seq count data, we start from Poisson factorization (PF):
+</p>
+
+<p>
+\[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
+</p>
+
+<p>
+\[ \lambda_{ij} = [\mathbf{LF}]_{ij} \]
+</p>
+
+<p>
+The PF MLE can be converted to a grade of membership model by normalizing to
+satisfy the constraints:
+</p>
+
+<p>
+\[ l_{ik} \geq 0 \]
+</p>
+
+<p>
+\[ \sum_i l_{ik} = 1 \]
+</p>
+
+<p>
+\[ f_{kj} \geq 0 \]
+</p>
+
+<p>
+After normalizing, the interpretation of the model is:
+</p>
+
+<ul class="org-ul">
+<li>\(f_{ik}\) is the centroid of cluster \(k\) (vector of mean expression)</li>
+<li>\(l_{ik}\) is the cluster weight of sample \(i\) on cluster \(k\).</li>
+</ul>
+
+<p>
+In this model, sample \(i\) could potentially belong to all clusters. For
+lineage tracing, we instead model sample \(i\) as belonging to at most two
+clusters. Then, the interpretation is that sample loadings interpolate
+between reference points, which are factors.
+</p>
+
+<p>
+We introduce latent indicator variables \(z_{ik}\), which denote whether
+sample \(i\) belongs to cluster \(k\).
+</p>
+
+<p>
+\[ l_{ik} = \tilde{l}_{ik} z_{ik} \]
+</p>
+
+<p>
+Now, we need to efficiently maximize the likelihood of the observed data and
+latent variables.
+</p>
+
+<p>
+\[ \max_{\mathbf{L},\mathbf{F},\mathbf{Z}} \ln p(\mathbf{X} \mid \cdot) \]
+</p>
+
+<p>
+\[ \mathrm{s.t.} \sum_k z_{ik} \leq 2\ \forall i \]
+</p>
+
+<p>
+\[ z_{ik} \in \{0, 1\} \]
+</p>
+
+<p>
+This is a <i>mixed integer non-convex optimization</i> problem.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf6432d6" class="outline-3">
+<h3 id="orgf6432d6">EM algorithm</h3>
+<div class="outline-text-3" id="text-orgf6432d6">
+<p>
+Given \(\mathbf{Z}, \mathbf{F}\), we can update \(\mathbf{L}\) using
+coordinate descent (<a href="http://www.bsp.brain.riken.jp/publications/2009/Cichocki-Phan-IEICE_col.pdf">Cichoki et al. 2009</a>,
+<a href="http://www.cs.utexas.edu/~cjhsieh/nmf_kdd11.pdf">Hsieh et al. 2011</a>,
+<a href="https://cran.r-project.org/web/packages/NNLM/vignettes/Fast-And-Versatile-NMF.html#sequential-coordinate-wise-descent-scd">Lin
+2018</a>).
+</p>
+
+<p>
+Given \(\mathbf{L}\), we can update \(\mathbf{F}\) using a multiplicative
+update (<a href="https://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization.pdf">Lee and Seung 2001</a>).
+</p>
+
+<p>
+Given \(\mathbf{L}, \mathbf{F}\), we can update \(\mathbf{Z}\):
+</p>
+
+<p>
+\[ p(z_{ik} \mid \cdot) \propto p(x_{ik} \mid z_{ik}, \cdot) \]
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2c57fc5" class="outline-3">
+<h3 id="org2c57fc5">Non-convex relaxation</h3>
+<div class="outline-text-3" id="text-org2c57fc5">
+<p>
+We will relax the integer constraint to make the problem easier.
+</p>
+
+<p>
+\[ \max_{\mathbf{L},\mathbf{F},\mathbf{Z}} \ln p(\mathbf{X} \mid \cdot) \]
+</p>
+
+<p>
+\[ \mathrm{s.t.} \sum_k z_{ik} \leq 2\ \forall i \]
+</p>
+
+<p>
+\[ 0 \leq z_{ik} \leq 1 \]
+</p>
+
+<p>
+We can re-parameterize to drop one constraint:
+</p>
+
+<p>
+\[ z_{ik} = \mathrm{sigmoid}(\tilde{z}_{ik}) \]
+</p>
+
+<p>
+\[ \max_{\mathbf{L},\mathbf{F},\mathbf{\tilde{Z}}} \ln p(\mathbf{X} \mid \cdot) \]
+</p>
+
+<p>
+\[ \mathrm{s.t.} \sum_k z_{ik} \leq 2\ \forall i \]
+</p>
+
+<p>
+We can solve this problem using the
+<a href="http://www.stat.cmu.edu/~ryantibs/convexopt-S15/scribes/15-barr-method-scribed.pdf">barrier
+method</a>.
+</p>
+
+<p>
+\[ \max_{\mathbf{L},\mathbf{F},\mathbf{\tilde{Z}}} \ln p(\mathbf{X} \mid
+   \cdot) + \alpha \sum_i \ln\left(2 - \sum_k z_{ik}\right) \]
+</p>
+
+<p>
+This approach can be more readily generalized to more complicated
+likelihoods (NB, ZINB) through the use of automatic differentiation.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org2a2b256"><span class="org-keyword">import</span> tensorflow <span class="org-keyword">as</span> tf
+
+<span class="org-keyword">def</span> <span class="org-function-name">pois_llik</span>(x, mean):
+  <span class="org-keyword">return</span> x * tf.log(mean) - mean - tf.lgamma(x + 1)
+
+<span class="org-keyword">def</span> <span class="org-function-name">pfa</span>(x, k, size, alpha=<span class="org-constant">None</span>, F=<span class="org-constant">None</span>, learning_rate=1e-2, max_epochs=10000, atol=1e-1, verbose=<span class="org-constant">True</span>):
+  <span class="org-doc">"""Return paired factor analysis estimate</span>
+
+<span class="org-doc">  :param x: array-like data ([n, p], tf.float32)</span>
+<span class="org-doc">  :param k: number of factors</span>
+<span class="org-doc">  :param size: size factor per observation</span>
+<span class="org-doc">  :param alpha: increasing sequence of penalty weights (default: np.logspace(-1, 3, 10))</span>
+<span class="org-doc">  :param F: known factors</span>
+<span class="org-doc">  :param learning_rate: base learning rate for RMSProp</span>
+<span class="org-doc">  :param max_epochs: maximum number of iterations per penalty weight</span>
+<span class="org-doc">  :param atol: absolute tolerance for convergence</span>
+<span class="org-doc">  :param verbose: print objective function updates</span>
+
+<span class="org-doc">  :returns loadings: Estimated sample loadings ([n, k])</span>
+<span class="org-doc">  :returns factors: Estimated factors ([k, p])</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
+  <span class="org-keyword">if</span> alpha <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">alpha</span> = np.logspace(-1, 3, 10)
+  <span class="org-keyword">else</span>:
+    <span class="org-variable-name">alpha</span> = np.sort(np.atleast_1d(alpha).ravel())
+  <span class="org-variable-name">graph</span> = tf.Graph()
+  <span class="org-keyword">with</span> graph.as_default():
+    <span class="org-variable-name">x</span> = tf.Variable(x.astype(np.float32), trainable=<span class="org-constant">False</span>)
+    <span class="org-variable-name">size</span> = tf.Variable(size.reshape(-1, 1).astype(np.float32), trainable=<span class="org-constant">False</span>)
+    <span class="org-keyword">if</span> F <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      <span class="org-keyword">assert</span> F.shape == (k, p)
+      <span class="org-variable-name">factors</span> = tf.Variable(F.astype(np.float32), trainable=<span class="org-constant">False</span>)
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">factors</span> = tf.exp(tf.Variable(tf.random_normal([k, p])))
+    <span class="org-variable-name">Z</span> = tf.sigmoid(tf.Variable(tf.random_normal([n, k])))
+    <span class="org-variable-name">Z</span> /= tf.reduce_sum(Z, axis=1, keepdims=<span class="org-constant">True</span>)
+    <span class="org-variable-name">loadings</span> = tf.exp(tf.Variable(tf.random_normal([n, k])))
+    <span class="org-variable-name">weight</span> = tf.placeholder(tf.float32, [])
+
+    <span class="org-variable-name">mean</span> = size * tf.matmul(loadings, factors)
+    <span class="org-variable-name">llik</span> = tf.reduce_sum(pois_llik(x, mean))
+    <span class="org-variable-name">penalty</span> = weight * tf.reduce_sum(tf.log(2 - tf.reduce_sum(Z, axis=1, keepdims=<span class="org-constant">True</span>)))
+    <span class="org-variable-name">loss</span> = -llik - penalty
+
+    <span class="org-variable-name">optim</span> = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+    <span class="org-variable-name">train</span> = optim.minimize(loss)
+    <span class="org-variable-name">reset</span> = tf.variables_initializer(optim.variables())
+    <span class="org-variable-name">trace</span> = [loss, weight, penalty]
+    <span class="org-variable-name">opt</span> = [loadings, factors]
+    <span class="org-variable-name">obj</span> = <span class="org-builtin">float</span>(<span class="org-string">'-inf'</span>)
+    <span class="org-keyword">with</span> tf.Session() <span class="org-keyword">as</span> sess:
+      sess.run(tf.global_variables_initializer())
+      <span class="org-keyword">for</span> a <span class="org-keyword">in</span> alpha:
+        sess.run(reset)  <span class="org-comment-delimiter"># </span><span class="org-comment">Restart momentum</span>
+        <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_epochs):
+          <span class="org-variable-name">_</span>, <span class="org-variable-name">update</span> = sess.run([train, trace], {weight: a})
+          <span class="org-keyword">if</span> <span class="org-keyword">not</span> np.isfinite(update[0]):
+            <span class="org-keyword">raise</span> tf.train.NanLossDuringTrainingError
+          <span class="org-keyword">elif</span> np.isclose(update[0], obj, atol=atol):
+            <span class="org-keyword">break</span>
+          <span class="org-keyword">if</span> verbose <span class="org-keyword">and</span> <span class="org-keyword">not</span> i % 500:
+            <span class="org-keyword">print</span>(i, *update, end=<span class="org-string">'\r'</span>)
+        <span class="org-keyword">if</span> verbose:
+          <span class="org-keyword">print</span>(i, *update)
+      <span class="org-keyword">return</span> sess.run(opt)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgdb38b26" class="outline-3">
+<h3 id="orgdb38b26">\(l_1\) penalized PF</h3>
+<div class="outline-text-3" id="text-orgdb38b26">
+<p>
+The preliminary simulation results suggest simply penalizing \(Z\) to be
+sparse could be sufficient to satisfy the relaxed constraint.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org818551f"><span class="org-keyword">def</span> <span class="org-function-name">pfa_l1</span>(x, k, size, weight=<span class="org-constant">None</span>, learning_rate=1e-2, max_epochs=10000, atol=1e-1, verbose=<span class="org-constant">True</span>):
+  <span class="org-doc">"""Return paired factor analysis estimate</span>
+
+<span class="org-doc">  :param x: array-like data ([n, p], tf.float32)</span>
+<span class="org-doc">  :param k: number of factors</span>
+<span class="org-doc">  :param size: size factor per observation</span>
+<span class="org-doc">  :param weight: l1 penalty weight</span>
+<span class="org-doc">  :param F: known factors</span>
+<span class="org-doc">  :param learning_rate: base learning rate for RMSProp</span>
+<span class="org-doc">  :param max_epochs: maximum number of iterations per penalty weight</span>
+<span class="org-doc">  :param atol: absolute tolerance for convergence</span>
+<span class="org-doc">  :param verbose: print objective function updates</span>
+
+<span class="org-doc">  :returns loadings: Estimated sample loadings ([n, k])</span>
+<span class="org-doc">  :returns factors: Estimated factors ([k, p])</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
+  <span class="org-variable-name">graph</span> = tf.Graph()
+  <span class="org-keyword">with</span> graph.as_default():
+    <span class="org-variable-name">x</span> = tf.Variable(x.astype(np.float32), trainable=<span class="org-constant">False</span>)
+    <span class="org-variable-name">size</span> = tf.Variable(size.reshape(-1, 1).astype(np.float32), trainable=<span class="org-constant">False</span>)
+    <span class="org-variable-name">weight</span> = tf.Variable(np.array(weight).astype(np.float32), trainable=<span class="org-constant">False</span>)
+    <span class="org-keyword">if</span> F <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      <span class="org-keyword">assert</span> F.shape == (k, p)
+      <span class="org-variable-name">factors</span> = tf.Variable(F.astype(np.float32), trainable=<span class="org-constant">False</span>)
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">factors</span> = tf.exp(tf.Variable(tf.random_normal([k, p])))
+    <span class="org-variable-name">Z</span> = tf.sigmoid(tf.Variable(tf.random_normal([n, k])))
+    <span class="org-variable-name">Z</span> /= tf.reduce_sum(Z, axis=1, keepdims=<span class="org-constant">True</span>)
+    <span class="org-variable-name">loadings</span> = tf.exp(tf.Variable(tf.random_normal([n, k])))
+
+    <span class="org-variable-name">mean</span> = size * tf.matmul(loadings, factors)
+    <span class="org-variable-name">llik</span> = tf.reduce_sum(pois_llik(x, mean))
+    <span class="org-variable-name">penalty</span> = weight * tf.reduce_sum(Z)
+    <span class="org-variable-name">loss</span> = -llik - penalty
+
+    <span class="org-variable-name">train</span> = tf.train.RMSPropOptimizer(learning_rate=learning_rate).minimize(loss)
+    <span class="org-variable-name">trace</span> = [loss, weight, penalty]
+    <span class="org-variable-name">opt</span> = [loadings, factors]
+    <span class="org-variable-name">obj</span> = <span class="org-builtin">float</span>(<span class="org-string">'-inf'</span>)
+    <span class="org-keyword">with</span> tf.Session() <span class="org-keyword">as</span> sess:
+      sess.run(tf.global_variables_initializer())
+      <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_epochs):
+        <span class="org-variable-name">_</span>, <span class="org-variable-name">update</span> = sess.run([train, trace])
+        <span class="org-keyword">if</span> <span class="org-keyword">not</span> np.isfinite(update[0]):
+          <span class="org-keyword">raise</span> tf.train.NanLossDuringTrainingError
+        <span class="org-keyword">elif</span> np.isclose(update[0], obj, atol=atol):
+          <span class="org-keyword">break</span>
+        <span class="org-keyword">if</span> verbose <span class="org-keyword">and</span> <span class="org-keyword">not</span> i % 500:
+          <span class="org-keyword">print</span>(i, *update, end=<span class="org-string">'\r'</span>)
+      <span class="org-keyword">if</span> verbose:
+        <span class="org-keyword">print</span>(i, *update)
+      <span class="org-keyword">return</span> sess.run(opt)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgfdb100e" class="outline-3">
+<h3 id="orgfdb100e">Plotting functions</h3>
+<div class="outline-text-3" id="text-orgfdb100e">
+<p>
+Produce a STRUCTURE plot.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">plot_structure</span>(weights, ax=<span class="org-constant">None</span>, idx=<span class="org-constant">None</span>):
+  <span class="org-keyword">if</span> ax <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">ax</span> = plt.gca()
+  <span class="org-variable-name">prop</span> = np.cumsum(weights, axis=1)
+  <span class="org-keyword">if</span> idx <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">idx</span> = np.lexsort(weights.T)
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(prop.shape[1]):
+    <span class="org-keyword">if</span> i &gt; 0:
+      <span class="org-variable-name">bot</span> = prop[idx,i - 1]
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">bot</span> = <span class="org-constant">None</span>
+    ax.bar(np.arange(prop.shape[0]), weights[idx,i], bottom=bot, color=f<span class="org-string">'C{i}'</span>, width=1, label=f<span class="org-string">'Topic {i + 1}'</span>)
+  ax.set_xlim(0, weights.shape[0])
+  ax.set_xticks([])
+  ax.set_ylim(0, 1)
+</pre>
+</div>
+
+<p>
+Plot estimated against true topics.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">plot_topics</span>(topics, ax=<span class="org-constant">None</span>):
+  <span class="org-keyword">if</span> ax <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">ax</span> = plt.gca()
+  <span class="org-variable-name">z</span> = np.cumsum(topics, axis=1)
+  <span class="org-keyword">for</span> row <span class="org-keyword">in</span> z:
+    ax.bar()
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga59d4b9" class="outline-2">
+<h2 id="orga59d4b9">Results</h2>
+<div class="outline-text-2" id="text-orga59d4b9">
+</div>
+<div id="outline-container-org4673a14" class="outline-3">
+<h3 id="simulation"><a id="org4673a14"></a>Simulation</h3>
+<div class="outline-text-3" id="text-simulation">
+</div>
+<div id="outline-container-org70aacd0" class="outline-4">
+<h4 id="org70aacd0">Unconstrained Poisson factorization</h4>
+<div class="outline-text-4" id="text-org70aacd0">
+<p>
+Simulate some Poisson data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(1)
+<span class="org-variable-name">L</span> = np.random.lognormal(size=(100, 3))
+<span class="org-variable-name">F</span> = np.random.lognormal(size=(3, 10))
+<span class="org-variable-name">size</span> = 100 * np.ones((L.shape[0], 1))
+<span class="org-variable-name">X</span> = np.random.poisson(lam=size * L.dot(F)).astype(np.float32)
+<span class="org-variable-name">topics</span> = F / F.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">weights</span> = L * F.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">weights</span> /= weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the pairwise correlation of the topics to each other.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="orgca0ef0e">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.imshow(np.corrcoef(topics), cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
+<span class="org-variable-name">cb</span> = plt.colorbar(shrink=0.5)
+cb.set_label(<span class="org-string">'Correlation'</span>)
+plt.xlabel(<span class="org-string">'True topic'</span>)
+plt.ylabel(<span class="org-string">'True topic'</span>)
+plt.gcf().tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pf-true-corr.png" alt="pf-true-corr.png">
+</p>
+</div>
+
+<p>
+Fix F and optimize L.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span> = pfa(X, 3, alpha=0, F=F, size=size, learning_rate=1e-2)
+<span class="org-variable-name">est_topics</span> = fhat / fhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = lhat * fhat.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org8212acd">plt.clf()
+plt.set_cmap(<span class="org-string">'Set2'</span>)
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1, sharex=<span class="org-constant">True</span>)
+fig.set_size_inches(6, 4)
+
+plot_structure(weights, ax=ax[0])
+plot_structure(est_weights, ax=ax[1], idx=np.lexsort(weights.T))
+
+ax[0].set_ylabel(<span class="org-string">'True topic weight'</span>)
+ax[1].set_ylabel(<span class="org-string">'Estimated topic weight'</span>)
+ax[1].set_xlabel(<span class="org-string">'Sample'</span>)
+
+ax[1].legend(loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5), frameon=<span class="org-constant">False</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pf-fixed-f.png" alt="pf-fixed-f.png">
+</p>
+</div>
+
+<p>
+Fit PF. This is bi-convex, so we might not expect to recover \(\mathbf{L},
+   \mathbf{F}\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span> = pfa(X, 3, alpha=0, size=size, learning_rate=1e-3)
+<span class="org-variable-name">est_topics</span> = fhat / fhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = lhat * fhat.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the pairwise correlation between the estimated topics and the true
+topics.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org4ef7b90">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.imshow(np.triu(np.corrcoef(F, fhat)), cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
+<span class="org-variable-name">cb</span> = plt.colorbar(shrink=0.5)
+cb.set_label(<span class="org-string">'Correlation'</span>)
+plt.xticks(np.arange(6), [<span class="org-string">'True1'</span>, <span class="org-string">'True2'</span>, <span class="org-string">'True3'</span>, <span class="org-string">'Est1'</span>, <span class="org-string">'Est2'</span>, <span class="org-string">'Est3'</span>], rotation=90)
+plt.yticks(np.arange(6), [<span class="org-string">'True1'</span>, <span class="org-string">'True2'</span>, <span class="org-string">'True3'</span>, <span class="org-string">'Est1'</span>, <span class="org-string">'Est2'</span>, <span class="org-string">'Est3'</span>])
+plt.gcf().tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pf-corr.png" alt="pf-corr.png">
+</p>
+</div>
+
+<p>
+Reorder the estimated topics to maximally correlate with the true topics.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">est_weights</span> = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+</pre>
+</div>
+
+<p>
+Plot the corresponding topic model.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pf-full.png" alt="pf-full.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge5312a0" class="outline-4">
+<h4 id="orge5312a0">PFA model</h4>
+<div class="outline-text-4" id="text-orge5312a0">
+<p>
+Simulate some data where each sample interpolates between a pair of factors.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(1)
+<span class="org-variable-name">L</span> = np.random.lognormal(size=(100, 3))
+<span class="org-variable-name">F</span> = np.random.lognormal(size=(3, 10))
+<span class="org-variable-name">Z</span> = np.zeros(L.shape)
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(Z.shape[0]):
+  <span class="org-variable-name">Z</span>[i,np.random.choice(3, size=2).astype(<span class="org-builtin">int</span>)] = 1
+<span class="org-variable-name">L</span> *= Z
+<span class="org-variable-name">L</span> /= L.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">size</span> = 100 * np.ones((L.shape[0], 1))
+<span class="org-variable-name">X</span> = np.random.poisson(lam=size * L.dot(F)).astype(np.float32)
+
+<span class="org-variable-name">topics</span> = F / F.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">weights</span> = L * F.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">weights</span> /= weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the pairwise correlation of the topics to each other.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pfa-true-corr.png" alt="pfa-true-corr.png">
+</p>
+</div>
+
+<p>
+Fix \(F\) and fit \(L\) using PF.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span> = pfa(X, 3, alpha=0, F=F, size=size, max_epochs=10000, learning_rate=1e-2)
+<span class="org-variable-name">est_topics</span> = fhat / fhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = lhat * fhat.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the corresponding topic models.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pfa-pf-fixed-f.png" alt="pfa-pf-fixed-f.png">
+</p>
+</div>
+
+<p>
+Fix \(F\) to the truth and fit \(L\) using PFA.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span> = pfa(X, 3, alpha=1, F=F, size=size, max_epochs=10000, learning_rate=1e-2)
+<span class="org-variable-name">est_topics</span> = fhat / fhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = lhat * fhat.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the corresponding topic models.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pfa-fixed-f.png" alt="pfa-fixed-f.png">
+</p>
+</div>
+
+<p>
+Project the solution onto the hard constraint.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">est_weights[np.arange(est_weights.shape[0]),np.argmin(est_weights, axis=1)] = 0
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the corresponding topic models.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pfa-fixed-f-hard.png" alt="pfa-fixed-f-hard.png">
+</p>
+</div>
+
+<p>
+Fit full PFA.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span> = pfa(X, 3, size=size, alpha=np.logspace(-1, 8, 10), max_epochs=10000, learning_rate=1e-2)
+<span class="org-variable-name">est_topics</span> = fhat / fhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = lhat * fhat.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the pairwise correlation between the estimated topics and the true
+topics.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.imshow(np.triu(np.corrcoef(F, fhat)), cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
+plt.colorbar(shrink=0.5)
+plt.xticks(np.arange(6), [<span class="org-string">'True1'</span>, <span class="org-string">'True2'</span>, <span class="org-string">'True3'</span>, <span class="org-string">'Est1'</span>, <span class="org-string">'Est2'</span>, <span class="org-string">'Est3'</span>], rotation=90)
+plt.yticks(np.arange(6), [<span class="org-string">'True1'</span>, <span class="org-string">'True2'</span>, <span class="org-string">'True3'</span>, <span class="org-string">'Est1'</span>, <span class="org-string">'Est2'</span>, <span class="org-string">'Est3'</span>])
+plt.gcf().tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pfa-corr.png" alt="pfa-corr.png">
+</p>
+</div>
+
+<p>
+Reorder the estimated topics to maximally correlate with the true topics.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">est_weights</span> = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+</pre>
+</div>
+
+<p>
+Plot the corresponding topic models.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pfa-full.png" alt="pfa-full.png">
+</p>
+</div>
+
+<p>
+Project the solution onto the hard constraint.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">est_weights[np.arange(est_weights.shape[0]),np.argmin(est_weights, axis=1)] = 0
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pfa-full-hard.png" alt="pfa-full-hard.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2d35b8a" class="outline-4">
+<h4 id="org2d35b8a">\(l_1\) penalized PF</h4>
+<div class="outline-text-4" id="text-org2d35b8a">
+<p>
+Simulate data from PFA.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(1)
+<span class="org-variable-name">L</span> = np.random.lognormal(size=(100, 3))
+<span class="org-variable-name">F</span> = np.random.lognormal(size=(3, 10))
+<span class="org-variable-name">Z</span> = np.zeros(L.shape)
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(Z.shape[0]):
+  <span class="org-variable-name">Z</span>[i,np.random.choice(3, size=2).astype(<span class="org-builtin">int</span>)] = 1
+<span class="org-variable-name">L</span> *= Z
+<span class="org-variable-name">L</span> /= L.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">size</span> = 100 * np.ones((L.shape[0], 1))
+<span class="org-variable-name">X</span> = np.random.poisson(lam=size * L.dot(F)).astype(np.float32)
+
+<span class="org-variable-name">topics</span> = F / F.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">weights</span> = L * F.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">weights</span> /= weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Fit \(L\) using sparse PF.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span> = pfa_l1(X, 3, weight=0., size=size, max_epochs=10000, learning_rate=1e-2)
+<span class="org-variable-name">est_topics</span> = fhat / fhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = lhat * fhat.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Reorder the estimated topics to maximally correlate with the true topics.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">est_weights</span> = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+</pre>
+</div>
+
+<p>
+Plot the corresponding topic models.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pfa-l1-full.png" alt="pfa-l1-full.png">
+</p>
+</div>
+
+<p>
+Project the solution onto the hard constraint.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">est_weights[np.arange(est_weights.shape[0]),np.argmin(est_weights, axis=1)] = 0
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the corresponding topic models.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/pfa-full-hard.png" alt="pfa-full-hard.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgcd68636" class="outline-4">
+<h4 id="orgcd68636">NB data</h4>
+<div class="outline-text-4" id="text-orgcd68636">
+<p>
+The preliminary results suggest that in the absence of extra-Poisson noise,
+ordinary PF gives a reasonable solution. Now, try simulating negative
+binomial data from PFA:
+</p>
+
+<p>
+\[ x_{ij} \sim \mathrm{Poisson}(R_i \lambda_{ij}) \]
+</p>
+
+<p>
+\[ \lambda_{ij} \sim [\mathbf{LF}]_{ij} u_{ij} \]
+</p>
+
+<p>
+\[ u_{ij} \sim \mathrm{Gamma}(\phi_j^{-1}, \phi_j^{-1}) \]
+</p>
+
+<p>
+Now, marginally \(x_{ij} \sim \mathrm{NB}(R_i \lambda_{ij}, \phi_j)\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(1)
+<span class="org-variable-name">L</span> = np.random.lognormal(size=(100, 3))
+<span class="org-variable-name">F</span> = np.random.lognormal(size=(3, 10))
+<span class="org-variable-name">Z</span> = np.zeros(L.shape)
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(Z.shape[0]):
+  <span class="org-variable-name">Z</span>[i,np.random.choice(3, size=2).astype(<span class="org-builtin">int</span>)] = 1
+<span class="org-variable-name">L</span> *= Z
+<span class="org-variable-name">L</span> /= L.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">size</span> = 100 * np.ones((L.shape[0], 1))
+<span class="org-variable-name">mu</span> = size * L.dot(F)
+<span class="org-variable-name">phi</span> = np.random.lognormal(sigma=.1, size=(100, 1))
+<span class="org-variable-name">u</span> = np.random.gamma(shape=phi, size=(100, 10))
+<span class="org-variable-name">X</span> = np.random.poisson(lam=mu * u).astype(np.float32)
+
+<span class="org-variable-name">topics</span> = F / F.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">weights</span> = L * F.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">weights</span> /= weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Fix \(F\) and fit PF.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span> = pfa(X, 3, alpha=0, F=F, size=size, learning_rate=1e-2)
+<span class="org-variable-name">est_topics</span> = fhat / fhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = lhat * fhat.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+</pre>
+</div>
+
+<p>
+Plot the corresponding topic models.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/nb-pf-fixed-f.png" alt="nb-pf-fixed-f.png">
+</p>
+</div>
+
+<p>
+Fit PF.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span> = pfa(X, 3, alpha=0, size=size, learning_rate=1e-2)
+<span class="org-variable-name">est_topics</span> = fhat / fhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = lhat * fhat.<span class="org-builtin">sum</span>(axis=1) / size
+<span class="org-variable-name">est_weights</span> /= est_weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">est_weights</span> = est_weights[:,np.argmax(np.corrcoef(F, fhat)[:3,3:], axis=1)]
+</pre>
+</div>
+
+<p>
+Plot the corresponding topic models.
+</p>
+
+
+<div class="figure">
+<p><img src="figure/gom.org/nb-pf-full.png" alt="nb-pf-full.png">
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga45af47" class="outline-3">
+<h3 id="orga45af47">Tabula Muris data</h3>
+<div class="outline-text-3" id="text-orga45af47">
+<p>
+<i><a href="https://tabula-muris.ds.czbiohub.org/">Tabula Muris</a></i>
+(<a href="https://www.nature.com/articles/s41586-018-0590-4">Tabula Muris
+consortium et al. 2018</a>) has collected scRNA-seq from 20 murine tissues. In
+particular, they collected 53,760 FACS-sorted cells and 55,656 unsorted
+cells.
+</p>
+
+<p>
+We can place the unsorted cells on lineages in two stages:
+</p>
+
+<ol class="org-ol">
+<li>Estimate 20 factors (mean vectors) from the FACS-sorted cells.</li>
+<li>Estimate PFA on the unsorted cells, using the fixed factors from (1).</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org1a53fd7" class="outline-3">
+<h3 id="org1a53fd7">Human embryoid body data</h3>
+<div class="outline-text-3" id="text-org1a53fd7">
+<p>
+<a href="https://genomebiology.biomedcentral.com/articles/10.1186/s13059-018-1426-0">Han
+et al. 2018</a> study embryoid bodies (EBs) generated by allowing human
+pluripotent stem cells to spontaneously differentiate.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2019-02-05 Tue 16:12</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

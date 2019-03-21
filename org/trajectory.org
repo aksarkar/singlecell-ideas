@@ -1,19 +1,27 @@
 #+TITLE: Cardiac trajectory prediction
 #+SETUPFILE: setup.org
 
-* Setup                                                            :noexport:
+* Introduction
 
-  #+BEGIN_SRC emacs-lisp
+  Here, we investigate some ideas for modeling differentiation of iPSCs into
+  cardiomyocytes.
+
+  Our goal is to build intuition about methods which learn gene expression
+  trajectories.
+
+* Setup
+
+  #+BEGIN_SRC emacs-lisp :exports none
     (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
   #+END_SRC
 
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(memory="16G",venv="singlecell",opts="-c4") :dir /scratch/midway2/aksarkar/ideas
+  #+CALL: ipython3(memory="16G",venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :dir /scratch/midway2/aksarkar/ideas :exports none
 
   #+RESULTS:
-  : Submitted batch job 53981202
+  : Submitted batch job 56732663
 
   #+NAME: imports
   #+BEGIN_SRC ipython
@@ -25,6 +33,7 @@
     import scipy.io as si
     import scipy.sparse as ss
     import scipy.stats as st
+    import scqtl
     import scvi.dataset
     import scvi.models
     import scvi.inference
@@ -35,7 +44,7 @@
 
   #+RESULTS: imports
   :RESULTS:
-  # Out[1]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -48,17 +57,8 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[3]:
   :END:
-
-* Introduction
-
-  Here, we investigate analogues of principal curves ([[https://www.tandfonline.com/doi/abs/10.1080/01621459.1989.10478797][Hastie and Stuetzle 1989]])
-  in other embeddings. 
-
-  The goal is to qualitatively evaluate the ability to follow gene expression
-  in the observed space by walking along trajectories in the embedding space,
-  to recover key events in differentiation time courses.
 
 * Materials and methods
 ** iPSC-derived cardiomyocyte differentiation time course data
@@ -84,6 +84,7 @@
 
    Read the compressed data.
 
+   #+NAME: read-cm-data
    #+BEGIN_SRC ipython
      counts = si.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/counts.mtx.gz')
      genes = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/genes.txt', header=None, index_col=0)
@@ -98,16 +99,17 @@
 
    Keep genes detected in at least 10% of cells.
 
+   #+NAME: filter-cm-data
    #+BEGIN_SRC ipython
      adata = anndata.AnnData(counts.T.tocsr(), obs=cells, var=genes)
-     sc.pp.filter_genes(adata, min_cells=.05 * adata.shape[0])
+     sc.pp.filter_genes(adata, min_cells=.1 * adata.shape[0])
      adata.shape
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
-   : (25311, 4161)
+   # Out[19]:
+   : (25311, 1898)
    :END:
 
 * Results
@@ -681,3 +683,50 @@
    :RESULTS:
    0 - f554087f-b03a-4574-8613-072c205e5251
    :END:
+** ZINB
+
+   Fit the ZINB model where parameters are shared between cells from the same
+   individual and day.
+
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/tf-zinb.py
+     <<imports>>
+     <<read-cm-data>>
+     <<filter-cm-data>>
+
+     groups = adata.obs.groupby(['day', 'ind'])
+     onehot = np.zeros((adata.shape[0], len(groups))).astype(np.float32)
+     for i, (k, g) in enumerate(groups):
+       onehot[g.index,i] = 1.0
+     design = np.zeros((adata.shape[0], 1)).astype(np.float32)
+     size_factor = adata.X.sum(axis=1).A.astype(np.float32)
+     init = scqtl.tf.fit(
+       umi=adata.X.A,
+       size_factor=size_factor,
+       onehot=onehot,
+       design=design,
+       learning_rate=1e-3,
+       max_epochs=30000,
+       verbose=True)
+     log_mu, log_phi, logodds, nb_nll, zinb_nll = scqtl.tf.fit(
+       umi=adata.X.A,
+       size_factor=size_factor,
+       onehot=onehot,
+       design=design,
+       warm_start=init[:3],
+       learning_rate=1e-3,
+       max_epochs=30000,
+       verbose=True)
+     pd.DataFrame(log_mu).to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/log_mu.txt.gz', compression='gzip', sep='\t')
+     pd.DataFrame(log_phi).to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/log_phi.txt.gz', compression='gzip', sep='\t')
+     pd.DataFrame(logodds).to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/logodds.txt.gz', compression='gzip', sep='\t')
+   #+END_SRC
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     sbatch --partition=gpu2 --gres=gpu:1 --mem=16G --time=7:00:00 --job-name=tf-zinb --out=tf-zinb-cm.out
+     #!/bin/bash
+     source activate singlecell
+     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/tf-zinb.py
+   #+END_SRC
+
+   #+RESULTS:
+   : Submitted batch job 55970981

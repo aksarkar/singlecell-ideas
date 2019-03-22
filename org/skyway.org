@@ -1,6 +1,6 @@
 #+TITLE: Skyway test
 #+SETUPFILE: setup.org
-#+PROPERTY: header-args:sh :results output drawer :eval never-export :exports both
+#+PROPERTY: header-args:sh :results output drawer :eval never-export :exports code
 
 * Desired setup
 
@@ -13,7 +13,8 @@
   3. ~emacs~ runs on the login node, and ~org-mode~ is used to send code blocks
      interactively to the remote kernel (through the console)
 
-  Currently, (1) and (2) don't work on ~skyway~.
+  Currently, (3) doesn't work on ~skyway~ (requires modification to
+  ~ob-ipython~).
 
 * Skyway setup
 
@@ -72,3 +73,4 @@
   #+RESULTS:
   :RESULTS:
   :END:
+

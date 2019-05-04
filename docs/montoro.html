@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2019-05-06 Mon 20:43 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deconvolution of Montoro et al.</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Deconvolution of Montoro et al.</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orge8e82b9">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org5991d21">Methods</a>
+<ul>
+<li><a href="#orgb7a7316">Data</a></li>
+<li><a href="#orga38ddff">Distribution deconvolution</a></li>
+</ul>
+</li>
+<li><a href="#org89f4a94">Results</a>
+<ul>
+<li><a href="#orga37dc64">Distribution deconvolution</a></li>
+<li><a href="#org61c1d9f">Highly variable genes</a></li>
+<li><a href="#org36f985c">Comparison against count-based approach</a></li>
+<li><a href="#org0f143eb">Comparison against log-transformed data approach</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orge8e82b9" class="outline-2">
+<h2 id="orge8e82b9">Introduction</h2>
+<div class="outline-text-2" id="text-orge8e82b9">
+<p>
+We have previously argued that that distribution deconvolution is <b>required</b>
+to characterize the variance of gene expression. The essence of the argument
+is: suppose
+</p>
+
+<p>
+\[ x_i \sim \mathrm{Poisson}(s \lambda_i) \]
+</p>
+
+<p>
+where \(i\) indexes samples. Further suppose
+</p>
+
+<p>
+\[ \lambda_i = \mu \]
+</p>
+
+<p>
+Then, \(V[\lambda_i] = 0\), but \(V[x_i] = s\mu\). Clearly, the latter answer
+is wrong, because it reflects variance induced by sampling noise, not true
+biological variance of interest.
+</p>
+
+<p>
+Here, we use distribution deconvolution to detect highly variable genes in
+the Drop-Seq of mouse lung epithelia
+(<a href="https://www.nature.com/articles/s41586-018-0393-7">Montoro et al.</a>), and
+demonstrate empirically that using naive approaches gives suboptimal (in the
+worst case, nonsense) results.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org926484d" class="outline-2">
+<h2 id="setup"><a id="org926484d"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython" id="org814526a"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scqtl
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5991d21" class="outline-2">
+<h2 id="org5991d21">Methods</h2>
+<div class="outline-text-2" id="text-org5991d21">
+</div>
+<div id="outline-container-orgb7a7316" class="outline-3">
+<h3 id="orgb7a7316">Data</h3>
+<div class="outline-text-3" id="text-orgb7a7316">
+<p>
+Download the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">curl -sLO <span class="org-string">"ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE103nnn/GSE103354/suppl/GSE103354_Trachea_droplet_UMIcounts.txt.gz"</span>
+</pre>
+</div>
+
+<p>
+Shard the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">s</span> = <span class="org-constant">None</span>
+<span class="org-keyword">for</span> i, chunk <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(pd.read_table(<span class="org-string">'/scratch/midway2/aksarkar/ideas/GSE103354_Trachea_droplet_UMIcounts.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, chunksize=5000)):
+  <span class="org-variable-name">chunk</span> = chunk.T
+  chunk.to_csv(f<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-chunk{i}.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
+  <span class="org-keyword">if</span> s <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">s</span> = chunk.<span class="org-builtin">sum</span>(axis=1)
+  <span class="org-keyword">else</span>:
+    <span class="org-variable-name">s</span> += chunk.<span class="org-builtin">sum</span>(axis=1)
+s.to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-size.txt'</span>, sep=<span class="org-string">'\t'</span>)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga38ddff" class="outline-3">
+<h3 id="orga38ddff">Distribution deconvolution</h3>
+<div class="outline-text-3" id="text-orga38ddff">
+<p>
+Fit the model:
+</p>
+
+<p>
+\[ x_{ijk} \sim \mathrm{Poisson}(s_{ij} \lambda_{ijk}) \]
+</p>
+
+<p>
+where \(i\) indexes cell types, \(j\) indexes cells, \(k\) indexes genes.
+</p>
+
+<p>
+\[ s_{ij} = \sum_k x_{ijk} \]
+</p>
+
+<p>
+\[ \lambda_{ijk} \sim \pi_{ik} \delta_0(\cdot) + \mu_{ik} \mathrm{Gamma}(\phi_{ik}^{-1}, \phi_{ik}^{-1}) \]
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org4baf926"><span class="org-keyword">import</span> os
+<span class="org-variable-name">task</span> = <span class="org-builtin">int</span>(os.environ[<span class="org-string">'SLURM_ARRAY_TASK_ID'</span>])
+<span class="org-variable-name">x</span> = pd.read_table(f<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-chunk{task}.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
+<span class="org-variable-name">s</span> = pd.read_table(<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-size.txt'</span>, sep=<span class="org-string">'\t'</span>, index_col=0, header=<span class="org-constant">None</span>)
+<span class="org-variable-name">design</span> = np.zeros((x.shape[0], 1))
+<span class="org-variable-name">onehot</span> = pd.Series(x.index).<span class="org-builtin">apply</span>(<span class="org-keyword">lambda</span> x: x.split(<span class="org-string">'_'</span>)[-1]).<span class="org-builtin">str</span>.get_dummies()
+<span class="org-variable-name">init</span> = scqtl.tf.fit(
+  umi=x.values.astype(np.float32),
+  onehot=onehot.values.astype(np.float32),
+  size_factor=s.values.reshape(-1, 1).astype(np.float32),
+  learning_rate=1e-3,
+  max_epochs=30000)
+log_mu, log_phi, logodds, *<span class="org-variable-name">_</span> = scqtl.tf.fit(
+  umi=x.values.astype(np.float32),
+  onehot=onehot.values.astype(np.float32),
+  size_factor=s.values.reshape(-1, 1).astype(np.float32),
+  learning_rate=1e-3,
+  max_epochs=30000,
+  warm_start=init[:3])
+pd.DataFrame(log_mu, index=onehot.columns, columns=x.columns).to_csv(f<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-log-mu-{task}.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
+pd.DataFrame(log_phi, index=onehot.columns, columns=x.columns).to_csv(f<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-log-phi-{task}.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
+pd.DataFrame(logodds, index=onehot.columns, columns=x.columns).to_csv(f<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-logodds-{task}.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-sh">sbatch -a 0-3 --partition=gpu2 --gres=gpu:1 --mem=16G --time=4:00:00 --job-name=montoro --out=montoro.out
+<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
+<span class="org-builtin">source</span> activate singlecell
+python &lt;&lt;EOF
+<span class="org-sh-heredoc">&lt;&lt;imports&gt;&gt;</span>
+&lt;&lt;deconvolve&gt;&gt;
+EOF
+</pre>
+</div>
+
+<pre class="example">
+Submitted batch job 60148824
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org89f4a94" class="outline-2">
+<h2 id="org89f4a94">Results</h2>
+<div class="outline-text-2" id="text-org89f4a94">
+</div>
+<div id="outline-container-orga37dc64" class="outline-3">
+<h3 id="orga37dc64">Distribution deconvolution</h3>
+<div class="outline-text-3" id="text-orga37dc64">
+<p>
+Read the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mu</span> = pd.concat([pd.read_table(f<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-log-mu-{i}.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(4)], axis=1)
+<span class="org-variable-name">log_phi</span> = pd.concat([pd.read_table(f<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-log-phi-{i}.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(4)], axis=1)
+<span class="org-variable-name">logodds</span> = pd.concat([pd.read_table(f<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-logodds-{i}.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(4)], axis=1)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org61c1d9f" class="outline-3">
+<h3 id="org61c1d9f">Highly variable genes</h3>
+<div class="outline-text-3" id="text-org61c1d9f">
+<p>
+Estimate \(E_j[\lambda_{ijk}]\), \(V_j[\lambda_{ijk}]\) for each cell type
+\(i\) and gene \(k\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: log(sigmoid(x)) = -softplus(-x)</span>
+<span class="org-variable-name">mean</span> = np.exp(log_mu - np.log1p(np.exp(logodds)))
+<span class="org-variable-name">variance</span> = np.exp(2 * log_mu + log_phi - np.log1p(np.exp(logodds))) + np.exp(-np.log1p(np.exp(logodds)) - np.log1p(np.exp(-logodds)) + 2 * log_mu)
+</pre>
+</div>
+
+<p>
+Plot latent mean/variance relationship.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 4, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7, 5)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(mean.index, ax.ravel()):
+  a.set_xscale(<span class="org-string">'log'</span>)
+  a.set_yscale(<span class="org-string">'log'</span>)
+  a.scatter(mean.loc[k], variance.loc[k], c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+  a.set_title(k)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a[0].set_ylabel(<span class="org-string">'Latent variance'</span>)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.T:
+  a[-1].set_xlabel(<span class="org-string">'Latent mean'</span>)
+ax[-1][-1].set_axis_off()
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/montoro.org/latent-mean-variance.png" alt="latent-mean-variance.png">
+</p>
+</div>
+
+<p>
+Find the outlier genes.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">mean.loc[<span class="org-string">'Tuft'</span>, mean.loc[<span class="org-string">'Tuft'</span>] &lt; 1e-8].index
+</pre>
+</div>
+
+<pre class="example">
+Index(['Gm37381', 'Rp1', 'Rgs20', 'Npbwr1', 'Gm30414', 'Mybl1',
+'1700034P13Rik', 'Tcf24', 'Ppp1r42', 'Prex2',
+...
+'Emx2', 'Gm7102', 'mt-Co2', 'mt-Co3', 'mt-Nd3', 'Spry3', 'Tmlhe',
+'AC125149.4', 'AC168977.2', 'AC168977.1'],
+dtype='object', length=5717)
+</pre>
+
+<p>
+These genes have no observed molecules in Tuft cells, so they are safe to ignore.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">sample_mean.loc[<span class="org-string">'Tuft'</span>, mean.loc[<span class="org-string">'Tuft'</span>] &lt; 1e-8].describe()
+</pre>
+</div>
+
+<pre class="example">
+count    5717.0
+mean        0.0
+std         0.0
+min         0.0
+25%         0.0
+50%         0.0
+75%         0.0
+max         0.0
+Name: Tuft, dtype: float64
+</pre>
+
+<p>
+Using this procedure, the genes with highest latent mean gene expression are
+also the genes with highest latent gene expression variance. <b>This is
+corrected for the mean-variance relationship induced by Poisson sampling</b>,
+so we do not need to correct for it again by estimating the
+dispersion. (There is a mean-variance relationship remaining in latent gene
+expression, which we argue is biologically plausible.)  This is in direct
+contrast with existing approaches, which call HVG using Fano factor (ratio
+of variance to mean).
+</p>
+</div>
+</div>
+
+<div id="outline-container-org36f985c" class="outline-3">
+<h3 id="org36f985c">Comparison against count-based approach</h3>
+<div class="outline-text-3" id="text-org36f985c">
+<p>
+Compare against dispersion approach, using sample moments of the counts.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: cells x genes</span>
+<span class="org-variable-name">x</span> = pd.read_table(<span class="org-string">'/scratch/midway2/aksarkar/ideas/GSE103354_Trachea_droplet_UMIcounts.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0).T
+</pre>
+</div>
+
+<p>
+Estimate \(E_j[x_{ijk}]\), \(V_j[x_{ijk}]\) for each cell type \(i\) and
+gene \(k\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">celltypes</span> = pd.Series(x.index).<span class="org-builtin">apply</span>(<span class="org-keyword">lambda</span> x: x.split(<span class="org-string">'_'</span>)[-1])
+<span class="org-variable-name">sample_mean</span> = x.groupby(celltypes.values).agg(np.mean, axis=0)
+<span class="org-variable-name">sample_var</span> = x.groupby(celltypes.values).agg(np.var, axis=0)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 4, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7, 5)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(sample_mean.index, ax.ravel()):
+  a.set_xscale(<span class="org-string">'symlog'</span>)
+  a.set_yscale(<span class="org-string">'symlog'</span>)
+  a.scatter(sample_mean.loc[k], sample_var.loc[k] / sample_mean.loc[k], c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+  a.set_title(k)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a[0].set_ylabel(<span class="org-string">'Sample dispersion'</span>)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.T:
+  a[-1].set_xlabel(<span class="org-string">'Sample mean'</span>)
+ax[-1][-1].set_axis_off()
+fig.tight_layout()
+
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/montoro.org/hvg-raw-counts.png" alt="hvg-raw-counts.png">
+</p>
+</div>
+
+<p>
+Compare the deconvolution-based estimates to the count-based estimates for
+tuft cells.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
+fig.set_size_inches(5, 3)
+ax[0].set_xscale(<span class="org-string">'symlog'</span>, linthreshx=1e-4)
+ax[0].set_yscale(<span class="org-string">'symlog'</span>)
+ax[0].scatter(mean.loc[<span class="org-string">'Tuft'</span>], sample_mean.loc[<span class="org-string">'Tuft'</span>], c=<span class="org-string">'k'</span>, s=1, alpha=0.2)
+ax[0].set_xlabel(<span class="org-string">'Latent gene expression mean'</span>)
+ax[0].set_ylabel(<span class="org-string">'Mean number of molecules'</span>)
+
+ax[1].set_xscale(<span class="org-string">'symlog'</span>, linthreshx=1e-5)
+ax[1].set_yscale(<span class="org-string">'symlog'</span>)
+ax[1].scatter(variance.loc[<span class="org-string">'Tuft'</span>], sample_var.loc[<span class="org-string">'Tuft'</span>], c=<span class="org-string">'k'</span>, s=1, alpha=0.2)
+ax[1].set_xlabel(<span class="org-string">'Latent gene expression variance'</span>)
+ax[1].set_ylabel(<span class="org-string">'Variance number of molecules'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/montoro.org/deconvolved-vs-sample-moments.png" alt="deconvolved-vs-sample-moments.png">
+</p>
+</div>
+
+<p>
+There is disagreement about the ordering of variable genes, but e.g. the top
+3 genes will be called the same.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0f143eb" class="outline-3">
+<h3 id="org0f143eb">Comparison against log-transformed data approach</h3>
+<div class="outline-text-3" id="text-org0f143eb">
+<p>
+Compare against dispersion approach, using sample moments of the
+log-transformed counts. Use pseudocount 1.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">s</span> = pd.read_table(<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-size.txt'</span>, sep=<span class="org-string">'\t'</span>, index_col=0, header=<span class="org-constant">None</span>)
+<span class="org-variable-name">t</span> = x.div(s.iloc[:,0], axis=0)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mean</span> = np.log(t + 1).groupby(celltypes.values).agg(np.mean, axis=0)
+<span class="org-variable-name">log_var</span> = np.log(t + 1).groupby(celltypes.values).agg(np.var, axis=0)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 4, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7, 5)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(log_mean.index, ax.ravel()):
+  a.set_xscale(<span class="org-string">'symlog'</span>, linthreshx=1e-4)
+  a.set_yscale(<span class="org-string">'symlog'</span>, linthreshy=1e-4)
+  a.scatter(log_mean.loc[k], log_var.loc[k] / log_mean.loc[k], c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+  a.set_title(k)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a[0].set_ylabel(<span class="org-string">'Disp $\ln(x+1)$'</span>)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.T:
+  a[-1].set_xlabel(<span class="org-string">'Mean $\ln(x+1)$'</span>)
+ax[-1][-1].set_axis_off()
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/montoro.org/hvg-log-counts.png" alt="hvg-log-counts.png">
+</p>
+</div>
+
+<p>
+Compare HVG called using latent variance versus sample dispersion of
+log-transformed data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 3)
+plt.xscale(<span class="org-string">'symlog'</span>, linthreshx=1e-8)
+plt.yscale(<span class="org-string">'symlog'</span>, linthreshy=1e-4)
+plt.scatter(variance.loc[<span class="org-string">'Tuft'</span>], log_var.loc[<span class="org-string">'Tuft'</span>] / log_mean.loc[<span class="org-string">'Tuft'</span>], c=<span class="org-string">'k'</span>, s=1, alpha=0.2)
+plt.xlabel(<span class="org-string">'Latent gene expression variance'</span>)
+plt.ylabel(<span class="org-string">'Sample disp $\ln(x + 1)$'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/montoro.org/deconv-hvg-vs-log-hvg.png" alt="deconv-hvg-vs-log-hvg.png">
+</p>
+</div>
+
+<p>
+There is disagreement about the ordering, but e.g. the top 4 genes are the
+same.
+</p>
+
+<p>
+Use pseudocount 0.5.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mean</span> = np.log(t + 0.5).groupby(celltypes.values).agg(np.mean, axis=0)
+<span class="org-variable-name">log_var</span> = np.log(t + 0.5).groupby(celltypes.values).agg(np.var, axis=0)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 4, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7, 5)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(log_mean.index, ax.ravel()):
+  <span class="org-comment-delimiter"># </span><span class="org-comment">a.set_xscale('symlog', linthreshx=1e-3)</span>
+  a.set_yscale(<span class="org-string">'symlog'</span>, linthreshy=1e-3)
+  a.scatter(log_mean.loc[k], log_var.loc[k] / log_mean.loc[k], c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+  a.set_title(k)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a[0].set_ylabel(<span class="org-string">'Disp $\ln(x+0.5)$'</span>)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.T:
+  a[-1].set_xlabel(<span class="org-string">'Mean $\ln(x+0.5)$'</span>)
+ax[-1][-1].set_axis_off()
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/montoro.org/hvg-log-counts-eps-0.5.png" alt="hvg-log-counts-eps-0.5.png">
+</p>
+</div>
+
+<p>
+Clearly, this approach is flawed for pseudocount \(< 1\).
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2019-05-06 Mon 20:43</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

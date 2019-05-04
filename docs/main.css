@@ -1,28 +1,9 @@
 body {
-    color: #223;
-    font: large/1.5 "Source Sans Pro", sans-serif;
-    width: 36em;
-    margin: 3em auto 0 auto;
+    width: 60em; 
+    margin:auto
 }
 
-p {
-    margin: 0 0 1.5em 0;
-}
-
-h1 {
-    font-size: 200%;
-    margin: 0
-}
-
-h2 {
-    font-size: 150%;
-    margin: 0;
-}
-
-a:link, a:visited,a:hover, a:active {
-    color: #0030a0;
-}
-
-a:hover {
-    text-decoration:none;
+pre.src, pre.example {
+    max-height: 12em;
+    overflow: auto;
 }

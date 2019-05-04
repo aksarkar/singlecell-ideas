@@ -1,0 +1,447 @@
+#+TITLE: Deconvolution of Montoro et al.
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  We have previously argued that that distribution deconvolution is *required*
+  to characterize the variance of gene expression. The essence of the argument
+  is: suppose
+
+  \[ x_i \sim \mathrm{Poisson}(s \lambda_i) \]
+
+  where \(i\) indexes samples. Further suppose
+
+  \[ \lambda_i = \mu \]
+
+  Then, \(V[\lambda_i] = 0\), but \(V[x_i] = s\mu\). Clearly, the latter answer
+  is wrong, because it reflects variance induced by sampling noise, not true
+  biological variance of interest.
+
+  Here, we use distribution deconvolution to detect highly variable genes in
+  the Drop-Seq of mouse lung epithelia
+  ([[https://www.nature.com/articles/s41586-018-0393-7][Montoro et al.]]), and
+  demonstrate empirically that using naive approaches gives suboptimal (in the
+  worst case, nonsense) results.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/ideas
+
+  #+RESULTS:
+  : Submitted batch job 60155827
+
+  #+NAME: imports
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import scqtl
+  #+END_SRC
+
+  #+RESULTS: imports
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Methods
+** Data
+
+   Download the data.
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     curl -sLO "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE103nnn/GSE103354/suppl/GSE103354_Trachea_droplet_UMIcounts.txt.gz"
+   #+END_SRC
+
+   #+RESULTS:
+
+   Shard the data.
+   
+   #+BEGIN_SRC ipython :async t
+     s = None
+     for i, chunk in enumerate(pd.read_table('/scratch/midway2/aksarkar/ideas/GSE103354_Trachea_droplet_UMIcounts.txt.gz', sep='\t', chunksize=5000)):
+       chunk = chunk.T
+       chunk.to_csv(f'/scratch/midway2/aksarkar/ideas/montoro-chunk{i}.txt.gz', sep='\t', compression='gzip')
+       if s is None:
+         s = chunk.sum(axis=1)
+       else:
+         s += chunk.sum(axis=1)
+     s.to_csv('/scratch/midway2/aksarkar/ideas/montoro-size.txt', sep='\t')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   :END:
+
+** Distribution deconvolution
+
+   Fit the model:
+
+   \[ x_{ijk} \sim \mathrm{Poisson}(s_{ij} \lambda_{ijk}) \]
+
+   where \(i\) indexes cell types, \(j\) indexes cells, \(k\) indexes genes.
+
+   \[ s_{ij} = \sum_k x_{ijk} \]
+
+   \[ \lambda_{ijk} \sim \pi_{ik} \delta_0(\cdot) + \mu_{ik} \mathrm{Gamma}(\phi_{ik}^{-1}, \phi_{ik}^{-1}) \]
+
+   #+NAME: deconvolve
+   #+BEGIN_SRC ipython :eval never
+     import os
+     task = int(os.environ['SLURM_ARRAY_TASK_ID'])
+     x = pd.read_table(f'/scratch/midway2/aksarkar/ideas/montoro-chunk{task}.txt.gz', sep='\t', index_col=0)
+     s = pd.read_table('/scratch/midway2/aksarkar/ideas/montoro-size.txt', sep='\t', index_col=0, header=None)
+     design = np.zeros((x.shape[0], 1))
+     onehot = pd.Series(x.index).apply(lambda x: x.split('_')[-1]).str.get_dummies()
+     init = scqtl.tf.fit(
+       umi=x.values.astype(np.float32),
+       onehot=onehot.values.astype(np.float32),
+       size_factor=s.values.reshape(-1, 1).astype(np.float32),
+       learning_rate=1e-3,
+       max_epochs=30000)
+     log_mu, log_phi, logodds, *_ = scqtl.tf.fit(
+       umi=x.values.astype(np.float32),
+       onehot=onehot.values.astype(np.float32),
+       size_factor=s.values.reshape(-1, 1).astype(np.float32),
+       learning_rate=1e-3,
+       max_epochs=30000,
+       warm_start=init[:3])
+     pd.DataFrame(log_mu, index=onehot.columns, columns=x.columns).to_csv(f'/scratch/midway2/aksarkar/ideas/montoro-log-mu-{task}.txt.gz', sep='\t', compression='gzip')
+     pd.DataFrame(log_phi, index=onehot.columns, columns=x.columns).to_csv(f'/scratch/midway2/aksarkar/ideas/montoro-log-phi-{task}.txt.gz', sep='\t', compression='gzip')
+     pd.DataFrame(logodds, index=onehot.columns, columns=x.columns).to_csv(f'/scratch/midway2/aksarkar/ideas/montoro-logodds-{task}.txt.gz', sep='\t', compression='gzip')
+   #+END_SRC
+
+   #+BEGIN_SRC sh :noweb eval :dir /scratch/midway2/aksarkar/ideas/
+     sbatch -a 0-3 --partition=gpu2 --gres=gpu:1 --mem=16G --time=4:00:00 --job-name=montoro --out=montoro.out
+     #!/bin/bash
+     source activate singlecell
+     python <<EOF
+     <<imports>>
+     <<deconvolve>>
+     EOF
+   #+END_SRC
+
+   #+RESULTS:
+   : Submitted batch job 60148824
+
+* Results
+** Distribution deconvolution
+
+   Read the results.
+
+   #+BEGIN_SRC ipython
+     log_mu = pd.concat([pd.read_table(f'/scratch/midway2/aksarkar/ideas/montoro-log-mu-{i}.txt.gz', sep='\t', index_col=0) for i in range(4)], axis=1)
+     log_phi = pd.concat([pd.read_table(f'/scratch/midway2/aksarkar/ideas/montoro-log-phi-{i}.txt.gz', sep='\t', index_col=0) for i in range(4)], axis=1)
+     logodds = pd.concat([pd.read_table(f'/scratch/midway2/aksarkar/ideas/montoro-logodds-{i}.txt.gz', sep='\t', index_col=0) for i in range(4)], axis=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[46]:
+   :END:
+
+** Highly variable genes
+
+   Estimate \(E_j[\lambda_{ijk}]\), \(V_j[\lambda_{ijk}]\) for each cell type
+   \(i\) and gene \(k\).
+
+   #+BEGIN_SRC ipython
+     # Important: log(sigmoid(x)) = -softplus(-x)
+     mean = np.exp(log_mu - np.log1p(np.exp(logodds)))
+     variance = np.exp(2 * log_mu + log_phi - np.log1p(np.exp(logodds))) + np.exp(-np.log1p(np.exp(logodds)) - np.log1p(np.exp(-logodds)) + 2 * log_mu)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   :END:
+
+   Plot latent mean/variance relationship.
+
+   #+BEGIN_SRC ipython :ipyfile figure/montoro.org/latent-mean-variance.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 4, sharex=True, sharey=True)
+     fig.set_size_inches(7, 5)
+     for k, a in zip(mean.index, ax.ravel()):
+       a.set_xscale('log')
+       a.set_yscale('log')
+       a.scatter(mean.loc[k], variance.loc[k], c='k', s=1, alpha=0.1)
+       a.set_title(k)
+     for a in ax:
+       a[0].set_ylabel('Latent variance')
+     for a in ax.T:
+       a[-1].set_xlabel('Latent mean')
+     ax[-1][-1].set_axis_off()
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[43]:
+   [[file:figure/montoro.org/latent-mean-variance.png]]
+   :END:
+
+   Find the outlier genes.
+
+   #+BEGIN_SRC ipython
+     mean.loc['Tuft', mean.loc['Tuft'] < 1e-8].index
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[84]:
+   #+BEGIN_EXAMPLE
+     Index(['Gm37381', 'Rp1', 'Rgs20', 'Npbwr1', 'Gm30414', 'Mybl1',
+     '1700034P13Rik', 'Tcf24', 'Ppp1r42', 'Prex2',
+     ...
+     'Emx2', 'Gm7102', 'mt-Co2', 'mt-Co3', 'mt-Nd3', 'Spry3', 'Tmlhe',
+     'AC125149.4', 'AC168977.2', 'AC168977.1'],
+     dtype='object', length=5717)
+   #+END_EXAMPLE
+   :END:
+
+   These genes have no observed molecules in Tuft cells, so they are safe to ignore.
+
+   #+BEGIN_SRC ipython
+     sample_mean.loc['Tuft', mean.loc['Tuft'] < 1e-8].describe()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[86]:
+   #+BEGIN_EXAMPLE
+     count    5717.0
+     mean        0.0
+     std         0.0
+     min         0.0
+     25%         0.0
+     50%         0.0
+     75%         0.0
+     max         0.0
+     Name: Tuft, dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+   Using this procedure, the genes with highest latent mean gene expression are
+   also the genes with highest latent gene expression variance. *This is
+   corrected for the mean-variance relationship induced by Poisson sampling*,
+   so we do not need to correct for it again by estimating the
+   dispersion. (There is a mean-variance relationship remaining in latent gene
+   expression, which we argue is biologically plausible.)  This is in direct
+   contrast with existing approaches, which call HVG using Fano factor (ratio
+   of variance to mean).
+
+** Comparison against count-based approach
+
+   Compare against dispersion approach, using sample moments of the counts.
+
+   #+BEGIN_SRC ipython :async t
+     # Important: cells x genes
+     x = pd.read_table('/scratch/midway2/aksarkar/ideas/GSE103354_Trachea_droplet_UMIcounts.txt.gz', sep='\t', index_col=0).T
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   Estimate \(E_j[x_{ijk}]\), \(V_j[x_{ijk}]\) for each cell type \(i\) and
+   gene \(k\).
+
+   #+BEGIN_SRC ipython
+     celltypes = pd.Series(x.index).apply(lambda x: x.split('_')[-1])
+     sample_mean = x.groupby(celltypes.values).agg(np.mean, axis=0)
+     sample_var = x.groupby(celltypes.values).agg(np.var, axis=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/montoro.org/hvg-raw-counts.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 4, sharex=True, sharey=True)
+     fig.set_size_inches(7, 5)
+     for k, a in zip(sample_mean.index, ax.ravel()):
+       a.set_xscale('symlog')
+       a.set_yscale('symlog')
+       a.scatter(sample_mean.loc[k], sample_var.loc[k] / sample_mean.loc[k], c='k', s=1, alpha=0.1)
+       a.set_title(k)
+     for a in ax:
+       a[0].set_ylabel('Sample dispersion')
+     for a in ax.T:
+       a[-1].set_xlabel('Sample mean')
+     ax[-1][-1].set_axis_off()
+     fig.tight_layout()
+
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[87]:
+   [[file:figure/montoro.org/hvg-raw-counts.png]]
+   :END:
+
+   Compare the deconvolution-based estimates to the count-based estimates for
+   tuft cells.
+
+   #+BEGIN_SRC ipython :ipyfile figure/montoro.org/deconvolved-vs-sample-moments.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(5, 3)
+     ax[0].set_xscale('symlog', linthreshx=1e-4)
+     ax[0].set_yscale('symlog')
+     ax[0].scatter(mean.loc['Tuft'], sample_mean.loc['Tuft'], c='k', s=1, alpha=0.2)
+     ax[0].set_xlabel('Latent gene expression mean')
+     ax[0].set_ylabel('Mean number of molecules')
+
+     ax[1].set_xscale('symlog', linthreshx=1e-5)
+     ax[1].set_yscale('symlog')
+     ax[1].scatter(variance.loc['Tuft'], sample_var.loc['Tuft'], c='k', s=1, alpha=0.2)
+     ax[1].set_xlabel('Latent gene expression variance')
+     ax[1].set_ylabel('Variance number of molecules')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[79]:
+   [[file:figure/montoro.org/deconvolved-vs-sample-moments.png]]
+   :END:
+
+   There is disagreement about the ordering of variable genes, but e.g. the top
+   3 genes will be called the same.
+
+** Comparison against log-transformed data approach
+
+   Compare against dispersion approach, using sample moments of the
+   log-transformed counts. Use pseudocount 1.
+
+   #+BEGIN_SRC ipython
+     s = pd.read_table('/scratch/midway2/aksarkar/ideas/montoro-size.txt', sep='\t', index_col=0, header=None)
+     t = x.div(s.iloc[:,0], axis=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[12]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     log_mean = np.log(t + 1).groupby(celltypes.values).agg(np.mean, axis=0)
+     log_var = np.log(t + 1).groupby(celltypes.values).agg(np.var, axis=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[50]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/montoro.org/hvg-log-counts.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 4, sharex=True, sharey=True)
+     fig.set_size_inches(7, 5)
+     for k, a in zip(log_mean.index, ax.ravel()):
+       a.set_xscale('symlog', linthreshx=1e-4)
+       a.set_yscale('symlog', linthreshy=1e-4)
+       a.scatter(log_mean.loc[k], log_var.loc[k] / log_mean.loc[k], c='k', s=1, alpha=0.1)
+       a.set_title(k)
+     for a in ax:
+       a[0].set_ylabel('Disp $\ln(x+1)$')
+     for a in ax.T:
+       a[-1].set_xlabel('Mean $\ln(x+1)$')
+     ax[-1][-1].set_axis_off()
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   [[file:figure/montoro.org/hvg-log-counts.png]]
+   :END:
+
+   Compare HVG called using latent variance versus sample dispersion of
+   log-transformed data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/montoro.org/deconv-hvg-vs-log-hvg.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 3)
+     plt.xscale('symlog', linthreshx=1e-8)
+     plt.yscale('symlog', linthreshy=1e-4)
+     plt.scatter(variance.loc['Tuft'], log_var.loc['Tuft'] / log_mean.loc['Tuft'], c='k', s=1, alpha=0.2)
+     plt.xlabel('Latent gene expression variance')
+     plt.ylabel('Sample disp $\ln(x + 1)$')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
+   [[file:figure/montoro.org/deconv-hvg-vs-log-hvg.png]]
+   :END:
+
+   There is disagreement about the ordering, but e.g. the top 4 genes are the
+   same.
+
+   Use pseudocount 0.5.
+
+   #+BEGIN_SRC ipython
+     log_mean = np.log(t + 0.5).groupby(celltypes.values).agg(np.mean, axis=0)
+     log_var = np.log(t + 0.5).groupby(celltypes.values).agg(np.var, axis=0)
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :ipyfile figure/montoro.org/hvg-log-counts-eps-0.5.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 4, sharex=True, sharey=True)
+     fig.set_size_inches(7, 5)
+     for k, a in zip(log_mean.index, ax.ravel()):
+       # a.set_xscale('symlog', linthreshx=1e-3)
+       a.set_yscale('symlog', linthreshy=1e-3)
+       a.scatter(log_mean.loc[k], log_var.loc[k] / log_mean.loc[k], c='k', s=1, alpha=0.1)
+       a.set_title(k)
+     for a in ax:
+       a[0].set_ylabel('Disp $\ln(x+0.5)$')
+     for a in ax.T:
+       a[-1].set_xlabel('Mean $\ln(x+0.5)$')
+     ax[-1][-1].set_axis_off()
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   [[file:figure/montoro.org/hvg-log-counts-eps-0.5.png]]
+   :END:
+
+   Clearly, this approach is flawed for pseudocount \(< 1\).

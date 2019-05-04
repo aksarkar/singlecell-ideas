@@ -1,10 +1,10 @@
 #+AUTHOR: Abhishek Sarkar
 #+EMAIL: aksarkar@uchicago.edu
-#+OPTIONS: num:nil
+#+OPTIONS: num:nil toc:2
 #+HTML_DOCTYPE: html5
 #+HTML_HEAD: <link href="bootstrap.min.css" rel="stylesheet" />
 #+HTML_HEAD: <link rel="stylesheet" type="text/css" href="htmlize.css"/>
-#+HTML_HEAD: <style type="text/css">body {width: 60em; margin:auto} pre.src {overflow:auto}</style>
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="main.css"/>
 #+PROPERTY: header-args:ipython :session kernel-singlecell.json :results raw drawer :eval never-export :exports both
 #+PROPERTY: header-args:shell :results output :eval never-export :exports both
 #+PROPERTY: header-args:sh :results output :eval never-export :exports both

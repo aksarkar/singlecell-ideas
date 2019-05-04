@@ -1,6 +1,7 @@
 #+TITLE: Single cell ideas
 #+SETUPFILE: setup.org
 
+- [[file:montoro.org][Deconvolution of Montoro et al.]]
 - [[file:gom.org][Two-group grade of membership model]]
 - [[file:alignment.org][Single cell alignment]]
 - [[file:wlra.org][Weighted low rank approximation]]

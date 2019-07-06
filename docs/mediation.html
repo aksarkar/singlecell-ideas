@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-07-05 Fri 22:46 -->
+<!-- 2019-07-06 Sat 19:15 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Causal mediation analysis</title>
@@ -268,7 +268,8 @@ for the JavaScript code in this tag.
 <li><a href="#org424c5f3">Results</a>
 <ul>
 <li><a href="#orgcfbadb5">Null example</a></li>
-<li><a href="#org58d514f">Type 1 error</a></li>
+<li><a href="#org25c77fb">Type 1 error under no pleiotropy</a></li>
+<li><a href="#org04701e4">Type 1 error under pleiotropy</a></li>
 <li><a href="#org5c85a59">Mediation example</a></li>
 </ul>
 </li>
@@ -523,16 +524,182 @@ Apply the alternative procedure to the simulated data.
 </div>
 </div>
 
-<div id="outline-container-org58d514f" class="outline-3">
-<h3 id="org58d514f">Type 1 error</h3>
-<div class="outline-text-3" id="text-org58d514f">
+<div id="outline-container-org25c77fb" class="outline-3">
+<h3 id="org25c77fb">Type 1 error under no pleiotropy</h3>
+<div class="outline-text-3" id="text-org25c77fb">
+<p>
+Fix \(\gamma_{xy} = 1, \gamma_{xz} = 0\). Estimate the type 1 error rate of
+the two procedures, varying \(\gamma_{zy}\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">evaluate_null</span>(n=500, n_bootstrap=1000, n_trials=10):
+  <span class="org-variable-name">result</span> = []
+  <span class="org-keyword">for</span> gamma_zy <span class="org-keyword">in</span> np.linspace(0, 1, 5):
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
+      <span class="org-variable-name">x</span>, <span class="org-variable-name">z</span>, <span class="org-variable-name">y</span> = simulate(n=n, gamma_xz=0, gamma_zy=gamma_zy, gamma_xy=1, seed=i)
+      <span class="org-keyword">for</span> method <span class="org-keyword">in</span> [mediation_test, residual_test]:
+        <span class="org-variable-name">p</span> = method(x, z, y, n_bootstrap=n_bootstrap, return_p=<span class="org-constant">True</span>)
+        result.append(pd.Series({
+          <span class="org-string">'gamma_zy'</span>: gamma_zy,
+          <span class="org-string">'trial'</span>: i,
+          <span class="org-string">'method'</span>: method.<span class="org-builtin">__name__</span>,
+          <span class="org-string">'p'</span>: p
+        }))
+  <span class="org-keyword">return</span> pd.DataFrame(result)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate_null(n_trials=100)
+<span class="org-variable-name">type_1_error</span> = result.groupby([<span class="org-string">'method'</span>, <span class="org-string">'gamma_zy'</span>])[<span class="org-string">'p'</span>].agg(<span class="org-keyword">lambda</span> x: (x &lt; 0.05).mean()).reset_index()
+</pre>
+</div>
+
+<p>
+Plot the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>).colors
+plt.clf()
+plt.gcf().set_size_inches(4, 3)
+<span class="org-keyword">for</span> i, method <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">set</span>(type_1_error[<span class="org-string">'method'</span>])):
+  <span class="org-variable-name">T</span> = type_1_error.loc[type_1_error[<span class="org-string">'method'</span>] == method, [<span class="org-string">'gamma_zy'</span>, <span class="org-string">'p'</span>]].values
+  plt.scatter(T[:,0], T[:,1], c=cm[i], label=method, s=16)
+plt.legend(title=<span class="org-string">'Method'</span>, frameon=<span class="org-constant">False</span>, bbox_to_anchor=(1, .5), loc=<span class="org-string">'center left'</span>, handletextpad=0)
+plt.axhline(y=0, lw=1, c=<span class="org-string">'k'</span>)
+plt.axhline(y=0.05, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'$\gamma_{zy}$'</span>)
+plt.ylabel(r<span class="org-string">'Type 1 error ($\alpha=0.05$)'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mediation.org/type-1-error-no-pleiotropy.png" alt="type-1-error-no-pleiotropy.png">
+</p>
+</div>
+
+<p>
+Write out the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">result.to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/mediation/type-1-error-no-pleiotropy.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, compression=<span class="org-string">'gzip'</span>)
+</pre>
+</div>
+
+<p>
+Why did the mediation test fail for large \(\gamma_{yz}\)? Look at one
+example.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">z</span>, <span class="org-variable-name">y</span> = simulate(n=500, gamma_xz=0, gamma_zy=.25, gamma_xy=1, seed=31)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">bhat</span>, <span class="org-variable-name">T0</span>, <span class="org-variable-name">B</span> = mediation_test(x, z, y, n_bootstrap=1000, return_p=<span class="org-constant">False</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
+fig.set_size_inches(8, 3)
+ax[0].hist(B[:,0], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[0].set_title(<span class="org-string">'$b_{xy}$'</span>)
+ax[0].axvline(x=bhat[0], c=<span class="org-string">'r'</span>, lw=1)
+
+ax[1].hist(B[:,1], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[1].set_title(<span class="org-string">'$b_{xz}$'</span>)
+ax[1].axvline(x=bhat[1], c=<span class="org-string">'r'</span>, lw=1)
+
+ax[2].hist(B[:,2], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[2].set_title(<span class="org-string">'$b_{zy}$'</span>)
+ax[2].axvline(x=bhat[2], c=<span class="org-string">'r'</span>, lw=1)
+
+ax[3].hist(B[:,1] * B[:,2], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[3].set_title(<span class="org-string">'$b_{xz}b_{zy}$'</span>)
+ax[3].axvline(x=bhat[1] * bhat[2], c=<span class="org-string">'r'</span>, lw=1)
+
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_xlabel(<span class="org-string">'Estimated effect'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mediation.org/no-pleiotropy-example.png" alt="no-pleiotropy-example.png">
+</p>
+</div>
+
+<p>
+Is this because of sampling noise? Look at a much larger sample.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">z</span>, <span class="org-variable-name">y</span> = simulate(n=5000, gamma_xz=0, gamma_zy=.25, gamma_xy=1, seed=31)
+<span class="org-variable-name">bhat</span>, <span class="org-variable-name">T0</span>, <span class="org-variable-name">B</span> = mediation_test(x, z, y, n_bootstrap=1000, return_p=<span class="org-constant">False</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
+fig.set_size_inches(8, 3)
+ax[0].hist(B[:,0], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[0].set_title(<span class="org-string">'$b_{xy}$'</span>)
+ax[0].axvline(x=bhat[0], c=<span class="org-string">'r'</span>, lw=1)
+
+ax[1].hist(B[:,1], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[1].set_title(<span class="org-string">'$b_{xz}$'</span>)
+ax[1].axvline(x=bhat[1], c=<span class="org-string">'r'</span>, lw=1)
+
+ax[2].hist(B[:,2], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[2].set_title(<span class="org-string">'$b_{zy}$'</span>)
+ax[2].axvline(x=bhat[2], c=<span class="org-string">'r'</span>, lw=1)
+
+ax[3].hist(B[:,1] * B[:,2], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[3].set_title(<span class="org-string">'$b_{xz}b_{zy}$'</span>)
+ax[3].axvline(x=bhat[1] * bhat[2], c=<span class="org-string">'r'</span>, lw=1)
+
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_xlabel(<span class="org-string">'Estimated effect'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+fig.tight_layout()
+
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mediation.org/no-pleiotropy-n-5000-example.png" alt="no-pleiotropy-n-5000-example.png">
+</p>
+</div>
+
+<p>
+<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2819363/">MacKinnon et al. 2010</a> demonstrate that many tests fail to control Type 1
+error under the null chosen in this simulation.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org04701e4" class="outline-3">
+<h3 id="org04701e4">Type 1 error under pleiotropy</h3>
+<div class="outline-text-3" id="text-org04701e4">
 <p>
 Fix \(\gamma_{xy} = 1, \gamma_{zy} = 0\). Estimate the type 1 error rate of
 the two procedures, varying \(\gamma_{xz}\).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">evaluate_null</span>(n=500, n_bootstrap=1000, n_trials=10):
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">evaluate_null_pleiotropy</span>(n=500, n_bootstrap=1000, n_trials=10):
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> gamma_xz <span class="org-keyword">in</span> np.linspace(0, 1, 5):
     <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
@@ -550,12 +717,8 @@ the two procedures, varying \(\gamma_{xz}\).
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate_null(n_trials=50)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">type_1_error</span> = result.groupby([<span class="org-string">'method'</span>, <span class="org-string">'gamma_xz'</span>])[<span class="org-string">'p'</span>].agg(<span class="org-keyword">lambda</span> x: (x &lt; 0.05).mean()).reset_index()
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate_null_pleiotropy(n_trials=50)
+<span class="org-variable-name">type_1_error</span> = result.groupby([<span class="org-string">'method'</span>, <span class="org-string">'gamma_xz'</span>])[<span class="org-string">'p'</span>].agg(<span class="org-keyword">lambda</span> x: (x &lt; 0.05).mean()).reset_index()
 </pre>
 </div>
 
@@ -607,26 +770,11 @@ Generate an example dataset from the linear structural equations.
 </div>
 
 <p>
-Apply 2SLS to the simulated data.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">res</span> = two_stage(x, z, y)
-res
-</pre>
-</div>
-
-<pre class="example">
-(1.0188962617346997, 1.0019913252340318, 1.0209252155715522)
-
-</pre>
-
-<p>
 Apply the Sobel test to the simulated data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">sobel_test(x, z, y)
+<pre class="src src-ipython">mediation_test(x, z, y)
 </pre>
 </div>
 
@@ -640,13 +788,12 @@ Apply the alternative procedure to the simulated data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">res1</span> = residual(x, z, y)
-res1
+<pre class="src src-ipython">residual_test(x, z, y)
 </pre>
 </div>
 
 <pre class="example">
-(2.036256495307328, 0.478136762877133)
+0.0
 
 </pre>
 </div>
@@ -655,7 +802,7 @@ res1
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-07-05 Fri 22:46</p>
+<p class="date">Created: 2019-07-06 Sat 19:15</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

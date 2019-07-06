@@ -39,7 +39,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 61276268
+  : Submitted batch job 61293975
 
   #+BEGIN_SRC ipython
     import numpy as np
@@ -50,7 +50,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[24]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -161,7 +161,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[22]:
+   # Out[5]:
    :END:
 
 * Results
@@ -239,13 +239,185 @@
    : 0.1828
    :END:
 
-** Type 1 error
+** Type 1 error under no pleiotropy
+
+   Fix \(\gamma_{xy} = 1, \gamma_{xz} = 0\). Estimate the type 1 error rate of
+   the two procedures, varying \(\gamma_{zy}\).
+
+   #+BEGIN_SRC ipython
+     def evaluate_null(n=500, n_bootstrap=1000, n_trials=10):
+       result = []
+       for gamma_zy in np.linspace(0, 1, 5):
+         for i in range(n_trials):
+           x, z, y = simulate(n=n, gamma_xz=0, gamma_zy=gamma_zy, gamma_xy=1, seed=i)
+           for method in [mediation_test, residual_test]:
+             p = method(x, z, y, n_bootstrap=n_bootstrap, return_p=True)
+             result.append(pd.Series({
+               'gamma_zy': gamma_zy,
+               'trial': i,
+               'method': method.__name__,
+               'p': p
+             }))
+       return pd.DataFrame(result)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     result = evaluate_null(n_trials=100)
+     type_1_error = result.groupby(['method', 'gamma_zy'])['p'].agg(lambda x: (x < 0.05).mean()).reset_index()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   :END:
+
+   Plot the results.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mediation.org/type-1-error-no-pleiotropy.png
+     cm = plt.get_cmap('Dark2').colors
+     plt.clf()
+     plt.gcf().set_size_inches(4, 3)
+     for i, method in enumerate(set(type_1_error['method'])):
+       T = type_1_error.loc[type_1_error['method'] == method, ['gamma_zy', 'p']].values
+       plt.scatter(T[:,0], T[:,1], c=cm[i], label=method, s=16)
+     plt.legend(title='Method', frameon=False, bbox_to_anchor=(1, .5), loc='center left', handletextpad=0)
+     plt.axhline(y=0, lw=1, c='k')
+     plt.axhline(y=0.05, lw=1, ls=':', c='k')
+     plt.xlabel('$\gamma_{zy}$')
+     plt.ylabel(r'Type 1 error ($\alpha=0.05$)')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[20]:
+   [[file:figure/mediation.org/type-1-error-no-pleiotropy.png]]
+   :END:
+
+   Write out the results.
+
+   #+BEGIN_SRC ipython
+     result.to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/mediation/type-1-error-no-pleiotropy.txt.gz', sep='\t', compression='gzip')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[31]:
+   :END:
+
+   Why did the mediation test fail for large \(\gamma_{yz}\)? Look at one
+   example.
+
+   #+BEGIN_SRC ipython
+     x, z, y = simulate(n=500, gamma_xz=0, gamma_zy=.25, gamma_xy=1, seed=31)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[32]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     bhat, T0, B = mediation_test(x, z, y, n_bootstrap=1000, return_p=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[34]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mediation.org/no-pleiotropy-example.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(8, 3)
+     ax[0].hist(B[:,0], bins=20, color='0.8', density=True)
+     ax[0].set_title('$b_{xy}$')
+     ax[0].axvline(x=bhat[0], c='r', lw=1)
+
+     ax[1].hist(B[:,1], bins=20, color='0.8', density=True)
+     ax[1].set_title('$b_{xz}$')
+     ax[1].axvline(x=bhat[1], c='r', lw=1)
+
+     ax[2].hist(B[:,2], bins=20, color='0.8', density=True)
+     ax[2].set_title('$b_{zy}$')
+     ax[2].axvline(x=bhat[2], c='r', lw=1)
+
+     ax[3].hist(B[:,1] * B[:,2], bins=20, color='0.8', density=True)
+     ax[3].set_title('$b_{xz}b_{zy}$')
+     ax[3].axvline(x=bhat[1] * bhat[2], c='r', lw=1)
+
+     for a in ax:
+       a.set_xlabel('Estimated effect')
+     ax[0].set_ylabel('Density')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[35]:
+   [[file:figure/mediation.org/no-pleiotropy-example.png]]
+   :END:
+
+   Is this because of sampling noise? Look at a much larger sample.
+
+   #+BEGIN_SRC ipython :async t
+     x, z, y = simulate(n=5000, gamma_xz=0, gamma_zy=.25, gamma_xy=1, seed=31)
+     bhat, T0, B = mediation_test(x, z, y, n_bootstrap=1000, return_p=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mediation.org/no-pleiotropy-n-5000-example.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(8, 3)
+     ax[0].hist(B[:,0], bins=20, color='0.8', density=True)
+     ax[0].set_title('$b_{xy}$')
+     ax[0].axvline(x=bhat[0], c='r', lw=1)
+
+     ax[1].hist(B[:,1], bins=20, color='0.8', density=True)
+     ax[1].set_title('$b_{xz}$')
+     ax[1].axvline(x=bhat[1], c='r', lw=1)
+
+     ax[2].hist(B[:,2], bins=20, color='0.8', density=True)
+     ax[2].set_title('$b_{zy}$')
+     ax[2].axvline(x=bhat[2], c='r', lw=1)
+
+     ax[3].hist(B[:,1] * B[:,2], bins=20, color='0.8', density=True)
+     ax[3].set_title('$b_{xz}b_{zy}$')
+     ax[3].axvline(x=bhat[1] * bhat[2], c='r', lw=1)
+
+     for a in ax:
+       a.set_xlabel('Estimated effect')
+     ax[0].set_ylabel('Density')
+     fig.tight_layout()
+
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   [[file:figure/mediation.org/no-pleiotropy-n-5000-example.png]]
+   :END:
+
+   [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2819363/][MacKinnon et al. 2010]] demonstrate that many tests fail to control Type 1
+   error under the null chosen in this simulation.
+
+** Type 1 error under pleiotropy
 
    Fix \(\gamma_{xy} = 1, \gamma_{zy} = 0\). Estimate the type 1 error rate of
    the two procedures, varying \(\gamma_{xz}\).
 
    #+BEGIN_SRC ipython
-     def evaluate_null(n=500, n_bootstrap=1000, n_trials=10):
+     def evaluate_null_pleiotropy(n=500, n_bootstrap=1000, n_trials=10):
        result = []
        for gamma_xz in np.linspace(0, 1, 5):
          for i in range(n_trials):
@@ -267,21 +439,13 @@
    :END:
 
    #+BEGIN_SRC ipython :async t
-     result = evaluate_null(n_trials=50)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[45]:
-   :END:
-
-   #+BEGIN_SRC ipython
+     result = evaluate_null_pleiotropy(n_trials=50)
      type_1_error = result.groupby(['method', 'gamma_xz'])['p'].agg(lambda x: (x < 0.05).mean()).reset_index()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[64]:
+   # Out[45]:
    :END:
 
    Plot the results.
@@ -322,44 +486,30 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[57]:
-   :END:
-
-   Apply 2SLS to the simulated data.
-
-   #+BEGIN_SRC ipython
-     res = two_stage(x, z, y)
-     res
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[58]:
-   : (1.0188962617346997, 1.0019913252340318, 1.0209252155715522)
+   # Out[6]:
    :END:
 
    Apply the Sobel test to the simulated data.
 
    #+BEGIN_SRC ipython :async t
-     sobel_test(x, z, y)
+     mediation_test(x, z, y)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[81]:
+   # Out[7]:
    : 0.0
    :END:
 
    Apply the alternative procedure to the simulated data.
 
    #+BEGIN_SRC ipython
-     res1 = residual(x, z, y)
-     res1
+     residual_test(x, z, y)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[47]:
-   : (2.036256495307328, 0.478136762877133)
+   # Out[9]:
+   : 0.0
    :END:
 

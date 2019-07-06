@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2019-07-05 Fri 22:46 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Causal mediation analysis</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Causal mediation analysis</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org8ce0657">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org7d81211">Methods</a>
+<ul>
+<li><a href="#org3fa7655">Simulation</a></li>
+<li><a href="#org679c358">Procedures</a></li>
+</ul>
+</li>
+<li><a href="#org424c5f3">Results</a>
+<ul>
+<li><a href="#orgcfbadb5">Null example</a></li>
+<li><a href="#org58d514f">Type 1 error</a></li>
+<li><a href="#org5c85a59">Mediation example</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org8ce0657" class="outline-2">
+<h2 id="org8ce0657">Introduction</h2>
+<div class="outline-text-2" id="text-org8ce0657">
+<p>
+We are often interested in understanding the proportion of variation explained
+in a phenotype by some mediating variable. For example Pai et al. 2011
+try to explain divergence in gene expression between species using divergence
+in DNA methylation, and Eres et al. 2019 try to explain it using divergence
+in chromatin interaction.
+</p>
+
+<p>
+Here, we investigate the classical procedure (based on two-stage least
+squares) and the alternative approach of Pai et al. 2011 in simulation, trying to answer
+two questions:
+</p>
+
+<ol class="org-ol">
+<li>What is the alternative approach estimating?</li>
+<li>Can the classical approach be systematically biased downwards under
+violations of the assumptions?</li>
+</ol>
+
+<p>
+We previously tried to prove that the alternative approach does not estimate
+the desired quantities. In (1), we investigate it empirically. Answering (2)
+matters for the interpretation of any empirical data analysis using the
+classical approach, because it is not possible to verify the assumptions hold
+in observational data (Pearl 2012).
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2db5e70" class="outline-2">
+<h2 id="setup"><a id="org2db5e70"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scipy.linalg <span class="org-keyword">as</span> sl
+<span class="org-keyword">import</span> sklearn.linear_model <span class="org-keyword">as</span> sklm
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7d81211" class="outline-2">
+<h2 id="org7d81211">Methods</h2>
+<div class="outline-text-2" id="text-org7d81211">
+</div>
+<div id="outline-container-org3fa7655" class="outline-3">
+<h3 id="org3fa7655">Simulation</h3>
+<div class="outline-text-3" id="text-org3fa7655">
+<p>
+Simulate from a simple linear structural equation model.
+</p>
+
+<p>
+\[ x = \mu_x + e_x \]
+</p>
+
+<p>
+\[ z = x \gamma_{xz} + e_z \]
+</p>
+
+<p>
+\[ y = x \gamma_{xy} + z \gamma_{zx} + e_y \]
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate</span>(n, gamma_xz, gamma_zy, gamma_xy, seed):
+  np.random.seed(seed)
+  <span class="org-variable-name">x</span> = np.random.normal(size=n)
+  <span class="org-variable-name">z</span> = x * gamma_xz + np.random.normal(size=n)
+  <span class="org-variable-name">z</span> -= z.mean()
+  <span class="org-variable-name">y</span> = x * gamma_xy + z * gamma_zy + np.random.normal(size=n)
+  <span class="org-variable-name">y</span> -= y.mean()
+  <span class="org-keyword">return</span> x, z, y
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org679c358" class="outline-3">
+<h3 id="org679c358">Procedures</h3>
+<div class="outline-text-3" id="text-org679c358">
+<p>
+Implement the procedures.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">mediation_formula</span>(x, z, y):
+  <span class="org-doc">"""Mediation formula (Pearl 2009)"""</span>
+  <span class="org-variable-name">b_xz</span> = np.inner(x, z) / np.inner(x, x)
+  <span class="org-variable-name">design</span> = np.vstack([x, z]).T
+  <span class="org-variable-name">b_xy</span>, <span class="org-variable-name">b_zy</span> = sl.pinv(design).dot(y)
+  <span class="org-keyword">return</span> b_xy, b_xz, b_zy
+
+<span class="org-keyword">def</span> <span class="org-function-name">mediation_test</span>(x, z, y, atol=1e-8, n_bootstrap=5000, return_p=<span class="org-constant">True</span>):
+  <span class="org-doc">"""Test b_xz b_zy = 0"""</span>
+  <span class="org-variable-name">b_xy</span>, <span class="org-variable-name">b_xz</span>, <span class="org-variable-name">b_zy</span> = mediation_formula(x, z, y)
+  <span class="org-variable-name">T0</span> = b_xz * b_zy
+  <span class="org-variable-name">B</span> = bootstrap(mediation_formula, x, z, y, n_bootstrap)
+  <span class="org-variable-name">T</span> = B[:,1] * B[:,2]
+  <span class="org-keyword">if</span> return_p:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Add tolerance around 0</span>
+    <span class="org-keyword">if</span> T0 &gt; 0:
+      <span class="org-keyword">return</span> (T &lt;= atol).mean()
+    <span class="org-keyword">else</span>:
+      <span class="org-keyword">return</span> (T &gt;= -atol).mean()
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">return</span> (b_xy, b_xz, b_zy), T0, B
+
+<span class="org-keyword">def</span> <span class="org-function-name">residual</span>(x, z, y):
+  <span class="org-doc">"""Procedure proposed in Pai et al. 2011"""</span>
+  <span class="org-variable-name">b0</span> = np.inner(x, y) / np.inner(x, x)
+  <span class="org-variable-name">b1</span> = np.inner(z, y) / np.inner(z, z)
+  <span class="org-variable-name">yhat</span> = y - z * b1
+  <span class="org-variable-name">b2</span> = np.inner(yhat, x) / np.inner(x, x)
+  <span class="org-keyword">return</span> b0, b2
+
+<span class="org-keyword">def</span> <span class="org-function-name">residual_test</span>(x, z, y, atol=1e-8, n_bootstrap=5000, return_p=<span class="org-constant">True</span>):
+  <span class="org-variable-name">b0</span>, <span class="org-variable-name">b2</span> = residual(x, z, y)
+  <span class="org-variable-name">T0</span> = b2 - b0
+  <span class="org-variable-name">B</span> = bootstrap(residual, x, z, y, n_bootstrap)
+  <span class="org-variable-name">T</span> = B[:,1] - B[:,0]
+  <span class="org-keyword">if</span> return_p:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Add tolerance around 0</span>
+    <span class="org-keyword">if</span> T0 &gt; 0:
+      <span class="org-keyword">return</span> (T &lt;= atol).mean()
+    <span class="org-keyword">else</span>:
+      <span class="org-keyword">return</span> (T &gt;= -atol).mean()
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">return</span> (b0, b2), T0, B
+
+<span class="org-keyword">def</span> <span class="org-function-name">bootstrap</span>(method, x, z, y, n_bootstrap):
+  <span class="org-variable-name">B</span> = []
+  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_bootstrap):
+    <span class="org-variable-name">idx</span> = np.random.choice(a=x.shape[0], size=x.shape[0])
+    B.append(method(x[idx], z[idx], y[idx]))
+  <span class="org-keyword">return</span> np.array(B)
+
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org424c5f3" class="outline-2">
+<h2 id="org424c5f3">Results</h2>
+<div class="outline-text-2" id="text-org424c5f3">
+</div>
+<div id="outline-container-orgcfbadb5" class="outline-3">
+<h3 id="orgcfbadb5">Null example</h3>
+<div class="outline-text-3" id="text-orgcfbadb5">
+<p>
+Generate an example dataset with no mediated effect.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">z</span>, <span class="org-variable-name">y</span> = simulate(n=500, gamma_xz=0, gamma_zy=0, gamma_xy=1, seed=3)
+</pre>
+</div>
+
+<p>
+Apply the mediation formula (Pearl 2009; alternative derivation of Sobel
+test, Sobel 1982) to the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">gamma</span>, <span class="org-variable-name">T</span>, <span class="org-variable-name">B</span> = mediation_test(x=x, z=z, y=y, method=mediation_formula, return_p=<span class="org-constant">False</span>)
+(B[:,1] * B[:,2] &lt; 0).mean()
+</pre>
+</div>
+
+<pre class="example">
+0.4064
+
+</pre>
+
+<p>
+Look at the bootstrap distribution of the estimates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
+fig.set_size_inches(8, 3)
+ax[0].hist(B[:,0], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[0].set_title(<span class="org-string">'$b_{xy}$'</span>)
+ax[0].axvline(x=gamma[0], c=<span class="org-string">'r'</span>, lw=1)
+
+ax[1].hist(B[:,1], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[1].set_title(<span class="org-string">'$b_{xz}$'</span>)
+ax[1].axvline(x=gamma[1], c=<span class="org-string">'r'</span>, lw=1)
+
+ax[2].hist(B[:,2], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[2].set_title(<span class="org-string">'$b_{zy}$'</span>)
+ax[2].axvline(x=gamma[2], c=<span class="org-string">'r'</span>, lw=1)
+
+ax[3].hist(B[:,1] * B[:,2], bins=20, color=<span class="org-string">'0.8'</span>, density=<span class="org-constant">True</span>)
+ax[3].set_title(<span class="org-string">'$b_{xz}b_{zy}$'</span>)
+ax[3].axvline(x=gamma[1] * gamma[2], c=<span class="org-string">'r'</span>, lw=1)
+
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_xlabel(<span class="org-string">'Estimated effect'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+fig.tight_layout()
+
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mediation.org/pearl-null-example.png" alt="pearl-null-example.png">
+</p>
+</div>
+
+<p>
+Apply the alternative procedure to the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">residual_test(x, z, y)
+</pre>
+</div>
+
+<pre class="example">
+0.1828
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org58d514f" class="outline-3">
+<h3 id="org58d514f">Type 1 error</h3>
+<div class="outline-text-3" id="text-org58d514f">
+<p>
+Fix \(\gamma_{xy} = 1, \gamma_{zy} = 0\). Estimate the type 1 error rate of
+the two procedures, varying \(\gamma_{xz}\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">evaluate_null</span>(n=500, n_bootstrap=1000, n_trials=10):
+  <span class="org-variable-name">result</span> = []
+  <span class="org-keyword">for</span> gamma_xz <span class="org-keyword">in</span> np.linspace(0, 1, 5):
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
+      <span class="org-variable-name">x</span>, <span class="org-variable-name">z</span>, <span class="org-variable-name">y</span> = simulate(n=n, gamma_xz=gamma_xz, gamma_zy=0, gamma_xy=1, seed=i)
+      <span class="org-keyword">for</span> method <span class="org-keyword">in</span> [mediation_test, residual_test]:
+        <span class="org-variable-name">p</span> = method(x, z, y, n_bootstrap=n_bootstrap, return_p=<span class="org-constant">True</span>)
+        result.append(pd.Series({
+          <span class="org-string">'gamma_xz'</span>: gamma_xz,
+          <span class="org-string">'trial'</span>: i,
+          <span class="org-string">'method'</span>: method.<span class="org-builtin">__name__</span>,
+          <span class="org-string">'p'</span>: p
+        }))
+  <span class="org-keyword">return</span> pd.DataFrame(result)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate_null(n_trials=50)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">type_1_error</span> = result.groupby([<span class="org-string">'method'</span>, <span class="org-string">'gamma_xz'</span>])[<span class="org-string">'p'</span>].agg(<span class="org-keyword">lambda</span> x: (x &lt; 0.05).mean()).reset_index()
+</pre>
+</div>
+
+<p>
+Plot the results.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>).colors
+plt.clf()
+plt.gcf().set_size_inches(4, 3)
+<span class="org-keyword">for</span> i, method <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">set</span>(type_1_error[<span class="org-string">'method'</span>])):
+  <span class="org-variable-name">T</span> = type_1_error.loc[type_1_error[<span class="org-string">'method'</span>] == method, [<span class="org-string">'gamma_xz'</span>, <span class="org-string">'p'</span>]].values
+  plt.scatter(T[:,0], T[:,1], c=cm[i], label=method, s=16)
+plt.legend(title=<span class="org-string">'Method'</span>, frameon=<span class="org-constant">False</span>, bbox_to_anchor=(1, .5), loc=<span class="org-string">'center left'</span>, handletextpad=0)
+plt.axhline(y=0, lw=1, c=<span class="org-string">'k'</span>)
+plt.axhline(y=0.05, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'$\gamma_{xz}$'</span>)
+plt.ylabel(r<span class="org-string">'Type 1 error ($\alpha=0.05$)'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mediation.org/type-1-error.png" alt="type-1-error.png">
+</p>
+</div>
+
+<p>
+Why do <i>both</i> methods fail when \(\gamma_{xz} > 0\)? When \(\gamma_{xz} >
+   0\), \(\operatorname{corr}(x, z) > 0\), and the multiple regression in the
+Sobel test/mediation formula is ill-specified. For the same reason, residualizing
+\(z\) introduces a correlation between \(y\) and \(x\)
+</p>
+</div>
+</div>
+
+<div id="outline-container-org5c85a59" class="outline-3">
+<h3 id="org5c85a59">Mediation example</h3>
+<div class="outline-text-3" id="text-org5c85a59">
+<p>
+Generate an example dataset from the linear structural equations.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">z</span>, <span class="org-variable-name">y</span> = simulate(n=500, gamma_xz=1, gamma_zy=1, gamma_xy=1, seed=1)
+</pre>
+</div>
+
+<p>
+Apply 2SLS to the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res</span> = two_stage(x, z, y)
+res
+</pre>
+</div>
+
+<pre class="example">
+(1.0188962617346997, 1.0019913252340318, 1.0209252155715522)
+
+</pre>
+
+<p>
+Apply the Sobel test to the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">sobel_test(x, z, y)
+</pre>
+</div>
+
+<pre class="example">
+0.0
+
+</pre>
+
+<p>
+Apply the alternative procedure to the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res1</span> = residual(x, z, y)
+res1
+</pre>
+</div>
+
+<pre class="example">
+(2.036256495307328, 0.478136762877133)
+
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2019-07-05 Fri 22:46</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

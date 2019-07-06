@@ -1,0 +1,365 @@
+#+TITLE: Causal mediation analysis
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  We are often interested in understanding the proportion of variation explained
+  in a phenotype by some mediating variable. For example Pai et al. 2011
+  try to explain divergence in gene expression between species using divergence
+  in DNA methylation, and Eres et al. 2019 try to explain it using divergence
+  in chromatin interaction.
+
+  Here, we investigate the classical procedure (based on two-stage least
+  squares) and the alternative approach of Pai et al. 2011 in simulation, trying to answer
+  two questions:
+
+  1. What is the alternative approach estimating?
+  2. Can the classical approach be systematically biased downwards under
+     violations of the assumptions?
+
+  We previously tried to prove that the alternative approach does not estimate
+  the desired quantities. In (1), we investigate it empirically. Answering (2)
+  matters for the interpretation of any empirical data analysis using the
+  classical approach, because it is not possible to verify the assumptions hold
+  in observational data (Pearl 2012).
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  : Submitted batch job 61276268
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import scipy.linalg as sl
+    import sklearn.linear_model as sklm
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[24]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Methods
+** Simulation
+
+   Simulate from a simple linear structural equation model.
+
+   \[ x = \mu_x + e_x \]
+
+   \[ z = x \gamma_{xz} + e_z \]
+
+   \[ y = x \gamma_{xy} + z \gamma_{zx} + e_y \]
+
+   #+BEGIN_SRC ipython
+     def simulate(n, gamma_xz, gamma_zy, gamma_xy, seed):
+       np.random.seed(seed)
+       x = np.random.normal(size=n)
+       z = x * gamma_xz + np.random.normal(size=n)
+       z -= z.mean()
+       y = x * gamma_xy + z * gamma_zy + np.random.normal(size=n)
+       y -= y.mean()
+       return x, z, y
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+** Procedures
+
+   Implement the procedures.
+
+   #+BEGIN_SRC ipython
+     def mediation_formula(x, z, y):
+       """Mediation formula (Pearl 2009)"""
+       b_xz = np.inner(x, z) / np.inner(x, x)
+       design = np.vstack([x, z]).T
+       b_xy, b_zy = sl.pinv(design).dot(y)
+       return b_xy, b_xz, b_zy
+
+     def mediation_test(x, z, y, atol=1e-8, n_bootstrap=5000, return_p=True):
+       """Test b_xz b_zy = 0"""
+       b_xy, b_xz, b_zy = mediation_formula(x, z, y)
+       T0 = b_xz * b_zy
+       B = bootstrap(mediation_formula, x, z, y, n_bootstrap)
+       T = B[:,1] * B[:,2]
+       if return_p:
+         # Add tolerance around 0
+         if T0 > 0:
+           return (T <= atol).mean()
+         else:
+           return (T >= -atol).mean()
+       else:
+         return (b_xy, b_xz, b_zy), T0, B
+
+     def residual(x, z, y):
+       """Procedure proposed in Pai et al. 2011"""
+       b0 = np.inner(x, y) / np.inner(x, x)
+       b1 = np.inner(z, y) / np.inner(z, z)
+       yhat = y - z * b1
+       b2 = np.inner(yhat, x) / np.inner(x, x)
+       return b0, b2
+
+     def residual_test(x, z, y, atol=1e-8, n_bootstrap=5000, return_p=True):
+       b0, b2 = residual(x, z, y)
+       T0 = b2 - b0
+       B = bootstrap(residual, x, z, y, n_bootstrap)
+       T = B[:,1] - B[:,0]
+       if return_p:
+         # Add tolerance around 0
+         if T0 > 0:
+           return (T <= atol).mean()
+         else:
+           return (T >= -atol).mean()
+       else:
+         return (b0, b2), T0, B
+
+     def bootstrap(method, x, z, y, n_bootstrap):
+       B = []
+       for _ in range(n_bootstrap):
+         idx = np.random.choice(a=x.shape[0], size=x.shape[0])
+         B.append(method(x[idx], z[idx], y[idx]))
+       return np.array(B)
+
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[22]:
+   :END:
+
+* Results
+** Null example
+
+   Generate an example dataset with no mediated effect.
+
+   #+BEGIN_SRC ipython
+     x, z, y = simulate(n=500, gamma_xz=0, gamma_zy=0, gamma_xy=1, seed=3)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   :END:
+
+   Apply the mediation formula (Pearl 2009; alternative derivation of Sobel
+   test, Sobel 1982) to the simulated data.
+
+   #+BEGIN_SRC ipython :async t
+     gamma, T, B = mediation_test(x=x, z=z, y=y, method=mediation_formula, return_p=False)
+     (B[:,1] * B[:,2] < 0).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[14]:
+   : 0.4064
+   :END:
+
+   Look at the bootstrap distribution of the estimates.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mediation.org/pearl-null-example.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(8, 3)
+     ax[0].hist(B[:,0], bins=20, color='0.8', density=True)
+     ax[0].set_title('$b_{xy}$')
+     ax[0].axvline(x=gamma[0], c='r', lw=1)
+
+     ax[1].hist(B[:,1], bins=20, color='0.8', density=True)
+     ax[1].set_title('$b_{xz}$')
+     ax[1].axvline(x=gamma[1], c='r', lw=1)
+
+     ax[2].hist(B[:,2], bins=20, color='0.8', density=True)
+     ax[2].set_title('$b_{zy}$')
+     ax[2].axvline(x=gamma[2], c='r', lw=1)
+
+     ax[3].hist(B[:,1] * B[:,2], bins=20, color='0.8', density=True)
+     ax[3].set_title('$b_{xz}b_{zy}$')
+     ax[3].axvline(x=gamma[1] * gamma[2], c='r', lw=1)
+
+     for a in ax:
+       a.set_xlabel('Estimated effect')
+     ax[0].set_ylabel('Density')
+     fig.tight_layout()
+
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[15]:
+   [[file:figure/mediation.org/pearl-null-example.png]]
+   :END:
+
+   Apply the alternative procedure to the simulated data.
+
+   #+BEGIN_SRC ipython
+     residual_test(x, z, y)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   : 0.1828
+   :END:
+
+** Type 1 error
+
+   Fix \(\gamma_{xy} = 1, \gamma_{zy} = 0\). Estimate the type 1 error rate of
+   the two procedures, varying \(\gamma_{xz}\).
+
+   #+BEGIN_SRC ipython
+     def evaluate_null(n=500, n_bootstrap=1000, n_trials=10):
+       result = []
+       for gamma_xz in np.linspace(0, 1, 5):
+         for i in range(n_trials):
+           x, z, y = simulate(n=n, gamma_xz=gamma_xz, gamma_zy=0, gamma_xy=1, seed=i)
+           for method in [mediation_test, residual_test]:
+             p = method(x, z, y, n_bootstrap=n_bootstrap, return_p=True)
+             result.append(pd.Series({
+               'gamma_xz': gamma_xz,
+               'trial': i,
+               'method': method.__name__,
+               'p': p
+             }))
+       return pd.DataFrame(result)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[28]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     result = evaluate_null(n_trials=50)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[45]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     type_1_error = result.groupby(['method', 'gamma_xz'])['p'].agg(lambda x: (x < 0.05).mean()).reset_index()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[64]:
+   :END:
+
+   Plot the results.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mediation.org/type-1-error.png
+     cm = plt.get_cmap('Dark2').colors
+     plt.clf()
+     plt.gcf().set_size_inches(4, 3)
+     for i, method in enumerate(set(type_1_error['method'])):
+       T = type_1_error.loc[type_1_error['method'] == method, ['gamma_xz', 'p']].values
+       plt.scatter(T[:,0], T[:,1], c=cm[i], label=method, s=16)
+     plt.legend(title='Method', frameon=False, bbox_to_anchor=(1, .5), loc='center left', handletextpad=0)
+     plt.axhline(y=0, lw=1, c='k')
+     plt.axhline(y=0.05, lw=1, ls=':', c='k')
+     plt.xlabel('$\gamma_{xz}$')
+     plt.ylabel(r'Type 1 error ($\alpha=0.05$)')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[92]:
+   [[file:figure/mediation.org/type-1-error.png]]
+   :END:
+
+   Why do /both/ methods fail when \(\gamma_{xz} > 0\)? When \(\gamma_{xz} >
+   0\), \(\operatorname{corr}(x, z) > 0\), and the multiple regression in the
+   Sobel test/mediation formula is ill-specified. For the same reason, residualizing
+   \(z\) introduces a correlation between \(y\) and \(x\)
+
+** Mediation example
+
+   Generate an example dataset from the linear structural equations.
+
+   #+BEGIN_SRC ipython
+     x, z, y = simulate(n=500, gamma_xz=1, gamma_zy=1, gamma_xy=1, seed=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[57]:
+   :END:
+
+   Apply 2SLS to the simulated data.
+
+   #+BEGIN_SRC ipython
+     res = two_stage(x, z, y)
+     res
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[58]:
+   : (1.0188962617346997, 1.0019913252340318, 1.0209252155715522)
+   :END:
+
+   Apply the Sobel test to the simulated data.
+
+   #+BEGIN_SRC ipython :async t
+     sobel_test(x, z, y)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[81]:
+   : 0.0
+   :END:
+
+   Apply the alternative procedure to the simulated data.
+
+   #+BEGIN_SRC ipython
+     res1 = residual(x, z, y)
+     res1
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   : (2.036256495307328, 0.478136762877133)
+   :END:
+

@@ -1,6 +1,7 @@
 #+TITLE: Single cell ideas
 #+SETUPFILE: setup.org
 
+- [[file:mediation.org][Causal mediation analysis]]
 - [[file:montoro.org][Deconvolution of Montoro et al.]]
 - [[file:gom.org][Two-group grade of membership model]]
 - [[file:alignment.org][Single cell alignment]]

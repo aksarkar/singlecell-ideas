@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2019-07-30 Tue 21:03 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Differential variance analysis</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Differential variance analysis</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org0a63af7">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#orgdddbad3">Methods</a>
+<ul>
+<li><a href="#orgcb42ca9">Differential variance</a></li>
+<li><a href="#org582162f">Data sets</a></li>
+</ul>
+</li>
+<li><a href="#orgf61cca5">Results</a>
+<ul>
+<li><a href="#orge8d934b">Null simulation</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org0a63af7" class="outline-2">
+<h2 id="org0a63af7">Introduction</h2>
+<div class="outline-text-2" id="text-org0a63af7">
+<p>
+We previously hypothesized that QTLs could disrupt the mechanisms controlling
+the variance of gene expression, and therefore reveal new insights into the
+genetic regulation of differentiation and disease. To investigate this
+hypothesis, we directly observed gene expression variance across 53
+individuals using scRNA-seq, and sought to identify dispersion QTLs (dQTLs)
+which could alter the variance of gene expression across cells within a
+single individual, independently of altering the mean expression. However, we
+failed to discover such QTLs, and demonstrated that variance QTLs can be
+explained by effects on mean expression
+(<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et al. 2019</a>).
+</p>
+
+<p>
+Before attempting to map dQTLs in a followup study, we need to produce
+evidence that there are such effects to find in human cell types.
+<i>Essentially no studies demonstrate mechanistic evidence of such effects in
+human tissues.</i> Many studies measure gene expression variance in human
+tissues without estimating the effect of perturbation
+(e.g. <a href="https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.0040309">Raj
+et al. 2006</a>, <a href="https://doi.org/10.1038/nature12172">Shalek et al. 2013</a>;
+<a href="https://doi.org/10.1038/nature13437">Shalek et
+al. 2014</a>). <a href="https://science.sciencemag.org/content/355/6332/1433.long">Martinez-Jimenez
+et al. 2018</a> (re-analyzed by
+<a href="https://www.cell.com/cell-systems/fulltext/S2405-4712(18)30278-3">Eling et
+al. 2018</a>) showed that aging changes variability of mouse CD4+ cell gene
+expression; however, clearly this perturbation is a complex combination of
+genetic and environmental factors. The strongest evidence is presented by
+<a href="http://dx.doi.org/10.1038/nbt.2642">Wills et al. 2013</a>, who demonstrated
+that perturbation of human naive B lymphocytes with a GSK3 inhibitor leads to
+changes in variance of downstream gene expression (as measured by qPCR).
+</p>
+
+<p>
+Here, we develop a method to test for differential variance, and use existing
+scRNA-seq datasets to ask whether there are effects which can alter gene
+expression variance <i>independent</i> of altering mean gene expression.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org07ce98a" class="outline-2">
+<h2 id="setup"><a id="org07ce98a"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> scmodes
+<span class="org-keyword">import</span> scqtl
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgdddbad3" class="outline-2">
+<h2 id="orgdddbad3">Methods</h2>
+<div class="outline-text-2" id="text-orgdddbad3">
+</div>
+<div id="outline-container-orgcb42ca9" class="outline-3">
+<h3 id="orgcb42ca9">Differential variance</h3>
+<div class="outline-text-3" id="text-orgcb42ca9">
+<p>
+We assume the following generative model for the data:
+</p>
+
+<p>
+\[ x_{ij} \mid s_i \sim \operatorname{Poisson}(s_i \lambda_{ij}) \]
+</p>
+
+<p>
+\[ \lambda_{ij} | z_i \sim g_{z_i}(\cdot) \]
+</p>
+
+<p>
+where:
+</p>
+
+<ul class="org-ul">
+<li>\(x_{ij}\) is the number of molecules in sample \(i\) mapping to gene
+\(j\)</li>
+<li>\(s_i\) is the total number of molecules in sample \(i\)</li>
+<li>\(z_i\) is an indicator variable denoting which group sample \(i\) belongs
+to</li>
+</ul>
+
+<p>
+Under this model, the variance in group \(k\) is
+\(\operatorname{Var}(g_{k})\).
+</p>
+
+<p>
+Although it is possible to estimate likelihood ratios comparing the assumed
+model to the null model:
+</p>
+
+<p>
+\[ x_{ij} \mid s_i \sim \operatorname{Poisson}(s_i \lambda_{ij}) \]
+</p>
+
+<p>
+\[ \lambda_{ij} \sim g_0(\cdot) \]
+</p>
+
+<p>
+this model comparison will also be significant for differentially expressed
+genes which do not have significant changes in variance.
+</p>
+
+<p>
+As an alternative, if we assume \(g\) is a mixture of a point mass on zero
+and a Gamma distribution:
+</p>
+
+<p>
+\[ g = \pi \delta_0(\cdot) + (1 - \pi) \operatorname{Gamma}(\frac{1}{\phi},
+   \frac{1}{\mu\phi}) \]
+</p>
+
+<p>
+then we can estimate differences in \(\phi\) and bootstrap to get
+\(p\)-values. There are two challenges in this approach:
+</p>
+
+<ol class="org-ol">
+<li><i>Boundary values</i>. In real data, we should expect \(\pi = 0\) (Negative Binomial
+marginal distribution), and even \(\phi = \infty\) ([Zero-inflated] Poisson
+marginal distribution) for some genes.</li>
+
+<li><i>Mean-variance relationship</i>. Eling et al. 2018 claim there is a
+relationship even between \(\mu\) and \(\phi\) in the deconvolved Gamma
+distributions.</li>
+</ol>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">est_diff_var</span>(x, s, z):
+  <span class="org-variable-name">g1</span> = scqtl.simple.fit_zinb(x[z], s[z])
+  <span class="org-variable-name">var1</span> = g1[0] * g1[0] / g1[1]
+  <span class="org-keyword">if</span> g1[-1] &gt; 0:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Inverse dispersion exploded</span>
+    <span class="org-variable-name">g1</span> = scqtl.simple.fit_pois(x[z], s[z])
+    <span class="org-variable-name">var1</span> = g1[0]
+  <span class="org-variable-name">g2</span> = scqtl.simple.fit_zinb(x[~z], s[~z])
+  <span class="org-variable-name">var2</span> = g2[0] * g2[0] / g1[1]
+  <span class="org-keyword">if</span> g2[-1] &gt; 0:
+    <span class="org-variable-name">g2</span> = scqtl.simple.fit_pois(x[~z], s[~z])
+    <span class="org-variable-name">var2</span> = g2[0]
+  <span class="org-keyword">return</span> var2 - var1
+
+<span class="org-keyword">def</span> <span class="org-function-name">zinb_variance_bootstrap</span>(x, s, z, random_state=<span class="org-constant">None</span>, n_bootstrap=1000):
+  <span class="org-keyword">if</span> random_state <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+    np.random.seed(random_state)
+  <span class="org-variable-name">theta</span> = est_diff_var(x, s, z)
+  <span class="org-variable-name">B</span> = []
+  <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_bootstrap):
+    B.append(est_diff_var(x, s, np.random.permutation(z)))
+  <span class="org-variable-name">B</span> = np.array(B)
+  <span class="org-keyword">if</span> theta &lt; 0:
+    <span class="org-keyword">return</span> theta, (B &lt; theta).mean()
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">return</span> theta, (B &gt; theta).mean()
+</pre>
+</div>
+
+<p>
+As a second alternative, for each gene \(j\) we can estimate \(g_0\) via
+Empirical Bayes, and then recover the posterior distribution:
+</p>
+
+<p>
+\[ \hat{g} = \hat\pi \delta_0(\cdot) + (1 -
+   \hat\pi)\operatorname{Gamma}(\frac{1}{\hat\phi}, \frac{1}{\hat\mu \hat\phi})
+   \]
+</p>
+
+<p>
+\[ p(\lambda_i \mid x_1, \ldots, x_n, s_1, \ldots, s_n, \hat{g}) = \hat\pi
+   \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
+   \frac{1}{\hat\phi}, s_i + \frac{1}{\hat\mu \hat\phi}\right)\]
+</p>
+
+<p>
+We can then take sample variances of latent gene expression values
+\(E[\lambda_i \mid \cdot]\) across groups.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org582162f" class="outline-3">
+<h3 id="org582162f">Data sets</h3>
+<div class="outline-text-3" id="text-org582162f">
+<p>
+For null simulations, we use homogeneous populations of sorted cells (Zheng
+et al. 2017):
+</p>
+
+<ul class="org-ul">
+<li>Cytotoxic T cells</li>
+<li>B cells</li>
+</ul>
+
+<p>
+As a positive control, we re-analyze
+<a href="https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-4888/">unstimulated
+and stimulated naive and effector memory CD4+ T cells</a> from young and old
+mice from two divergent species (Martinez-Jimenez et al. 2018)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">sbatch --partition=mstephens
+<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
+<span class="org-builtin">test</span> -f E-MTAB-4888.processed.1.zip || curl -O https://www.ebi.ac.uk/arrayexpress/files/E-MTAB-4888/E-MTAB-4888.processed.1.zip
+<span class="org-builtin">test</span> -f raw_data.txt || unzip E-MTAB-4888.processed.1.zip
+mkdir -p /project2/mstephens/aksarkar/projects/singlecell-ideas/data/E-MTAB-4888
+gzip &lt;raw_data.txt &gt;/project2/mstephens/aksarkar/projects/singlecell-ideas/data/E-MTAB-4888/counts.txt.gz
+</pre>
+</div>
+
+<pre class="example">
+Submitted batch job 61624943
+
+</pre>
+
+<p>
+We then analyze single cell RNA-seq time course data through differentiation
+of iPSCs into cardiomyocytes (Selewa et al. 2019).
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-orgf61cca5" class="outline-2">
+<h2 id="orgf61cca5">Results</h2>
+<div class="outline-text-2" id="text-orgf61cca5">
+</div>
+<div id="outline-container-orge8d934b" class="outline-3">
+<h3 id="orge8d934b">Null simulation</h3>
+<div class="outline-text-3" id="text-orge8d934b">
+<p>
+Randomly split a homogeneous collections of cells into two groups to
+generate null data sets.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">null_sim</span>(x, n1, n2, seed=0):
+  np.random.seed(seed)
+  <span class="org-keyword">assert</span> n1 + n2 &lt; x.shape[0]
+  <span class="org-variable-name">x_sub</span> = x.iloc[np.random.choice(x.shape[0], size=n1 + n2, replace=<span class="org-constant">False</span>)].sample(frac=1)
+  <span class="org-variable-name">z</span> = np.zeros(n1 + n2).astype(<span class="org-builtin">bool</span>)
+  <span class="org-variable-name">z</span>[:n1] = 1
+  <span class="org-keyword">return</span> x_sub, z
+
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_null_type1</span>(data, n_trials):
+  <span class="org-variable-name">result</span> = []
+  <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">z</span> = null_sim(data, 100, 100, seed=trial)
+    <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
+    <span class="org-keyword">for</span> gene, counts <span class="org-keyword">in</span> x.iteritems():
+      <span class="org-keyword">try</span>:
+        <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = zinb_variance_lrt(counts.values, s, z)
+      <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
+        <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = np.nan, np.nan
+    result.append(pd.Series({<span class="org-string">'trial'</span>: trial, <span class="org-string">'gene'</span>: gene, <span class="org-string">'n'</span>: 100, <span class="org-string">'llr'</span>: llr, <span class="org-string">'p'</span>: p}))
+  <span class="org-variable-name">result</span> = pd.DataFrame(result)
+  <span class="org-keyword">return</span> result
+</pre>
+</div>
+
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cytotoxic_t</span> = scmodes.dataset.read_10x(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cytotoxic_t/filtered_matrices_mex/hg19'</span>, return_df=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Test the benchmark.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">evaluate_null_type1(cytotoxic_t, n_trials=1)
+</pre>
+</div>
+
+<pre class="example">
+Empty DataFrame
+Columns: []
+Index: []
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2019-07-30 Tue 21:03</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

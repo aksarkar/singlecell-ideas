@@ -1,0 +1,273 @@
+#+TITLE: Differential variance analysis
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  We previously hypothesized that QTLs could disrupt the mechanisms controlling
+  the variance of gene expression, and therefore reveal new insights into the
+  genetic regulation of differentiation and disease. To investigate this
+  hypothesis, we directly observed gene expression variance across 53
+  individuals using scRNA-seq, and sought to identify dispersion QTLs (dQTLs)
+  which could alter the variance of gene expression across cells within a
+  single individual, independently of altering the mean expression. However, we
+  failed to discover such QTLs, and demonstrated that variance QTLs can be
+  explained by effects on mean expression
+  ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et al. 2019]]).
+
+  Before attempting to map dQTLs in a followup study, we need to produce
+  evidence that there are such effects to find in human cell types.
+  /Essentially no studies demonstrate mechanistic evidence of such effects in
+  human tissues./ Many studies measure gene expression variance in human
+  tissues without estimating the effect of perturbation
+  (e.g. [[https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.0040309][Raj
+  et al. 2006]], [[https://doi.org/10.1038/nature12172][Shalek et al. 2013]];
+  [[https://doi.org/10.1038/nature13437][Shalek et
+  al. 2014]]). [[https://science.sciencemag.org/content/355/6332/1433.long][Martinez-Jimenez
+  et al. 2018]] (re-analyzed by
+  [[https://www.cell.com/cell-systems/fulltext/S2405-4712(18)30278-3][Eling et
+  al. 2018]]) showed that aging changes variability of mouse CD4+ cell gene
+  expression; however, clearly this perturbation is a complex combination of
+  genetic and environmental factors. The strongest evidence is presented by
+  [[http://dx.doi.org/10.1038/nbt.2642][Wills et al. 2013]], who demonstrated
+  that perturbation of human naive B lymphocytes with a GSK3 inhibitor leads to
+  changes in variance of downstream gene expression (as measured by qPCR).
+
+  Here, we develop a method to test for differential variance, and use existing
+  scRNA-seq datasets to ask whether there are effects which can alter gene
+  expression variance /independent/ of altering mean gene expression.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  : Submitted batch job 61625457
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import scipy.stats as st
+    import scmodes
+    import scqtl
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Methods
+** Differential variance
+
+   We assume the following generative model for the data:
+
+   \[ x_{ij} \mid s_i \sim \operatorname{Poisson}(s_i \lambda_{ij}) \]
+
+   \[ \lambda_{ij} | z_i \sim g_{z_i}(\cdot) \]
+
+   where:
+
+   - \(x_{ij}\) is the number of molecules in sample \(i\) mapping to gene
+     \(j\)
+   - \(s_i\) is the total number of molecules in sample \(i\)
+   - \(z_i\) is an indicator variable denoting which group sample \(i\) belongs
+     to
+
+   Under this model, the variance in group \(k\) is
+   \(\operatorname{Var}(g_{k})\).
+
+   Although it is possible to estimate likelihood ratios comparing the assumed
+   model to the null model:
+
+   \[ x_{ij} \mid s_i \sim \operatorname{Poisson}(s_i \lambda_{ij}) \]
+
+   \[ \lambda_{ij} \sim g_0(\cdot) \]
+
+   this model comparison will also be significant for differentially expressed
+   genes which do not have significant changes in variance.
+
+   As an alternative, if we assume \(g\) is a mixture of a point mass on zero
+   and a Gamma distribution:
+
+   \[ g = \pi \delta_0(\cdot) + (1 - \pi) \operatorname{Gamma}(\frac{1}{\phi},
+   \frac{1}{\mu\phi}) \]
+
+   then we can estimate differences in \(\phi\) and bootstrap to get
+   \(p\)-values. There are two challenges in this approach:
+
+   1. /Boundary values/. In real data, we should expect \(\pi = 0\) (Negative Binomial
+      marginal distribution), and even \(\phi = \infty\) ([Zero-inflated] Poisson
+      marginal distribution) for some genes.
+
+   2. /Mean-variance relationship/. Eling et al. 2018 claim there is a
+      relationship even between \(\mu\) and \(\phi\) in the deconvolved Gamma
+      distributions.
+
+   #+BEGIN_SRC ipython
+     def est_diff_var(x, s, z):
+       g1 = scqtl.simple.fit_zinb(x[z], s[z])
+       var1 = g1[0] * g1[0] / g1[1]
+       if g1[-1] > 0:
+         # Inverse dispersion exploded
+         g1 = scqtl.simple.fit_pois(x[z], s[z])
+         var1 = g1[0]
+       g2 = scqtl.simple.fit_zinb(x[~z], s[~z])
+       var2 = g2[0] * g2[0] / g1[1]
+       if g2[-1] > 0:
+         g2 = scqtl.simple.fit_pois(x[~z], s[~z])
+         var2 = g2[0]
+       return var2 - var1
+
+     def zinb_variance_bootstrap(x, s, z, random_state=None, n_bootstrap=1000):
+       if random_state is not None:
+         np.random.seed(random_state)
+       theta = est_diff_var(x, s, z)
+       B = []
+       for trial in range(n_bootstrap):
+         B.append(est_diff_var(x, s, np.random.permutation(z)))
+       B = np.array(B)
+       if theta < 0:
+         return theta, (B < theta).mean()
+       else:
+         return theta, (B > theta).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   As a second alternative, for each gene \(j\) we can estimate \(g_0\) via
+   Empirical Bayes, and then recover the posterior distribution:
+
+   \[ \hat{g} = \hat\pi \delta_0(\cdot) + (1 -
+   \hat\pi)\operatorname{Gamma}(\frac{1}{\hat\phi}, \frac{1}{\hat\mu \hat\phi})
+   \]
+
+   \[ p(\lambda_i \mid x_1, \ldots, x_n, s_1, \ldots, s_n, \hat{g}) = \hat\pi
+   \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
+   \frac{1}{\hat\phi}, s_i + \frac{1}{\hat\mu \hat\phi}\right)\]
+
+   We can then take sample variances of latent gene expression values
+   \(E[\lambda_i \mid \cdot]\) across groups.
+
+** Data sets
+
+   For null simulations, we use homogeneous populations of sorted cells (Zheng
+   et al. 2017):
+
+   - Cytotoxic T cells
+   - B cells
+
+   As a positive control, we re-analyze
+   [[https://www.ebi.ac.uk/arrayexpress/experiments/E-MTAB-4888/][unstimulated
+   and stimulated naive and effector memory CD4+ T cells]] from young and old
+   mice from two divergent species (Martinez-Jimenez et al. 2018)
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/singlecell
+     sbatch --partition=mstephens
+     #!/bin/bash
+     test -f E-MTAB-4888.processed.1.zip || curl -O https://www.ebi.ac.uk/arrayexpress/files/E-MTAB-4888/E-MTAB-4888.processed.1.zip
+     test -f raw_data.txt || unzip E-MTAB-4888.processed.1.zip
+     mkdir -p /project2/mstephens/aksarkar/projects/singlecell-ideas/data/E-MTAB-4888
+     gzip <raw_data.txt >/project2/mstephens/aksarkar/projects/singlecell-ideas/data/E-MTAB-4888/counts.txt.gz
+   #+END_SRC
+
+   #+RESULTS:
+   : Submitted batch job 61624943
+
+   We then analyze single cell RNA-seq time course data through differentiation
+   of iPSCs into cardiomyocytes (Selewa et al. 2019).
+* Results
+** Null simulation
+
+   Randomly split a homogeneous collections of cells into two groups to
+   generate null data sets.
+
+   #+BEGIN_SRC ipython
+     def null_sim(x, n1, n2, seed=0):
+       np.random.seed(seed)
+       assert n1 + n2 < x.shape[0]
+       x_sub = x.iloc[np.random.choice(x.shape[0], size=n1 + n2, replace=False)].sample(frac=1)
+       z = np.zeros(n1 + n2).astype(bool)
+       z[:n1] = 1
+       return x_sub, z
+
+     def evaluate_null_type1(data, n_trials):
+       result = []
+       for trial in range(n_trials):
+         x, z = null_sim(data, 100, 100, seed=trial)
+         s = x.sum(axis=1)
+         for gene, counts in x.iteritems():
+           try:
+             llr, p = zinb_variance_lrt(counts.values, s, z)
+           except RuntimeError:
+             llr, p = np.nan, np.nan
+         result.append(pd.Series({'trial': trial, 'gene': gene, 'n': 100, 'llr': llr, 'p': p}))
+       result = pd.DataFrame(result)
+       return result
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[71]:
+   :END:
+
+   Read the data.
+
+   #+BEGIN_SRC ipython
+     cytotoxic_t = scmodes.dataset.read_10x('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cytotoxic_t/filtered_matrices_mex/hg19', return_df=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   Test the benchmark.
+
+   #+BEGIN_SRC ipython :async t
+     evaluate_null_type1(cytotoxic_t, n_trials=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[42]:
+   #+BEGIN_EXAMPLE
+     Empty DataFrame
+     Columns: []
+     Index: []
+   #+END_EXAMPLE
+   :END:

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-07-30 Tue 21:03 -->
+<!-- 2019-07-30 Tue 22:22 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -267,6 +267,7 @@ for the JavaScript code in this tag.
 </li>
 <li><a href="#orgf61cca5">Results</a>
 <ul>
+<li><a href="#org0ccad8b">Mean-dispersion relationship</a></li>
 <li><a href="#orge8d934b">Null simulation</a></li>
 </ul>
 </li>
@@ -337,7 +338,8 @@ expression variance <i>independent</i> of altering mean gene expression.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
 </pre>
@@ -411,7 +413,7 @@ and a Gamma distribution:
 
 <p>
 then we can estimate differences in \(\phi\) and bootstrap to get
-\(p\)-values. There are two challenges in this approach:
+\(p\)-values. There are three challenges in this approach:
 </p>
 
 <ol class="org-ol">
@@ -422,6 +424,9 @@ marginal distribution) for some genes.</li>
 <li><i>Mean-variance relationship</i>. Eling et al. 2018 claim there is a
 relationship even between \(\mu\) and \(\phi\) in the deconvolved Gamma
 distributions.</li>
+
+<li><i>Computational cost</i>. The bootstraps are expensive, and it is difficult
+to take a hierarchical approach in this setting due to lack of conjugacy.</li>
 </ol>
 
 <div class="org-src-container">
@@ -439,7 +444,7 @@ distributions.</li>
     <span class="org-variable-name">var2</span> = g2[0]
   <span class="org-keyword">return</span> var2 - var1
 
-<span class="org-keyword">def</span> <span class="org-function-name">zinb_variance_bootstrap</span>(x, s, z, random_state=<span class="org-constant">None</span>, n_bootstrap=1000):
+<span class="org-keyword">def</span> <span class="org-function-name">diff_var_bootstrap</span>(x, s, z, random_state=<span class="org-constant">None</span>, n_bootstrap=1000):
   <span class="org-keyword">if</span> random_state <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
     np.random.seed(random_state)
   <span class="org-variable-name">theta</span> = est_diff_var(x, s, z)
@@ -520,10 +525,79 @@ of iPSCs into cardiomyocytes (Selewa et al. 2019).
 </div>
 </div>
 </div>
+
 <div id="outline-container-orgf61cca5" class="outline-2">
 <h2 id="orgf61cca5">Results</h2>
 <div class="outline-text-2" id="text-orgf61cca5">
 </div>
+<div id="outline-container-org0ccad8b" class="outline-3">
+<h3 id="org0ccad8b">Mean-dispersion relationship</h3>
+<div class="outline-text-3" id="text-org0ccad8b">
+<p>
+Use scRNA-seq of 9,957 genes in 5,597 iPSCs from 53 donors (Sarkar et
+al. 2019) to examine the relationship between mean and dispersion.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mu</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-mu.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+<span class="org-variable-name">log_phi</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-phi.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+<span class="org-variable-name">logodds</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-logodds.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-variable-name">H</span> = np.histogram2d(log_mu.values.ravel(), log_phi.values.ravel(), bins=200)
+<span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = np.meshgrid(H[1], H[2])
+plt.contour(X[1:,1:].T, Y[1:,1:].T, H[0], cmap=colorcet.cm[<span class="org-string">'fire'</span>], linewidths=1)
+plt.xlabel(<span class="org-string">'$\ln(\mu)$'</span>)
+plt.ylabel(<span class="org-string">'$\ln(\phi)$'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/log-mu-vs-log-phi.png" alt="log-mu-vs-log-phi.png">
+</p>
+</div>
+
+<p>
+Look at zeros and dispersion.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-variable-name">H</span> = np.histogram2d(logodds.values.ravel(), log_phi.values.ravel(), bins=200)
+<span class="org-variable-name">X</span>, <span class="org-variable-name">Y</span> = np.meshgrid(H[1], H[2])
+plt.contour(X[1:,1:].T, Y[1:,1:].T, H[0], cmap=colorcet.cm[<span class="org-string">'fire'</span>], linewidths=1)
+plt.xlabel(<span class="org-string">'$\mathrm{logit}(\pi)$'</span>)
+plt.ylabel(<span class="org-string">'$\ln(\mu)$'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/logodds-vs-log-phi.png" alt="logodds-vs-log-phi.png">
+</p>
+</div>
+
+<p>
+We previously looked at the relationship between estimated parameters,
+averaging over all 53 individuals.
+</p>
+
+
+<div class="figure">
+<p><img src="https://jdblischak.github.io/singlecell-qtl/figure/zinb.org/joint-distribution.png" alt="joint-distribution.png">
+</p>
+</div>
+</div>
+</div>
+
 <div id="outline-container-orge8d934b" class="outline-3">
 <h3 id="orge8d934b">Null simulation</h3>
 <div class="outline-text-3" id="text-orge8d934b">
@@ -548,7 +622,7 @@ generate null data sets.
     <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
     <span class="org-keyword">for</span> gene, counts <span class="org-keyword">in</span> x.iteritems():
       <span class="org-keyword">try</span>:
-        <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = zinb_variance_lrt(counts.values, s, z)
+        <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = diff_var_bootstrap(counts.values, s, z)
       <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
         <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = np.nan, np.nan
     result.append(pd.Series({<span class="org-string">'trial'</span>: trial, <span class="org-string">'gene'</span>: gene, <span class="org-string">'n'</span>: 100, <span class="org-string">'llr'</span>: llr, <span class="org-string">'p'</span>: p}))
@@ -571,7 +645,7 @@ Test the benchmark.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">evaluate_null_type1(cytotoxic_t, n_trials=1)
+<pre class="src src-ipython"><span class="org-variable-name">test_result</span> = evaluate_null_type1(cytotoxic_t, n_trials=1)
 </pre>
 </div>
 
@@ -586,7 +660,7 @@ Index: []
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-07-30 Tue 21:03</p>
+<p class="date">Created: 2019-07-30 Tue 22:22</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -52,7 +52,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 61625457
+  : Submitted batch job 61629987
 
   #+BEGIN_SRC ipython
     import numpy as np
@@ -78,6 +78,7 @@
   :END:
 
   #+BEGIN_SRC ipython
+    import colorcet
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
     plt.rcParams['font.family'] = 'Nimbus Sans'
@@ -85,7 +86,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[21]:
   :END:
 
 * Methods
@@ -125,7 +126,7 @@
    \frac{1}{\mu\phi}) \]
 
    then we can estimate differences in \(\phi\) and bootstrap to get
-   \(p\)-values. There are two challenges in this approach:
+   \(p\)-values. There are three challenges in this approach:
 
    1. /Boundary values/. In real data, we should expect \(\pi = 0\) (Negative Binomial
       marginal distribution), and even \(\phi = \infty\) ([Zero-inflated] Poisson
@@ -134,6 +135,9 @@
    2. /Mean-variance relationship/. Eling et al. 2018 claim there is a
       relationship even between \(\mu\) and \(\phi\) in the deconvolved Gamma
       distributions.
+
+   3. /Computational cost/. The bootstraps are expensive, and it is difficult
+      to take a hierarchical approach in this setting due to lack of conjugacy.
 
    #+BEGIN_SRC ipython
      def est_diff_var(x, s, z):
@@ -150,7 +154,7 @@
          var2 = g2[0]
        return var2 - var1
 
-     def zinb_variance_bootstrap(x, s, z, random_state=None, n_bootstrap=1000):
+     def diff_var_bootstrap(x, s, z, random_state=None, n_bootstrap=1000):
        if random_state is not None:
          np.random.seed(random_state)
        theta = est_diff_var(x, s, z)
@@ -166,7 +170,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[86]:
    :END:
 
    As a second alternative, for each gene \(j\) we can estimate \(g_0\) via
@@ -210,7 +214,65 @@
 
    We then analyze single cell RNA-seq time course data through differentiation
    of iPSCs into cardiomyocytes (Selewa et al. 2019).
+
 * Results
+** Mean-dispersion relationship
+
+   Use scRNA-seq of 9,957 genes in 5,597 iPSCs from 53 donors (Sarkar et
+   al. 2019) to examine the relationship between mean and dispersion.
+
+   #+BEGIN_SRC ipython
+     log_mu = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-mu.txt.gz', sep=' ', index_col=0)
+     log_phi = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-phi.txt.gz', sep=' ', index_col=0)
+     logodds = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-logodds.txt.gz', sep=' ', index_col=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[32]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/log-mu-vs-log-phi.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     H = np.histogram2d(log_mu.values.ravel(), log_phi.values.ravel(), bins=200)
+     X, Y = np.meshgrid(H[1], H[2])
+     plt.contour(X[1:,1:].T, Y[1:,1:].T, H[0], cmap=colorcet.cm['fire'], linewidths=1)
+     plt.xlabel('$\ln(\mu)$')
+     plt.ylabel('$\ln(\phi)$')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[31]:
+   [[file:figure/diff-var.org/log-mu-vs-log-phi.png]]
+   :END:
+
+   Look at zeros and dispersion.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/logodds-vs-log-phi.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     H = np.histogram2d(logodds.values.ravel(), log_phi.values.ravel(), bins=200)
+     X, Y = np.meshgrid(H[1], H[2])
+     plt.contour(X[1:,1:].T, Y[1:,1:].T, H[0], cmap=colorcet.cm['fire'], linewidths=1)
+     plt.xlabel('$\mathrm{logit}(\pi)$')
+     plt.ylabel('$\ln(\mu)$')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[34]:
+   [[file:figure/diff-var.org/logodds-vs-log-phi.png]]
+   :END:
+
+   We previously looked at the relationship between estimated parameters,
+   averaging over all 53 individuals.
+
+   https://jdblischak.github.io/singlecell-qtl/figure/zinb.org/joint-distribution.png
+
 ** Null simulation
 
    Randomly split a homogeneous collections of cells into two groups to
@@ -232,7 +294,7 @@
          s = x.sum(axis=1)
          for gene, counts in x.iteritems():
            try:
-             llr, p = zinb_variance_lrt(counts.values, s, z)
+             llr, p = diff_var_bootstrap(counts.values, s, z)
            except RuntimeError:
              llr, p = np.nan, np.nan
          result.append(pd.Series({'trial': trial, 'gene': gene, 'n': 100, 'llr': llr, 'p': p}))
@@ -242,7 +304,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[71]:
+   # Out[87]:
    :END:
 
    Read the data.
@@ -259,7 +321,7 @@
    Test the benchmark.
 
    #+BEGIN_SRC ipython :async t
-     evaluate_null_type1(cytotoxic_t, n_trials=1)
+     test_result = evaluate_null_type1(cytotoxic_t, n_trials=1)
    #+END_SRC
 
    #+RESULTS:

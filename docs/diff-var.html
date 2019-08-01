@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-07-30 Tue 22:22 -->
+<!-- 2019-08-03 Sat 22:00 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -257,27 +257,34 @@ for the JavaScript code in this tag.
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org0a63af7">Introduction</a></li>
+<li><a href="#intro">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#orgdddbad3">Methods</a>
+<li><a href="#methods">Methods</a>
 <ul>
-<li><a href="#orgcb42ca9">Differential variance</a></li>
-<li><a href="#org582162f">Data sets</a></li>
+<li><a href="#poisson-beta">Mechanistic basis of effects on variance</a></li>
+<li><a href="#diff-var">Differential variance</a></li>
+<li><a href="#data">Data sets</a></li>
 </ul>
 </li>
-<li><a href="#orgf61cca5">Results</a>
+<li><a href="#results">Results</a>
 <ul>
-<li><a href="#org0ccad8b">Mean-dispersion relationship</a></li>
-<li><a href="#orge8d934b">Null simulation</a></li>
+<li><a href="#mean-disp-rel">Mean-dispersion relationship</a></li>
+<li><a href="#null-sim">Null simulation</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
-
+<p>
+\[
+\newcommand\kr{k_r}
+\newcommand\kon{k_{\text{on}}}
+\newcommand\koff{k_{\text{off}}}
+\]
+</p>
 <div id="outline-container-org0a63af7" class="outline-2">
-<h2 id="org0a63af7">Introduction</h2>
-<div class="outline-text-2" id="text-org0a63af7">
+<h2 id="intro"><a id="org0a63af7"></a>Introduction</h2>
+<div class="outline-text-2" id="text-intro">
 <p>
 We previously hypothesized that QTLs could disrupt the mechanisms controlling
 the variance of gene expression, and therefore reveal new insights into the
@@ -305,7 +312,7 @@ et al. 2018</a> (re-analyzed by
 <a href="https://www.cell.com/cell-systems/fulltext/S2405-4712(18)30278-3">Eling et
 al. 2018</a>) showed that aging changes variability of mouse CD4+ cell gene
 expression; however, clearly this perturbation is a complex combination of
-genetic and environmental factors. The strongest evidence is presented by
+environmental factors. The strongest evidence is presented by
 <a href="http://dx.doi.org/10.1038/nbt.2642">Wills et al. 2013</a>, who demonstrated
 that perturbation of human naive B lymphocytes with a GSK3 inhibitor leads to
 changes in variance of downstream gene expression (as measured by qPCR).
@@ -348,23 +355,135 @@ expression variance <i>independent</i> of altering mean gene expression.
 </div>
 
 <div id="outline-container-orgdddbad3" class="outline-2">
-<h2 id="orgdddbad3">Methods</h2>
-<div class="outline-text-2" id="text-orgdddbad3">
+<h2 id="methods"><a id="orgdddbad3"></a>Methods</h2>
+<div class="outline-text-2" id="text-methods">
 </div>
+<div id="outline-container-org834badd" class="outline-3">
+<h3 id="poisson-beta"><a id="org834badd"></a>Mechanistic basis of effects on variance</h3>
+<div class="outline-text-3" id="text-poisson-beta">
+<p>
+Assume the following generative model:
+</p>
+
+\begin{align*}
+  x_i \mid \kr, p_i &\sim \operatorname{Poisson}(\kr p_i)\\
+  p_i \mid \kon, \koff &\sim \operatorname{Beta}(\kon, \koff)
+\end{align*}
+
+<p>
+where:
+</p>
+
+<ul class="org-ul">
+<li>\(x_i\) is the number of molecules in sample \(i\) (considering one gene)</li>
+<li>\(\kr\) is the rate of transcription</li>
+<li>\(\kon\) is the rate of off \(\rightarrow\) on promoter switching</li>
+<li>\(\koff\) is the rate of on \(\rightarrow\) off promoter switching</li>
+</ul>
+
+<p>
+and rates are scaled by the decay rate. The Poisson-Beta model model
+describes the steady state distribution of molecules under a two-state
+kinetic model of gene regulation
+(<a href="https://users.rcc.uchicago.edu/~aksarkar/singlecell-ideas/diff-var.html#poisson-beta">Raj
+et al. 2006</a>, <a href="https://dx.doi.org/10.1186/gb-2013-14-1-r7">Kim and Marioni
+2013</a>, <a href="https://dx.doi.org/10.1126/science.1216379">Munsky et
+al. 2013</a>). Under this model:
+</p>
+
+\begin{align*}
+  E[x_i] &= \kr \frac{\kon}{\kon + \koff}\\
+  V[x_i] &= \kr \frac{\kon}{\kon + \koff} + \kr^2 \frac{\kon\koff}{(\kon + \koff)^2 (\kon + \koff + 1)}\\
+  \text{Fano factor} &= 1 + \frac{\kr\koff}{(\kon + \koff) (\kon + \koff + 1)}
+\end{align*}
+
+<p>
+From this model, it is clear that an effect which changes variance <i>while
+leaving the mean unchanged</i> must leave \(p_i\) unchanged, i.e. equally scale
+\(\kon\) and \(\koff\). This fact raises several questions:
+</p>
+
+<ul class="org-ul">
+<li>Do we know of such a biological mechanism?</li>
+<li>Should we expect to find one?</li>
+<li>Does such an effect require convergence of multiple biological mechanisms?</li>
+<li>This model assumes <i>all cells are described by the same kinetic
+parameters.</i> What if subsets of cells change kinetic parameters in
+different directions?</li>
+</ul>
+
+<p>
+How does this model relate to the typical Poisson-Gamma generative model?
+</p>
+
+\begin{align*}
+  x_i \mid s_i, \lambda_i &\sim \operatorname{Poisson}(s_i \lambda_i) \\
+  \lambda_i \mid \mu, \phi &\sim \operatorname{Gamma}(\phi, \phi / \mu)
+\end{align*}
+
+<p>
+where:
+</p>
+
+<ul class="org-ul">
+<li>\(s_i\) denotes the total number of molecules sequenced in sample \(i\)</li>
+<li>\(\mu\) denotes the latent mean gene expression</li>
+<li>\(\phi\) denotes the overdispersion parameter (relative to Poisson)</li>
+</ul>
+
+<p>
+Under the Poisson-Gamma model:
+</p>
+
+\begin{align*}
+  E[x_i] &= s_i \mu \\
+  V[x_i] &= s_i \mu + (s_i \mu)^2 \phi \\
+  \text{Fano factor} &= 1 + \phi
+\end{align*}
+
+<p>
+Suppose data are generated by Poisson-Beta model, and we fit a Poisson-Gamma
+distribution. Naively, it would seem the mean \(\mu\) and overdispersion
+\(\phi\) will be related to each other, through their dependence on \(\kr,
+   \kon, \koff\). This possibility raises several questions:
+</p>
+
+<ul class="org-ul">
+<li>If we do find effects on \(\phi\), should we expect them to be independent
+of effects on \(\mu\)?</li>
+<li><a href="https://dx.doi.org/10.1126/science.1216379">Eling et al. 2018</a> claim
+data demonstrate this relationship, and propose to correct the
+relationship between \(\mu\) and \(\phi\). Will this approach estimate
+differences in kinetic parameters? Will a different approach estimate the
+kinetic parameters?</li>
+</ul>
+
+<p>
+The interpretation of the Poisson is different in the two models. In the
+Poisson-Beta model, it denotes stochastic generation of molecules; in the
+Poisson-Gamma model it denotes sampling variation. <i>How do we account for
+this difference?</i> Kim and Marioni assume that the number of molecules
+observed in real data is proportional to the total number of molecules in
+the cell, i.e.
+</p>
+
+<p>
+\[ x_i \sim \operatorname{Poisson}(s_i \kr p_i) \]
+</p>
+</div>
+</div>
+
 <div id="outline-container-orgcb42ca9" class="outline-3">
-<h3 id="orgcb42ca9">Differential variance</h3>
-<div class="outline-text-3" id="text-orgcb42ca9">
+<h3 id="diff-var"><a id="orgcb42ca9"></a>Differential variance</h3>
+<div class="outline-text-3" id="text-diff-var">
 <p>
 We assume the following generative model for the data:
 </p>
 
-<p>
-\[ x_{ij} \mid s_i \sim \operatorname{Poisson}(s_i \lambda_{ij}) \]
-</p>
-
-<p>
-\[ \lambda_{ij} | z_i \sim g_{z_i}(\cdot) \]
-</p>
+\begin{align*}
+  x_{ij} \mid s_i &\sim \operatorname{Poisson}(s_i \lambda_{ij}) \\
+  \lambda_{ij} \mid z_i &\sim g_{z_i}(\cdot)
+\end{align*}
 
 <p>
 where:
@@ -388,13 +507,10 @@ Although it is possible to estimate likelihood ratios comparing the assumed
 model to the null model:
 </p>
 
-<p>
-\[ x_{ij} \mid s_i \sim \operatorname{Poisson}(s_i \lambda_{ij}) \]
-</p>
-
-<p>
-\[ \lambda_{ij} \sim g_0(\cdot) \]
-</p>
+\begin{align*}
+  x_{ij} \mid s_i &\sim \operatorname{Poisson}(s_i \lambda_{ij}) \\
+  \lambda_{ij} &\sim g_0(\cdot)
+\end{align*}
 
 <p>
 this model comparison will also be significant for differentially expressed
@@ -464,17 +580,11 @@ As a second alternative, for each gene \(j\) we can estimate \(g_0\) via
 Empirical Bayes, and then recover the posterior distribution:
 </p>
 
-<p>
-\[ \hat{g} = \hat\pi \delta_0(\cdot) + (1 -
-   \hat\pi)\operatorname{Gamma}(\frac{1}{\hat\phi}, \frac{1}{\hat\mu \hat\phi})
-   \]
-</p>
-
-<p>
-\[ p(\lambda_i \mid x_1, \ldots, x_n, s_1, \ldots, s_n, \hat{g}) = \hat\pi
-   \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
-   \frac{1}{\hat\phi}, s_i + \frac{1}{\hat\mu \hat\phi}\right)\]
-</p>
+\begin{align*}
+  \hat{g} &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}(\frac{1}{\hat\phi}, \frac{1}{\hat\mu \hat\phi})\\
+  p(\lambda_i \mid x_1, \ldots, x_n, s_1, \ldots, s_n, \hat{g}) &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
+   \frac{1}{\hat\phi}, s_i + \frac{1}{\hat\mu \hat\phi}\right)
+\end{align*}
 
 <p>
 We can then take sample variances of latent gene expression values
@@ -484,8 +594,8 @@ We can then take sample variances of latent gene expression values
 </div>
 
 <div id="outline-container-org582162f" class="outline-3">
-<h3 id="org582162f">Data sets</h3>
-<div class="outline-text-3" id="text-org582162f">
+<h3 id="data"><a id="org582162f"></a>Data sets</h3>
+<div class="outline-text-3" id="text-data">
 <p>
 For null simulations, we use homogeneous populations of sorted cells (Zheng
 et al. 2017):
@@ -527,12 +637,12 @@ of iPSCs into cardiomyocytes (Selewa et al. 2019).
 </div>
 
 <div id="outline-container-orgf61cca5" class="outline-2">
-<h2 id="orgf61cca5">Results</h2>
-<div class="outline-text-2" id="text-orgf61cca5">
+<h2 id="results"><a id="orgf61cca5"></a>Results</h2>
+<div class="outline-text-2" id="text-results">
 </div>
 <div id="outline-container-org0ccad8b" class="outline-3">
-<h3 id="org0ccad8b">Mean-dispersion relationship</h3>
-<div class="outline-text-3" id="text-org0ccad8b">
+<h3 id="mean-disp-rel"><a id="org0ccad8b"></a>Mean-dispersion relationship</h3>
+<div class="outline-text-3" id="text-mean-disp-rel">
 <p>
 Use scRNA-seq of 9,957 genes in 5,597 iPSCs from 53 donors (Sarkar et
 al. 2019) to examine the relationship between mean and dispersion.
@@ -599,8 +709,8 @@ averaging over all 53 individuals.
 </div>
 
 <div id="outline-container-orge8d934b" class="outline-3">
-<h3 id="orge8d934b">Null simulation</h3>
-<div class="outline-text-3" id="text-orge8d934b">
+<h3 id="null-sim"><a id="orge8d934b"></a>Null simulation</h3>
+<div class="outline-text-3" id="text-null-sim">
 <p>
 Randomly split a homogeneous collections of cells into two groups to
 generate null data sets.
@@ -660,7 +770,7 @@ Index: []
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-07-30 Tue 22:22</p>
+<p class="date">Created: 2019-08-03 Sat 22:00</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

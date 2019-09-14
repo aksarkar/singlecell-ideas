@@ -1,0 +1,88 @@
+#+TITLE: Correlation of gene expression variance across species
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Benjamin Fair has collected data on 40 chimpanzee hearts, in order to map
+  eQTLs and compare them to human heart eQTLs from GTEx. One interesting
+  question is whether there are genes with differential variance between chimp
+  and human, which could suggest loss/gain of evolutionary pressure on genes
+  important for species divergence.
+
+  We have previously established that we cannot analyze the variance of gene
+  expression across samples by taking the sample variance of counts or log of
+  counts ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
+  al. 2019]]). Here, we detail how to analyze this specific problem.
+
+* Method
+
+  The measurement process for a bulk RNA-seq experiment can be described as
+  ([[https://arxiv.org/abs/1104.3889][Pachter 2011]]):
+
+  \begin{align*}
+    x_{i1}, \ldots, x_{ip} &\sim \operatorname{Multinomial}(x_i^+, \pi_{i1}, \ldots, \pi_{ip})\\
+    \pi_{ij} &= \alpha_{ij} / l_j
+  \end{align*}
+
+  where:
+
+  - \(x_{ij}\) is the read count of gene \(j = 1, \ldots, p\) in sample \(i =
+    1, \ldots, n\)
+  - \(x_i^+ = \sum_{j=1}^p x_{ij}\) is the library size of sample \(i\)
+  - \(\alpha_{ij}\) is the relative abundance of gene \(j\) in sample \(i\)
+    (the parameter of interest)
+  - \(l_j\) is the /effective length/ of gene \(j\) (number of positions to
+    which a read could map, i.e., the gene length corrected by edge effects
+    caused by the read length)
+
+  This Multinomial model can be transformed into a Poisson model which is more
+  computationally tractable ([[https://www.jstor.org/stable/2348134][Baker
+  1964]]):
+
+  \[ x_{ij} \sim \operatorname{Poisson}(s_i \lambda_{ij} / l_j) \]
+
+  where \(s_i = x_i^+\) and \(\lambda_{ij} = \alpha_{ij}\). (More generally,
+  \(\lambda_{ij} \propto \alpha_{ij}\).) In order to characterize /biological/
+  gene expression variance (i.e., not introduced by the measurement process),
+  we need to make a distributional assumption on \(\lambda_{ij}\). The most
+  computationally convenient is:
+
+  \[ \lambda_{ij} \sim \operatorname{Gamma}(\phi_j, \phi_j / \mu_j) \]
+
+  Under this assumption, the mean gene expression is \(E[\lambda_{ij}] =
+  \mu_j\) and the gene expression variance is \(V[\lambda_{ij}] = \mu_j^2 /
+  \phi_j\). This assumption can be derived by introducing a multiplicative
+  random effect:
+
+  \begin{align*}
+    \lambda_{ij} &= \mu_j u_{ij}\\
+    u_{ij} &\sim \operatorname{Gamma}(\phi_j, \phi_j)
+  \end{align*}
+
+  where \(E[u_{ij}] = 1\) and \(V[u_{ij}] = \phi_j\). Marginally, \(x_{ij}\) is
+  negative binomial distributed with mean \(\mu_j\), overdispersion \(1 /
+  \phi_j\), and variance \(\mu_j + \mu_j^2 / \phi_j\). Estimating this
+  distribution from the data can be achieved by fitting a generalized linear
+  model
+  ([[https://www.cambridge.org/core/books/modeling-count-data/BFEB3985905CA70523D9F98DA8E64D08][Hilbe
+  2014]]):
+
+  \begin{align*}
+    \ln E[x_{ij}] &= \ln s_i - \ln l_j + \ln \mu_j\\
+    V[x_{ij}] &= \mu_j + \mu_j^2 / \phi_j
+  \end{align*}
+
+* Example
+
+  #+BEGIN_SRC R :eval never
+    N <- 10000
+    mu <- .1
+    phi <- .1
+    lambda <- rgamma(n=N, shape=phi, rate=phi / mu)
+    s <- rep(5000, N)
+    l <- 1
+    y <- rpois(n=N, lambda=s * lambda)
+    fit <- MASS::glm.nb(y ~ offset(log(s)) + 1, control=glm.control(maxit=100))
+    c(fit$coef["(Intercept)"], log(mu))
+    c(fit$theta, phi)
+  #+END_SRC

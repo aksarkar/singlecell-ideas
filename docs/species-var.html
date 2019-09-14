@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-09-13 Fri 21:37 -->
+<!-- 2019-09-14 Sat 11:22 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Correlation of gene expression variance across species</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,28 +227,164 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
-<ul class="org-ul">
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html">SCVI</a></li>
-<li><a href="vae.html">VAE for single-cell expression</a></li>
-<li><a href="zinb-vae-gmm.html">ZINB-VAE-GMM</a></li>
+<h1 class="title">Correlation of gene expression variance across species</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgb3336b7">Introduction</a></li>
+<li><a href="#org12a4a9b">Method</a></li>
+<li><a href="#org01e7d57">Example</a></li>
 </ul>
+</div>
+</div>
+
+<div id="outline-container-orgb3336b7" class="outline-2">
+<h2 id="orgb3336b7">Introduction</h2>
+<div class="outline-text-2" id="text-orgb3336b7">
+<p>
+Benjamin Fair has collected data on 40 chimpanzee hearts, in order to map
+eQTLs and compare them to human heart eQTLs from GTEx. One interesting
+question is whether there are genes with differential variance between chimp
+and human, which could suggest loss/gain of evolutionary pressure on genes
+important for species divergence.
+</p>
+
+<p>
+We have previously established that we cannot analyze the variance of gene
+expression across samples by taking the sample variance of counts or log of
+counts (<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et
+al. 2019</a>). Here, we detail how to analyze this specific problem.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org12a4a9b" class="outline-2">
+<h2 id="org12a4a9b">Method</h2>
+<div class="outline-text-2" id="text-org12a4a9b">
+<p>
+The measurement process for a bulk RNA-seq experiment can be described as
+(<a href="https://arxiv.org/abs/1104.3889">Pachter 2011</a>):
+</p>
+
+\begin{align*}
+  x_{i1}, \ldots, x_{ip} &\sim \operatorname{Multinomial}(x_i^+, \pi_{i1}, \ldots, \pi_{ip})\\
+  \pi_{ij} &= \alpha_{ij} / l_j
+\end{align*}
+
+<p>
+where:
+</p>
+
+<ul class="org-ul">
+<li>\(x_{ij}\) is the read count of gene \(j = 1, \ldots, p\) in sample \(i =
+    1, \ldots, n\)</li>
+<li>\(x_i^+ = \sum_{j=1}^p x_{ij}\) is the library size of sample \(i\)</li>
+<li>\(\alpha_{ij}\) is the relative abundance of gene \(j\) in sample \(i\)
+(the parameter of interest)</li>
+<li>\(l_j\) is the <i>effective length</i> of gene \(j\) (number of positions to
+which a read could map, i.e., the gene length corrected by edge effects
+caused by the read length)</li>
+</ul>
+
+<p>
+This Multinomial model can be transformed into a Poisson model which is more
+computationally tractable (<a href="https://www.jstor.org/stable/2348134">Baker
+1964</a>):
+</p>
+
+<p>
+\[ x_{ij} \sim \operatorname{Poisson}(s_i \lambda_{ij} / l_j) \]
+</p>
+
+<p>
+where \(s_i = x_i^+\) and \(\lambda_{ij} = \alpha_{ij}\). (More generally,
+\(\lambda_{ij} \propto \alpha_{ij}\).) In order to characterize <i>biological</i>
+gene expression variance (i.e., not introduced by the measurement process),
+we need to make a distributional assumption on \(\lambda_{ij}\). The most
+computationally convenient is:
+</p>
+
+<p>
+\[ \lambda_{ij} \sim \operatorname{Gamma}(\phi_j, \phi_j / \mu_j) \]
+</p>
+
+<p>
+Under this assumption, the mean gene expression is \(E[\lambda_{ij}] =
+  \mu_j\) and the gene expression variance is \(V[\lambda_{ij}] = \mu_j^2 /
+  \phi_j\). This assumption can be derived by introducing a multiplicative
+random effect:
+</p>
+
+\begin{align*}
+  \lambda_{ij} &= \mu_j u_{ij}\\
+  u_{ij} &\sim \operatorname{Gamma}(\phi_j, \phi_j)
+\end{align*}
+
+<p>
+where \(E[u_{ij}] = 1\) and \(V[u_{ij}] = \phi_j\). Marginally, \(x_{ij}\) is
+negative binomial distributed with mean \(\mu_j\), overdispersion \(1 /
+  \phi_j\), and variance \(\mu_j + \mu_j^2 / \phi_j\). Estimating this
+distribution from the data can be achieved by fitting a generalized linear
+model
+(<a href="https://www.cambridge.org/core/books/modeling-count-data/BFEB3985905CA70523D9F98DA8E64D08">Hilbe
+2014</a>):
+</p>
+
+\begin{align*}
+  \ln E[x_{ij}] &= \ln s_i - \ln l_j + \ln \mu_j\\
+  V[x_{ij}] &= \mu_j + \mu_j^2 / \phi_j
+\end{align*}
+</div>
+</div>
+
+<div id="outline-container-org01e7d57" class="outline-2">
+<h2 id="org01e7d57">Example</h2>
+<div class="outline-text-2" id="text-org01e7d57">
+<div class="org-src-container">
+<pre class="src src-R">N <span class="org-ess-assignment">&lt;-</span> 10000
+mu <span class="org-ess-assignment">&lt;-</span> .1
+phi <span class="org-ess-assignment">&lt;-</span> .1
+lambda <span class="org-ess-assignment">&lt;-</span> rgamma(n=N, shape=phi, rate=phi / mu)
+s <span class="org-ess-assignment">&lt;-</span> rep(5000, N)
+l <span class="org-ess-assignment">&lt;-</span> 1
+y <span class="org-ess-assignment">&lt;-</span> rpois(n=N, lambda=s * lambda)
+fit <span class="org-ess-assignment">&lt;-</span> MASS::glm.nb(y ~ offset(log(s)) + 1, control=glm.control(maxit=100))
+c(fit$coef[<span class="org-string">"(Intercept)"</span>], log(mu))
+c(fit$theta, phi)
+</pre>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-09-13 Fri 21:37</p>
+<p class="date">Created: 2019-09-14 Sat 11:22</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

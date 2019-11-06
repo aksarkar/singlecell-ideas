@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-11-05 Tue 23:30 -->
+<!-- 2019-11-05 Tue 23:40 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Why do high-dimensional networks produce low-dimensional activity?</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,29 +227,224 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
-<ul class="org-ul">
-<li><a href="network-dim.html">Why do high-dimensional networks produce low-dimensional activity?</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html">SCVI</a></li>
-<li><a href="vae.html">VAE for single-cell expression</a></li>
-<li><a href="zinb-vae-gmm.html">ZINB-VAE-GMM</a></li>
+<h1 class="title">Why do high-dimensional networks produce low-dimensional activity?</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org9fc2883">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#orge1d34d3">Methods</a>
+<ul>
+<li><a href="#org802b5a2">Generating spike trains</a></li>
 </ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org9fc2883" class="outline-2">
+<h2 id="org9fc2883">Introduction</h2>
+<div class="outline-text-2" id="text-org9fc2883">
+<p>
+<a href="https://www.biorxiv.org/content/biorxiv/early/2018/08/17/394684.full.pdf">Recanatesi et al. 2018</a> investigated how the dimensionality of neuron spike
+activity data depends on the connectivity of neurons. Spike-in data can be
+represented as a matrix \([x_{ij}]\), \(i = 1, \ldots, n\), \(j = 1, \ldots,
+  p\) where \(x_{ij}\) denotes the number of times neuron \(i\) fired in time
+interval \([t_{j - 1}, t_{j})\).
+</p>
+
+<p>
+The initial ideas are motivated by simulations rather than real data, which
+we examine here.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org3ba3837" class="outline-2">
+<h2 id="setup"><a id="org3ba3837"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge1d34d3" class="outline-2">
+<h2 id="orge1d34d3">Methods</h2>
+<div class="outline-text-2" id="text-orge1d34d3">
+</div>
+<div id="outline-container-org802b5a2" class="outline-3">
+<h3 id="org802b5a2">Generating spike trains</h3>
+<div class="outline-text-3" id="text-org802b5a2">
+<p>
+The activity of neuron \(i\), \(s_i(t)\), is assumed to be a
+time-inhomogeneous Poisson process with rate \(\lambda_i(t)\). The rate
+\(\lambda_i(t)\) depends on a baseline rate \(\mu_i\), the activity of other
+neurons it is connected to \(s_j(t)\) (where connections have weights
+\(w_{ij}\)), and external stimulus \(\alpha_i(t)\). This can be written
+</p>
+
+<p>
+\[ \lambda_i(t) = \mu_i + \alpha_i(t) + \sum_j w_{ij} s_j(t) \]
+</p>
+
+<p>
+The events \(s_i(t)\) are then binned between time points \(t_0, \ldots,
+   t_p\) to generate the observed data \(X = [x_{ij}]\), of dimension \(n
+   \times p\). The motivating questions are: is \(X\) low rank ("lower
+dimension")? How does the rank/dimension of the observed data depend on the
+network \(W\)?
+</p>
+
+<p>
+The starting point of the analysis is to ask about the dimension of \(X\)
+for random graphs \(W\), by simply simulating random graphs. The simplest
+notion of "random graph" is the Erdös-Rényi model \(G(n, p)\), which denotes
+a graph of \(n\) nodes where each (directed) edge is included iid with
+probability \(p\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">er_random_graph</span>(n, p):
+  <span class="org-keyword">return</span> st.binom(n=1, p=p).rvs(size=(n, n))
+</pre>
+</div>
+
+<p>
+Here, edge weights are either 0 or 1 (i.e., we model excitatory neurons
+only). As an example, generate data for randomly connected neurons with no
+external stimulus.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate</span>(t_max, A, mu0, seed=0):
+  np.random.seed(seed)
+  <span class="org-variable-name">events</span> = []
+  <span class="org-variable-name">t</span> = 0
+  <span class="org-keyword">while</span> t &lt; t_max:
+    <span class="org-keyword">if</span> events:
+      <span class="org-variable-name">y</span> = mu0 + A[events[-1][1]]
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">y</span> = mu0
+    <span class="org-variable-name">wait</span> = np.random.exponential(scale=1 / y)
+    <span class="org-variable-name">event</span> = np.argmin(wait)
+    events.append((t + wait[event], event))
+    <span class="org-variable-name">t</span> += wait[event]
+  <span class="org-keyword">return</span> np.array(events)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">N</span> = 10
+<span class="org-variable-name">pi</span> = 0.2
+<span class="org-variable-name">A</span> = er_random_graph(N, pi)
+<span class="org-variable-name">mu0</span> = np.random.gamma(shape=.5, scale=.5, size=N)
+<span class="org-variable-name">t_max</span> = 10
+<span class="org-variable-name">S</span> = simulate(t_max, A, mu0)
+</pre>
+</div>
+
+<p>
+Plot the simulated spike train.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.scatter(S[:,0], S[:,1], c=<span class="org-string">'k'</span>, marker=<span class="org-string">'|'</span>)
+plt.xlabel(<span class="org-string">'Time'</span>)
+plt.ylabel(<span class="org-string">'Neuron'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/network-dim.org/random-firing.png" alt="random-firing.png">
+</p>
+</div>
+
+<p>
+Now bin the spikes into time intervals of length \(0.01\) (we should expect
+to have roughly 1000 of them), and estimate the eigenspectrum (equivalently,
+singular values) of the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">X</span> = pd.DataFrame(S).groupby(1).<span class="org-builtin">apply</span>(<span class="org-keyword">lambda</span> x: pd.Series(np.histogram(x[0], bins=np.arange(0, t_max, .01))[0]))
+<span class="org-variable-name">d</span> = np.linalg.svd(X)[1]
+d
+</pre>
+</div>
+
+<pre class="example">
+array([4.47213595, 3.16227766, 2.72290535, 2.44948974, 2.14144494,
+1.73205081, 1.41421356, 1.41421356, 1.41421356, 1.        ])
+</pre>
+
+<p>
+Recanatesi et al. define the dimension as \((\sum_i \lambda_i)^2 / \sum_i
+   \lambda_i^2\). We estimate it in the simulated data:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.square(np.square(d).<span class="org-builtin">sum</span>()) / (d ** 4).<span class="org-builtin">sum</span>()
+</pre>
+</div>
+
+<pre class="example">
+5.305993690851737
+
+</pre>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-11-05 Tue 23:30</p>
+<p class="date">Created: 2019-11-05 Tue 23:40</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

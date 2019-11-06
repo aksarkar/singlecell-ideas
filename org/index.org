@@ -1,6 +1,7 @@
 #+TITLE: Single cell ideas
 #+SETUPFILE: setup.org
 
+- [[file:network-dim.org][Why do high-dimensional networks produce low-dimensional activity?]]
 - [[file:species-var.org][Correlation of gene expression variance across species]]
 - [[file:diff-var.org][Differential variance analysis]]
 - [[file:mediation.org][Causal mediation analysis]]

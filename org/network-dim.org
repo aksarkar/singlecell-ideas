@@ -4,10 +4,10 @@
 * Introduction
 
   [[https://www.biorxiv.org/content/biorxiv/early/2018/08/17/394684.full.pdf][Recanatesi et al. 2018]] investigated how the dimensionality of neuron spike
-  activity data depends on the connectivity of neurons. Spike-in data can be
-  represented as a matrix \([x_{ij}]\), \(i = 1, \ldots, n\), \(j = 1, \ldots,
-  p\) where \(x_{ij}\) denotes the number of times neuron \(i\) fired in time
-  interval \([t_{j - 1}, t_{j})\).
+  activity data ("spike trains") depends on the connectivity of neurons. Spike
+  trains can be represented as a matrix \([x_{ij}]\), \(i = 1, \ldots, n\), \(j
+  = 1, \ldots, p\) where \(x_{ij}\) denotes the number of times neuron \(i\)
+  fired in time interval \([t_{j - 1}, t_{j})\).
 
   The initial ideas are motivated by simulations rather than real data, which
   we examine here.
@@ -28,17 +28,19 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/ideas/
 
   #+RESULTS:
-  : Submitted batch job 63615548
+  : Submitted batch job 63678585
 
   #+BEGIN_SRC ipython
+    import collections
     import numpy as np
     import pandas as pd
+    import scipy.sparse as ss
     import scipy.stats as st
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[46]:
+  # Out[38]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -107,6 +109,8 @@
        while t < t_max:
          if events:
            y = mu0 + A[events[-1][1]]
+           if ss.issparse(A):
+             y = y.A.ravel()
          else:
            y = mu0
          wait = np.random.exponential(scale=1 / y)
@@ -118,7 +122,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[66]:
+   # Out[79]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -182,4 +186,51 @@
    :RESULTS:
    # Out[106]:
    : 5.305993690851737
+   :END:
+
+   A different notion of random graph is the [[https://en.wikipedia.org/wiki/Barab%25C3%25A1si%25E2%2580%2593Albert_model][Barabási–Albert model]], which
+   generates scale-free networks. (The ER model cannot generate such networks.)
+
+   #+BEGIN_SRC ipython
+     def ba_random_graph(n, m=2):
+       A = collections.defaultdict(set)
+       # Start from a fully connected network
+       A[0].add(1)
+       A[1].add(0)
+       for i in range(2, n):
+         p = np.array([float(len(A[k])) for k in A])
+         p /= p.sum()
+         e = set(np.random.choice(a=i, p=p, size=2))
+         A[i] = e
+         for j in e:
+           A[j].add(i)
+       # Convert adjacency list to adjacency matrix
+       ind = np.array([(k, v) for k in A for v in A[k]])
+       A = ss.coo_matrix((np.ones(len(ind)).astype(int), (ind[:,0], ind[:,1]))).tocsr()
+       return A
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[72]:
+   :END:
+
+   Generate spike trains for a random BA graph, and estimate the dimension of
+   the generated data.
+
+   #+BEGIN_SRC ipython :async t
+     N = 10
+     A = ba_random_graph(N)
+     mu0 = np.random.gamma(shape=.5, scale=.5, size=N)
+     t_max = 10
+     S = simulate(t_max, A, mu0)
+     X = pd.DataFrame(S).groupby(1).apply(lambda x: pd.Series(np.histogram(x[0], bins=np.arange(0, t_max, .01))[0]))
+     d = np.linalg.svd(X)[1]
+     np.square(np.square(d).sum()) / (d ** 4).sum()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[84]:
+   : 4.878048780487806
    :END:

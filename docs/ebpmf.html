@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-11-14 Thu 22:11 -->
+<!-- 2019-11-29 Fri 12:57 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Empirical Bayes Poisson Matrix Factorization</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,30 +227,212 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
-<ul class="org-ul">
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="network-dim.html">Why do high-dimensional networks produce low-dimensional activity?</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html">SCVI</a></li>
-<li><a href="vae.html">VAE for single-cell expression</a></li>
-<li><a href="zinb-vae-gmm.html">ZINB-VAE-GMM</a></li>
+<h1 class="title">Empirical Bayes Poisson Matrix Factorization</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org673971c">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#orgf16e04b">Methods</a>
+<ul>
+<li><a href="#org5495e82">Variational inference</a></li>
 </ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org673971c" class="outline-2">
+<h2 id="org673971c">Introduction</h2>
+<div class="outline-text-2" id="text-org673971c">
+<p>
+<i>Empirical Bayes Matrix Factorization</i>
+(<a href="https://arxiv.org/abs/1802.06931">Wang et al. 2018</a>) is a factor analysis
+method which uses empirical Bayes to learn a (possibly) sparse prior on each
+factor/loading from the data (and in addition, the number of factors).
+</p>
+
+\begin{align*}
+  x_{ij} \mid \mathbf{L}, \mathbf{F}, \mathbf{S} &\sim \mathcal{N}\left(\sum_k l_{ik} f_{jk}, s^2_{ij}\right)\\
+  l_{ik} &\sim g_k^l(\cdot)\\
+  f_{jk} &\sim g_k^f(\cdot)
+\end{align*}
+
+<p>
+The inference algorithm relies critically on the fact that the problem can be
+decomposed into a sum of rank one problems, each of which takes the form of
+<a href="https://stephens999.github.io/fiveMinuteStats/ebnm_normal.html"><i>Empirical
+Bayes Normal Means</i></a>
+</p>
+
+\begin{align*}
+  x_i \mid \theta_i, s_i^2 &\sim \mathcal{N}(\theta_i, s_i^2)\\
+  \theta_i &\sim g(\cdot),
+\end{align*}
+
+<p>
+yielding coordinate ascent updates of a variational objective. We are now
+interested in solving <i>Empirical Bayes Poisson Matrix Factorization</i>
+(extending <a href="https://www.hindawi.com/journals/cin/2009/785152/">Cemgil
+2009</a>, Gopalan et al. 2013, Gopalan et al. 2014, Mendes-Levitin et al. 2019)
+</p>
+
+\begin{align*}
+  x_{ij} &= \sum_k z_{ijk}\\
+  z_{ijk} \mid l_{ik}, f_{jk} &\sim \operatorname{Poisson}(l_{ik} f_{jk})\\
+  l_{ik} &\sim g_k^l(\cdot)\\
+  f_{jk} &\sim g_k^f(\cdot)
+\end{align*}
+
+<p>
+By introducing latent variables \(z_{ijk}\), we can again decompose the
+problem into a collection of rank one problems, which take the form
+</p>
+
+\begin{align*}
+  x_i \mid \lambda_i, s_i &\sim \operatorname{Poisson}(s_i \lambda_i)\\
+  \lambda_i &\sim g(\cdot),
+\end{align*}
+
+<p>
+which we define as <i>Empirical Bayes Poisson Means</i>. Again, this approach
+yields coordinate ascent VI updates. Introduce variational surrogates
+\(q_l^k\), \(q_f^k\), \(q_z\). Then \(\newcommand\E[1]{\left\langle #1
+  \right\rangle}\)
+</p>
+
+\begin{align*}
+  q^*_z(z_{ij1}, \ldots, z_{ijK}) &= \operatorname{Multinomial}(x_{ij}, \zeta_{ij1}, \ldots, \zeta_{ijK})\\
+  \zeta_{ijk} &= \frac{\exp(\E{\ln l_{ik}} + \E{\ln f_{jk}})}{\sum_t \exp(\E{\ln l_{it}} + \E{\ln f_{jt}})}\\
+\end{align*}
+
+<p>
+where expectations are taken with respect to \(q\). If \(\mathcal{G}\) is
+the family of Gamma distributions (parameterized by shape \(a\) and rate
+\(b\)), then
+</p>
+
+\begin{align*}
+  q^*_l(l_{ik}) = \operatorname{Gamma}\left(\sum_j \E{z_{ijk}} + a_k^l, \sum_j \E{f_{jk}} + b_k^l\right)\\
+  q^*_f(f_{jk}) = \operatorname{Gamma}\left(\sum_i \E{z_{ijk}} + a_k^f, \sum_i \E{l_{ik}} + b_k^f\right)\\
+\end{align*}
+
+<p>
+We can incorporate a variational EM step, (numerically) maximizing the ELBO
+wrt \(a, b\). This is equivalent (up to a constant which does not depend on
+\(a, b\)) to
+</p>
+
+\begin{align*}
+  q_k^l, g_k^l &:= \operatorname{EBPM}\left(\sum_j \E{z_{ijk}}, \ldots, \sum_j \E{z_{njk}}; \E{f_{jk}}\right)\\
+  q_k^f, g_k^f &:= \operatorname{EBPM}\left(\sum_i \E{z_{i1k}}, \ldots, \sum_i \E{z_{ipk}}; \E{l_{ik}}\right)
+\end{align*}
+
+<p>
+in which the size factors are identical for each "observation". More
+generally, we can view empirical Bayes as VBEM, by noting that the optimal
+\(q\) is the posterior \(p(\cdot \mid \mathbf{X}, g, \cdot)\), and that the
+EBPM objective is equivalent to the ELBO (up to a constant which does not
+depend on \(g\)).
+</p>
+
+<p>
+This approach has a practical issue: it cannot shrink factors/loadings
+exactly to zero. Surprisingly, this is true even when \(g\) is assumed to
+include a point mass on zero. The reason is that the posterior mean of
+\(\lambda\) in EBPM cannot equal zero. Here, we investigate whether a
+different approach can shrink loadings/factors to exactly zero under a
+point-Gamma assumption on \(\mathcal{G}\).
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0aa8f23" class="outline-2">
+<h2 id="setup"><a id="org0aa8f23"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> torch
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf16e04b" class="outline-2">
+<h2 id="orgf16e04b">Methods</h2>
+<div class="outline-text-2" id="text-orgf16e04b">
+</div>
+<div id="outline-container-org5495e82" class="outline-3">
+<h3 id="org5495e82">Variational inference</h3>
+<div class="outline-text-3" id="text-org5495e82">
+<p>
+Assuming \(\mathcal{G}\) is the family of point-Gamma distributions, the
+ELBO is not analytic. (It can be computed using the marginal likelihood of
+the EBPM subproblems.) Further, there is not an easy re-parameterization of
+\(q_l, q_f\) because they are now discrete mixtures, so we cannot use the
+re-parameterization gradient (Kingma and Welling 2014, Titsias and
+Lázaro-Gredilla 2014, Rezende and Mohammed 2014). We can still use the score
+gradient (also known as the
+<a href="http://blog.shakirm.com/2015/11/machine-learning-trick-of-the-day-5-log-derivative-trick/">log
+derivative trick</a> or
+<a href="http://www-anw.cs.umass.edu/~barto/courses/cs687/williams92simple.pdf">REINFORCE
+gradient</a>)
+</p>
+
+<p>
+\[ \grad E_Q[ln P(\cdot)] = E_Q[ln P(\cdot) \grad \ln Q(\cdot)] \]
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">
+</pre>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-11-14 Thu 22:11</p>
+<p class="date">Created: 2019-11-29 Fri 12:57</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

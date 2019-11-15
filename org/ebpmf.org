@@ -1,0 +1,156 @@
+#+TITLE: Empirical Bayes Poisson Matrix Factorization
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  /Empirical Bayes Matrix Factorization/
+  ([[https://arxiv.org/abs/1802.06931][Wang et al. 2018]]) is a factor analysis
+  method which uses empirical Bayes to learn a (possibly) sparse prior on each
+  factor/loading from the data (and in addition, the number of factors).
+
+  \begin{align*}
+    x_{ij} \mid \mathbf{L}, \mathbf{F}, \mathbf{S} &\sim \mathcal{N}\left(\sum_k l_{ik} f_{jk}, s^2_{ij}\right)\\
+    l_{ik} &\sim g_k^l(\cdot)\\
+    f_{jk} &\sim g_k^f(\cdot)
+  \end{align*}
+
+  The inference algorithm relies critically on the fact that the problem can be
+  decomposed into a sum of rank one problems, each of which takes the form of
+  [[https://stephens999.github.io/fiveMinuteStats/ebnm_normal.html][/Empirical
+  Bayes Normal Means/]]
+
+  \begin{align*}
+    x_i \mid \theta_i, s_i^2 &\sim \mathcal{N}(\theta_i, s_i^2)\\
+    \theta_i &\sim g(\cdot),
+  \end{align*}
+
+  yielding coordinate ascent updates of a variational objective. We are now
+  interested in solving /Empirical Bayes Poisson Matrix Factorization/
+  (extending [[https://www.hindawi.com/journals/cin/2009/785152/][Cemgil
+  2009]], Gopalan et al. 2013, Gopalan et al. 2014, Mendes-Levitin et al. 2019)
+
+  \begin{align*}
+    x_{ij} &= \sum_k z_{ijk}\\
+    z_{ijk} \mid l_{ik}, f_{jk} &\sim \operatorname{Poisson}(l_{ik} f_{jk})\\
+    l_{ik} &\sim g_k^l(\cdot)\\
+    f_{jk} &\sim g_k^f(\cdot)
+  \end{align*}
+
+  By introducing latent variables \(z_{ijk}\), we can again decompose the
+  problem into a collection of rank one problems, which take the form
+
+  \begin{align*}
+    x_i \mid \lambda_i, s_i &\sim \operatorname{Poisson}(s_i \lambda_i)\\
+    \lambda_i &\sim g(\cdot),
+  \end{align*}
+
+  which we define as /Empirical Bayes Poisson Means/. Again, this approach
+  yields coordinate ascent VI updates. Introduce variational surrogates
+  \(q_l^k\), \(q_f^k\), \(q_z\). Then \(\newcommand\E[1]{\left\langle #1
+  \right\rangle}\)
+
+  \begin{align*}
+    q^*_z(z_{ij1}, \ldots, z_{ijK}) &= \operatorname{Multinomial}(x_{ij}, \zeta_{ij1}, \ldots, \zeta_{ijK})\\
+    \zeta_{ijk} &= \frac{\exp(\E{\ln l_{ik}} + \E{\ln f_{jk}})}{\sum_t \exp(\E{\ln l_{it}} + \E{\ln f_{jt}})}\\
+  \end{align*}
+
+  where expectations are taken with respect to \(q\). If \(\mathcal{G}\) is
+  the family of Gamma distributions (parameterized by shape \(a\) and rate
+  \(b\)), then
+
+  \begin{align*}
+    q^*_l(l_{ik}) = \operatorname{Gamma}\left(\sum_j \E{z_{ijk}} + a_k^l, \sum_j \E{f_{jk}} + b_k^l\right)\\
+    q^*_f(f_{jk}) = \operatorname{Gamma}\left(\sum_i \E{z_{ijk}} + a_k^f, \sum_i \E{l_{ik}} + b_k^f\right)\\
+  \end{align*}
+
+  We can incorporate a variational EM step, (numerically) maximizing the ELBO
+  wrt \(a, b\). This is equivalent (up to a constant which does not depend on
+  \(a, b\)) to
+
+  \begin{align*}
+    q_k^l, g_k^l &:= \operatorname{EBPM}\left(\sum_j \E{z_{ijk}}, \ldots, \sum_j \E{z_{njk}}; \E{f_{jk}}\right)\\
+    q_k^f, g_k^f &:= \operatorname{EBPM}\left(\sum_i \E{z_{i1k}}, \ldots, \sum_i \E{z_{ipk}}; \E{l_{ik}}\right)
+  \end{align*}
+
+  in which the size factors are identical for each "observation". More
+  generally, we can view empirical Bayes as VBEM, by noting that the optimal
+  \(q\) is the posterior \(p(\cdot \mid \mathbf{X}, g, \cdot)\), and that the
+  EBPM objective is equivalent to the ELBO (up to a constant which does not
+  depend on \(g\)).
+
+  This approach has a practical issue: it cannot shrink factors/loadings
+  exactly to zero. Surprisingly, this is true even when \(g\) is assumed to
+  include a point mass on zero. The reason is that the posterior mean of
+  \(\lambda\) in EBPM cannot equal zero. Here, we investigate whether a
+  different approach can shrink loadings/factors to exactly zero under a
+  point-Gamma assumption on \(\mathcal{G}\).
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/ideas
+
+  #+RESULTS:
+  : Submitted batch job 63736279
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import torch
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Methods
+** Variational inference
+
+   Assuming \(\mathcal{G}\) is the family of point-Gamma distributions, the
+   ELBO is not analytic. (It can be computed using the marginal likelihood of
+   the EBPM subproblems.) Further, there is not an easy re-parameterization of
+   \(q_l, q_f\) because they are now discrete mixtures, so we cannot use the
+   re-parameterization gradient (Kingma and Welling 2014, Titsias and
+   Lázaro-Gredilla 2014, Rezende and Mohammed 2014). We can still use the score
+   gradient (also known as the
+   [[http://blog.shakirm.com/2015/11/machine-learning-trick-of-the-day-5-log-derivative-trick/][log
+   derivative trick]] or
+   [[http://www-anw.cs.umass.edu/~barto/courses/cs687/williams92simple.pdf][REINFORCE
+   gradient]])
+
+   \[ \grad E_Q[ln P(\cdot)] = E_Q[ln P(\cdot) \grad \ln Q(\cdot)] \]
+
+   #+BEGIN_SRC ipython
+   
+   #+END_SRC

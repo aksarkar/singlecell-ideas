@@ -1,6 +1,7 @@
 #+TITLE: Single cell ideas
 #+SETUPFILE: setup.org
 
+- [[file:pois-beta.org][Poisson-Beta model]]
 - [[file:ebpmf.org][Empirical Bayes Poisson Matrix Factorization]]
 - [[file:network-dim.org][Why do high-dimensional networks produce low-dimensional activity?]]
 - [[file:species-var.org][Correlation of gene expression variance across species]]

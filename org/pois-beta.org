@@ -1,0 +1,335 @@
+#+TITLE: Poisson-Beta model
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  One idealized model for transcriptional regulation is the /telegraph model/
+  (Peccoud and Ycart 1995, Raj et al. 2006, Kim and Marioni 2013, Munsky et
+  al. 2013), whose steady state is described by \(
+  \newcommand\kr{k_r}
+  \newcommand\kon{k_{\text{on}}}
+  \newcommand\koff{k_{\text{off}}}
+  \newcommand\E[1]{\left\langle #1 \right\rangle}
+  \newcommand\Pois{\operatorname{Poisson}}
+  \newcommand\B{\operatorname{Beta}}
+  \newcommand\betafun{\operatorname{B}}
+  \newcommand\Bin{\operatorname{Binomial}}
+  \)
+
+  \begin{align*}
+    x_i \mid p_i, \kr &\sim \Pois(p_i \kr)\\
+    p_i \mid \kon, \koff &\sim \B(\kon, \koff)
+  \end{align*}
+
+  where \(x_i\) is the number of mRNA molecules in cell \(i=1, \ldots, n\)
+  (considering only one gene), \(\kon\) is the rate of off\(\rightarrow\)on
+  promoter switching, \(\koff\) is the rate of on\(\rightarrow\)off promoter
+  switching, and \(\kr\) is the rate of mRNA synthesis. (All rates are scaled
+  relative to the mRNA decay rate.)
+
+  The inference goal is to estimate \(\kr, \kon, \koff\) given data \(x\)
+  assumed to be at steady state. The marginal likelihood \(p(x_i \mid \kr,
+  \kon, \koff)\) does have a closed form; however, it involves the
+  [[http://mathworld.wolfram.com/HypergeometricFunction.html][confluent
+  hypergeometric function of the first kind]] (Raj et al 2006), which is
+  difficult to evaluate. To avoid this challenge, Kim and Marioni 2013 develop
+  an MCMC scheme to sample from the posterior \(p(\kr, \kon, \koff \mid x_i)\),
+  and Larsson et al. 2019 use numerical integration to evaluate the marginal
+  likelihood. Here, we investigate how the running time of the MLE procedure
+  (using numerical integration) scales, and whether variational inference can
+  improve the running time.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar
+
+  #+RESULTS:
+  : Submitted batch job 64073884
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import scipy.optimize as so
+    import scipy.special as sp
+    import scipy.stats as st
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Methods
+** Moment estimation
+
+   Peccoud and Ycart 1995 derived moment estimators for \(\kr, \kon, \koff\)
+
+   #+BEGIN_SRC ipython
+     def fit_poisson_beta_moment(x):
+       """Return kr, kon, koff
+
+       x - array-like [n,]
+
+       """
+       moments = np.array([1, x.mean(), (x * (x - 1)).mean(), (x * (x - 1) * (x - 2)).mean()])
+       ratios = moments[1:] / moments[:-1]
+       kr = (2 * ratios[0] * ratios[2] - ratios[0] * ratios[1] - ratios[1] * ratios[2]) / (ratios[0] - 2 * ratios[1] + ratios[2])
+       kon = (2 * ratios[0] * (ratios[2] - ratios[1])) / (ratios[0] * ratios[1] - 2 * ratios[0] * ratios[2] + ratios[1] * ratios[2])
+       koff = (2 * (ratios[2] - ratios[1]) * (ratios[0] - ratios[2]) * (ratios[1] - ratios[0])) / ((ratios[0] * ratios[1] - 2 * ratios[0] * ratios[2] + ratios[1] * ratios[2]) * (ratios[0] - 2 * ratios[1] + ratios[2]))
+       return kr, kon, koff
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[26]:
+   :END:
+
+** Maximum likelihood estimation
+
+   Larsson et al. 2019 use
+   [[https://en.wikipedia.org/wiki/Gauss%25E2%2580%2593Jacobi_quadrature][Gauss-Jacobi
+   quadrature]] to evaluate the marginal likelihood
+
+   \begin{align*}
+     \ell &= \frac{1}{\betafun(\kon, \koff)} \int_0^1 \Pois(x_i; \kr p_i)\, p_i^{\kon - 1} (1 - p_i)^{\koff - 1}\; dp_i\\
+     &= \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i
+   \end{align*}
+
+   where \(p_i \triangleq \frac{1 + t_i}{2}\) and \(\betafun(\cdot)\) denotes
+   the Beta function. This procedure can be used as a subroutine to numerically
+   optimize the marginal likelihood.
+
+   #+BEGIN_SRC ipython
+     def poisson_beta_neg_llik(theta, x, order=50):
+       """Return the negative log likelihood of the data
+
+       theta - [ln k_r, ln k_on, ln k_off]
+       order - quadrature order
+
+       """
+       kr, kon, koff = np.exp(theta) + 1e-8
+       # Important: Gauss-Jacobi quadrature computes the integral over t ∈ [-1, 1],
+       # but we want the integral over p ∈ [0, 1]
+       t, w = sp.roots_jacobi(n=order, alpha=koff - 1, beta=kon - 1)
+       # (order, 1)
+       p = ((1 + t) / 2).reshape(-1, 1)
+       # (1, order) @ (order, n)
+       px = w.reshape(1, -1) @ st.poisson(mu=kr * p).pmf(x.reshape(1, -1))
+       return -(np.log(px) - sp.betaln(kon, koff) - (kon + koff - 2) * np.log(2)).sum()
+
+     def fit_poisson_beta_mle(x, init=None, order=50):
+       """Return k_r, k_on, k_off
+
+       x - array-like [n,]
+       init - [k_r, k_on, k_off] (3,)
+       order - quadrature order
+
+       """
+       if init is None:
+         init = fit_poisson_beta_moment(x)
+       # Work in log space to allow unconstrained optimization
+       x0 = np.log(init)
+       opt = so.minimize(poisson_beta_neg_llik, x0=x0, args=(x, order), method='Nelder-Mead')
+       if not opt.success:
+         raise RuntimeError(f'failed to converge: {opt.message}')
+       return np.exp(opt.x)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[121]:
+   :END:
+
+** Variational inference
+
+   To make the model amenable for VI, introduce latent variables \(z_i\)
+
+   \begin{align*}
+     x_i \mid z_i, p_i &\sim \Bin(z_i, p_i)\\
+     z_i \mid \kr &\sim \Pois(\kr)\\
+     p_i \mid \kon, \koff &\sim \B(\kon, \koff)
+   \end{align*}
+
+   Then, we have
+
+   \begin{multline*}
+     \ln p(x_i, z_i, p_i \mid \kr, \kon, \koff) = (x + \kon - 1) \ln p_i + (z_i - x_i + \koff - 1) \ln(1 - p_i)\\
+     - (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
+   \end{multline*}
+
+   where we have added and subtracted \(x_i \ln \kr\) to more easily derive
+   coordinate updates
+
+   \begin{align*}
+     q^*(z_i - x_i) &= \Pois(\exp(\E{\ln (1 - p_i)} + \ln k_r)) \triangleq \Pois(\mu_i) \\
+     q^*(p_i) &= \B(x_i + \kon, \E{z_i - x_i} + \koff) \triangleq \B(\alpha_i, \beta_i)
+   \end{align*}
+
+   where expectations are taken with respect to the variational approximation
+   \(q\). [[https://en.wikipedia.org/wiki/Beta_distribution#Moments_of_logarithmically_transformed_random_variables][Using
+   properties of the Beta distribution]]
+
+   \begin{align*}
+     \E{\ln p_i} &= \psi(\alpha_i) - \psi(\alpha_i + \beta_i)\\
+     \E{\ln (1 - p_i)} &= \psi(\beta_i) - \psi(\alpha_i + \beta_i)
+   \end{align*}   
+
+   where \(\psi\) is the digamma function. The evidence lower bound is
+
+   \begin{multline*}
+     \ell = \sum_i (x_i + \kon - \alpha_i) \E{\ln p_i} + (\mu_i + \koff - \beta_i) \E{\ln(1 - p_i)}\\
+     + (x_i + \mu_i) \ln \kr - k_r - \mu_i \ln \mu_i + \mu_i - \ln\Gamma(x_i + 1) - \ln\betafun(\kon, \koff) + \ln\betafun(\alpha_i, \beta_i)
+   \end{multline*}
+
+   which can be numerically optimized over \(\kr, \kon, \koff\).
+
+   #+BEGIN_SRC ipython
+     def poisson_beta_elbo(theta, x, mu, alpha, beta):
+       """Return the evidence lower bound
+
+       theta - [ln k_r, ln k_on, ln k_off]
+       x - array-like [n,]
+       mu - array-like [n,]
+       alpha - array-like [n,]
+       beta - array-like [n,]
+
+       """
+       kr, kon, koff = np.exp(theta)
+       return ((x + kon - alpha) * (sp.digamma(alpha) - sp.digamma(alpha + beta))
+               + (mu + koff - beta) * (sp.digamma(beta) - sp.digamma(alpha + beta))
+               + (x + mu) * np.log(kr) - kr - mu * np.log(mu) + mu - sp.gammaln(x + 1)
+               - sp.betaln(kon, koff) + sp.betaln(alpha, beta)).sum()
+
+     def poisson_beta_neg_elbo(theta, x, mu, alpha, beta):
+       """Return the negative evidence lower bound
+
+       This is intended to be used as a subroutine to scipy.optimize.minimize
+
+       """
+       return -poisson_beta_elbo(theta, x, mu, alpha, beta)
+
+     def fit_poisson_beta_vi(x, init=None, atol=1e-8, max_iters=1000, verbose=False):
+       """Return kr, kon, koff
+
+       init - [ln k_r, ln k_on, ln k_off]
+
+       """
+       if init is None:
+         init = np.log(fit_poisson_beta_moment(x))
+       theta = init
+       mu = np.zeros(x.shape)
+       alpha = np.ones(x.shape)
+       beta = np.ones(x.shape)
+
+       obj = -np.inf
+       for t in range(max_iters):
+         alpha = x + np.exp(theta[1])
+         beta = mu + np.exp(theta[2])
+         mu = np.exp(sp.digamma(beta) - sp.digamma(alpha + beta) + theta[0])
+         opt = so.minimize(poisson_beta_neg_elbo, x0=theta, args=(x, mu, alpha, beta), method='L-BFGS-B')
+         if not opt.success:
+           raise RuntimeError(f'Variational M step failed to converge: {opt.message}')
+         theta = opt.x
+         update = -opt.fun
+         if verbose:
+           print(f'Epoch {t}: {update}')
+         if abs(obj - update) < atol:
+           return theta
+         else:
+           obj = update
+       raise RuntimeError('failed to converge')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[119]:
+   :END:
+
+* Results
+** Simulation
+
+   Make sure the implementations work on one example.
+
+   #+BEGIN_SRC ipython
+     def simulate_pois_beta(n, kr=None, kon=None, koff=None, seed=None):
+       if seed is not None:
+         np.random.seed(seed)
+       if kr is None:
+         kr = np.random.lognormal(mean=3)
+       if kon is None:
+         kon = np.random.lognormal()
+       if koff is None:
+         koff = np.random.lognormal()
+       p = np.random.beta(a=kon, b=koff, size=n)
+       x = np.random.poisson(lam=kr * p)
+       return x, kr, kon, koff
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[112]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     x, *theta = simulate_pois_beta(n=1000, seed=0)
+     theta
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[113]:
+   : [117.2199806492514, 1.4920592434019648, 2.661095776728801]
+   :END:
+
+   #+BEGIN_SRC ipython
+     thetahat_moment = fit_poisson_beta_moment(x)
+     thetahat_moment
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   : (120.04495742521208, 1.5214275840865479, 2.720680223717907)
+   :END:
+
+   #+BEGIN_SRC ipython
+     thetahat_mle = fit_poisson_beta_mle(x)
+     thetahat_mle
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[122]:
+   : array([118.92485772,   1.52953485,   2.68994176])
+   :END:

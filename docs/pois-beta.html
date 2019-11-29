@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2019-11-30 Sat 16:42 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poisson-Beta model</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Poisson-Beta model</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgc65a620">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org7800341">Methods</a>
+<ul>
+<li><a href="#org5c935d4">Moment estimation</a></li>
+<li><a href="#org85740f7">Maximum likelihood estimation</a></li>
+<li><a href="#orgafe29a8">Variational inference</a></li>
+</ul>
+</li>
+<li><a href="#org8f429f7">Results</a>
+<ul>
+<li><a href="#org6abae0d">Simulation</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgc65a620" class="outline-2">
+<h2 id="orgc65a620">Introduction</h2>
+<div class="outline-text-2" id="text-orgc65a620">
+<p>
+One idealized model for transcriptional regulation is the <i>telegraph model</i>
+(Peccoud and Ycart 1995, Raj et al. 2006, Kim and Marioni 2013, Munsky et
+al. 2013), whose steady state is described by \(
+  \newcommand\kr{k_r}
+  \newcommand\kon{k_{\text{on}}}
+  \newcommand\koff{k_{\text{off}}}
+  \newcommand\E[1]{\left\langle #1 \right\rangle}
+  \newcommand\Pois{\operatorname{Poisson}}
+  \newcommand\B{\operatorname{Beta}}
+  \newcommand\betafun{\operatorname{B}}
+  \newcommand\Bin{\operatorname{Binomial}}
+  \)
+</p>
+
+\begin{align*}
+  x_i \mid p_i, \kr &\sim \Pois(p_i \kr)\\
+  p_i \mid \kon, \koff &\sim \B(\kon, \koff)
+\end{align*}
+
+<p>
+where \(x_i\) is the number of mRNA molecules in cell \(i=1, \ldots, n\)
+(considering only one gene), \(\kon\) is the rate of off\(\rightarrow\)on
+promoter switching, \(\koff\) is the rate of on\(\rightarrow\)off promoter
+switching, and \(\kr\) is the rate of mRNA synthesis. (All rates are scaled
+relative to the mRNA decay rate.)
+</p>
+
+<p>
+The inference goal is to estimate \(\kr, \kon, \koff\) given data \(x\)
+assumed to be at steady state. The marginal likelihood \(p(x_i \mid \kr,
+  \kon, \koff)\) does have a closed form; however, it involves the
+<a href="http://mathworld.wolfram.com/HypergeometricFunction.html">confluent
+hypergeometric function of the first kind</a> (Raj et al 2006), which is
+difficult to evaluate. To avoid this challenge, Kim and Marioni 2013 develop
+an MCMC scheme to sample from the posterior \(p(\kr, \kon, \koff \mid x_i)\),
+and Larsson et al. 2019 use numerical integration to evaluate the marginal
+likelihood. Here, we investigate how the running time of the MLE procedure
+(using numerical integration) scales, and whether variational inference can
+improve the running time.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc673021" class="outline-2">
+<h2 id="setup"><a id="orgc673021"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> scipy.optimize <span class="org-keyword">as</span> so
+<span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7800341" class="outline-2">
+<h2 id="org7800341">Methods</h2>
+<div class="outline-text-2" id="text-org7800341">
+</div>
+<div id="outline-container-org5c935d4" class="outline-3">
+<h3 id="org5c935d4">Moment estimation</h3>
+<div class="outline-text-3" id="text-org5c935d4">
+<p>
+Peccoud and Ycart 1995 derived moment estimators for \(\kr, \kon, \koff\)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_moment</span>(x):
+  <span class="org-doc">"""Return kr, kon, koff</span>
+
+<span class="org-doc">  x - array-like [n,]</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">moments</span> = np.array([1, x.mean(), (x * (x - 1)).mean(), (x * (x - 1) * (x - 2)).mean()])
+  <span class="org-variable-name">ratios</span> = moments[1:] / moments[:-1]
+  <span class="org-variable-name">kr</span> = (2 * ratios[0] * ratios[2] - ratios[0] * ratios[1] - ratios[1] * ratios[2]) / (ratios[0] - 2 * ratios[1] + ratios[2])
+  <span class="org-variable-name">kon</span> = (2 * ratios[0] * (ratios[2] - ratios[1])) / (ratios[0] * ratios[1] - 2 * ratios[0] * ratios[2] + ratios[1] * ratios[2])
+  <span class="org-variable-name">koff</span> = (2 * (ratios[2] - ratios[1]) * (ratios[0] - ratios[2]) * (ratios[1] - ratios[0])) / ((ratios[0] * ratios[1] - 2 * ratios[0] * ratios[2] + ratios[1] * ratios[2]) * (ratios[0] - 2 * ratios[1] + ratios[2]))
+  <span class="org-keyword">return</span> kr, kon, koff
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org85740f7" class="outline-3">
+<h3 id="org85740f7">Maximum likelihood estimation</h3>
+<div class="outline-text-3" id="text-org85740f7">
+<p>
+Larsson et al. 2019 use
+<a href="https://en.wikipedia.org/wiki/Gauss%E2%80%93Jacobi_quadrature">Gauss-Jacobi
+quadrature</a> to evaluate the marginal likelihood
+</p>
+
+\begin{align*}
+  \ell &= \frac{1}{\betafun(\kon, \koff)} \int_0^1 \Pois(x_i; \kr p_i)\, p_i^{\kon - 1} (1 - p_i)^{\koff - 1}\; dp_i\\
+  &= \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i
+\end{align*}
+
+<p>
+where \(p_i \triangleq \frac{1 + t_i}{2}\) and \(\betafun(\cdot)\) denotes
+the Beta function. This procedure can be used as a subroutine to numerically
+optimize the marginal likelihood.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_neg_llik</span>(theta, x, order=50):
+  <span class="org-doc">"""Return the negative log likelihood of the data</span>
+
+<span class="org-doc">  theta - [ln k_r, ln k_on, ln k_off]</span>
+<span class="org-doc">  order - quadrature order</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">kr</span>, <span class="org-variable-name">kon</span>, <span class="org-variable-name">koff</span> = np.exp(theta) + 1e-8
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: Gauss-Jacobi quadrature computes the integral over t &#8712; [-1, 1],</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">but we want the integral over p &#8712; [0, 1]</span>
+  <span class="org-variable-name">t</span>, <span class="org-variable-name">w</span> = sp.roots_jacobi(n=order, alpha=koff - 1, beta=kon - 1)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">(order, 1)</span>
+  <span class="org-variable-name">p</span> = ((1 + t) / 2).reshape(-1, 1)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">(1, order) @ (order, n)</span>
+  <span class="org-variable-name">px</span> = w.reshape(1, -1) @ st.poisson(mu=kr * p).pmf(x.reshape(1, -1))
+  <span class="org-keyword">return</span> -(np.log(px) - sp.betaln(kon, koff) - (kon + koff - 2) * np.log(2)).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_mle</span>(x, init=<span class="org-constant">None</span>, order=50):
+  <span class="org-doc">"""Return k_r, k_on, k_off</span>
+
+<span class="org-doc">  x - array-like [n,]</span>
+<span class="org-doc">  init - [k_r, k_on, k_off] (3,)</span>
+<span class="org-doc">  order - quadrature order</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">if</span> init <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">init</span> = fit_poisson_beta_moment(x)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Work in log space to allow unconstrained optimization</span>
+  <span class="org-variable-name">x0</span> = np.log(init)
+  <span class="org-variable-name">opt</span> = so.minimize(poisson_beta_neg_llik, x0=x0, args=(x, order), method=<span class="org-string">'Nelder-Mead'</span>)
+  <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt.success:
+    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'failed to converge: {opt.message}'</span>)
+  <span class="org-keyword">return</span> np.exp(opt.x)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgafe29a8" class="outline-3">
+<h3 id="orgafe29a8">Variational inference</h3>
+<div class="outline-text-3" id="text-orgafe29a8">
+<p>
+To make the model amenable for VI, introduce latent variables \(z_i\)
+</p>
+
+\begin{align*}
+  x_i \mid z_i, p_i &\sim \Bin(z_i, p_i)\\
+  z_i \mid \kr &\sim \Pois(\kr)\\
+  p_i \mid \kon, \koff &\sim \B(\kon, \koff)
+\end{align*}
+
+<p>
+Then, we have
+</p>
+
+\begin{multline*}
+  \ln p(x_i, z_i, p_i \mid \kr, \kon, \koff) = (x + \kon - 1) \ln p_i + (z_i - x_i + \koff - 1) \ln(1 - p_i)\\
+  - (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
+\end{multline*}
+
+<p>
+where we have added and subtracted \(x_i \ln \kr\) to more easily derive
+coordinate updates
+</p>
+
+\begin{align*}
+  q^*(z_i - x_i) &= \Pois(\exp(\E{\ln (1 - p_i)} + \ln k_r)) \triangleq \Pois(\mu_i) \\
+  q^*(p_i) &= \B(x_i + \kon, \E{z_i - x_i} + \koff) \triangleq \B(\alpha_i, \beta_i)
+\end{align*}
+
+<p>
+where expectations are taken with respect to the variational approximation
+\(q\). <a href="https://en.wikipedia.org/wiki/Beta_distribution#Moments_of_logarithmically_transformed_random_variables">Using
+properties of the Beta distribution</a>
+</p>
+
+\begin{align*}
+  \E{\ln p_i} &= \psi(\alpha_i) - \psi(\alpha_i + \beta_i)\\
+  \E{\ln (1 - p_i)} &= \psi(\beta_i) - \psi(\alpha_i + \beta_i)
+\end{align*}   
+
+<p>
+where \(\psi\) is the digamma function. The evidence lower bound is
+</p>
+
+\begin{multline*}
+  \ell = \sum_i (x_i + \kon - \alpha_i) \E{\ln p_i} + (\mu_i + \koff - \beta_i) \E{\ln(1 - p_i)}\\
+  + (x_i + \mu_i) \ln \kr - k_r - \mu_i \ln \mu_i + \mu_i - \ln\Gamma(x_i + 1) - \ln\betafun(\kon, \koff) + \ln\betafun(\alpha_i, \beta_i)
+\end{multline*}
+
+<p>
+which can be numerically optimized over \(\kr, \kon, \koff\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_elbo</span>(theta, x, mu, alpha, beta):
+  <span class="org-doc">"""Return the evidence lower bound</span>
+
+<span class="org-doc">  theta - [ln k_r, ln k_on, ln k_off]</span>
+<span class="org-doc">  x - array-like [n,]</span>
+<span class="org-doc">  mu - array-like [n,]</span>
+<span class="org-doc">  alpha - array-like [n,]</span>
+<span class="org-doc">  beta - array-like [n,]</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">kr</span>, <span class="org-variable-name">kon</span>, <span class="org-variable-name">koff</span> = np.exp(theta)
+  <span class="org-keyword">return</span> ((x + kon - alpha) * (sp.digamma(alpha) - sp.digamma(alpha + beta))
+          + (mu + koff - beta) * (sp.digamma(beta) - sp.digamma(alpha + beta))
+          + (x + mu) * np.log(kr) - kr - mu * np.log(mu) + mu - sp.gammaln(x + 1)
+          - sp.betaln(kon, koff) + sp.betaln(alpha, beta)).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_neg_elbo</span>(theta, x, mu, alpha, beta):
+  <span class="org-doc">"""Return the negative evidence lower bound</span>
+
+<span class="org-doc">  This is intended to be used as a subroutine to scipy.optimize.minimize</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">return</span> -poisson_beta_elbo(theta, x, mu, alpha, beta)
+
+<span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_vi</span>(x, init=<span class="org-constant">None</span>, atol=1e-8, max_iters=1000, verbose=<span class="org-constant">False</span>):
+  <span class="org-doc">"""Return kr, kon, koff</span>
+
+<span class="org-doc">  init - [ln k_r, ln k_on, ln k_off]</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">if</span> init <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">init</span> = np.log(fit_poisson_beta_moment(x))
+  <span class="org-variable-name">theta</span> = init
+  <span class="org-variable-name">mu</span> = np.zeros(x.shape)
+  <span class="org-variable-name">alpha</span> = np.ones(x.shape)
+  <span class="org-variable-name">beta</span> = np.ones(x.shape)
+
+  <span class="org-variable-name">obj</span> = -np.inf
+  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
+    <span class="org-variable-name">alpha</span> = x + np.exp(theta[1])
+    <span class="org-variable-name">beta</span> = mu + np.exp(theta[2])
+    <span class="org-variable-name">mu</span> = np.exp(sp.digamma(beta) - sp.digamma(alpha + beta) + theta[0])
+    <span class="org-variable-name">opt</span> = so.minimize(poisson_beta_neg_elbo, x0=theta, args=(x, mu, alpha, beta), method=<span class="org-string">'L-BFGS-B'</span>)
+    <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt.success:
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'Variational M step failed to converge: {opt.message}'</span>)
+    <span class="org-variable-name">theta</span> = opt.x
+    <span class="org-variable-name">update</span> = -opt.fun
+    <span class="org-keyword">if</span> verbose:
+      <span class="org-keyword">print</span>(f<span class="org-string">'Epoch {t}: {update}'</span>)
+    <span class="org-keyword">if</span> <span class="org-builtin">abs</span>(obj - update) &lt; atol:
+      <span class="org-keyword">return</span> theta
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">obj</span> = update
+  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge'</span>)
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org8f429f7" class="outline-2">
+<h2 id="org8f429f7">Results</h2>
+<div class="outline-text-2" id="text-org8f429f7">
+</div>
+<div id="outline-container-org6abae0d" class="outline-3">
+<h3 id="org6abae0d">Simulation</h3>
+<div class="outline-text-3" id="text-org6abae0d">
+<p>
+Make sure the implementations work on one example.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_pois_beta</span>(n, kr=<span class="org-constant">None</span>, kon=<span class="org-constant">None</span>, koff=<span class="org-constant">None</span>, seed=<span class="org-constant">None</span>):
+  <span class="org-keyword">if</span> seed <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+    np.random.seed(seed)
+  <span class="org-keyword">if</span> kr <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">kr</span> = np.random.lognormal(mean=3)
+  <span class="org-keyword">if</span> kon <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">kon</span> = np.random.lognormal()
+  <span class="org-keyword">if</span> koff <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">koff</span> = np.random.lognormal()
+  <span class="org-variable-name">p</span> = np.random.beta(a=kon, b=koff, size=n)
+  <span class="org-variable-name">x</span> = np.random.poisson(lam=kr * p)
+  <span class="org-keyword">return</span> x, kr, kon, koff
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">x, *<span class="org-variable-name">theta</span> = simulate_pois_beta(n=1000, seed=0)
+theta
+</pre>
+</div>
+
+<pre class="example">
+[117.2199806492514, 1.4920592434019648, 2.661095776728801]
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">thetahat_moment</span> = fit_poisson_beta_moment(x)
+thetahat_moment
+</pre>
+</div>
+
+<pre class="example">
+(120.04495742521208, 1.5214275840865479, 2.720680223717907)
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">thetahat_mle</span> = fit_poisson_beta_mle(x)
+thetahat_mle
+</pre>
+</div>
+
+<pre class="example">
+array([118.92485772,   1.52953485,   2.68994176])
+
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2019-11-30 Sat 16:42</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-11-30 Sat 16:42 -->
+<!-- 2019-12-01 Sun 02:47 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -259,16 +259,16 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#orgc65a620">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#org7800341">Methods</a>
+<li><a href="#methods">Methods</a>
 <ul>
-<li><a href="#org5c935d4">Moment estimation</a></li>
-<li><a href="#org85740f7">Maximum likelihood estimation</a></li>
-<li><a href="#orgafe29a8">Variational inference</a></li>
+<li><a href="#moment">Moment estimation</a></li>
+<li><a href="#mle">Maximum likelihood estimation</a></li>
+<li><a href="#vi">Variational inference</a></li>
 </ul>
 </li>
-<li><a href="#org8f429f7">Results</a>
+<li><a href="#results">Results</a>
 <ul>
-<li><a href="#org6abae0d">Simulation</a></li>
+<li><a href="#simulation">Simulation</a></li>
 </ul>
 </li>
 </ul>
@@ -349,12 +349,12 @@ improve the running time.
 </div>
 
 <div id="outline-container-org7800341" class="outline-2">
-<h2 id="org7800341">Methods</h2>
-<div class="outline-text-2" id="text-org7800341">
+<h2 id="methods"><a id="org7800341"></a>Methods</h2>
+<div class="outline-text-2" id="text-methods">
 </div>
 <div id="outline-container-org5c935d4" class="outline-3">
-<h3 id="org5c935d4">Moment estimation</h3>
-<div class="outline-text-3" id="text-org5c935d4">
+<h3 id="moment"><a id="org5c935d4"></a>Moment estimation</h3>
+<div class="outline-text-3" id="text-moment">
 <p>
 Peccoud and Ycart 1995 derived moment estimators for \(\kr, \kon, \koff\)
 </p>
@@ -378,8 +378,8 @@ Peccoud and Ycart 1995 derived moment estimators for \(\kr, \kon, \koff\)
 </div>
 
 <div id="outline-container-org85740f7" class="outline-3">
-<h3 id="org85740f7">Maximum likelihood estimation</h3>
-<div class="outline-text-3" id="text-org85740f7">
+<h3 id="mle"><a id="org85740f7"></a>Maximum likelihood estimation</h3>
+<div class="outline-text-3" id="text-mle">
 <p>
 Larsson et al. 2019 use
 <a href="https://en.wikipedia.org/wiki/Gauss%E2%80%93Jacobi_quadrature">Gauss-Jacobi
@@ -437,8 +437,8 @@ optimize the marginal likelihood.
 </div>
 
 <div id="outline-container-orgafe29a8" class="outline-3">
-<h3 id="orgafe29a8">Variational inference</h3>
-<div class="outline-text-3" id="text-orgafe29a8">
+<h3 id="vi"><a id="orgafe29a8"></a>Variational inference</h3>
+<div class="outline-text-3" id="text-vi">
 <p>
 To make the model amenable for VI, introduce latent variables \(z_i\)
 </p>
@@ -455,7 +455,7 @@ Then, we have
 
 \begin{multline*}
   \ln p(x_i, z_i, p_i \mid \kr, \kon, \koff) = (x + \kon - 1) \ln p_i + (z_i - x_i + \koff - 1) \ln(1 - p_i)\\
-  - (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
+  + (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
 \end{multline*}
 
 <p>
@@ -489,8 +489,17 @@ where \(\psi\) is the digamma function. The evidence lower bound is
 \end{multline*}
 
 <p>
-which can be numerically optimized over \(\kr, \kon, \koff\).
+We can derive the Jacobian with respect to \(\kr, \kon, \koff\), leading to
+an analytic update for \(\kr\). We can use Brent's method to numerically
+update \(\kon, \koff\).
 </p>
+
+\begin{align*}
+  \frac{\partial \ell}{\partial \kr} &= \sum_i \frac{x_i + \mu_i}{\kr} - 1\\
+  \kr &:= \frac{1}{n} \sum_i x_i + \mu_i\\
+  \frac{\partial \ell}{\partial \kon} &= \sum_i \psi(\alpha_i) - \psi(\alpha_i - \beta_i) - \psi(\kon) + \psi(\kon + \koff)\\
+  \frac{\partial \ell}{\partial \koff} &= \sum_i \psi(\beta_i) - \psi(\alpha_i - \beta_i) - \psi(\koff) + \psi(\kon + \koff)
+\end{align*}
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_elbo</span>(theta, x, mu, alpha, beta):
@@ -554,12 +563,12 @@ which can be numerically optimized over \(\kr, \kon, \koff\).
 </div>
 
 <div id="outline-container-org8f429f7" class="outline-2">
-<h2 id="org8f429f7">Results</h2>
-<div class="outline-text-2" id="text-org8f429f7">
+<h2 id="results"><a id="org8f429f7"></a>Results</h2>
+<div class="outline-text-2" id="text-results">
 </div>
 <div id="outline-container-org6abae0d" class="outline-3">
-<h3 id="org6abae0d">Simulation</h3>
-<div class="outline-text-3" id="text-org6abae0d">
+<h3 id="simulation"><a id="org6abae0d"></a>Simulation</h3>
+<div class="outline-text-3" id="text-simulation">
 <p>
 Make sure the implementations work on one example.
 </p>
@@ -618,7 +627,7 @@ array([118.92485772,   1.52953485,   2.68994176])
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-11-30 Sat 16:42</p>
+<p class="date">Created: 2019-12-01 Sun 02:47</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

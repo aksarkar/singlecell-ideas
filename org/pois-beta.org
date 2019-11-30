@@ -91,7 +91,13 @@
   :END:
 
 * Methods
+  :PROPERTIES:
+  :CUSTOM_ID: methods
+  :END:
 ** Moment estimation
+   :PROPERTIES:
+   :CUSTOM_ID: moment
+   :END:
 
    Peccoud and Ycart 1995 derived moment estimators for \(\kr, \kon, \koff\)
 
@@ -116,6 +122,9 @@
    :END:
 
 ** Maximum likelihood estimation
+   :PROPERTIES:
+   :CUSTOM_ID: mle
+   :END:
 
    Larsson et al. 2019 use
    [[https://en.wikipedia.org/wiki/Gauss%25E2%2580%2593Jacobi_quadrature][Gauss-Jacobi
@@ -172,6 +181,9 @@
    :END:
 
 ** Variational inference
+   :PROPERTIES:
+   :CUSTOM_ID: vi
+   :END:
 
    To make the model amenable for VI, introduce latent variables \(z_i\)
 
@@ -185,7 +197,7 @@
 
    \begin{multline*}
      \ln p(x_i, z_i, p_i \mid \kr, \kon, \koff) = (x + \kon - 1) \ln p_i + (z_i - x_i + \koff - 1) \ln(1 - p_i)\\
-     - (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
+     + (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
    \end{multline*}
 
    where we have added and subtracted \(x_i \ln \kr\) to more easily derive
@@ -212,7 +224,16 @@
      + (x_i + \mu_i) \ln \kr - k_r - \mu_i \ln \mu_i + \mu_i - \ln\Gamma(x_i + 1) - \ln\betafun(\kon, \koff) + \ln\betafun(\alpha_i, \beta_i)
    \end{multline*}
 
-   which can be numerically optimized over \(\kr, \kon, \koff\).
+   We can derive the Jacobian with respect to \(\kr, \kon, \koff\), leading to
+   an analytic update for \(\kr\). We can use Brent's method to numerically
+   update \(\kon, \koff\).
+
+   \begin{align*}
+     \frac{\partial \ell}{\partial \kr} &= \sum_i \frac{x_i + \mu_i}{\kr} - 1\\
+     \kr &:= \frac{1}{n} \sum_i x_i + \mu_i\\
+     \frac{\partial \ell}{\partial \kon} &= \sum_i \psi(\alpha_i) - \psi(\alpha_i - \beta_i) - \psi(\kon) + \psi(\kon + \koff)\\
+     \frac{\partial \ell}{\partial \koff} &= \sum_i \psi(\beta_i) - \psi(\alpha_i - \beta_i) - \psi(\koff) + \psi(\kon + \koff)
+   \end{align*}
 
    #+BEGIN_SRC ipython
      def poisson_beta_elbo(theta, x, mu, alpha, beta):
@@ -277,7 +298,13 @@
    :END:
 
 * Results
+  :PROPERTIES:
+  :CUSTOM_ID: results
+  :END:
 ** Simulation
+   :PROPERTIES:
+   :CUSTOM_ID: simulation
+   :END:
 
    Make sure the implementations work on one example.
 

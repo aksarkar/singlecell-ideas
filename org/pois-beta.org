@@ -55,18 +55,22 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar
 
   #+RESULTS:
-  : Submitted batch job 64073884
+  : Submitted batch job 64094866
 
   #+BEGIN_SRC ipython
+    import itertools as it
     import numpy as np
+    import pandas as pd
     import scipy.optimize as so
     import scipy.special as sp
     import scipy.stats as st
+    import sys
+    import timeit
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[120]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -102,8 +106,11 @@
    Peccoud and Ycart 1995 derived moment estimators for \(\kr, \kon, \koff\)
 
    #+BEGIN_SRC ipython
-     def fit_poisson_beta_moment(x):
-       """Return kr, kon, koff
+     def fit_poisson_beta_moment(x, **kwargs):
+       """Return ln kr, ln kon, ln koff
+
+       Estimate kr, kon, koff using the first three exponential moments (Peccoud &
+       Ycart 1995).
 
        x - array-like [n,]
 
@@ -113,12 +120,15 @@
        kr = (2 * ratios[0] * ratios[2] - ratios[0] * ratios[1] - ratios[1] * ratios[2]) / (ratios[0] - 2 * ratios[1] + ratios[2])
        kon = (2 * ratios[0] * (ratios[2] - ratios[1])) / (ratios[0] * ratios[1] - 2 * ratios[0] * ratios[2] + ratios[1] * ratios[2])
        koff = (2 * (ratios[2] - ratios[1]) * (ratios[0] - ratios[2]) * (ratios[1] - ratios[0])) / ((ratios[0] * ratios[1] - 2 * ratios[0] * ratios[2] + ratios[1] * ratios[2]) * (ratios[0] - 2 * ratios[1] + ratios[2]))
-       return kr, kon, koff
+       result = np.array([kr, kon, koff])
+       if not (np.isfinite(result).all() and (result > 0).all()):
+         raise RuntimeError('moment estimation failed')
+       return np.log(result)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[26]:
+   # Out[74]:
    :END:
 
 ** Maximum likelihood estimation
@@ -132,8 +142,8 @@
 
    \begin{align*}
      \ell &= \frac{1}{\betafun(\kon, \koff)} \int_0^1 \Pois(x_i; \kr p_i)\, p_i^{\kon - 1} (1 - p_i)^{\koff - 1}\; dp_i\\
-     &= \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i\\
-     &\approx \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \sum_{k=1}^K w_k \Pois(x_i; \kr y_k)
+     &= \frac{1}{2^{\kon + \koff - 1} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i\\
+     &\approx \frac{1}{2^{\kon + \koff - 1} \betafun(\kon, \koff)} \sum_{k=1}^K w_k \Pois(x_i; \kr y_k)
    \end{align*}
 
    where \(\betafun(\cdot)\) denotes the Beta function, \(y_k\) is the root of
@@ -142,44 +152,47 @@
    the marginal likelihood.
 
    #+BEGIN_SRC ipython
-     def poisson_beta_neg_llik(theta, x, order=50):
+     def poisson_beta_neg_llik(theta, x, n_points=50):
        """Return the negative log likelihood of the data
 
        theta - [ln k_r, ln k_on, ln k_off]
-       order - quadrature order
+       n_points - number of points used in numerical integration
 
        """
        kr, kon, koff = np.exp(theta) + 1e-8
        # Important: Gauss-Jacobi quadrature computes the integral over t ∈ [-1, 1],
        # but we want the integral over p ∈ [0, 1]
-       t, w = sp.roots_jacobi(n=order, alpha=koff - 1, beta=kon - 1)
-       # (order, 1)
+       t, w = sp.roots_jacobi(n=n_points, alpha=koff - 1, beta=kon - 1)
+       # (n_points, 1)
        p = ((1 + t) / 2).reshape(-1, 1)
-       # (1, order) @ (order, n)
+       # (1, n_points) @ (n_points, n)
        px = w.reshape(1, -1) @ st.poisson(mu=kr * p).pmf(x.reshape(1, -1))
-       return -(np.log(px) - sp.betaln(kon, koff) - (kon + koff - 2) * np.log(2)).sum()
+       # Important: extra 1/2 comes from u-substitution
+       return -(np.log(px) - sp.betaln(kon, koff) - (kon + koff - 1) * np.log(2)).sum()
 
-     def fit_poisson_beta_mle(x, init=None, order=50):
-       """Return k_r, k_on, k_off
+     def fit_poisson_beta_mle(x, init=None, max_iters=1000, n_points=50):
+       """Return ln k_r, ln k_on, ln k_off
 
        x - array-like [n,]
-       init - [k_r, k_on, k_off] (3,)
-       order - quadrature order
+       init - [ln k_r, ln k_on, ln k_off]
+       n_points - number of points used in numerical integration
 
        """
        if init is None:
-         init = fit_poisson_beta_moment(x)
-       # Work in log space to allow unconstrained optimization
-       x0 = np.log(init)
-       opt = so.minimize(poisson_beta_neg_llik, x0=x0, args=(x, order), method='Nelder-Mead')
+         try:
+           init = fit_poisson_beta_moment(x)
+         except RuntimeError:
+           init = np.zeros(3)
+       opt = so.minimize(poisson_beta_neg_llik, x0=init, args=(x, n_points),
+                         method='Nelder-Mead', options={'maxiter': max_iters})
        if not opt.success:
          raise RuntimeError(f'failed to converge: {opt.message}')
-       return np.exp(opt.x)
+       return opt.x
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[121]:
+   # Out[111]:
    :END:
 
 ** Variational inference
@@ -254,13 +267,19 @@
                + (x + mu) * np.log(kr) - kr - mu * np.log(mu) + mu - sp.gammaln(x + 1)
                - sp.betaln(kon, koff) + sp.betaln(alpha, beta)).sum()
 
-     def poisson_beta_neg_elbo(theta, x, mu, alpha, beta):
-       """Return the negative evidence lower bound
+     def poisson_beta_delbo_dkon(ln_kon, ln_koff, alpha, beta):
+       """Return the partial derivative of ELBO wrt kon"""
+       return (sp.digamma(alpha)
+               - sp.digamma(alpha - beta)
+               - sp.digamma(np.exp(ln_kon))
+               + sp.digamma(np.exp(ln_kon) + np.exp(ln_koff))).sum()
 
-       This is intended to be used as a subroutine to scipy.optimize.minimize
-
-       """
-       return -poisson_beta_elbo(theta, x, mu, alpha, beta)
+     def poisson_beta_delbo_dkoff(ln_koff, ln_kon, alpha, beta):
+       """Return the partial derivative of ELBO wrt koff"""
+       return (sp.digamma(beta)
+               - sp.digamma(alpha - beta)
+               - sp.digamma(np.exp(ln_koff))
+               + sp.digamma(np.exp(ln_kon) + np.exp(ln_koff))).sum()
 
      def fit_poisson_beta_vi(x, init=None, atol=1e-8, max_iters=1000, verbose=False):
        """Return kr, kon, koff
@@ -280,11 +299,16 @@
          alpha = x + np.exp(theta[1])
          beta = mu + np.exp(theta[2])
          mu = np.exp(sp.digamma(beta) - sp.digamma(alpha + beta) + theta[0])
-         opt = so.minimize(poisson_beta_neg_elbo, x0=theta, args=(x, mu, alpha, beta), method='L-BFGS-B')
-         if not opt.success:
-           raise RuntimeError(f'Variational M step failed to converge: {opt.message}')
-         theta = opt.x
-         update = -opt.fun
+         theta[0] = np.log((x + mu).mean())
+         opt_kon = so.newton(poisson_beta_delbo_dkon, x0=theta[1], args=(theta[2], alpha, beta))
+         if not opt_kon.success:
+           raise RuntimeError(f'k_on update failed: {opt_kon.message}')
+         theta[1] = opt_kon.x
+         opt_koff = so.root_scalar(poisson_beta_delbo_dkoff, x0=theta[2], args=(theta[1], alpha, beta))
+         if not opt_koff.success:
+           raise RuntimeError(f'k_on update failed: {opt_koff.message}')
+         theta[1] = opt_koff.x
+         update = poisson_beta_elbo(theta, x, mu, alpha, beta)
          if verbose:
            print(f'Epoch {t}: {update}')
          if abs(obj - update) < atol:
@@ -296,7 +320,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[119]:
+   # Out[23]:
    :END:
 
 * Results
@@ -327,7 +351,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[112]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -337,28 +361,134 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[113]:
+   # Out[6]:
    : [117.2199806492514, 1.4920592434019648, 2.661095776728801]
    :END:
 
+   Fit the moment estimator.
+
    #+BEGIN_SRC ipython
      thetahat_moment = fit_poisson_beta_moment(x)
-     thetahat_moment
+     np.exp(thetahat_moment)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[44]:
-   : (120.04495742521208, 1.5214275840865479, 2.720680223717907)
+   # Out[8]:
+   : array([120.04495743,   1.52142758,   2.72068022])
    :END:
+
+   Fit the MLE.
 
    #+BEGIN_SRC ipython
      thetahat_mle = fit_poisson_beta_mle(x)
-     thetahat_mle
+     np.exp(thetahat_mle)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[122]:
+   # Out[11]:
    : array([118.92485772,   1.52953485,   2.68994176])
+   :END:
+
+   Evaluate more systematically.
+
+   #+BEGIN_SRC ipython
+     def evaluate_estimator(n, n_trials):
+       sim_result = []
+       grid = np.linspace(np.log(.1), np.log(100), 5)
+       for (ln_kr, ln_kon, ln_koff) in itertools.product(grid, repeat=3):
+         for trial in range(n_trials):
+           x, *_ = simulate_pois_beta(n=n, kr=np.exp(ln_kr), kon=np.exp(ln_kon),
+                                      koff=np.exp(ln_koff), seed=trial)
+           for method in ['moment', 'mle']:
+             try:
+               thetahat = getattr(sys.modules['__main__'], f'fit_poisson_beta_{method}')(x)
+             except RuntimeError:
+               thetahat = [np.nan, np.nan, np.nan]
+             sim_result.append([ln_kr, ln_kon, ln_koff, method, trial] + list(thetahat))
+       return pd.DataFrame(sim_result, columns=['ln_kr', 'ln_kon', 'ln_koff', 'method', 'trial', 'ln_kr_hat', 'ln_kon_hat', 'ln_koff_hat'])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[67]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     res = evaluate_estimator(n=100, n_trials=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[117]:
+   :END:
+
+   Report the fraction of data sets for which estimation failed.
+
+   #+BEGIN_SRC ipython
+     res.groupby(['method']).apply(lambda x: x.dropna().shape[0] / x.shape[0])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[118]:
+   #+BEGIN_EXAMPLE
+     method
+     mle       0.584
+     moment    0.296
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+** Running time benchmark
+
+   #+BEGIN_SRC ipython
+     def evaluate_running_time(n_trials):
+       timing_result = []
+       for n in (100, 500, 1000, 5000, 10000):
+         # Fix the parameters to something easy
+         x, *_ = simulate_pois_beta(n=n, kr=50, kon=1, koff=1, seed=0)
+         for m in ('moment', 'mle'):
+           res = timeit.repeat(stmt=lambda: getattr(sys.modules['__main__'], f'fit_poisson_beta_{m}')(x),
+                               number=1, repeat=n_trials, globals=locals())
+           for i, t in enumerate(res):
+             timing_result.append([n, m, i, t])
+       return pd.DataFrame(timing_result, columns=['n', 'method', 'trial', 'time'])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[156]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     timing_res = evaluate_running_time(n_trials=10)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[157]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/timing.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.xscale('log')
+     plt.yscale('log')
+     for i, (m, g) in enumerate(timing_res.groupby('method')):
+       t = g.groupby('n')['time'].agg([np.mean, np.std]).reset_index()
+       plt.plot(t['n'], t['mean'], lw=1, c=cm(i), label=m)
+       plt.scatter(g['n'] + np.random.normal(scale=np.log10(g['n']), size=g.shape[0]), g['time'], c=cm(i), s=2, label=None)
+     plt.legend(frameon=False, title='Method')
+     plt.xlabel('Sample size')
+     plt.ylabel('Running time (s)')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[159]:
+   [[file:figure/pois-beta.org/timing.png]]
    :END:

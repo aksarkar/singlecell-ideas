@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-12-01 Sun 03:30 -->
+<!-- 2019-12-01 Sun 13:43 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -269,6 +269,7 @@ for the JavaScript code in this tag.
 <li><a href="#results">Results</a>
 <ul>
 <li><a href="#simulation">Simulation</a></li>
+<li><a href="#orgfaf81f2">Running time benchmark</a></li>
 </ul>
 </li>
 </ul>
@@ -326,10 +327,14 @@ improve the running time.
 <h2 id="setup"><a id="orgc673021"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<pre class="src src-ipython"><span class="org-keyword">import</span> itertools <span class="org-keyword">as</span> it
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scipy.optimize <span class="org-keyword">as</span> so
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> sys
+<span class="org-keyword">import</span> timeit
 </pre>
 </div>
 
@@ -360,8 +365,11 @@ Peccoud and Ycart 1995 derived moment estimators for \(\kr, \kon, \koff\)
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_moment</span>(x):
-  <span class="org-doc">"""Return kr, kon, koff</span>
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_moment</span>(x, **kwargs):
+  <span class="org-doc">"""Return ln kr, ln kon, ln koff</span>
+
+<span class="org-doc">  Estimate kr, kon, koff using the first three exponential moments (Peccoud &amp;</span>
+<span class="org-doc">  Ycart 1995).</span>
 
 <span class="org-doc">  x - array-like [n,]</span>
 
@@ -371,7 +379,10 @@ Peccoud and Ycart 1995 derived moment estimators for \(\kr, \kon, \koff\)
   <span class="org-variable-name">kr</span> = (2 * ratios[0] * ratios[2] - ratios[0] * ratios[1] - ratios[1] * ratios[2]) / (ratios[0] - 2 * ratios[1] + ratios[2])
   <span class="org-variable-name">kon</span> = (2 * ratios[0] * (ratios[2] - ratios[1])) / (ratios[0] * ratios[1] - 2 * ratios[0] * ratios[2] + ratios[1] * ratios[2])
   <span class="org-variable-name">koff</span> = (2 * (ratios[2] - ratios[1]) * (ratios[0] - ratios[2]) * (ratios[1] - ratios[0])) / ((ratios[0] * ratios[1] - 2 * ratios[0] * ratios[2] + ratios[1] * ratios[2]) * (ratios[0] - 2 * ratios[1] + ratios[2]))
-  <span class="org-keyword">return</span> kr, kon, koff
+  <span class="org-variable-name">result</span> = np.array([kr, kon, koff])
+  <span class="org-keyword">if</span> <span class="org-keyword">not</span> (np.isfinite(result).<span class="org-builtin">all</span>() <span class="org-keyword">and</span> (result &gt; 0).<span class="org-builtin">all</span>()):
+    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'moment estimation failed'</span>)
+  <span class="org-keyword">return</span> np.log(result)
 </pre>
 </div>
 </div>
@@ -388,8 +399,8 @@ quadrature</a> to evaluate the marginal likelihood
 
 \begin{align*}
   \ell &= \frac{1}{\betafun(\kon, \koff)} \int_0^1 \Pois(x_i; \kr p_i)\, p_i^{\kon - 1} (1 - p_i)^{\koff - 1}\; dp_i\\
-  &= \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i\\
-  &\approx \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \sum_{k=1}^K w_k \Pois(x_i; \kr y_k)
+  &= \frac{1}{2^{\kon + \koff - 1} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i\\
+  &\approx \frac{1}{2^{\kon + \koff - 1} \betafun(\kon, \koff)} \sum_{k=1}^K w_k \Pois(x_i; \kr y_k)
 \end{align*}
 
 <p>
@@ -400,39 +411,42 @@ the marginal likelihood.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_neg_llik</span>(theta, x, order=50):
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_neg_llik</span>(theta, x, n_points=50):
   <span class="org-doc">"""Return the negative log likelihood of the data</span>
 
 <span class="org-doc">  theta - [ln k_r, ln k_on, ln k_off]</span>
-<span class="org-doc">  order - quadrature order</span>
+<span class="org-doc">  n_points - number of points used in numerical integration</span>
 
 <span class="org-doc">  """</span>
   <span class="org-variable-name">kr</span>, <span class="org-variable-name">kon</span>, <span class="org-variable-name">koff</span> = np.exp(theta) + 1e-8
   <span class="org-comment-delimiter"># </span><span class="org-comment">Important: Gauss-Jacobi quadrature computes the integral over t &#8712; [-1, 1],</span>
   <span class="org-comment-delimiter"># </span><span class="org-comment">but we want the integral over p &#8712; [0, 1]</span>
-  <span class="org-variable-name">t</span>, <span class="org-variable-name">w</span> = sp.roots_jacobi(n=order, alpha=koff - 1, beta=kon - 1)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">(order, 1)</span>
+  <span class="org-variable-name">t</span>, <span class="org-variable-name">w</span> = sp.roots_jacobi(n=n_points, alpha=koff - 1, beta=kon - 1)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">(n_points, 1)</span>
   <span class="org-variable-name">p</span> = ((1 + t) / 2).reshape(-1, 1)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">(1, order) @ (order, n)</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">(1, n_points) @ (n_points, n)</span>
   <span class="org-variable-name">px</span> = w.reshape(1, -1) @ st.poisson(mu=kr * p).pmf(x.reshape(1, -1))
-  <span class="org-keyword">return</span> -(np.log(px) - sp.betaln(kon, koff) - (kon + koff - 2) * np.log(2)).<span class="org-builtin">sum</span>()
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: extra 1/2 comes from u-substitution</span>
+  <span class="org-keyword">return</span> -(np.log(px) - sp.betaln(kon, koff) - (kon + koff - 1) * np.log(2)).<span class="org-builtin">sum</span>()
 
-<span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_mle</span>(x, init=<span class="org-constant">None</span>, order=50):
-  <span class="org-doc">"""Return k_r, k_on, k_off</span>
+<span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_mle</span>(x, init=<span class="org-constant">None</span>, max_iters=1000, n_points=50):
+  <span class="org-doc">"""Return ln k_r, ln k_on, ln k_off</span>
 
 <span class="org-doc">  x - array-like [n,]</span>
-<span class="org-doc">  init - [k_r, k_on, k_off] (3,)</span>
-<span class="org-doc">  order - quadrature order</span>
+<span class="org-doc">  init - [ln k_r, ln k_on, ln k_off]</span>
+<span class="org-doc">  n_points - number of points used in numerical integration</span>
 
 <span class="org-doc">  """</span>
   <span class="org-keyword">if</span> init <span class="org-keyword">is</span> <span class="org-constant">None</span>:
-    <span class="org-variable-name">init</span> = fit_poisson_beta_moment(x)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Work in log space to allow unconstrained optimization</span>
-  <span class="org-variable-name">x0</span> = np.log(init)
-  <span class="org-variable-name">opt</span> = so.minimize(poisson_beta_neg_llik, x0=x0, args=(x, order), method=<span class="org-string">'Nelder-Mead'</span>)
+    <span class="org-keyword">try</span>:
+      <span class="org-variable-name">init</span> = fit_poisson_beta_moment(x)
+    <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
+      <span class="org-variable-name">init</span> = np.zeros(3)
+  <span class="org-variable-name">opt</span> = so.minimize(poisson_beta_neg_llik, x0=init, args=(x, n_points),
+                    method=<span class="org-string">'Nelder-Mead'</span>, options={<span class="org-string">'maxiter'</span>: max_iters})
   <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt.success:
     <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'failed to converge: {opt.message}'</span>)
-  <span class="org-keyword">return</span> np.exp(opt.x)
+  <span class="org-keyword">return</span> opt.x
 </pre>
 </div>
 </div>
@@ -520,13 +534,19 @@ update \(\kon, \koff\).
           + (x + mu) * np.log(kr) - kr - mu * np.log(mu) + mu - sp.gammaln(x + 1)
           - sp.betaln(kon, koff) + sp.betaln(alpha, beta)).<span class="org-builtin">sum</span>()
 
-<span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_neg_elbo</span>(theta, x, mu, alpha, beta):
-  <span class="org-doc">"""Return the negative evidence lower bound</span>
+<span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_delbo_dkon</span>(ln_kon, ln_koff, alpha, beta):
+  <span class="org-doc">"""Return the partial derivative of ELBO wrt kon"""</span>
+  <span class="org-keyword">return</span> (sp.digamma(alpha)
+          - sp.digamma(alpha - beta)
+          - sp.digamma(np.exp(ln_kon))
+          + sp.digamma(np.exp(ln_kon) + np.exp(ln_koff))).<span class="org-builtin">sum</span>()
 
-<span class="org-doc">  This is intended to be used as a subroutine to scipy.optimize.minimize</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-keyword">return</span> -poisson_beta_elbo(theta, x, mu, alpha, beta)
+<span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_delbo_dkoff</span>(ln_koff, ln_kon, alpha, beta):
+  <span class="org-doc">"""Return the partial derivative of ELBO wrt koff"""</span>
+  <span class="org-keyword">return</span> (sp.digamma(beta)
+          - sp.digamma(alpha - beta)
+          - sp.digamma(np.exp(ln_koff))
+          + sp.digamma(np.exp(ln_kon) + np.exp(ln_koff))).<span class="org-builtin">sum</span>()
 
 <span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_vi</span>(x, init=<span class="org-constant">None</span>, atol=1e-8, max_iters=1000, verbose=<span class="org-constant">False</span>):
   <span class="org-doc">"""Return kr, kon, koff</span>
@@ -546,11 +566,16 @@ update \(\kon, \koff\).
     <span class="org-variable-name">alpha</span> = x + np.exp(theta[1])
     <span class="org-variable-name">beta</span> = mu + np.exp(theta[2])
     <span class="org-variable-name">mu</span> = np.exp(sp.digamma(beta) - sp.digamma(alpha + beta) + theta[0])
-    <span class="org-variable-name">opt</span> = so.minimize(poisson_beta_neg_elbo, x0=theta, args=(x, mu, alpha, beta), method=<span class="org-string">'L-BFGS-B'</span>)
-    <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt.success:
-      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'Variational M step failed to converge: {opt.message}'</span>)
-    <span class="org-variable-name">theta</span> = opt.x
-    <span class="org-variable-name">update</span> = -opt.fun
+    <span class="org-variable-name">theta</span>[0] = np.log((x + mu).mean())
+    <span class="org-variable-name">opt_kon</span> = so.newton(poisson_beta_delbo_dkon, x0=theta[1], args=(theta[2], alpha, beta))
+    <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt_kon.success:
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'k_on update failed: {opt_kon.message}'</span>)
+    <span class="org-variable-name">theta</span>[1] = opt_kon.x
+    <span class="org-variable-name">opt_koff</span> = so.root_scalar(poisson_beta_delbo_dkoff, x0=theta[2], args=(theta[1], alpha, beta))
+    <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt_koff.success:
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'k_on update failed: {opt_koff.message}'</span>)
+    <span class="org-variable-name">theta</span>[1] = opt_koff.x
+    <span class="org-variable-name">update</span> = poisson_beta_elbo(theta, x, mu, alpha, beta)
     <span class="org-keyword">if</span> verbose:
       <span class="org-keyword">print</span>(f<span class="org-string">'Epoch {t}: {update}'</span>)
     <span class="org-keyword">if</span> <span class="org-builtin">abs</span>(obj - update) &lt; atol:
@@ -602,20 +627,28 @@ theta
 
 </pre>
 
+<p>
+Fit the moment estimator.
+</p>
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">thetahat_moment</span> = fit_poisson_beta_moment(x)
-thetahat_moment
+np.exp(thetahat_moment)
 </pre>
 </div>
 
 <pre class="example">
-(120.04495742521208, 1.5214275840865479, 2.720680223717907)
+array([120.04495743,   1.52142758,   2.72068022])
 
 </pre>
 
+<p>
+Fit the MLE.
+</p>
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">thetahat_mle</span> = fit_poisson_beta_mle(x)
-thetahat_mle
+np.exp(thetahat_mle)
 </pre>
 </div>
 
@@ -623,13 +656,104 @@ thetahat_mle
 array([118.92485772,   1.52953485,   2.68994176])
 
 </pre>
+
+<p>
+Evaluate more systematically.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">evaluate_estimator</span>(n, n_trials):
+  <span class="org-variable-name">sim_result</span> = []
+  <span class="org-variable-name">grid</span> = np.linspace(np.log(.1), np.log(100), 5)
+  <span class="org-keyword">for</span> (ln_kr, ln_kon, ln_koff) <span class="org-keyword">in</span> itertools.product(grid, repeat=3):
+    <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
+      x, *<span class="org-variable-name">_</span> = simulate_pois_beta(n=n, kr=np.exp(ln_kr), kon=np.exp(ln_kon),
+                                 koff=np.exp(ln_koff), seed=trial)
+      <span class="org-keyword">for</span> method <span class="org-keyword">in</span> [<span class="org-string">'moment'</span>, <span class="org-string">'mle'</span>]:
+        <span class="org-keyword">try</span>:
+          <span class="org-variable-name">thetahat</span> = <span class="org-builtin">getattr</span>(sys.modules[<span class="org-string">'__main__'</span>], f<span class="org-string">'fit_poisson_beta_{method}'</span>)(x)
+        <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
+          <span class="org-variable-name">thetahat</span> = [np.nan, np.nan, np.nan]
+        sim_result.append([ln_kr, ln_kon, ln_koff, method, trial] + <span class="org-builtin">list</span>(thetahat))
+  <span class="org-keyword">return</span> pd.DataFrame(sim_result, columns=[<span class="org-string">'ln_kr'</span>, <span class="org-string">'ln_kon'</span>, <span class="org-string">'ln_koff'</span>, <span class="org-string">'method'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'ln_kr_hat'</span>, <span class="org-string">'ln_kon_hat'</span>, <span class="org-string">'ln_koff_hat'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res</span> = evaluate_estimator(n=100, n_trials=1)
+</pre>
+</div>
+
+<p>
+Report the fraction of data sets for which estimation failed.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">res.groupby([<span class="org-string">'method'</span>]).<span class="org-builtin">apply</span>(<span class="org-keyword">lambda</span> x: x.dropna().shape[0] / x.shape[0])
+</pre>
+</div>
+
+<pre class="example">
+method
+mle       0.584
+moment    0.296
+dtype: float64
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgfaf81f2" class="outline-3">
+<h3 id="orgfaf81f2">Running time benchmark</h3>
+<div class="outline-text-3" id="text-orgfaf81f2">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">evaluate_running_time</span>(n_trials):
+  <span class="org-variable-name">timing_result</span> = []
+  <span class="org-keyword">for</span> n <span class="org-keyword">in</span> (100, 500, 1000, 5000, 10000):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Fix the parameters to something easy</span>
+    x, *<span class="org-variable-name">_</span> = simulate_pois_beta(n=n, kr=50, kon=1, koff=1, seed=0)
+    <span class="org-keyword">for</span> m <span class="org-keyword">in</span> (<span class="org-string">'moment'</span>, <span class="org-string">'mle'</span>):
+      <span class="org-variable-name">res</span> = timeit.repeat(stmt=<span class="org-keyword">lambda</span>: <span class="org-builtin">getattr</span>(sys.modules[<span class="org-string">'__main__'</span>], f<span class="org-string">'fit_poisson_beta_{m}'</span>)(x),
+                          number=1, repeat=n_trials, <span class="org-builtin">globals</span>=<span class="org-builtin">locals</span>())
+      <span class="org-keyword">for</span> i, t <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(res):
+        timing_result.append([n, m, i, t])
+  <span class="org-keyword">return</span> pd.DataFrame(timing_result, columns=[<span class="org-string">'n'</span>, <span class="org-string">'method'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'time'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">timing_res</span> = evaluate_running_time(n_trials=10)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.xscale(<span class="org-string">'log'</span>)
+plt.yscale(<span class="org-string">'log'</span>)
+<span class="org-keyword">for</span> i, (m, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(timing_res.groupby(<span class="org-string">'method'</span>)):
+  <span class="org-variable-name">t</span> = g.groupby(<span class="org-string">'n'</span>)[<span class="org-string">'time'</span>].agg([np.mean, np.std]).reset_index()
+  plt.plot(t[<span class="org-string">'n'</span>], t[<span class="org-string">'mean'</span>], lw=1, c=cm(i), label=m)
+  plt.scatter(g[<span class="org-string">'n'</span>] + np.random.normal(scale=np.log10(g[<span class="org-string">'n'</span>]), size=g.shape[0]), g[<span class="org-string">'time'</span>], c=cm(i), s=2, label=<span class="org-constant">None</span>)
+plt.legend(frameon=<span class="org-constant">False</span>, title=<span class="org-string">'Method'</span>)
+plt.xlabel(<span class="org-string">'Sample size'</span>)
+plt.ylabel(<span class="org-string">'Running time (s)'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/timing.png" alt="timing.png">
+</p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-12-01 Sun 03:30</p>
+<p class="date">Created: 2019-12-01 Sun 13:43</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

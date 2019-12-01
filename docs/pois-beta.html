@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-12-01 Sun 02:47 -->
+<!-- 2019-12-01 Sun 03:30 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -388,13 +388,15 @@ quadrature</a> to evaluate the marginal likelihood
 
 \begin{align*}
   \ell &= \frac{1}{\betafun(\kon, \koff)} \int_0^1 \Pois(x_i; \kr p_i)\, p_i^{\kon - 1} (1 - p_i)^{\koff - 1}\; dp_i\\
-  &= \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i
+  &= \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i\\
+  &\approx \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \sum_{k=1}^K w_k \Pois(x_i; \kr y_k)
 \end{align*}
 
 <p>
-where \(p_i \triangleq \frac{1 + t_i}{2}\) and \(\betafun(\cdot)\) denotes
-the Beta function. This procedure can be used as a subroutine to numerically
-optimize the marginal likelihood.
+where \(\betafun(\cdot)\) denotes the Beta function, \(y_k\) is the root of
+the Jacobi polynomial of degree \(k\), and \(w_k\) is the associated
+weight. This procedure can be used as a subroutine to numerically optimize
+the marginal likelihood.
 </p>
 
 <div class="org-src-container">
@@ -627,7 +629,7 @@ array([118.92485772,   1.52953485,   2.68994176])
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-12-01 Sun 02:47</p>
+<p class="date">Created: 2019-12-01 Sun 03:30</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

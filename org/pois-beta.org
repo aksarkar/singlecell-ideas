@@ -132,12 +132,14 @@
 
    \begin{align*}
      \ell &= \frac{1}{\betafun(\kon, \koff)} \int_0^1 \Pois(x_i; \kr p_i)\, p_i^{\kon - 1} (1 - p_i)^{\koff - 1}\; dp_i\\
-     &= \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i
+     &= \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \int_{-1}^1 \Pois(x_i; \kr \frac{1 + t_i}{2})\, (1 + t_i)^{\kon - 1} (1 - t_i)^{\koff - 1}\; dt_i\\
+     &\approx \frac{1}{2^{\kon + \koff - 2} \betafun(\kon, \koff)} \sum_{k=1}^K w_k \Pois(x_i; \kr y_k)
    \end{align*}
 
-   where \(p_i \triangleq \frac{1 + t_i}{2}\) and \(\betafun(\cdot)\) denotes
-   the Beta function. This procedure can be used as a subroutine to numerically
-   optimize the marginal likelihood.
+   where \(\betafun(\cdot)\) denotes the Beta function, \(y_k\) is the root of
+   the Jacobi polynomial of degree \(k\), and \(w_k\) is the associated
+   weight. This procedure can be used as a subroutine to numerically optimize
+   the marginal likelihood.
 
    #+BEGIN_SRC ipython
      def poisson_beta_neg_llik(theta, x, order=50):

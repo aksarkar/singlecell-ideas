@@ -6,14 +6,22 @@
   One idealized model for transcriptional regulation is the /telegraph model/
   (Peccoud and Ycart 1995, Raj et al. 2006, Kim and Marioni 2013, Munsky et
   al. 2013), whose steady state is described by \(
-  \newcommand\kr{k_r}
-  \newcommand\kon{k_{\text{on}}}
-  \newcommand\koff{k_{\text{off}}}
-  \newcommand\E[1]{\left\langle #1 \right\rangle}
-  \newcommand\Pois{\operatorname{Poisson}}
-  \newcommand\B{\operatorname{Beta}}
-  \newcommand\betafun{\operatorname{B}}
   \newcommand\Bin{\operatorname{Binomial}}
+  \newcommand\B{\operatorname{Beta}}
+  \newcommand\E[1]{\left\langle #1 \right\rangle}
+  \newcommand\Gam{\operatorname{Gamma}}
+  \newcommand\Pois{\operatorname{Poisson}}
+  \newcommand\aoff{a_{\text{off}}}
+  \newcommand\aon{a_{\text{on}}}
+  \newcommand\ar{a_r}
+  \newcommand\betafun{\operatorname{B}}
+  \newcommand\boff{b_{\text{off}}}
+  \newcommand\bon{b_{\text{on}}}
+  \newcommand\br{b_r}
+  \newcommand\const{\mathrm{const}}
+  \newcommand\koff{k_{\text{off}}}
+  \newcommand\kon{k_{\text{on}}}
+  \newcommand\kr{k_r}
   \)
 
   \begin{align*}
@@ -194,6 +202,30 @@
    :RESULTS:
    # Out[111]:
    :END:
+
+** Slice sampling
+
+   Kim & Marioni 2013 add priors
+
+   \begin{align*}
+     x_i \mid p_i, \kr &\sim \Pois(p_i \kr)\\
+     p_i \mid \kon, \koff &\sim \B(\kon, \koff)\\
+     \kr \mid \ar, \br &\sim \Gam(\ar, \br)\\
+     \kon \mid \aon, \bon &\sim \Gam(\aon, \bon)\\
+     \koff \mid \aoff, \boff &\sim \Gam(\aoff, \boff)
+   \end{align*}
+
+   The conditional (log) densities are available, up to constants
+
+   \begin{align*}
+     \ln p(p_i \mid \cdot) &= (x_i + \kon - 1) \ln p_i + (\koff - 1)\ln(1 - p_i) - \kr p_i + \const\\
+     \ln p(\kr \mid \cdot) &= \sum_i [(x_i + \ar - 1) \ln \kr - (p_i + \br) \kr] + \const\\
+     \ln p(\kon \mid \cdot) &= \sum_i [\kon \ln p_i + (\aon - 1)\ln \kon - \bon\kon - 2 \ln\Gamma(\kon) + \ln\Gamma(\kon + \koff)] + \const\\
+     \ln p(\koff \mid \cdot) &= \sum_i [\koff \ln (1 - p_i) + (\aoff - 1)\ln \koff - \boff\koff - 2 \ln\Gamma(\koff) + \ln\Gamma(\koff + \koff)] + \const
+   \end{align*}
+
+   Although the conditional distributions are non-standard, slice sampling
+   (Neal 2003) only requires the target density up to a constant.
 
 ** Variational inference
    :PROPERTIES:

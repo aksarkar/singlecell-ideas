@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-12-01 Sun 13:43 -->
+<!-- 2019-12-01 Sun 20:12 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -263,6 +263,7 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#moment">Moment estimation</a></li>
 <li><a href="#mle">Maximum likelihood estimation</a></li>
+<li><a href="#org1db87cc">Slice sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
 </ul>
 </li>
@@ -283,14 +284,22 @@ for the JavaScript code in this tag.
 One idealized model for transcriptional regulation is the <i>telegraph model</i>
 (Peccoud and Ycart 1995, Raj et al. 2006, Kim and Marioni 2013, Munsky et
 al. 2013), whose steady state is described by \(
-  \newcommand\kr{k_r}
-  \newcommand\kon{k_{\text{on}}}
-  \newcommand\koff{k_{\text{off}}}
-  \newcommand\E[1]{\left\langle #1 \right\rangle}
-  \newcommand\Pois{\operatorname{Poisson}}
-  \newcommand\B{\operatorname{Beta}}
-  \newcommand\betafun{\operatorname{B}}
   \newcommand\Bin{\operatorname{Binomial}}
+  \newcommand\B{\operatorname{Beta}}
+  \newcommand\E[1]{\left\langle #1 \right\rangle}
+  \newcommand\Gam{\operatorname{Gamma}}
+  \newcommand\Pois{\operatorname{Poisson}}
+  \newcommand\aoff{a_{\text{off}}}
+  \newcommand\aon{a_{\text{on}}}
+  \newcommand\ar{a_r}
+  \newcommand\betafun{\operatorname{B}}
+  \newcommand\boff{b_{\text{off}}}
+  \newcommand\bon{b_{\text{on}}}
+  \newcommand\br{b_r}
+  \newcommand\const{\mathrm{const}}
+  \newcommand\koff{k_{\text{off}}}
+  \newcommand\kon{k_{\text{on}}}
+  \newcommand\kr{k_r}
   \)
 </p>
 
@@ -449,6 +458,39 @@ the marginal likelihood.
   <span class="org-keyword">return</span> opt.x
 </pre>
 </div>
+</div>
+</div>
+
+<div id="outline-container-org1db87cc" class="outline-3">
+<h3 id="org1db87cc">Slice sampling</h3>
+<div class="outline-text-3" id="text-org1db87cc">
+<p>
+Kim &amp; Marioni 2013 add priors
+</p>
+
+\begin{align*}
+  x_i \mid p_i, \kr &\sim \Pois(p_i \kr)\\
+  p_i \mid \kon, \koff &\sim \B(\kon, \koff)\\
+  \kr \mid \ar, \br &\sim \Gam(\ar, \br)\\
+  \kon \mid \aon, \bon &\sim \Gam(\aon, \bon)\\
+  \koff \mid \aoff, \boff &\sim \Gam(\aoff, \boff)
+\end{align*}
+
+<p>
+The conditional (log) densities are available, up to constants
+</p>
+
+\begin{align*}
+  \ln p(p_i \mid \cdot) &= (x_i + \kon - 1) \ln p_i + (\koff - 1)\ln(1 - p_i) - \kr p_i + \const\\
+  \ln p(\kr \mid \cdot) &= \sum_i [(x_i + \ar - 1) \ln \kr - (p_i + \br) \kr] + \const\\
+  \ln p(\kon \mid \cdot) &= \sum_i [\kon \ln p_i + (\aon - 1)\ln \kon - \bon\kon - 2 \ln\Gamma(\kon) + \ln\Gamma(\kon + \koff)] + \const\\
+  \ln p(\koff \mid \cdot) &= \sum_i [\koff \ln (1 - p_i) + (\aoff - 1)\ln \koff - \boff\koff - 2 \ln\Gamma(\koff) + \ln\Gamma(\koff + \koff)] + \const
+\end{align*}
+
+<p>
+Although the conditional distributions are non-standard, slice sampling
+(Neal 2003) only requires the target density up to a constant.
+</p>
 </div>
 </div>
 
@@ -753,7 +795,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-12-01 Sun 13:43</p>
+<p class="date">Created: 2019-12-01 Sun 20:12</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -231,7 +231,7 @@
    requires the target density up to a constant.
 
    #+BEGIN_SRC ipython
-     def _slice_sample(f, init, **kwargs):
+     def _slice_sample(f, init, width=0.1, max_steps=100, **kwargs):
        """Return samples from the density proportional to exp(f)
 
        f - log density (up to a constant)
@@ -239,7 +239,30 @@
        kwargs - additional arguments to f
 
        """
-       raise NotImplementedError
+       # Auxiliary variable defines the slice
+       z = f(init, **kwargs) - np.random.exponential()
+       # Step out
+       left = init - width * np.random.uniform()
+       right = left + width
+       left_steps = int(np.random.uniform() * max_steps)
+       for _ in range(left_steps):
+         if z < f(left, **kwargs):
+           break
+         left -= width
+       for _ in range(max_steps - left_steps):
+         if z < f(right, **kwargs):
+           break
+         right += width
+       # Step in
+       while right > left:
+         proposal = left + np.random.uniform() * (right - left)
+         if z < f(proposal, **kwargs):
+           return proposal
+         elif proposal < init:
+           left = proposal
+         else:
+           right = proposal
+       raise RuntimeError('failed to find an acceptable sample')
 
      def _cond_logpdf_p(p, x, kr, kon, koff):
        return (x + kon - 1) * np.log(p) + (koff - 1) * np.log(1 - p) - kr * p
@@ -276,7 +299,7 @@
        koff = Foff.rvs(size=1)
        p = st.beta(a=kon, b=koff).rvs(size=x.shape)
        for t in range(n_samples):
-         samples.append((p, kr, kon, koff))
+         samples.append((kr, kon, koff))
          for i in range(x.shape[0]):
            p[i] = _slice_sample(_cond_logpdf_p, init=p[i], x=x[i], kr=kr, kon=kon, koff=koff)
          kr = _slice_sample(_cond_logpdf_kr, init=kr, x=x, p=p, ar=ar, br=br)

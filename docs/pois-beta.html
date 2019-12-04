@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-12-03 Tue 19:50 -->
+<!-- 2019-12-03 Tue 20:35 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -263,7 +263,7 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#moment">Moment estimation</a></li>
 <li><a href="#mle">Maximum likelihood estimation</a></li>
-<li><a href="#org1db87cc">Slice sampling</a></li>
+<li><a href="#mcmc">Slice-within-Gibbs sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
 </ul>
 </li>
@@ -461,16 +461,14 @@ the marginal likelihood.
 </div>
 </div>
 
-<div id="outline-container-org1db87cc" class="outline-3">
-<h3 id="org1db87cc">Slice sampling</h3>
-<div class="outline-text-3" id="text-org1db87cc">
+<div id="outline-container-org860fe85" class="outline-3">
+<h3 id="mcmc"><a id="org860fe85"></a>Slice-within-Gibbs sampling</h3>
+<div class="outline-text-3" id="text-mcmc">
 <p>
 Kim &amp; Marioni 2013 add priors
 </p>
 
 \begin{align*}
-  x_i \mid p_i, \kr &\sim \Pois(p_i \kr)\\
-  p_i \mid \kon, \koff &\sim \B(\kon, \koff)\\
   \kr \mid \ar, \br &\sim \Gam(\ar, \br)\\
   \kon \mid \aon, \bon &\sim \Gam(\aon, \bon)\\
   \koff \mid \aoff, \boff &\sim \Gam(\aoff, \boff)
@@ -484,13 +482,78 @@ The conditional (log) densities are available, up to constants
   \ln p(p_i \mid \cdot) &= (x_i + \kon - 1) \ln p_i + (\koff - 1)\ln(1 - p_i) - \kr p_i + \const\\
   \ln p(\kr \mid \cdot) &= \sum_i [(x_i + \ar - 1) \ln \kr - (p_i + \br) \kr] + \const\\
   \ln p(\kon \mid \cdot) &= \sum_i [\kon \ln p_i + (\aon - 1)\ln \kon - \bon\kon - \ln\Gamma(\kon) + \ln\Gamma(\kon + \koff)] + \const\\
-  \ln p(\koff \mid \cdot) &= \sum_i [\koff \ln (1 - p_i) + (\aoff - 1)\ln \koff - \boff\koff - \ln\Gamma(\koff) + \ln\Gamma(\koff + \koff)] + \const
+  \ln p(\koff \mid \cdot) &= \sum_i [\koff \ln (1 - p_i) + (\aoff - 1)\ln \koff - \boff\koff - \ln\Gamma(\koff) + \ln\Gamma(\kon + \koff)] + \const
 \end{align*}
 
 <p>
-Although the conditional distributions are non-standard, slice sampling
-(Neal 2003) only requires the target density up to a constant.
+Although the conditional distributions are non-standard,
+<a href="https://en.wikipedia.org/wiki/Slice_sampling">slice sampling</a>
+(<a href="https://projecteuclid.org/euclid.aos/1056562461">Neal 2003</a>) only
+requires the target density up to a constant.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">_slice_sample</span>(f, init, **kwargs):
+  <span class="org-doc">"""Return samples from the density proportional to exp(f)</span>
+
+<span class="org-doc">  f - log density (up to a constant)</span>
+<span class="org-doc">  init - initial value</span>
+<span class="org-doc">  kwargs - additional arguments to f</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">raise</span> <span class="org-type">NotImplementedError</span>
+
+<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_p</span>(p, x, kr, kon, koff):
+  <span class="org-keyword">return</span> (x + kon - 1) * np.log(p) + (koff - 1) * np.log(1 - p) - kr * p
+
+<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_kr</span>(kr, x, p, ar, br):
+  <span class="org-keyword">return</span> ((x + ar - 1) * np.log(kr) - (p + br) * kr).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_kon</span>(kon, p, koff, aon, bon):
+  <span class="org-keyword">return</span> (kon * np.log(p) + (aon - 1) * np.log(kon)
+          - bon * kon - sp.gammaln(kon) + sp.gammaln(kon + koff)).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_koff</span>(koff, p, on, aoff, boff):
+  <span class="org-keyword">return</span> (koff * np.log(1 - p) + (aoff - 1) * np.log(koff)
+          - boff * koff - sp.gammaln(koff) + sp.gammaln(on + koff)).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_mcmc</span>(x, n_samples, ar, br, aon, bon, aoff, boff, verbose=<span class="org-constant">False</span>):
+  <span class="org-doc">"""Return samples from the posterior p(kon, koff, kr | x)</span>
+
+<span class="org-doc">  x - counts (n,)</span>
+<span class="org-doc">  n_samples - number of samples to draw</span>
+<span class="org-doc">  ar, br - prior parameters kr ~ Gamma(ar, br)</span>
+<span class="org-doc">  aon, bon - prior parameters kon ~ Gamma(aon, bon)</span>
+<span class="org-doc">  aoff, boff - prior parameters koff ~ Gamma(aoff, boff)</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">samples</span> = []
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these are fixed</span>
+  <span class="org-variable-name">Fr</span> = st.gamma(a=ar, scale=1 / br)
+  <span class="org-variable-name">Fon</span> = st.gamma(a=aon, scale=1 / bon)
+  <span class="org-variable-name">Foff</span> = st.gamma(a=aoff, scale=1 / boff)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Draw initial sample from the prior</span>
+  <span class="org-variable-name">kr</span> = Fr.rvs(size=1)
+  <span class="org-variable-name">kon</span> = Fon.rvs(size=1)
+  <span class="org-variable-name">koff</span> = Foff.rvs(size=1)
+  <span class="org-variable-name">p</span> = st.beta(a=kon, b=koff).rvs(size=x.shape)
+  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_samples):
+    samples.append((p, kr, kon, koff))
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(x.shape[0]):
+      <span class="org-variable-name">p</span>[i] = _slice_sample(_cond_logpdf_p, init=p[i], x=x[i], kr=kr, kon=kon, koff=koff)
+    <span class="org-variable-name">kr</span> = _slice_sample(_cond_logpdf_kr, init=kr, x=x, p=p, ar=ar, br=br)
+    <span class="org-variable-name">kon</span> = _slice_sample(_cond_logpdf_kon, init=kon, p=p, koff=koff, aon=aon, bon=bon)
+    <span class="org-variable-name">koff</span> = _slice_sample(_cond_logpdf_koff, init=koff, p=p, kon=kon, aoff=aoff, boff=boff)
+    <span class="org-keyword">if</span> verbose:
+      <span class="org-variable-name">log_joint</span> = (st.poisson(mu=kr * p).logpmf(x).<span class="org-builtin">sum</span>()
+                   + st.beta(a=kon, b=koff).logpdf(p).<span class="org-builtin">sum</span>()
+                   + Fr.logpdf(kr)
+                   + Fon.logpdf(kon)
+                   + Foff.logpdf(koff))
+      <span class="org-keyword">print</span>(f<span class="org-string">'sample {t}: {log_joint}'</span>)
+  <span class="org-keyword">return</span> samples
+</pre>
+</div>
 </div>
 </div>
 
@@ -795,7 +858,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-12-03 Tue 19:50</p>
+<p class="date">Created: 2019-12-03 Tue 20:35</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-12-01 Sun 20:12 -->
+<!-- 2019-12-03 Tue 19:50 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -483,8 +483,8 @@ The conditional (log) densities are available, up to constants
 \begin{align*}
   \ln p(p_i \mid \cdot) &= (x_i + \kon - 1) \ln p_i + (\koff - 1)\ln(1 - p_i) - \kr p_i + \const\\
   \ln p(\kr \mid \cdot) &= \sum_i [(x_i + \ar - 1) \ln \kr - (p_i + \br) \kr] + \const\\
-  \ln p(\kon \mid \cdot) &= \sum_i [\kon \ln p_i + (\aon - 1)\ln \kon - \bon\kon - 2 \ln\Gamma(\kon) + \ln\Gamma(\kon + \koff)] + \const\\
-  \ln p(\koff \mid \cdot) &= \sum_i [\koff \ln (1 - p_i) + (\aoff - 1)\ln \koff - \boff\koff - 2 \ln\Gamma(\koff) + \ln\Gamma(\koff + \koff)] + \const
+  \ln p(\kon \mid \cdot) &= \sum_i [\kon \ln p_i + (\aon - 1)\ln \kon - \bon\kon - \ln\Gamma(\kon) + \ln\Gamma(\kon + \koff)] + \const\\
+  \ln p(\koff \mid \cdot) &= \sum_i [\koff \ln (1 - p_i) + (\aoff - 1)\ln \koff - \boff\koff - \ln\Gamma(\koff) + \ln\Gamma(\koff + \koff)] + \const
 \end{align*}
 
 <p>
@@ -795,7 +795,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-12-01 Sun 20:12</p>
+<p class="date">Created: 2019-12-03 Tue 19:50</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -1,0 +1,141 @@
+#+TITLE: [[file:time-course.org][Fully unsupervised topic models of scRNA-seq time course data]]
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  In our prior work (Sarkar et al. 2019), we introduced a factor model to
+  capture between donor individual variation in the mean and variance of gene
+  expression in a single cell type \(
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\Gam{Gamma}
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mf{\mathbf{F}}
+  \)
+
+  \begin{align*}
+    x_{ij} &\sim \Poi(x_i^+ \lambda_{ij})\\
+    \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})
+    \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
+    \ln \phi_{ij} &= (\ml \mf_\phi)_{ij}\\
+    \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi)_{ij}\\
+  \end{align*}
+
+  where \(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\)
+  observed in cell \(i = 1, \ldots, n\), cells are taken from \(m\) donor
+  individuals, and assignments of cells to donors (loadings) \(l_{ik} \in {0,
+  1}\) are known and fixed.
+
+  We are now interested in two lines of questions:
+
+  1. If we analyze this kind of data in a fully unsupervised manner, can we
+     recover the assignments of cells to donors? If not, what do we recover?
+  2. Can we generalize this analysis approach to data which additionally has
+     multiple cell types, and then multiple time points?
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  : Submitted batch job 65478911
+
+  #+BEGIN_SRC ipython
+    import anndata
+    import numpy as np
+    import pandas as pd
+    import scipy.sparse as ss
+    import sklearn.decomposition as skd
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Methods
+** iPSC data
+
+   Read the data.
+
+   #+BEGIN_SRC ipython :async t
+     keep_samples = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt', index_col=0, header=None)
+     keep_genes = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/genes-pass-filter.txt', index_col=0, header=None)
+     annotations = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-annotation.txt')
+     annotations = annotations.loc[keep_samples.values.ravel()]
+     header = sorted(set(annotations['chip_id']))
+     umi = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-counts.txt.gz', index_col=0).loc[keep_genes.values.ravel(),keep_samples.values.ravel()]
+     gene_info = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-genes.txt.gz', index_col=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   Convert to sparse ~h5ad~.
+
+   #+BEGIN_SRC ipython :async t
+     del annotations["index"]
+     x = anndata.AnnData(ss.csr_matrix(umi.values.T), obs=annotations, var=gene_info.loc[umi.index])
+     x.write('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad', compression=None, force_dense=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[33]:
+   :END:
+
+* Results
+** Unsupervised NMF on iPSCs
+
+   #+BEGIN_SRC ipython
+     x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     m = skd.NMF(n_components=53, beta_loss=1, solver='mu', verbose=True).fit(x.X)
+     f = m.components_.T
+     l = m.transform(x.X)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - f38355c7-4293-4104-babc-10a2759ce749
+   :END:

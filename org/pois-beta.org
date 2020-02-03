@@ -63,7 +63,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar
 
   #+RESULTS:
-  : Submitted batch job 64094866
+  : Submitted batch job 65547994
 
   #+BEGIN_SRC ipython
     import itertools as it
@@ -78,7 +78,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[120]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -136,7 +136,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[74]:
+   # Out[20]:
    :END:
 
 ** Maximum likelihood estimation
@@ -160,13 +160,7 @@
    the marginal likelihood.
 
    #+BEGIN_SRC ipython
-     def poisson_beta_neg_llik(theta, x, n_points=50):
-       """Return the negative log likelihood of the data
-
-       theta - [ln k_r, ln k_on, ln k_off]
-       n_points - number of points used in numerical integration
-
-       """
+     def poisson_beta_logpmf(theta, x, s, n_points=50):
        kr, kon, koff = np.exp(theta) + 1e-8
        # Important: Gauss-Jacobi quadrature computes the integral over t ∈ [-1, 1],
        # but we want the integral over p ∈ [0, 1]
@@ -174,11 +168,20 @@
        # (n_points, 1)
        p = ((1 + t) / 2).reshape(-1, 1)
        # (1, n_points) @ (n_points, n)
-       px = w.reshape(1, -1) @ st.poisson(mu=kr * p).pmf(x.reshape(1, -1))
+       px = w.reshape(1, -1) @ st.poisson(mu=s * kr * p).pmf(x.reshape(1, -1))
        # Important: extra 1/2 comes from u-substitution
-       return -(np.log(px) - sp.betaln(kon, koff) - (kon + koff - 1) * np.log(2)).sum()
+       return np.log(px) - sp.betaln(kon, koff) - (kon + koff - 1) * np.log(2)
 
-     def fit_poisson_beta_mle(x, init=None, max_iters=1000, n_points=50):
+     def poisson_beta_neg_llik(theta, x, s, n_points=50):
+       """Return the negative log likelihood of the data
+
+       theta - [ln k_r, ln k_on, ln k_off]
+       n_points - number of points used in numerical integration
+
+       """
+       return -poisson_beta_logpmf(theta, x, s, n_points).sum()
+
+     def fit_poisson_beta_mle(x, s=None, init=None, max_iters=1000, n_points=50):
        """Return ln k_r, ln k_on, ln k_off
 
        x - array-like [n,]
@@ -191,7 +194,9 @@
            init = fit_poisson_beta_moment(x)
          except RuntimeError:
            init = np.zeros(3)
-       opt = so.minimize(poisson_beta_neg_llik, x0=init, args=(x, n_points),
+       if s is None:
+         s = 1
+       opt = so.minimize(poisson_beta_neg_llik, x0=init, args=(x, s, n_points),
                          method='Nelder-Mead', options={'maxiter': max_iters})
        if not opt.success:
          raise RuntimeError(f'failed to converge: {opt.message}')
@@ -200,7 +205,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[111]:
+   # Out[35]:
    :END:
 
 ** Slice-within-Gibbs sampling
@@ -455,7 +460,7 @@
    Make sure the implementations work on one example.
 
    #+BEGIN_SRC ipython
-     def simulate_pois_beta(n, kr=None, kon=None, koff=None, seed=None):
+     def simulate_pois_beta(n, s=None, kr=None, kon=None, koff=None, seed=None):
        if seed is not None:
          np.random.seed(seed)
        if kr is None:
@@ -464,14 +469,16 @@
          kon = np.random.lognormal()
        if koff is None:
          koff = np.random.lognormal()
+       if s is None:
+         s = 1
        p = np.random.beta(a=kon, b=koff, size=n)
-       x = np.random.poisson(lam=kr * p)
+       x = np.random.poisson(lam=s * kr * p)
        return x, kr, kon, koff
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[6]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -611,4 +618,138 @@
    :RESULTS:
    # Out[159]:
    [[file:figure/pois-beta.org/timing.png]]
+   :END:
+** Impact of size factors
+
+   Simulate a simple example with non-trivial size factor variation.
+
+   #+BEGIN_SRC ipython
+     def trial(n, mean_size, var_size, kr, kon, koff, seed):
+       np.random.seed(seed)
+       disp = (var_size - mean_size) / (mean_size * mean_size)
+       s = np.random.poisson(lam=mean_size, size=n) * np.random.gamma(shape=1 / disp, scale=disp, size=n)
+       x, *theta = simulate_pois_beta(n=n, s=s, kr=kr / mean_size, kon=kon, koff=koff, seed=1)
+       theta0 = fit_poisson_beta_moment(x)
+       theta0[0] -= np.log(s).mean()
+       theta1 = fit_poisson_beta_mle(x)
+       theta1[0] -= np.log(s).mean()
+       theta2 = fit_poisson_beta_mle(x, s, init=theta0)
+       return x, s, [np.log(theta), theta0, theta1, theta2]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[298]:
+   :END:
+
+   Plot the estimated distributions, as well as the difference between the
+   fitted Beta distributions and the ground truth.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/size-ex.png
+     x, s, res = trial(n=1000, mean_size=10000, var_size=250000, kr=32, kon=.5, koff=.25, seed=0)
+
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(6, 4)
+
+     grid = np.arange(x.max() + 1)
+     ax[0].hist(x, bins=grid, color='0.5')
+
+     for i, (log_theta, label) in enumerate(zip(res, ['Ground truth', 'Moment', 'MLE (posthoc)', 'MLE'])):
+       p = np.array([np.exp(poisson_beta_logpmf(log_theta, i, s)).mean() for i in grid[:-1]])
+       ax[0].plot(.5 + grid[:-1], n * p, lw=1, c=cm(i), label=label)
+     ax[0].legend(frameon=False, bbox_to_anchor=(1, .5), loc='center left')
+     ax[0].set_xlabel('Number of molecules')
+     ax[0].set_ylabel('Number of cells')
+
+     grid = np.linspace(0, 1, 1000)
+     fp = st.beta(a=kon, b=koff).logpdf(grid)
+     for i, (log_theta, label) in enumerate(zip(res, ['Ground truth', 'Moment', 'MLE (posthoc)', 'MLE'])):
+       if i > 0:
+         ax[1].plot(grid, fp - st.beta(a=np.exp(log_theta[1]), b=np.exp(log_theta[2])).logpdf(grid), lw=1, c=cm(i))
+     ax[1].axhline(y=0, lw=1, ls=':', c='k')
+     ax[1].set_xlabel('$p_i$')
+     ax[1].set_ylabel('Diff log density\nfrom ground truth')
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[336]:
+   [[file:figure/pois-beta.org/size-ex.png]]
+   :END:
+
+   Compare the log likelihoods of the fitted models.
+
+   #+BEGIN_SRC ipython
+     pd.Series({k: poisson_beta_neg_llik(log_theta, x, s) for k, log_theta 
+                in zip(['ground_truth', 'moment', 'mle_poshoc', 'mle'], res)})
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[337]:
+   #+BEGIN_EXAMPLE
+     ground_truth    3692.394156
+     moment          3690.490051
+     mle_poshoc      3690.382941
+     mle             3690.376902
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+   Look at some more examples.
+
+   #+BEGIN_SRC ipython :async t :ipyfile figure/pois-beta.org/size-ex2.png
+     x, s, res = trial(n=int(1e3), mean_size=1e5, var_size=4e5, kr=64, kon=2, koff=.5, seed=1)
+
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(6, 4)
+
+     grid = np.arange(x.max() + 1)
+     ax[0].hist(x, bins=grid, color='0.5')
+
+     for i, (log_theta, label) in enumerate(zip(res, ['Ground truth', 'Moment', 'MLE (posthoc)', 'MLE'])):
+       p = np.array([np.exp(poisson_beta_logpmf(log_theta, i, s)).mean() for i in grid[:-1]])
+       ax[0].plot(.5 + grid[:-1], n * p, lw=1, c=cm(i), label=label)
+     ax[0].legend(frameon=False, bbox_to_anchor=(1, .5), loc='center left')
+     ax[0].set_xlabel('Number of molecules')
+     ax[0].set_ylabel('Number of cells')
+
+     grid = np.linspace(0, 1, 1000)
+     fp = st.beta(a=kon, b=koff).logpdf(grid)
+     for i, (log_theta, label) in enumerate(zip(res, ['Ground truth', 'Moment', 'MLE (posthoc)', 'MLE'])):
+       if i > 0:
+         ax[1].plot(grid, fp - st.beta(a=np.exp(log_theta[1]), b=np.exp(log_theta[2])).logpdf(grid), lw=1, c=cm(i))
+     ax[1].set_xlabel('$p_i$')
+     ax[1].set_ylabel('Diff log density\nfrom ground truth')
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[338]:
+   [[file:figure/pois-beta.org/size-ex2.png]]
+   :END:
+
+   #+BEGIN_SRC ipython
+     pd.Series({k: poisson_beta_neg_llik(log_theta, x, s) for k, log_theta 
+                in zip(['ground_truth', 'moment', 'mle_poshoc', 'mle'], res)})
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[339]:
+   #+BEGIN_EXAMPLE
+     ground_truth    4053.912218
+     moment          4052.601052
+     mle_poshoc      4052.557805
+     mle             4052.557227
+     dtype: float64
+   #+END_EXAMPLE
    :END:

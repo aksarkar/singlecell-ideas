@@ -1,36 +1,45 @@
-#+TITLE: [[file:time-course.org][Fully unsupervised topic models of scRNA-seq time course data]]
+#+TITLE: Fully unsupervised topic models of scRNA-seq time course data
 #+SETUPFILE: setup.org
 
 * Introduction
 
-  In our prior work (Sarkar et al. 2019), we introduced a factor model to
-  capture between donor individual variation in the mean and variance of gene
-  expression in a single cell type \(
-  \DeclareMathOperator\Poi{Poisson}
+  In our prior work ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar
+  et al. 2019]]), we introduced a factor model to capture between donor
+  individual variation in the mean and variance of gene expression in a single
+  cell type \( 
   \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Poi{Poisson}
+  \newcommand\mf{\mathbf{F}} 
   \newcommand\ml{\mathbf{L}}
-  \newcommand\mf{\mathbf{F}}
+  \newcommand\mx{\mathbf{X}}
   \)
 
   \begin{align*}
     x_{ij} &\sim \Poi(x_i^+ \lambda_{ij})\\
-    \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})
+    \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
     \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
     \ln \phi_{ij} &= (\ml \mf_\phi)_{ij}\\
     \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi)_{ij}\\
   \end{align*}
 
-  where \(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\)
-  observed in cell \(i = 1, \ldots, n\), cells are taken from \(m\) donor
-  individuals, and assignments of cells to donors (loadings) \(l_{ik} \in {0,
-  1}\) are known and fixed.
+  where 
 
-  We are now interested in two lines of questions:
+  - \(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\) observed
+    in cell \(i = 1, \ldots, n\)
+  - cells are taken from \(m\) donor individuals, \(\ml\) is \(n \times m\),
+    each \(\mf_{\cdot}\) is \(p \times m\)
+  - assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}\) are
+    known and fixed.
+
+  We are now interested in several lines of questions:
 
   1. If we analyze this kind of data in a fully unsupervised manner, can we
      recover the assignments of cells to donors? If not, what do we recover?
   2. Can we generalize this analysis approach to data which additionally has
      multiple cell types, and then multiple time points?
+  3. Can we implement this approach without forming entire products
+     \(\ml\mf'\)? Can we implement each update without looking at the entire
+     data \(\mx\)?
 
 * Setup
   :PROPERTIES:

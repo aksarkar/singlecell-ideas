@@ -1,4 +1,4 @@
-#+TITLE: [[file:mnn.org][Mutual nearest neighbors in topic model space]]
+#+TITLE: Mutual nearest neighbors in topic model space
 #+SETUPFILE: setup.org
 
 * Introduction
@@ -25,7 +25,7 @@
   expression under the generative model
 
   \begin{align*}
-    x_{ij} \mid s_i, \lambda_{ij} &\sim \operatorname{Poisson}(s_i \lambda_{ij})
+    x_{ij} \mid s_i, \lambda_{ij} &\sim \operatorname{Poisson}(s_i \lambda_{ij})\\
     \lambda_{ij} &= \sum_{k=1}^K l_{ik} f_{jk}
   \end{align*}
 

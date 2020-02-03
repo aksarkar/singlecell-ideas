@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-02 Sun 19:06 -->
+<!-- 2020-02-02 Sun 19:18 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></title>
+<title>Fully unsupervised topic models of scRNA-seq time course data</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -252,7 +252,7 @@ for the JavaScript code in this tag.
 </head>
 <body>
 <div id="content">
-<h1 class="title"><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></h1>
+<h1 class="title">Fully unsupervised topic models of scRNA-seq time course data</h1>
 <div id="table-of-contents">
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
@@ -277,33 +277,41 @@ for the JavaScript code in this tag.
 <h2 id="orgbb76e5c">Introduction</h2>
 <div class="outline-text-2" id="text-orgbb76e5c">
 <p>
-In our prior work (Sarkar et al. 2019), we introduced a factor model to
-capture between donor individual variation in the mean and variance of gene
-expression in a single cell type \(
-  \DeclareMathOperator\Poi{Poisson}
+In our prior work (<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar
+et al. 2019</a>), we introduced a factor model to capture between donor
+individual variation in the mean and variance of gene expression in a single
+cell type \( 
   \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Poi{Poisson}
+  \newcommand\mf{\mathbf{F}} 
   \newcommand\ml{\mathbf{L}}
-  \newcommand\mf{\mathbf{F}}
+  \newcommand\mx{\mathbf{X}}
   \)
 </p>
 
 \begin{align*}
   x_{ij} &\sim \Poi(x_i^+ \lambda_{ij})\\
-  \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})
+  \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
   \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
   \ln \phi_{ij} &= (\ml \mf_\phi)_{ij}\\
   \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi)_{ij}\\
 \end{align*}
 
 <p>
-where \(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\)
-observed in cell \(i = 1, \ldots, n\), cells are taken from \(m\) donor
-individuals, and assignments of cells to donors (loadings) \(l_{ik} \in {0,
-  1}\) are known and fixed.
+where 
 </p>
 
+<ul class="org-ul">
+<li>\(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\) observed
+in cell \(i = 1, \ldots, n\)</li>
+<li>cells are taken from \(m\) donor individuals, \(\ml\) is \(n \times m\),
+each \(\mf_{\cdot}\) is \(p \times m\)</li>
+<li>assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}\) are
+known and fixed.</li>
+</ul>
+
 <p>
-We are now interested in two lines of questions:
+We are now interested in several lines of questions:
 </p>
 
 <ol class="org-ol">
@@ -311,6 +319,9 @@ We are now interested in two lines of questions:
 recover the assignments of cells to donors? If not, what do we recover?</li>
 <li>Can we generalize this analysis approach to data which additionally has
 multiple cell types, and then multiple time points?</li>
+<li>Can we implement this approach without forming entire products
+\(\ml\mf'\)? Can we implement each update without looking at the entire
+data \(\mx\)?</li>
 </ol>
 </div>
 </div>
@@ -406,7 +417,7 @@ x.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlece
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-02 Sun 19:06</p>
+<p class="date">Created: 2020-02-02 Sun 19:18</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

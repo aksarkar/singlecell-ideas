@@ -1,0 +1,325 @@
+#+TITLE: [[file:mnn.org][Mutual nearest neighbors in topic model space]]
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  [[https://www.ncbi.nlm.nih.gov/pubmed/29608177][Haghverdi et al 2018]] introduce a method for batch correction based on
+  identifying /mutual nearest neighbors/. The key idea of the method is to
+  identify cells which should have "equal gene expression" across batches, and
+  compute correction factors based on the observed differences in gene
+  expression, where "difference" is cosine distance. The key intuition of the
+  method is "Proper removal of the batch effect should result in the formation
+  of...clusters, one for each cell type, where each cluster contains a mixture
+  of cells from both batches."
+
+  #+BEGIN_QUOTE
+  Our use of MNN pairs involves three assumptions: (i) there is at least one
+  cell population that is present in both batches, (ii) the batch effect is
+  almost orthogonal to the biological subspace, and (iii) batch effect
+  variation is much smaller than the biological effect variation between
+  different cell types
+  #+END_QUOTE
+
+  Here, we first investigate these assumptions using real data to generate a
+  null batch effect. Then, we investigate using NMF/LDA to estimate true gene
+  expression under the generative model
+
+  \begin{align*}
+    x_{ij} \mid s_i, \lambda_{ij} &\sim \operatorname{Poisson}(s_i \lambda_{ij})
+    \lambda_{ij} &= \sum_{k=1}^K l_{ik} f_{jk}
+  \end{align*}
+
+  and compare the results against previous approaches based on cosine distance,
+  or Euclidean distance in a principal component subspace.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  : Submitted batch job 65529686
+
+  #+BEGIN_SRC ipython
+    import anndata
+    import numpy as np
+    import pandas as pd
+    import scanpy.api as sc
+    import sklearn.decomposition as skd
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Methods
+** Fast approximate nearest neighbors
+
+   - M. Aumüller, E. Bernhardsson, A. Faithfull: ANN-Benchmarks: A Benchmarking
+     Tool for Approximate Nearest Neighbor Algorithms. Information
+     Systems 2019. doi:10.1016/j.is.2019.02.006 https://github.com/erikbern/ann-benchmarks
+
+* Results
+** iPSC data
+
+   Load the iPSC data.
+
+   #+BEGIN_SRC ipython :async t
+     x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   Take all cells from batch 1. A priori, there could be clusters by individual
+   and plate.
+
+   #+BEGIN_SRC ipython
+     y = x[x.obs['batch'] == 'b1']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[14]:
+   :END:
+
+   Use the default approach, projecting \(\ln(x+1)\) into a principal component
+   subspace and computing nearest neighbors.
+
+   #+BEGIN_SRC ipython :async t
+     sc.pp.neighbors(y)
+     sc.tl.umap(y, copy=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-b1-umap.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(6, 3)
+     for i, k in enumerate(y.obs['chip_id'].unique()):
+       query = y[y.obs['chip_id'] == k].obsm['X_umap']
+       ax[0].scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k)
+     ax[0].set_title('By donor')
+     for i, k in enumerate(y.obs['experiment'].unique()):
+       query = y[y.obs['experiment'] == k].obsm['X_umap']
+       ax[1].scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k)
+     ax[1].set_title('By chip')
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+       a.set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[49]:
+   [[file:figure/mnn.org/ipsc-b1-umap.png]]
+   :END:
+
+   Take all cells from NA18507. A priori, there could be clusters by batch.
+
+   #+BEGIN_SRC ipython :async t
+     y = x[x.obs['chip_id'] == 'NA18507']
+     sc.pp.neighbors(y)
+     sc.tl.umap(y, copy=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[50]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-NA18507-umap.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(6, 3)
+     for i, k in enumerate(y.obs['batch'].unique()):
+       query = y[y.obs['batch'] == k].obsm['X_umap']
+       ax[0].scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k)
+     ax[0].set_title('By batch')
+     for i, k in enumerate(y.obs['experiment'].unique()):
+       query = y[y.obs['experiment'] == k].obsm['X_umap']
+       ax[1].scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k)
+     ax[1].set_title('By chip')
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+       a.set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
+   [[file:figure/mnn.org/ipsc-NA18507-umap.png]]
+   :END:
+
+   Look at the all cells from all individuals measured in both batches 1 and 2.
+
+   #+BEGIN_SRC ipython
+     ix = set(x.obs.loc[x.obs['batch'] == 'b1','chip_id']) & set(x.obs.loc[x.obs['batch'] == 'b2','chip_id'])
+     ix
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[61]:
+   : {'NA18507', 'NA18508', 'NA19190'}
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     y = x[x.obs['chip_id'].isin(ix)]
+     sc.pp.neighbors(y)
+     sc.tl.umap(y, copy=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[63]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-b1-b2-umap.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(6, 3)
+     for i, k in enumerate(y.obs['batch'].unique()):
+       query = y[y.obs['batch'] == k].obsm['X_umap']
+       ax[0].scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k)
+     ax[0].set_title('By batch')
+     for i, k in enumerate(y.obs['chip_id'].unique()):
+       query = y[y.obs['chip_id'] == k].obsm['X_umap']
+       ax[1].scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k)
+     ax[1].set_title('By individual')
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+       a.set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[64]:
+   [[file:figure/mnn.org/ipsc-b1-b2-umap.png]]
+   :END:
+
+   Plot the full data, colored by batch.
+
+   #+BEGIN_SRC ipython :async t
+     sc.pp.neighbors(x)
+     sc.tl.umap(x, copy=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[65]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-umap.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     for i, k in enumerate(x.obs['batch'].unique()):
+       query = x[x.obs['batch'] == k].obsm['X_umap']
+       plt.scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k)
+     plt.title('By batch')
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[74]:
+   [[file:figure/mnn.org/ipsc-umap.png]]
+   :END:
+
+** NMF
+
+   Instead of PCA, use NMF and normalize to a topic model as the latent space.
+
+   #+BEGIN_SRC ipython :async t
+     m = skd.NMF(n_components=10, solver='mu', beta_loss=1, max_iter=1000, verbose=True)
+     l = m.fit_transform(x.X)
+     f = m.components_
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     weights = l * f.sum(axis=1)
+     topics = f.T / f.sum(axis=1)
+     s = weights.sum(axis=1, keepdims=True)
+     weights /= s
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     x.obs['topic_scale'] = s
+     x.obsm['topics'] = weights
+     x.varm['topics'] = topics
+     x.write('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   :END:
+
+   *TODO:* this segfaults.
+
+   #+BEGIN_SRC ipython :async t
+     sc.pp.neighbors(x, use_rep='topics')
+     sc.tl.umap(x, copy=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - 36d6e328-d507-454e-9ac5-657bf63ae113
+   :END:

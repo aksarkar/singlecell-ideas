@@ -1,6 +1,8 @@
 #+TITLE: Single cell ideas
 #+SETUPFILE: setup.org
 
+- [[file:mnn.org][Mutual nearest neighbors in topic model space]]
+- [[file:time-course.org][Fully unsupervised topic models of scRNA-seq time course data]]
 - [[file:pois-beta.org][Poisson-Beta model]]
 - [[file:ebpmf.org][Empirical Bayes Poisson Matrix Factorization]]
 - [[file:network-dim.org][Why do high-dimensional networks produce low-dimensional activity?]]

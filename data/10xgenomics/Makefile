@@ -16,7 +16,8 @@ cd56_nk \
 cytotoxic_t \
 naive_cytotoxic \
 fresh_68k_pbmc_donor_a \
-jurkat 
+jurkat \
+pbmc_10k_v3
 
 CURL := curl -O
 
@@ -25,12 +26,20 @@ all: $(DATA)
 
 .PHONY: all
 
+
 # Make doesn't like colons
 # http://lists.gnu.org/archive/html/bug-make/2004-10/msg00010.html
 jurkat_293t_50_50_filtered_gene_bc_matrices.tar.gz:
 	curl "https://cf.10xgenomics.com/samples/cell-exp/1.1.0/jurkat:293t_50:50/jurkat:293t_50:50_filtered_gene_bc_matrices.tar.gz" -o $@
 
-.INTERMEDIATE: jurkat_293t_50_50_filtered_gene_bc_matrices.tar.gz
+.INTERMEDIATE: jurkat_293t_50_50_filtered_gene_bc_matrices.tar.gz pbmc_10k_v3_filtered_feature_bc_matrix.tar.gz
+
+pbmc_10k_v3: pbmc_10k_v3_filtered_feature_bc_matrix.tar.gz
+	mkdir -p $@
+	tar xf $< -C $@
+
+pbmc_10k_v3_filtered_feature_bc_matrix.tar.gz:
+	$(CURL) "http://cf.10xgenomics.com/samples/cell-exp/3.0.0/pbmc_10k_v3/pbmc_10k_v3_filtered_feature_bc_matrix.tar.gz"
 
 %_filtered_gene_bc_matrices.tar.gz:
 	$(CURL) "https://cf.10xgenomics.com/samples/cell-exp/1.1.0/$*/$@"

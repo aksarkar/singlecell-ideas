@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-02 Sun 19:11 -->
+<!-- 2020-02-04 Tue 19:31 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mutual nearest neighbors in topic model space</title>
@@ -299,8 +299,9 @@ different cell types
 </blockquote>
 
 <p>
-Here, we first investigate these assumptions using real data to generate a
-null batch effect. Then, we investigate using NMF/LDA to estimate true gene
+Here, we first investigate the intuition and assumptions underlying MNN
+correction using real data with known, estimable batch effects (Sarkar et
+al. 2019). Then, we investigate using NMF/LDA to estimate true gene
 expression under the generative model
 </p>
 
@@ -310,8 +311,9 @@ expression under the generative model
 \end{align*}
 
 <p>
-and compare the results against previous approaches based on cosine distance,
-or Euclidean distance in a principal component subspace.
+and compare MNN applied to this latent space against previous approaches
+based on cosine distance on normalized counts, or Euclidean distance in a
+principal component subspace.
 </p>
 </div>
 </div>
@@ -588,7 +590,7 @@ sc.tl.umap(x, copy=<span class="org-constant">False</span>)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-02 Sun 19:11</p>
+<p class="date">Created: 2020-02-04 Tue 19:31</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

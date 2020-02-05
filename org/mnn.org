@@ -20,8 +20,9 @@
   different cell types
   #+END_QUOTE
 
-  Here, we first investigate these assumptions using real data to generate a
-  null batch effect. Then, we investigate using NMF/LDA to estimate true gene
+  Here, we first investigate the intuition and assumptions underlying MNN
+  correction using real data with known, estimable batch effects (Sarkar et
+  al. 2019). Then, we investigate using NMF/LDA to estimate true gene
   expression under the generative model
 
   \begin{align*}
@@ -29,8 +30,9 @@
     \lambda_{ij} &= \sum_{k=1}^K l_{ik} f_{jk}
   \end{align*}
 
-  and compare the results against previous approaches based on cosine distance,
-  or Euclidean distance in a principal component subspace.
+  and compare MNN applied to this latent space against previous approaches
+  based on cosine distance on normalized counts, or Euclidean distance in a
+  principal component subspace.
 
 * Setup
   :PROPERTIES:

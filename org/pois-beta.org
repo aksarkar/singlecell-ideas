@@ -41,11 +41,14 @@
   [[http://mathworld.wolfram.com/HypergeometricFunction.html][confluent
   hypergeometric function of the first kind]] (Raj et al 2006), which is
   difficult to evaluate. To avoid this challenge, Kim and Marioni 2013 develop
-  an MCMC scheme to sample from the posterior \(p(\kr, \kon, \koff \mid x_i)\),
-  and Larsson et al. 2019 use numerical integration to evaluate the marginal
-  likelihood. Here, we investigate how the running time of the MLE procedure
-  (using numerical integration) scales, and whether variational inference can
-  improve the running time.
+  an MCMC scheme to sample from the posterior \(p(\kr, \kon, \koff \mid x_1,
+  \ldots, x_n)\), and Larsson et al. 2019 use numerical integration to evaluate
+  the marginal likelihood. 
+
+  Here, we investigate how the running time of the MLE procedure (using
+  numerical integration) scales, and whether variational inference can improve
+  the running time. We also investigate the effect of size factors (Kim and
+  Marioni 2013) and initialization on the estimates.
 
 * Setup
   :PROPERTIES:
@@ -63,9 +66,10 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar
 
   #+RESULTS:
-  : Submitted batch job 65547994
+  : Submitted batch job 65580527
 
   #+BEGIN_SRC ipython
+    import colorcet
     import itertools as it
     import numpy as np
     import pandas as pd
@@ -78,7 +82,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[31]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -136,7 +140,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[20]:
+   # Out[4]:
    :END:
 
 ** Maximum likelihood estimation
@@ -205,7 +209,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[35]:
+   # Out[5]:
    :END:
 
 ** Slice-within-Gibbs sampling
@@ -319,6 +323,11 @@
            print(f'sample {t}: {log_joint}')
        return samples
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
 
 ** Variational inference
    :PROPERTIES:
@@ -445,19 +454,12 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[23]:
+   # Out[7]:
    :END:
 
-* Results
-  :PROPERTIES:
-  :CUSTOM_ID: results
-  :END:
 ** Simulation
-   :PROPERTIES:
-   :CUSTOM_ID: simulation
-   :END:
 
-   Make sure the implementations work on one example.
+   Draw data from the basic model.
 
    #+BEGIN_SRC ipython
      def simulate_pois_beta(n, s=None, kr=None, kon=None, koff=None, seed=None):
@@ -478,8 +480,45 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[9]:
    :END:
+
+   Draw data from a model with size factors.
+
+  \begin{align*}
+    x_i \mid s_i, p_i, \kr &\sim \Pois(s_i p_i \kr)\\
+    p_i \mid \kon, \koff &\sim \B(\kon, \koff)
+  \end{align*}
+
+   #+BEGIN_SRC ipython
+     def trial(n, mean_size, var_size, kr, kon, koff, seed):
+       np.random.seed(seed)
+       disp = (var_size - mean_size) / (mean_size * mean_size)
+       s = np.random.poisson(lam=mean_size, size=n) * np.random.gamma(shape=1 / disp, scale=disp, size=n)
+       x, *theta = simulate_pois_beta(n=n, s=s, kr=kr / mean_size, kon=kon, koff=koff, seed=1)
+       theta0 = fit_poisson_beta_moment(x)
+       theta0[0] -= np.log(s).mean()
+       theta1 = fit_poisson_beta_mle(x)
+       theta1[0] -= np.log(s).mean()
+       theta2 = fit_poisson_beta_mle(x, s, init=theta0)
+       return x, s, [np.log(theta), theta0, theta1, theta2]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   :END:
+   
+* Results
+  :PROPERTIES:
+  :CUSTOM_ID: results
+  :END:
+** Simulation
+   :PROPERTIES:
+   :CUSTOM_ID: simulation
+   :END:
+
+   Make sure the implementations work on one example.
 
    #+BEGIN_SRC ipython
      x, *theta = simulate_pois_beta(n=1000, seed=0)
@@ -621,29 +660,9 @@
    :END:
 ** Impact of size factors
 
-   Simulate a simple example with non-trivial size factor variation.
-
-   #+BEGIN_SRC ipython
-     def trial(n, mean_size, var_size, kr, kon, koff, seed):
-       np.random.seed(seed)
-       disp = (var_size - mean_size) / (mean_size * mean_size)
-       s = np.random.poisson(lam=mean_size, size=n) * np.random.gamma(shape=1 / disp, scale=disp, size=n)
-       x, *theta = simulate_pois_beta(n=n, s=s, kr=kr / mean_size, kon=kon, koff=koff, seed=1)
-       theta0 = fit_poisson_beta_moment(x)
-       theta0[0] -= np.log(s).mean()
-       theta1 = fit_poisson_beta_mle(x)
-       theta1[0] -= np.log(s).mean()
-       theta2 = fit_poisson_beta_mle(x, s, init=theta0)
-       return x, s, [np.log(theta), theta0, theta1, theta2]
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[298]:
-   :END:
-
-   Plot the estimated distributions, as well as the difference between the
-   fitted Beta distributions and the ground truth.
+   Simulate a simple example with non-trivial size factor variation. Plot the
+   estimated distributions, as well as the difference between the fitted Beta
+   distributions and the ground truth.
 
    #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/size-ex.png
      x, s, res = trial(n=1000, mean_size=10000, var_size=250000, kr=32, kon=.5, koff=.25, seed=0)
@@ -752,4 +771,198 @@
      mle             4052.557227
      dtype: float64
    #+END_EXAMPLE
+   :END:
+
+** Log likelihood surface
+
+   Simulate a single example.
+
+   #+BEGIN_SRC ipython
+     x, *theta = simulate_pois_beta(n=1000, seed=0)
+     log_theta = np.log(np.array(theta))
+     log_theta_hat = fit_poisson_beta_mle(x)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[83]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/llik-sim-data.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 1)
+     plt.hist(x, bins=grid, color='0.5')
+     for i, (k, v) in enumerate(zip(['Ground truth', 'MLE'], [log_theta, log_theta_hat])):
+       p = np.array([np.exp(poisson_beta_logpmf(v, i, 1)).mean() for i in grid[:-1]])
+       plt.plot(.5 + grid[:-1], 1000 * p, lw=1, c=cm(i), label=k)
+     plt.legend(frameon=False)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Number of cells')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[86]:
+   [[file:figure/pois-beta.org/llik-sim-data.png]]
+   :END:
+
+   Draw the log likelihood surface about the true value.
+
+   #+BEGIN_SRC ipython
+     M = 100
+     grid_kr = np.linspace(log_theta[0] - .5, log_theta[0] + .5, M)
+     grid_kon = np.linspace(log_theta[1] - .5, log_theta[1] + .5, M)
+     grid_koff = np.linspace(log_theta[2] - .5, log_theta[2] + .5, M)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[23]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     llik_kr_kon = np.zeros((M, M))
+     for i in range(M):
+       for j in range(M):
+         llik_kr_kon[i, j] = poisson_beta_neg_llik(np.array([grid_kr[i], grid_kon[j], log_theta[2]]), x, 1)
+
+     llik_kr_koff = np.zeros((M, M))
+     for i in range(M):
+       for j in range(M):
+         llik_kr_koff[i, j] = poisson_beta_neg_llik(np.array([grid_kr[i], log_theta[1], grid_koff[j]]), x, 1)
+
+     llik_kon_koff = np.zeros((M, M))
+     for i in range(M):
+       for j in range(M):
+         llik_kon_koff[i, j] = poisson_beta_neg_llik(np.array([log_theta[0], grid_kon[i], grid_koff[j]]), x, 1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[29]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/llik-surface.png
+     cm = colorcet.cm['fire_r']
+     plt.clf()
+     fig, ax = plt.subplots(2, 2)
+     fig.set_size_inches(6, 6)
+
+     ax[0,0].contour(grid_kr, grid_kon, llik_kr_kon, cmap=cm, linewidths=1, levels=np.linspace(llik_kr_kon.min(), llik_kr_kon.max(), 20))
+     ax[0,0].scatter(log_theta[0], log_theta[1], marker='x', s=32, c='k', label='Ground truth')
+     ax[0,0].scatter(log_theta_hat[0], log_theta_hat[1], marker='x', s=32, c='r', label='MLE')
+     ax[0,0].legend(handletextpad=0)
+     ax[0,0].set_xlabel('$\ln(k_r)$')
+     ax[0,0].set_ylabel('$\ln(k_{\mathrm{on}})$')
+
+     ax[1,0].contour(grid_kr, grid_koff, llik_kr_koff, cmap=cm, levels=np.linspace(llik_kr_koff.min(), llik_kr_koff.max(), 20), linewidths=1)
+     ax[1,0].scatter(log_theta[0], log_theta[2], marker='x', s=32, c='k')
+     ax[1,0].scatter(log_theta_hat[0], log_theta_hat[2], marker='x', s=32, c='r')
+     ax[1,0].set_xlabel('$\ln(k_r)$')
+     ax[1,0].set_ylabel('$\ln(k_{\mathrm{off}})$')
+
+     ax[0,1].contour(grid_koff, grid_kon, llik_kon_koff.T, cmap=cm, levels=np.linspace(llik_kon_koff.min(), llik_kon_koff.max(), 20), linewidths=1)
+     ax[0,1].scatter(log_theta[2], log_theta[1], marker='x', s=32, c='k')
+     ax[0,1].scatter(log_theta_hat[2], log_theta_hat[1], marker='x', s=32, c='r')
+     ax[0,1].set_xlabel('$\ln(k_{\mathrm{off}})$')
+     ax[0,1].set_ylabel('$\ln(k_{\mathrm{on}})$')
+
+     ax[1,1].set_axis_off()
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[58]:
+   [[file:figure/pois-beta.org/llik-surface.png]]
+   :END:
+
+** Impact of initialization
+
+   Look at estimates starting from random initializations.
+
+   #+BEGIN_SRC ipython :async t
+     thetahat = []
+     for i in range(100):
+       try:
+         res = fit_poisson_beta_mle(x, init=np.random.normal(scale=0.5, size=3), max_iters=10000)
+       except RuntimeError as e:
+         print(f'Initialization {i} failed: {e.__cause__}')
+       if not i % 10:
+         print(f'Trial {i}')
+       thetahat.append(res)
+     thetahat = np.array(thetahat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[68]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/init-ex.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 2)
+     fig.set_size_inches(6, 6)
+     ax[0,0].scatter(thetahat[:,0], thetahat[:,1], s=1, c='k')
+     ax[0,0].set_xlabel('Estimated $\ln(k_r)$')
+     ax[0,0].set_ylabel('Estimated $\ln(k_{\mathrm{on}})$')
+
+     ax[1,0].scatter(thetahat[:,0], thetahat[:,2], s=1, c='k')
+     ax[1,0].set_xlabel('Estimated $\ln(k_r)$')
+     ax[1,0].set_ylabel('Estimated $\ln(k_{\mathrm{off}})$')
+
+     ax[0,1].scatter(thetahat[:,2], thetahat[:,1], s=1, c='k')
+     ax[0,1].set_xlabel('Estimated $\ln(k_{\mathrm{off}})$')
+     ax[0,1].set_ylabel('Estimated $\ln(k_{\mathrm{on}})$')
+
+     ax[1,1].set_axis_off()
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[75]:
+   [[file:figure/pois-beta.org/init-ex.png]]
+   :END:
+
+   #+BEGIN_SRC ipython
+     (pd.DataFrame(thetahat, columns=['log_kr', 'log_kon', 'log_koff'])
+      .to_csv('/scratch/midway2/aksarkar/ideas/poisson-beta-est.txt.gz', sep='\t'))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[73]:
+   :END:
+
+   Look at one example where the fit converged to something far from the ground
+   truth.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/init-ex2.png
+     query = thetahat[np.argmin(thetahat[:,0])]
+
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 1)
+     plt.hist(x, bins=grid, color='0.5')
+     for i, (k, v) in enumerate(zip(['Ground truth', 'MLE'], [log_theta, query])):
+       p = np.array([np.exp(poisson_beta_logpmf(v, i, 1)).mean() for i in grid[:-1]])
+       plt.plot(.5 + grid[:-1], 1000 * p, lw=1, c=cm(i), label=k)
+     plt.legend(frameon=False)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Number of cells')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[97]:
+   [[file:figure/pois-beta.org/init-ex2.png]]
    :END:

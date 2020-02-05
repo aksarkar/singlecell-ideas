@@ -1,6 +1,9 @@
 #+TITLE: Single cell ideas
 #+SETUPFILE: setup.org
 
+A collection of various (often incomplete or broken) ideas for single cell
+analysis plus some related topics.
+
 - [[file:mnn.org][Mutual nearest neighbors in topic model space]]
 - [[file:time-course.org][Fully unsupervised topic models of scRNA-seq time course data]]
 - [[file:pois-beta.org][Poisson-Beta model]]
@@ -15,6 +18,6 @@
 - [[file:wlra.org][Weighted low rank approximation]]
 - [[file:susie.org][Multivariate fine mapping]]
 - [[file:pop-structure.org][Population structure in single cell data]]
-- [[file:scvi.org][SCVI]]
-- [[file:vae.org][VAE for single-cell expression]]
-- [[file:zinb-vae-gmm.org][ZINB-VAE-GMM]]
+- [[file:scvi.org][+SCVI+]]
+- [[file:vae.org][+VAE for single-cell expression+]]
+- [[file:zinb-vae-gmm.org][+ZINB-VAE-GMM+]]

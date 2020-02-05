@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-04 Tue 21:39 -->
+<!-- 2020-02-04 Tue 21:58 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -265,7 +265,7 @@ for the JavaScript code in this tag.
 <li><a href="#mle">Maximum likelihood estimation</a></li>
 <li><a href="#mcmc">Slice-within-Gibbs sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
-<li><a href="#orga5a1df2">Simulation</a></li>
+<li><a href="#org204a7df">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
@@ -441,6 +441,9 @@ the marginal likelihood.
   <span class="org-variable-name">px</span> = w.reshape(1, -1) @ st.poisson(mu=s * kr * p).pmf(x.reshape(1, -1))
   <span class="org-comment-delimiter"># </span><span class="org-comment">Important: extra 1/2 comes from u-substitution</span>
   <span class="org-keyword">return</span> np.log(px) - sp.betaln(kon, koff) - (kon + koff - 1) * np.log(2)
+
+<span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_pmf</span>(theta, x, s, n_points=50):
+  <span class="org-keyword">return</span> np.exp(poisson_beta_logpmf(theta, x, s, n_points))
 
 <span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_neg_llik</span>(theta, x, s, n_points=50):
   <span class="org-doc">"""Return the negative log likelihood of the data</span>
@@ -731,9 +734,9 @@ update \(\kon, \koff\).
 </div>
 </div>
 
-<div id="outline-container-orga5a1df2" class="outline-3">
-<h3 id="orga5a1df2">Simulation</h3>
-<div class="outline-text-3" id="text-orga5a1df2">
+<div id="outline-container-org204a7df" class="outline-3">
+<h3 id="org204a7df">Simulation</h3>
+<div class="outline-text-3" id="text-org204a7df">
 <p>
 Draw data from the basic model.
 </p>
@@ -787,8 +790,8 @@ Draw data from a model with size factors.
 <h2 id="results"><a id="org8f429f7"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-org204a7df" class="outline-3">
-<h3 id="simulation"><a id="org204a7df"></a>Simulation</h3>
+<div id="outline-container-org5bf7b6e" class="outline-3">
+<h3 id="simulation"><a id="org5bf7b6e"></a>Simulation</h3>
 <div class="outline-text-3" id="text-simulation">
 <p>
 Make sure the implementations work on one example.
@@ -948,7 +951,7 @@ fig.set_size_inches(6, 4)
 ax[0].hist(x, bins=grid, color=<span class="org-string">'0.5'</span>)
 
 <span class="org-keyword">for</span> i, (log_theta, label) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>(res, [<span class="org-string">'Ground truth'</span>, <span class="org-string">'Moment'</span>, <span class="org-string">'MLE (posthoc)'</span>, <span class="org-string">'MLE'</span>])):
-  <span class="org-variable-name">p</span> = np.array([np.exp(poisson_beta_logpmf(log_theta, i, s)).mean() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid[:-1]])
+  <span class="org-variable-name">p</span> = np.array([poisson_beta_pmf(log_theta, i, s).mean() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid[:-1]])
   ax[0].plot(.5 + grid[:-1], n * p, lw=1, c=cm(i), label=label)
 ax[0].legend(frameon=<span class="org-constant">False</span>, bbox_to_anchor=(1, .5), loc=<span class="org-string">'center left'</span>)
 ax[0].set_xlabel(<span class="org-string">'Number of molecules'</span>)
@@ -1007,7 +1010,7 @@ fig.set_size_inches(6, 4)
 ax[0].hist(x, bins=grid, color=<span class="org-string">'0.5'</span>)
 
 <span class="org-keyword">for</span> i, (log_theta, label) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>(res, [<span class="org-string">'Ground truth'</span>, <span class="org-string">'Moment'</span>, <span class="org-string">'MLE (posthoc)'</span>, <span class="org-string">'MLE'</span>])):
-  <span class="org-variable-name">p</span> = np.array([np.exp(poisson_beta_logpmf(log_theta, i, s)).mean() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid[:-1]])
+  <span class="org-variable-name">p</span> = np.array([poisson_beta_pmf(log_theta, i, s).mean() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid[:-1]])
   ax[0].plot(.5 + grid[:-1], n * p, lw=1, c=cm(i), label=label)
 ax[0].legend(frameon=<span class="org-constant">False</span>, bbox_to_anchor=(1, .5), loc=<span class="org-string">'center left'</span>)
 ax[0].set_xlabel(<span class="org-string">'Number of molecules'</span>)
@@ -1072,7 +1075,7 @@ plt.gcf().set_size_inches(4, 2)
 <span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
 plt.hist(x, bins=grid, color=<span class="org-string">'0.5'</span>)
 <span class="org-keyword">for</span> i, (k, v) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>([<span class="org-string">'Ground truth'</span>, <span class="org-string">'MLE'</span>], [log_theta, log_theta_hat])):
-  <span class="org-variable-name">p</span> = np.array([np.exp(poisson_beta_logpmf(v, i, 1)).mean() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid[:-1]])
+  <span class="org-variable-name">p</span> = np.array([poisson_beta_pmf(v, i, 1).mean() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid[:-1]])
   plt.plot(.5 + grid[:-1], 1000 * p, lw=1, c=cm(i), label=k)
 plt.legend(frameon=<span class="org-constant">False</span>)
 plt.xlabel(<span class="org-string">'Number of molecules'</span>)
@@ -1224,7 +1227,7 @@ plt.gcf().set_size_inches(4, 2)
 <span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
 plt.hist(x, bins=grid, color=<span class="org-string">'0.5'</span>)
 <span class="org-keyword">for</span> i, (k, v) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>([<span class="org-string">'Ground truth'</span>, <span class="org-string">'MLE'</span>], [log_theta, query])):
-  <span class="org-variable-name">p</span> = np.array([np.exp(poisson_beta_logpmf(v, i, 1)).mean() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid[:-1]])
+  <span class="org-variable-name">p</span> = np.array([poisson_beta_pmf(v, i, 1).mean() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid[:-1]])
   plt.plot(.5 + grid[:-1], 1000 * p, lw=1, c=cm(i), label=k)
 plt.legend(frameon=<span class="org-constant">False</span>)
 plt.xlabel(<span class="org-string">'Number of molecules'</span>)
@@ -1244,7 +1247,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-04 Tue 21:39</p>
+<p class="date">Created: 2020-02-04 Tue 21:58</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

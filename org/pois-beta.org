@@ -176,6 +176,9 @@
        # Important: extra 1/2 comes from u-substitution
        return np.log(px) - sp.betaln(kon, koff) - (kon + koff - 1) * np.log(2)
 
+     def poisson_beta_pmf(theta, x, s, n_points=50):
+       return np.exp(poisson_beta_logpmf(theta, x, s, n_points))
+
      def poisson_beta_neg_llik(theta, x, s, n_points=50):
        """Return the negative log likelihood of the data
 
@@ -676,7 +679,7 @@
      ax[0].hist(x, bins=grid, color='0.5')
 
      for i, (log_theta, label) in enumerate(zip(res, ['Ground truth', 'Moment', 'MLE (posthoc)', 'MLE'])):
-       p = np.array([np.exp(poisson_beta_logpmf(log_theta, i, s)).mean() for i in grid[:-1]])
+       p = np.array([poisson_beta_pmf(log_theta, i, s).mean() for i in grid[:-1]])
        ax[0].plot(.5 + grid[:-1], n * p, lw=1, c=cm(i), label=label)
      ax[0].legend(frameon=False, bbox_to_anchor=(1, .5), loc='center left')
      ax[0].set_xlabel('Number of molecules')
@@ -733,7 +736,7 @@
      ax[0].hist(x, bins=grid, color='0.5')
 
      for i, (log_theta, label) in enumerate(zip(res, ['Ground truth', 'Moment', 'MLE (posthoc)', 'MLE'])):
-       p = np.array([np.exp(poisson_beta_logpmf(log_theta, i, s)).mean() for i in grid[:-1]])
+       p = np.array([poisson_beta_pmf(log_theta, i, s).mean() for i in grid[:-1]])
        ax[0].plot(.5 + grid[:-1], n * p, lw=1, c=cm(i), label=label)
      ax[0].legend(frameon=False, bbox_to_anchor=(1, .5), loc='center left')
      ax[0].set_xlabel('Number of molecules')
@@ -797,7 +800,7 @@
      grid = np.arange(x.max() + 1)
      plt.hist(x, bins=grid, color='0.5')
      for i, (k, v) in enumerate(zip(['Ground truth', 'MLE'], [log_theta, log_theta_hat])):
-       p = np.array([np.exp(poisson_beta_logpmf(v, i, 1)).mean() for i in grid[:-1]])
+       p = np.array([poisson_beta_pmf(v, i, 1).mean() for i in grid[:-1]])
        plt.plot(.5 + grid[:-1], 1000 * p, lw=1, c=cm(i), label=k)
      plt.legend(frameon=False)
      plt.xlabel('Number of molecules')
@@ -953,7 +956,7 @@
      grid = np.arange(x.max() + 1)
      plt.hist(x, bins=grid, color='0.5')
      for i, (k, v) in enumerate(zip(['Ground truth', 'MLE'], [log_theta, query])):
-       p = np.array([np.exp(poisson_beta_logpmf(v, i, 1)).mean() for i in grid[:-1]])
+       p = np.array([poisson_beta_pmf(v, i, 1).mean() for i in grid[:-1]])
        plt.plot(.5 + grid[:-1], 1000 * p, lw=1, c=cm(i), label=k)
      plt.legend(frameon=False)
      plt.xlabel('Number of molecules')

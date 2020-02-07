@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-02 Sun 19:18 -->
+<!-- 2020-02-12 Wed 11:55 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -261,6 +261,7 @@ for the JavaScript code in this tag.
 <li><a href="#setup">Setup</a></li>
 <li><a href="#org1860a88">Methods</a>
 <ul>
+<li><a href="#orgdd042e9">Amortized NMF/LDA</a></li>
 <li><a href="#orga68114a">iPSC data</a></li>
 </ul>
 </li>
@@ -286,6 +287,8 @@ cell type \(
   \newcommand\mf{\mathbf{F}} 
   \newcommand\ml{\mathbf{L}}
   \newcommand\mx{\mathbf{X}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vx{\mathbf{x}}
   \)
 </p>
 
@@ -293,8 +296,8 @@ cell type \(
   x_{ij} &\sim \Poi(x_i^+ \lambda_{ij})\\
   \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
   \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
-  \ln \phi_{ij} &= (\ml \mf_\phi)_{ij}\\
-  \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi)_{ij}\\
+  \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
+  \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij}\\
 \end{align*}
 
 <p>
@@ -316,12 +319,20 @@ We are now interested in several lines of questions:
 
 <ol class="org-ol">
 <li>If we analyze this kind of data in a fully unsupervised manner, can we
-recover the assignments of cells to donors? If not, what do we recover?</li>
+recover the assignments of cells to donors? This approach has been
+previously proposed in our specific factor model
+(<a href="10.1038/s41467-017-02554-5">Risso et al. 2018</a>). If not, what do
+we recover?</li>
 <li>Can we generalize this analysis approach to data which additionally has
 multiple cell types, and then multiple time points?</li>
 <li>Can we implement this approach without forming entire products
 \(\ml\mf'\)? Can we implement each update without looking at the entire
-data \(\mx\)?</li>
+data \(\mx\)? How much faster can we get than existing methods? Can we
+analyze datasets which are currently impossible to analyze (due to size),
+e.g. Human Cell Atlas? As references, compare against
+<a href="10.1038/s41592-018-0229-2">scVI</a>,
+<a href="https://rawcdn.githack.com/aertslab/cisTopic/8d15fa2813312aa0b20c1042604079558829e947/vignettes/10X_workflow.html#building_the_models">cisTopic</a>,
+<a href="https://github.com/stephenslab/fastTopics">fastTopics</a></li>
 </ol>
 </div>
 </div>
@@ -335,6 +346,7 @@ data \(\mx\)?</li>
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
 <span class="org-keyword">import</span> sklearn.decomposition <span class="org-keyword">as</span> skd
+<span class="org-keyword">import</span> torch
 </pre>
 </div>
 
@@ -357,6 +369,75 @@ data \(\mx\)?</li>
 <h2 id="org1860a88">Methods</h2>
 <div class="outline-text-2" id="text-org1860a88">
 </div>
+<div id="outline-container-orgdd042e9" class="outline-3">
+<h3 id="orgdd042e9">Amortized NMF/LDA</h3>
+<div class="outline-text-3" id="text-orgdd042e9">
+<p>
+Amortized inference
+(<a href="http://ruishu.io/2017/11/07/amortized-optimization/">Shu 2017</a>,
+<a href="https://papers.nips.cc/paper/7692-amortized-inference-regularization.pdf">Shu
+et al. 2018</a>) refers to a general solution to coupled optimization
+problems:
+</p>
+
+<p>
+\[ \theta^* = \arg\min_\theta f(\theta, \phi) \]
+</p>
+
+<p>
+where \(\phi \in \Phi\) is some context variable. Rather than solving one
+problem for each \(\phi\), we learn a function \(h_\alpha: \phi \rightarrow
+   \theta^*\) parameterized by \(\alpha\)
+</p>
+
+<p>
+\[ \alpha^* = \arg\min_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi) \]
+</p>
+
+<p>
+where \(\hat{p}(\phi)\) denotes the empirical distribution of \(\phi\) in
+the training data. As a concrete example, NMF (Lee and Seung 2001q) can be
+written
+</p>
+
+<p>
+\[ \vl_i^* = \arg\min_{\vl_i} \sum_{j, k} \operatorname{Poisson}(x_{ij}; l_{ik} f_{jk})\]
+</p>
+
+<p>
+where \(\vx_i\) is the context variable, and the goal is to learn
+\(h_\alpha\) which maps observations \(\mathbf{x}_{i}\) to loadings
+\(\mathbf{l}_{i}\). This can be achieved by introducing an <i>encoder
+network</i>, which has been previously proposed
+(<a href="10.1038/s41592-018-0229-2">Lopez et al. 2018</a>,
+<a href="10.1038/s41467-018-07931-2">Eraslan et al. 2018</a>).
+</p>
+
+<p>
+NMF is intimately connected to LDA via the Multinomial-Poisson transform
+(<a href="http://www.jstor.org/stable/2348134">Baker 1994</a>). Briefly, if we have
+an MLE for NMF and scale \(\ml\) and \(\mf\) to satisfy the constraints
+\(\sum_k l_{ik} = 1\), \(\sum_k f_{jk} = 1\), we recover an MLE for the
+Multinomial likelihood underlying LDA. This fact suggests an amortized
+inference scheme for maximum likelihood estimation of topic models:
+</p>
+
+\begin{align*}
+  x_{ij} \mid s_i, \mathbf{l}_i, \mathbf{F} &\sim \operatorname{Poisson}(s_i \sum_k l_{ik} f_{jk})\\
+  \mathbf{l}_i &= h(\mathbf{x}_i)
+\end{align*}
+
+<p>
+where \(h\) is a neural network with softmax output. Unlike previous
+approaches for amortized inference in topic models
+(<a href="https://arxiv.org/pdf/1703.01488">Srivastava et al. 2017</a>), we are not
+concerned with recovering an approximate posterior over \(\mathbf{L},
+   \mathbf{F}\), simplifying the problem. Our scheme suggests a fast GPU
+implementation based on minibatch gradient descent.
+</p>
+</div>
+</div>
+
 <div id="outline-container-orga68114a" class="outline-3">
 <h3 id="orga68114a">iPSC data</h3>
 <div class="outline-text-3" id="text-orga68114a">
@@ -417,7 +498,7 @@ x.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlece
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-02 Sun 19:18</p>
+<p class="date">Created: 2020-02-12 Wed 11:55</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

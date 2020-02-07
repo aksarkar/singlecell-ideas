@@ -12,14 +12,16 @@
   \newcommand\mf{\mathbf{F}} 
   \newcommand\ml{\mathbf{L}}
   \newcommand\mx{\mathbf{X}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vx{\mathbf{x}}
   \)
 
   \begin{align*}
     x_{ij} &\sim \Poi(x_i^+ \lambda_{ij})\\
     \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
     \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
-    \ln \phi_{ij} &= (\ml \mf_\phi)_{ij}\\
-    \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi)_{ij}\\
+    \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
+    \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij}\\
   \end{align*}
 
   where 
@@ -34,12 +36,20 @@
   We are now interested in several lines of questions:
 
   1. If we analyze this kind of data in a fully unsupervised manner, can we
-     recover the assignments of cells to donors? If not, what do we recover?
+     recover the assignments of cells to donors? This approach has been
+     previously proposed in our specific factor model
+     ([[doi:10.1038/s41467-017-02554-5][Risso et al. 2018]]). If not, what do
+     we recover?
   2. Can we generalize this analysis approach to data which additionally has
      multiple cell types, and then multiple time points?
   3. Can we implement this approach without forming entire products
      \(\ml\mf'\)? Can we implement each update without looking at the entire
-     data \(\mx\)?
+     data \(\mx\)? How much faster can we get than existing methods? Can we
+     analyze datasets which are currently impossible to analyze (due to size),
+     e.g. Human Cell Atlas? As references, compare against
+     [[doi:10.1038/s41592-018-0229-2][scVI]],
+     [[https://rawcdn.githack.com/aertslab/cisTopic/8d15fa2813312aa0b20c1042604079558829e947/vignettes/10X_workflow.html#building_the_models][cisTopic]],
+     [[https://github.com/stephenslab/fastTopics][fastTopics]]
 
 * Setup
   :PROPERTIES:
@@ -65,6 +75,7 @@
     import pandas as pd
     import scipy.sparse as ss
     import sklearn.decomposition as skd
+    import torch
   #+END_SRC
 
   #+RESULTS:
@@ -94,6 +105,54 @@
   :END:
 
 * Methods
+** Amortized NMF/LDA
+
+   Amortized inference
+   ([[http://ruishu.io/2017/11/07/amortized-optimization/][Shu 2017]],
+   [[https://papers.nips.cc/paper/7692-amortized-inference-regularization.pdf][Shu
+   et al. 2018]]) refers to a general solution to coupled optimization
+   problems:
+
+   \[ \theta^* = \arg\min_\theta f(\theta, \phi) \]
+
+   where \(\phi \in \Phi\) is some context variable. Rather than solving one
+   problem for each \(\phi\), we learn a function \(h_\alpha: \phi \rightarrow
+   \theta^*\) parameterized by \(\alpha\)
+
+   \[ \alpha^* = \arg\min_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi) \]
+
+   where \(\hat{p}(\phi)\) denotes the empirical distribution of \(\phi\) in
+   the training data. As a concrete example, NMF (Lee and Seung 2001q) can be
+   written
+
+   \[ \vl_i^* = \arg\min_{\vl_i} \sum_{j, k} \operatorname{Poisson}(x_{ij}; l_{ik} f_{jk})\]
+
+   where \(\vx_i\) is the context variable, and the goal is to learn
+   \(h_\alpha\) which maps observations \(\mathbf{x}_{i}\) to loadings
+   \(\mathbf{l}_{i}\). This can be achieved by introducing an /encoder
+   network/, which has been previously proposed
+   ([[doi:10.1038/s41592-018-0229-2][Lopez et al. 2018]],
+   [[doi:10.1038/s41467-018-07931-2][Eraslan et al. 2018]]).
+
+   NMF is intimately connected to LDA via the Multinomial-Poisson transform
+   ([[http://www.jstor.org/stable/2348134][Baker 1994]]). Briefly, if we have
+   an MLE for NMF and scale \(\ml\) and \(\mf\) to satisfy the constraints
+   \(\sum_k l_{ik} = 1\), \(\sum_k f_{jk} = 1\), we recover an MLE for the
+   Multinomial likelihood underlying LDA. This fact suggests an amortized
+   inference scheme for maximum likelihood estimation of topic models:
+
+   \begin{align*}
+     x_{ij} \mid s_i, \mathbf{l}_i, \mathbf{F} &\sim \operatorname{Poisson}(s_i \sum_k l_{ik} f_{jk})\\
+     \mathbf{l}_i &= h(\mathbf{x}_i)
+   \end{align*}
+
+   where \(h\) is a neural network with softmax output. Unlike previous
+   approaches for amortized inference in topic models
+   ([[https://arxiv.org/pdf/1703.01488][Srivastava et al. 2017]]), we are not
+   concerned with recovering an approximate posterior over \(\mathbf{L},
+   \mathbf{F}\), simplifying the problem. Our scheme suggests a fast GPU
+   implementation based on minibatch gradient descent.
+
 ** iPSC data
 
    Read the data.

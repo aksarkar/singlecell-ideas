@@ -1,6 +1,9 @@
 #+TITLE: Differential variance analysis
 #+SETUPFILE: setup.org
 \[
+\DeclareMathOperator\Poi{Poisson}
+\DeclareMathOperator\B{Beta}
+\DeclareMathOperator\Gam{Gamma}
 \newcommand\kr{k_r}
 \newcommand\kon{k_{\text{on}}}
 \newcommand\koff{k_{\text{off}}}
@@ -105,37 +108,38 @@
    :CUSTOM_ID: poisson-beta
    :END:
 
-   Assume the following generative model:
+   A simple model for transcriptional regulation is the /telegraph model/
+   ([[https://www.sciencedirect.com/science/article/pii/S0040580985710271][Peccoud
+   and Ycart 1995]],
+   [[https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.0040309][Raj
+   et al. 2006]], [[https://dx.doi.org/10.1186/gb-2013-14-1-r7][Kim and Marioni
+   2013]], [[https://dx.doi.org/10.1126/science.1216379][Munsky et al. 2013]]).
+   The steady state of this model can be characterized as a
+   [[file:pois-beta.org][Poisson-Beta distribution]]
 
    \begin{align*}
-     x_i \mid \kr, p_i &\sim \operatorname{Poisson}(\kr p_i)\\
-     p_i \mid \kon, \koff &\sim \operatorname{Beta}(\kon, \koff)
+     m_i \mid \kr, p_i &\sim \Poi(\kr p_i)\\
+     p_i \mid \kon, \koff &\sim \B(\kon, \koff)
    \end{align*}
 
    where:
 
-   - \(x_i\) is the number of molecules in sample \(i\) (considering one gene)
+   - \(m_i\) is the number of molecules in sample \(i\) (considering one gene)
    - \(\kr\) is the rate of transcription
    - \(\kon\) is the rate of off \(\rightarrow\) on promoter switching
    - \(\koff\) is the rate of on \(\rightarrow\) off promoter switching
 
-   and rates are scaled by the decay rate. The Poisson-Beta model model
-   describes the steady state distribution of molecules under a two-state
-   kinetic model of gene regulation
-   ([[https://users.rcc.uchicago.edu/~aksarkar/singlecell-ideas/diff-var.html#poisson-beta][Raj
-   et al. 2006]], [[https://dx.doi.org/10.1186/gb-2013-14-1-r7][Kim and Marioni
-   2013]], [[https://dx.doi.org/10.1126/science.1216379][Munsky et
-   al. 2013]]). Under this model:
+   and rates are scaled by the decay rate. Under this model
 
    \begin{align*}
-     E[x_i] &= \kr \frac{\kon}{\kon + \koff}\\
-     V[x_i] &= \kr \frac{\kon}{\kon + \koff} + \kr^2 \frac{\kon\koff}{(\kon + \koff)^2 (\kon + \koff + 1)}\\
+     E[m_i] &= \kr \frac{\kon}{\kon + \koff}\\
+     V[m_i] &= \kr \frac{\kon}{\kon + \koff} + \kr^2 \frac{\kon\koff}{(\kon + \koff)^2 (\kon + \koff + 1)}\\
      \text{Fano factor} &= 1 + \frac{\kr\koff}{(\kon + \koff) (\kon + \koff + 1)}
    \end{align*}
 
-   From this model, it is clear that an effect which changes variance /while
-   leaving the mean unchanged/ must leave \(p_i\) unchanged, i.e. equally scale
-   \(\kon\) and \(\koff\). This fact raises several questions:
+   It follows that an effect which changes variance /while leaving the mean
+   unchanged/ must leave \(p_i\) unchanged, i.e. equally scale \(\kon\) and
+   \(\koff\). This fact raises several questions:
 
    - Do we know of such a biological mechanism?
    - Should we expect to find one?
@@ -144,31 +148,59 @@
      parameters./ What if subsets of cells change kinetic parameters in
      different directions?
 
-   How does this model relate to the typical Poisson-Gamma generative model?
+   The Poisson-Beta model describes the process which generates the molecules
+   present in each cell; however, it does not include measurement error. To
+   model measurement error, assume there are \(m_{ij}\) molecules from gene
+   \(j\) in cell \(i\), with \(m_i^+\) molecules total, but we only observe a
+   random sample \(x_{i1}, \ldots, x_{ip}\) of the available molecules, in
+   which case
+
+   \[ x_{i1}, \ldots, x_{ip} \mid x_i^+ \sim \operatorname{Multinomial}(x_i^+, \lambda_{i1}, \ldots, \lambda_{ip}) \]
+
+   where \(x_i^+ \triangleq \sum_j x_{ij}\), \(\lambda_{ij} \triangleq
+   m_{ij} / m_i^+\), and we have assumed that \(x_i^+ \ll m_i^+\). This can be
+   transformed into a Poisson model (Baker 1994)
+
+   \[ x_{ij} \sim \Poi(x_i^+ \lambda_{ij}), \qquad j = 1, \ldots, p \]
+
+   Therefore, observed molecule counts \(x_{ij}\) are generated as Poisson
+   sampling on top of a Poisson-Beta generative process. However, focusing on
+   gene \(j\)
+
+   \[ x_{ij} \sim \Poi(x_i^+ m_{ij} / m_i^+) \approx \operatorname{Binomial}(m_{ij}, x_i^+ / m_i^+) \]
+
+   and we have \(k_r p_i \propto \lambda_{ij}\), yielding a model (via binomial
+   thinning; [[https://www.biorxiv.org/content/10.1101/758524v1][Gerard 2019]])
+
+   \[ x_{ij} \sim \Poi(x_i^+ \kr p_i) \]
+
+   which was proposed by Kim and Marioni 2013. Now suppose we fit a
+   Poisson-Gamma model to the observed data, meaning we assume variation in
+   \(\lambda_{ij}\) (which is due to stochastic transcription) follows a Gamma
+   distribution
 
    \begin{align*}
-     x_i \mid s_i, \lambda_i &\sim \operatorname{Poisson}(s_i \lambda_i) \\
-     \lambda_i \mid \mu, \phi &\sim \operatorname{Gamma}(\phi, \phi / \mu)
+     x_i \mid x_i^+, \lambda_i &\sim \Poi(x_i^+ \lambda_i) \\
+     \lambda_i \mid \mu, \phi &\sim \Gam(\phi, \phi / \mu)
    \end{align*}
 
    where:
 
-   - \(s_i\) denotes the total number of molecules sequenced in sample \(i\)
+   - \(x_i^+\) denotes the total number of molecules sequenced in sample \(i\)
    - \(\mu\) denotes the latent mean gene expression
    - \(\phi\) denotes the overdispersion parameter (relative to Poisson)
 
    Under the Poisson-Gamma model:
 
    \begin{align*}
-     E[x_i] &= s_i \mu \\
-     V[x_i] &= s_i \mu + (s_i \mu)^2 \phi \\
+     E[x_i] &= x_i^+ \mu \\
+     V[x_i] &= x_i^+ \mu + (x_i^+ \mu)^2 \phi \\
      \text{Fano factor} &= 1 + \phi
    \end{align*}
 
-   Suppose data are generated by Poisson-Beta model, and we fit a Poisson-Gamma
-   distribution. Naively, it would seem the mean \(\mu\) and overdispersion
-   \(\phi\) will be related to each other, through their dependence on \(\kr,
-   \kon, \koff\). This possibility raises several questions:
+   Naively, it would seem the mean \(\mu\) and overdispersion \(\phi\) will be
+   related to each other, through their dependence on \(\kr, \kon,
+   \koff\). This possibility raises several questions:
 
    - If we do find effects on \(\phi\), should we expect them to be independent
      of effects on \(\mu\)?
@@ -178,15 +210,6 @@
      differences in kinetic parameters? Will a different approach estimate the
      kinetic parameters?
 
-   The interpretation of the Poisson is different in the two models. In the
-   Poisson-Beta model, it denotes stochastic generation of molecules; in the
-   Poisson-Gamma model it denotes sampling variation. /How do we account for
-   this difference?/ Kim and Marioni assume that the number of molecules
-   observed in real data is proportional to the total number of molecules in
-   the cell, i.e.
-
-   \[ x_i \sim \operatorname{Poisson}(s_i \kr p_i) \]
-
 ** Differential variance
    :PROPERTIES:
    :CUSTOM_ID: diff-var
@@ -195,7 +218,7 @@
    We assume the following generative model for the data:
 
    \begin{align*}
-     x_{ij} \mid s_i &\sim \operatorname{Poisson}(s_i \lambda_{ij}) \\
+     x_{ij} \mid x_i^+ &\sim \operatorname{Poisson}(x_i^+ \lambda_{ij}) \\
      \lambda_{ij} \mid z_i &\sim g_{z_i}(\cdot)
    \end{align*}
 
@@ -203,7 +226,7 @@
 
    - \(x_{ij}\) is the number of molecules in sample \(i\) mapping to gene
      \(j\)
-   - \(s_i\) is the total number of molecules in sample \(i\)
+   - \(x_i^+\) is the total number of molecules in sample \(i\)
    - \(z_i\) is an indicator variable denoting which group sample \(i\) belongs
      to
 
@@ -214,7 +237,7 @@
    model to the null model:
 
    \begin{align*}
-     x_{ij} \mid s_i &\sim \operatorname{Poisson}(s_i \lambda_{ij}) \\
+     x_{ij} \mid x_i^+ &\sim \operatorname{Poisson}(x_i^+ \lambda_{ij}) \\
      \lambda_{ij} &\sim g_0(\cdot)
    \end{align*}
 
@@ -280,8 +303,8 @@
 
    \begin{align*}
      \hat{g} &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}(\frac{1}{\hat\phi}, \frac{1}{\hat\mu \hat\phi})\\
-     p(\lambda_i \mid x_1, \ldots, x_n, s_1, \ldots, s_n, \hat{g}) &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
-      \frac{1}{\hat\phi}, s_i + \frac{1}{\hat\mu \hat\phi}\right)
+     p(\lambda_i \mid x_1, \ldots, x_n, x_1^+, \ldots, x_n^+, \hat{g}) &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
+      \frac{1}{\hat\phi}, x_i^+ + \frac{1}{\hat\mu \hat\phi}\right)
    \end{align*}
 
    We can then take sample variances of latent gene expression values

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-08-03 Sat 22:00 -->
+<!-- 2020-02-12 Wed 19:38 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -277,6 +277,9 @@ for the JavaScript code in this tag.
 </div>
 <p>
 \[
+\DeclareMathOperator\Poi{Poisson}
+\DeclareMathOperator\B{Beta}
+\DeclareMathOperator\Gam{Gamma}
 \newcommand\kr{k_r}
 \newcommand\kon{k_{\text{on}}}
 \newcommand\koff{k_{\text{off}}}
@@ -362,12 +365,19 @@ expression variance <i>independent</i> of altering mean gene expression.
 <h3 id="poisson-beta"><a id="org834badd"></a>Mechanistic basis of effects on variance</h3>
 <div class="outline-text-3" id="text-poisson-beta">
 <p>
-Assume the following generative model:
+A simple model for transcriptional regulation is the <i>telegraph model</i>
+(<a href="https://www.sciencedirect.com/science/article/pii/S0040580985710271">Peccoud
+and Ycart 1995</a>,
+<a href="https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.0040309">Raj
+et al. 2006</a>, <a href="https://dx.doi.org/10.1186/gb-2013-14-1-r7">Kim and Marioni
+2013</a>, <a href="https://dx.doi.org/10.1126/science.1216379">Munsky et al. 2013</a>).
+The steady state of this model can be characterized as a
+<a href="pois-beta.html">Poisson-Beta distribution</a>
 </p>
 
 \begin{align*}
-  x_i \mid \kr, p_i &\sim \operatorname{Poisson}(\kr p_i)\\
-  p_i \mid \kon, \koff &\sim \operatorname{Beta}(\kon, \koff)
+  m_i \mid \kr, p_i &\sim \Poi(\kr p_i)\\
+  p_i \mid \kon, \koff &\sim \B(\kon, \koff)
 \end{align*}
 
 <p>
@@ -375,32 +385,26 @@ where:
 </p>
 
 <ul class="org-ul">
-<li>\(x_i\) is the number of molecules in sample \(i\) (considering one gene)</li>
+<li>\(m_i\) is the number of molecules in sample \(i\) (considering one gene)</li>
 <li>\(\kr\) is the rate of transcription</li>
 <li>\(\kon\) is the rate of off \(\rightarrow\) on promoter switching</li>
 <li>\(\koff\) is the rate of on \(\rightarrow\) off promoter switching</li>
 </ul>
 
 <p>
-and rates are scaled by the decay rate. The Poisson-Beta model model
-describes the steady state distribution of molecules under a two-state
-kinetic model of gene regulation
-(<a href="https://users.rcc.uchicago.edu/~aksarkar/singlecell-ideas/diff-var.html#poisson-beta">Raj
-et al. 2006</a>, <a href="https://dx.doi.org/10.1186/gb-2013-14-1-r7">Kim and Marioni
-2013</a>, <a href="https://dx.doi.org/10.1126/science.1216379">Munsky et
-al. 2013</a>). Under this model:
+and rates are scaled by the decay rate. Under this model
 </p>
 
 \begin{align*}
-  E[x_i] &= \kr \frac{\kon}{\kon + \koff}\\
-  V[x_i] &= \kr \frac{\kon}{\kon + \koff} + \kr^2 \frac{\kon\koff}{(\kon + \koff)^2 (\kon + \koff + 1)}\\
+  E[m_i] &= \kr \frac{\kon}{\kon + \koff}\\
+  V[m_i] &= \kr \frac{\kon}{\kon + \koff} + \kr^2 \frac{\kon\koff}{(\kon + \koff)^2 (\kon + \koff + 1)}\\
   \text{Fano factor} &= 1 + \frac{\kr\koff}{(\kon + \koff) (\kon + \koff + 1)}
 \end{align*}
 
 <p>
-From this model, it is clear that an effect which changes variance <i>while
-leaving the mean unchanged</i> must leave \(p_i\) unchanged, i.e. equally scale
-\(\kon\) and \(\koff\). This fact raises several questions:
+It follows that an effect which changes variance <i>while leaving the mean
+unchanged</i> must leave \(p_i\) unchanged, i.e. equally scale \(\kon\) and
+\(\koff\). This fact raises several questions:
 </p>
 
 <ul class="org-ul">
@@ -413,12 +417,57 @@ different directions?</li>
 </ul>
 
 <p>
-How does this model relate to the typical Poisson-Gamma generative model?
+The Poisson-Beta model describes the process which generates the molecules
+present in each cell; however, it does not include measurement error. To
+model measurement error, assume there are \(m_{ij}\) molecules from gene
+\(j\) in cell \(i\), with \(m_i^+\) molecules total, but we only observe a
+random sample \(x_{i1}, \ldots, x_{ip}\) of the available molecules, in
+which case
+</p>
+
+<p>
+\[ x_{i1}, \ldots, x_{ip} \mid x_i^+ \sim \operatorname{Multinomial}(x_i^+, \lambda_{i1}, \ldots, \lambda_{ip}) \]
+</p>
+
+<p>
+where \(x_i^+ \triangleq \sum_j x_{ij}\), \(\lambda_{ij} \triangleq
+   m_{ij} / m_i^+\), and we have assumed that \(x_i^+ \ll m_i^+\). This can be
+transformed into a Poisson model (Baker 1994)
+</p>
+
+<p>
+\[ x_{ij} \sim \Poi(x_i^+ \lambda_{ij}), \qquad j = 1, \ldots, p \]
+</p>
+
+<p>
+Therefore, observed molecule counts \(x_{ij}\) are generated as Poisson
+sampling on top of a Poisson-Beta generative process. However, focusing on
+gene \(j\)
+</p>
+
+<p>
+\[ x_{ij} \sim \Poi(x_i^+ m_{ij} / m_i^+) \approx \operatorname{Binomial}(m_{ij}, x_i^+ / m_i^+) \]
+</p>
+
+<p>
+and we have \(k_r p_i \propto \lambda_{ij}\), yielding a model (via binomial
+thinning; <a href="https://www.biorxiv.org/content/10.1101/758524v1">Gerard 2019</a>)
+</p>
+
+<p>
+\[ x_{ij} \sim \Poi(x_i^+ \kr p_i) \]
+</p>
+
+<p>
+which was proposed by Kim and Marioni 2013. Now suppose we fit a
+Poisson-Gamma model to the observed data, meaning we assume variation in
+\(\lambda_{ij}\) (which is due to stochastic transcription) follows a Gamma
+distribution
 </p>
 
 \begin{align*}
-  x_i \mid s_i, \lambda_i &\sim \operatorname{Poisson}(s_i \lambda_i) \\
-  \lambda_i \mid \mu, \phi &\sim \operatorname{Gamma}(\phi, \phi / \mu)
+  x_i \mid x_i^+, \lambda_i &\sim \Poi(x_i^+ \lambda_i) \\
+  \lambda_i \mid \mu, \phi &\sim \Gam(\phi, \phi / \mu)
 \end{align*}
 
 <p>
@@ -426,7 +475,7 @@ where:
 </p>
 
 <ul class="org-ul">
-<li>\(s_i\) denotes the total number of molecules sequenced in sample \(i\)</li>
+<li>\(x_i^+\) denotes the total number of molecules sequenced in sample \(i\)</li>
 <li>\(\mu\) denotes the latent mean gene expression</li>
 <li>\(\phi\) denotes the overdispersion parameter (relative to Poisson)</li>
 </ul>
@@ -436,16 +485,15 @@ Under the Poisson-Gamma model:
 </p>
 
 \begin{align*}
-  E[x_i] &= s_i \mu \\
-  V[x_i] &= s_i \mu + (s_i \mu)^2 \phi \\
+  E[x_i] &= x_i^+ \mu \\
+  V[x_i] &= x_i^+ \mu + (x_i^+ \mu)^2 \phi \\
   \text{Fano factor} &= 1 + \phi
 \end{align*}
 
 <p>
-Suppose data are generated by Poisson-Beta model, and we fit a Poisson-Gamma
-distribution. Naively, it would seem the mean \(\mu\) and overdispersion
-\(\phi\) will be related to each other, through their dependence on \(\kr,
-   \kon, \koff\). This possibility raises several questions:
+Naively, it would seem the mean \(\mu\) and overdispersion \(\phi\) will be
+related to each other, through their dependence on \(\kr, \kon,
+   \koff\). This possibility raises several questions:
 </p>
 
 <ul class="org-ul">
@@ -457,19 +505,6 @@ relationship between \(\mu\) and \(\phi\). Will this approach estimate
 differences in kinetic parameters? Will a different approach estimate the
 kinetic parameters?</li>
 </ul>
-
-<p>
-The interpretation of the Poisson is different in the two models. In the
-Poisson-Beta model, it denotes stochastic generation of molecules; in the
-Poisson-Gamma model it denotes sampling variation. <i>How do we account for
-this difference?</i> Kim and Marioni assume that the number of molecules
-observed in real data is proportional to the total number of molecules in
-the cell, i.e.
-</p>
-
-<p>
-\[ x_i \sim \operatorname{Poisson}(s_i \kr p_i) \]
-</p>
 </div>
 </div>
 
@@ -481,7 +516,7 @@ We assume the following generative model for the data:
 </p>
 
 \begin{align*}
-  x_{ij} \mid s_i &\sim \operatorname{Poisson}(s_i \lambda_{ij}) \\
+  x_{ij} \mid x_i^+ &\sim \operatorname{Poisson}(x_i^+ \lambda_{ij}) \\
   \lambda_{ij} \mid z_i &\sim g_{z_i}(\cdot)
 \end{align*}
 
@@ -492,7 +527,7 @@ where:
 <ul class="org-ul">
 <li>\(x_{ij}\) is the number of molecules in sample \(i\) mapping to gene
 \(j\)</li>
-<li>\(s_i\) is the total number of molecules in sample \(i\)</li>
+<li>\(x_i^+\) is the total number of molecules in sample \(i\)</li>
 <li>\(z_i\) is an indicator variable denoting which group sample \(i\) belongs
 to</li>
 </ul>
@@ -508,7 +543,7 @@ model to the null model:
 </p>
 
 \begin{align*}
-  x_{ij} \mid s_i &\sim \operatorname{Poisson}(s_i \lambda_{ij}) \\
+  x_{ij} \mid x_i^+ &\sim \operatorname{Poisson}(x_i^+ \lambda_{ij}) \\
   \lambda_{ij} &\sim g_0(\cdot)
 \end{align*}
 
@@ -582,8 +617,8 @@ Empirical Bayes, and then recover the posterior distribution:
 
 \begin{align*}
   \hat{g} &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}(\frac{1}{\hat\phi}, \frac{1}{\hat\mu \hat\phi})\\
-  p(\lambda_i \mid x_1, \ldots, x_n, s_1, \ldots, s_n, \hat{g}) &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
-   \frac{1}{\hat\phi}, s_i + \frac{1}{\hat\mu \hat\phi}\right)
+  p(\lambda_i \mid x_1, \ldots, x_n, x_1^+, \ldots, x_n^+, \hat{g}) &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
+   \frac{1}{\hat\phi}, x_i^+ + \frac{1}{\hat\mu \hat\phi}\right)
 \end{align*}
 
 <p>
@@ -770,7 +805,7 @@ Index: []
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-08-03 Sat 22:00</p>
+<p class="date">Created: 2020-02-12 Wed 19:38</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

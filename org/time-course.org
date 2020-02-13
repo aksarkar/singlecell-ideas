@@ -122,8 +122,9 @@
    \[ \alpha^* = \arg\min_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi) \]
 
    where \(\hat{p}(\phi)\) denotes the empirical distribution of \(\phi\) in
-   the training data. As a concrete example, NMF (Lee and Seung 2001q) can be
-   written
+   the training data. As a concrete example, NMF
+   ([[http://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization][Lee
+   and Seung 2001]]) can be written
 
    \[ \vl_i^* = \arg\min_{\vl_i} \sum_{j, k} \operatorname{Poisson}(x_{ij}; l_{ik} f_{jk})\]
 
@@ -151,7 +152,8 @@
    ([[https://arxiv.org/pdf/1703.01488][Srivastava et al. 2017]]), we are not
    concerned with recovering an approximate posterior over \(\mathbf{L},
    \mathbf{F}\), simplifying the problem. Our scheme suggests a fast GPU
-   implementation based on minibatch gradient descent.
+   implementation based on minibatch gradient descent, which we provide in the
+   Python package ~anmf~.
 
 ** iPSC data
 

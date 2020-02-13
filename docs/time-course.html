@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-12 Wed 11:55 -->
+<!-- 2020-02-12 Wed 19:06 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -396,8 +396,9 @@ problem for each \(\phi\), we learn a function \(h_\alpha: \phi \rightarrow
 
 <p>
 where \(\hat{p}(\phi)\) denotes the empirical distribution of \(\phi\) in
-the training data. As a concrete example, NMF (Lee and Seung 2001q) can be
-written
+the training data. As a concrete example, NMF
+(<a href="http://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization">Lee
+and Seung 2001</a>) can be written
 </p>
 
 <p>
@@ -433,7 +434,8 @@ approaches for amortized inference in topic models
 (<a href="https://arxiv.org/pdf/1703.01488">Srivastava et al. 2017</a>), we are not
 concerned with recovering an approximate posterior over \(\mathbf{L},
    \mathbf{F}\), simplifying the problem. Our scheme suggests a fast GPU
-implementation based on minibatch gradient descent.
+implementation based on minibatch gradient descent, which we provide in the
+Python package <code>anmf</code>.
 </p>
 </div>
 </div>
@@ -498,7 +500,7 @@ x.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlece
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-12 Wed 11:55</p>
+<p class="date">Created: 2020-02-12 Wed 19:06</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-12 Wed 19:06 -->
+<!-- 2020-02-13 Thu 21:48 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -284,6 +284,7 @@ individual variation in the mean and variance of gene expression in a single
 cell type \( 
   \DeclareMathOperator\Gam{Gamma}
   \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\argmin{arg min}
   \newcommand\mf{\mathbf{F}} 
   \newcommand\ml{\mathbf{L}}
   \newcommand\mx{\mathbf{X}}
@@ -381,7 +382,7 @@ problems:
 </p>
 
 <p>
-\[ \theta^* = \arg\min_\theta f(\theta, \phi) \]
+\[ \theta^* = \argmin_\theta f(\theta, \phi) \]
 </p>
 
 <p>
@@ -391,7 +392,7 @@ problem for each \(\phi\), we learn a function \(h_\alpha: \phi \rightarrow
 </p>
 
 <p>
-\[ \alpha^* = \arg\min_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi) \]
+\[ \alpha^* = \argmin_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi) \]
 </p>
 
 <p>
@@ -402,16 +403,18 @@ and Seung 2001</a>) can be written
 </p>
 
 <p>
-\[ \vl_i^* = \arg\min_{\vl_i} \sum_{j, k} \operatorname{Poisson}(x_{ij}; l_{ik} f_{jk})\]
+\[ \vl_i^* = \argmin_{\vl_i} \sum_j \operatorname{Poisson}(x_{ij}; \sum_k l_{ik} f_{jk})\]
 </p>
 
 <p>
 where \(\vx_i\) is the context variable, and the goal is to learn
-\(h_\alpha\) which maps observations \(\mathbf{x}_{i}\) to loadings
-\(\mathbf{l}_{i}\). This can be achieved by introducing an <i>encoder
-network</i>, which has been previously proposed
-(<a href="10.1038/s41592-018-0229-2">Lopez et al. 2018</a>,
-<a href="10.1038/s41467-018-07931-2">Eraslan et al. 2018</a>).
+\(h_\alpha\) which maps observations \(\vx_i\) to loadings \(\vl_i\). (Here,
+we are simplifying by holding \(\mf\) fixed. In this setup, we treat the
+\(\vl_i\) as local latent variables, and \(\mf\) as a global latent
+variable. These can be optimized in alternating phases.) The optimization
+can be achieved by introducing an <i>encoder network</i> \(h_\alpha\), which has
+been previously proposed (<a href="10.1038/s41592-018-0229-2">Lopez et
+al. 2018</a>, <a href="10.1038/s41467-018-07931-2">Eraslan et al. 2018</a>).
 </p>
 
 <p>
@@ -424,8 +427,8 @@ inference scheme for maximum likelihood estimation of topic models:
 </p>
 
 \begin{align*}
-  x_{ij} \mid s_i, \mathbf{l}_i, \mathbf{F} &\sim \operatorname{Poisson}(s_i \sum_k l_{ik} f_{jk})\\
-  \mathbf{l}_i &= h(\mathbf{x}_i)
+  x_{ij} \mid s_i, \vl_i, \mf &\sim \operatorname{Poisson}(s_i \sum_k l_{ik} f_{jk})\\
+  \vl_i &= h(\vx_i)
 \end{align*}
 
 <p>
@@ -500,7 +503,7 @@ x.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlece
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-12 Wed 19:06</p>
+<p class="date">Created: 2020-02-13 Thu 21:48</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

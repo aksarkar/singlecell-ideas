@@ -9,6 +9,7 @@
   cell type \( 
   \DeclareMathOperator\Gam{Gamma}
   \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\argmin{arg min}
   \newcommand\mf{\mathbf{F}} 
   \newcommand\ml{\mathbf{L}}
   \newcommand\mx{\mathbf{X}}
@@ -113,27 +114,29 @@
    et al. 2018]]) refers to a general solution to coupled optimization
    problems:
 
-   \[ \theta^* = \arg\min_\theta f(\theta, \phi) \]
+   \[ \theta^* = \argmin_\theta f(\theta, \phi) \]
 
    where \(\phi \in \Phi\) is some context variable. Rather than solving one
    problem for each \(\phi\), we learn a function \(h_\alpha: \phi \rightarrow
    \theta^*\) parameterized by \(\alpha\)
 
-   \[ \alpha^* = \arg\min_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi) \]
+   \[ \alpha^* = \argmin_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi) \]
 
    where \(\hat{p}(\phi)\) denotes the empirical distribution of \(\phi\) in
    the training data. As a concrete example, NMF
    ([[http://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization][Lee
    and Seung 2001]]) can be written
 
-   \[ \vl_i^* = \arg\min_{\vl_i} \sum_{j, k} \operatorname{Poisson}(x_{ij}; l_{ik} f_{jk})\]
+   \[ \vl_i^* = \argmin_{\vl_i} \sum_j \operatorname{Poisson}(x_{ij}; \sum_k l_{ik} f_{jk})\]
 
    where \(\vx_i\) is the context variable, and the goal is to learn
-   \(h_\alpha\) which maps observations \(\mathbf{x}_{i}\) to loadings
-   \(\mathbf{l}_{i}\). This can be achieved by introducing an /encoder
-   network/, which has been previously proposed
-   ([[doi:10.1038/s41592-018-0229-2][Lopez et al. 2018]],
-   [[doi:10.1038/s41467-018-07931-2][Eraslan et al. 2018]]).
+   \(h_\alpha\) which maps observations \(\vx_i\) to loadings \(\vl_i\). (Here,
+   we are simplifying by holding \(\mf\) fixed. In this setup, we treat the
+   \(\vl_i\) as local latent variables, and \(\mf\) as a global latent
+   variable. These can be optimized in alternating phases.) The optimization
+   can be achieved by introducing an /encoder network/ \(h_\alpha\), which has
+   been previously proposed ([[doi:10.1038/s41592-018-0229-2][Lopez et
+   al. 2018]], [[doi:10.1038/s41467-018-07931-2][Eraslan et al. 2018]]).
 
    NMF is intimately connected to LDA via the Multinomial-Poisson transform
    ([[http://www.jstor.org/stable/2348134][Baker 1994]]). Briefly, if we have
@@ -143,8 +146,8 @@
    inference scheme for maximum likelihood estimation of topic models:
 
    \begin{align*}
-     x_{ij} \mid s_i, \mathbf{l}_i, \mathbf{F} &\sim \operatorname{Poisson}(s_i \sum_k l_{ik} f_{jk})\\
-     \mathbf{l}_i &= h(\mathbf{x}_i)
+     x_{ij} \mid s_i, \vl_i, \mf &\sim \operatorname{Poisson}(s_i \sum_k l_{ik} f_{jk})\\
+     \vl_i &= h(\vx_i)
    \end{align*}
 
    where \(h\) is a neural network with softmax output. Unlike previous

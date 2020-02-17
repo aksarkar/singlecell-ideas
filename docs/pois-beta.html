@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-16 Sun 20:24 -->
+<!-- 2020-02-17 Mon 11:53 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -265,7 +265,7 @@ for the JavaScript code in this tag.
 <li><a href="#mle">Maximum likelihood estimation</a></li>
 <li><a href="#mcmc">Slice-within-Gibbs sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
-<li><a href="#org5bf7b6e">Simulation</a></li>
+<li><a href="#org5ff99fe">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
@@ -275,6 +275,7 @@ for the JavaScript code in this tag.
 <li><a href="#org2a8e2d9">Impact of size factors</a></li>
 <li><a href="#org1a579b3">Log likelihood surface</a></li>
 <li><a href="#org2d20171">Impact of initialization</a></li>
+<li><a href="#orgfb20ae8">Slice-within-Gibbs sampling</a></li>
 </ul>
 </li>
 </ul>
@@ -351,6 +352,7 @@ initialization on the estimates.
 <span class="org-keyword">import</span> itertools <span class="org-keyword">as</span> it
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> poisbeta
 <span class="org-keyword">import</span> scipy.optimize <span class="org-keyword">as</span> so
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
@@ -736,15 +738,15 @@ update \(\kon, \koff\).
 </div>
 </div>
 
-<div id="outline-container-org5bf7b6e" class="outline-3">
-<h3 id="org5bf7b6e">Simulation</h3>
-<div class="outline-text-3" id="text-org5bf7b6e">
+<div id="outline-container-org5ff99fe" class="outline-3">
+<h3 id="org5ff99fe">Simulation</h3>
+<div class="outline-text-3" id="text-org5ff99fe">
 <p>
 Draw data from the basic model.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_pois_beta</span>(n, s=<span class="org-constant">None</span>, kr=<span class="org-constant">None</span>, kon=<span class="org-constant">None</span>, koff=<span class="org-constant">None</span>, seed=<span class="org-constant">None</span>):
+<pre class="src src-ipython" id="org06bcd76"><span class="org-keyword">def</span> <span class="org-function-name">simulate_pois_beta</span>(n, s=<span class="org-constant">None</span>, kr=<span class="org-constant">None</span>, kon=<span class="org-constant">None</span>, koff=<span class="org-constant">None</span>, seed=<span class="org-constant">None</span>):
   <span class="org-keyword">if</span> seed <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
     np.random.seed(seed)
   <span class="org-keyword">if</span> kr <span class="org-keyword">is</span> <span class="org-constant">None</span>:
@@ -792,8 +794,8 @@ Draw data from a model with size factors.
 <h2 id="results"><a id="org8f429f7"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-org5ff99fe" class="outline-3">
-<h3 id="simulation"><a id="org5ff99fe"></a>Simulation</h3>
+<div id="outline-container-orged64f38" class="outline-3">
+<h3 id="simulation"><a id="orged64f38"></a>Simulation</h3>
 <div class="outline-text-3" id="text-simulation">
 <p>
 Make sure the implementations work on one example.
@@ -1245,11 +1247,146 @@ plt.tight_layout()
 </div>
 </div>
 </div>
+<div id="outline-container-orgfb20ae8" class="outline-3">
+<h3 id="orgfb20ae8">Slice-within-Gibbs sampling</h3>
+<div class="outline-text-3" id="text-orgfb20ae8">
+<p>
+First, try to sample from a standard Gaussian using slice sampling.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> poisbeta.mcmc
+<span class="org-variable-name">f</span> = st.norm().logpdf
+<span class="org-variable-name">n_samples</span> = 1000
+<span class="org-variable-name">samples</span> = [0]
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_samples):
+  <span class="org-variable-name">x</span> = poisbeta.mcmc.slice_sample(f, width=5, init=samples[-1])
+  samples.append(x)
+<span class="org-variable-name">samples</span> = np.array(samples[1:])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(-4, 4, 1000)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.hist(samples, bins=30, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+plt.plot(grid, np.exp(f(grid)), lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Samples'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/slice-sample-norm.png" alt="slice-sample-norm.png">
+</p>
+</div>
+
+<p>
+Now, use slice-within-Gibbs to sample from the posterior \(p(\kr, \kon,
+   \koff \mid \cdot)\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">x, *<span class="org-variable-name">theta</span> = simulate_pois_beta(n=100, kr=32, kon=.25, koff=.25, seed=0)
+<span class="org-variable-name">log_theta</span> = np.log(np.array(theta))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
+plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.hist(x, bins=grid, color=<span class="org-string">'0.7'</span>)
+plt.plot(grid + 0.5, x.shape[0] * np.array([poisbeta.mle.poisson_beta_pmf(log_theta, i, 1) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid]).ravel(), lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Number of molecules'</span>)
+plt.ylabel(<span class="org-string">'Number of cells'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/slice-sample-ex.png" alt="slice-sample-ex.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: Kim &amp; Marioni 2013 use shape/scale parametrization, but write</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">alpha/beta. We use shape/rate</span>
+<span class="org-variable-name">samples</span>, <span class="org-variable-name">trace</span> = poisbeta.mcmc.fit_poisson_beta_mcmc(
+  x,
+  n_samples=1000,
+  ar=1,
+  br=1/x.<span class="org-builtin">max</span>(),
+  aon=1,
+  bon=1/100,
+  aoff=1,
+  boff=1/100,
+  trace=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the evolution of the log joint probability over the samples.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(np.arange(samples.shape[0]), trace, lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Sample'</span>)
+plt.ylabel(<span class="org-string">'Log joint probability'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/slice-sample-log-joint.png" alt="slice-sample-log-joint.png">
+</p>
+</div>
+
+<p>
+Look at the posterior distributions over the parameters. Use 800 samples
+after warm-up, based on the evolution of the log joint
+probability. Superimpose the moment estimate.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">thetahat</span> = np.exp(poisbeta.fit_poisson_beta_moment(x))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(7, 2)
+<span class="org-keyword">for</span> a, s, t, h, k <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, samples.T, theta, thetahat, [<span class="org-string">'$k_r$'</span>, <span class="org-string">'$k_{\mathrm{on}}$'</span>, <span class="org-string">'$k_{\mathrm{off}}$'</span>]):
+  a.hist(s[-800:], bins=30, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+  a.axvline(x=t, c=<span class="org-string">'k'</span>, lw=1, label=<span class="org-string">'Ground truth'</span>)
+  a.axvline(x=h, c=<span class="org-string">'r'</span>, lw=1, label=<span class="org-string">'Moment'</span>)
+  a.set_xlabel(k)
+ax[0].set_ylabel(<span class="org-string">'Posterior density'</span>)
+ax[-1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/slice-sample-post.png" alt="slice-sample-post.png">
+</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-16 Sun 20:24</p>
+<p class="date">Created: 2020-02-17 Mon 11:53</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

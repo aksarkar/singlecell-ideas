@@ -68,13 +68,14 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar
 
   #+RESULTS:
-  : Submitted batch job 65831937
+  : Submitted batch job 65877155
 
   #+BEGIN_SRC ipython
     import colorcet
     import itertools as it
     import numpy as np
     import pandas as pd
+    import poisbeta
     import scipy.optimize as so
     import scipy.special as sp
     import scipy.stats as st
@@ -84,7 +85,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[31]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -466,6 +467,7 @@
 
    Draw data from the basic model.
 
+   #+NAME: simulate
    #+BEGIN_SRC ipython
      def simulate_pois_beta(n, s=None, kr=None, kon=None, koff=None, seed=None):
        if seed is not None:
@@ -483,9 +485,14 @@
        return x, kr, kon, koff
    #+END_SRC
 
+   #+RESULTS: simulate
+   :RESULTS:
+   # Out[5]:
+   :END:
+
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[44]:
    :END:
 
    Draw data from a model with size factors.
@@ -970,4 +977,140 @@
    :RESULTS:
    # Out[97]:
    [[file:figure/pois-beta.org/init-ex2.png]]
+   :END:
+** Slice-within-Gibbs sampling
+
+   First, try to sample from a standard Gaussian using slice sampling.
+
+   #+BEGIN_SRC ipython :async t
+     import poisbeta.mcmc
+     f = st.norm().logpdf
+     n_samples = 1000
+     samples = [0]
+     for i in range(n_samples):
+       x = poisbeta.mcmc.slice_sample(f, width=5, init=samples[-1])
+       samples.append(x)
+     samples = np.array(samples[1:])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/slice-sample-norm.png
+     grid = np.linspace(-4, 4, 1000)
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.hist(samples, bins=30, density=True, color='0.7')
+     plt.plot(grid, np.exp(f(grid)), lw=1, c='k')
+     plt.xlabel('Samples')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[30]:
+   [[file:figure/pois-beta.org/slice-sample-norm.png]]
+   :END:
+
+   Now, use slice-within-Gibbs to sample from the posterior \(p(\kr, \kon,
+   \koff \mid \cdot)\).
+
+   #+BEGIN_SRC ipython
+     x, *theta = simulate_pois_beta(n=100, kr=32, kon=.25, koff=.25, seed=0)
+     log_theta = np.log(np.array(theta))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[18]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/slice-sample-ex.png
+     grid = np.arange(x.max() + 1)
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.hist(x, bins=grid, color='0.7')
+     plt.plot(grid + 0.5, x.shape[0] * np.array([poisbeta.mle.poisson_beta_pmf(log_theta, i, 1) for i in grid]).ravel(), lw=1, c='k')
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Number of cells')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   [[file:figure/pois-beta.org/slice-sample-ex.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     # Important: Kim & Marioni 2013 use shape/scale parametrization, but write
+     # alpha/beta. We use shape/rate
+     samples, trace = poisbeta.mcmc.fit_poisson_beta_mcmc(
+       x,
+       n_samples=1000,
+       ar=1,
+       br=1/x.max(),
+       aon=1,
+       bon=1/100,
+       aoff=1,
+       boff=1/100,
+       trace=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   :END:
+
+   Plot the evolution of the log joint probability over the samples.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/slice-sample-log-joint.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(np.arange(samples.shape[0]), trace, lw=1, c='k')
+     plt.xlabel('Sample')
+     plt.ylabel('Log joint probability')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[41]:
+   [[file:figure/pois-beta.org/slice-sample-log-joint.png]]
+   :END:
+
+   Look at the posterior distributions over the parameters. Use 800 samples
+   after warm-up, based on the evolution of the log joint
+   probability. Superimpose the moment estimate.
+
+   #+BEGIN_SRC ipython
+     thetahat = np.exp(poisbeta.fit_poisson_beta_moment(x))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[48]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/slice-sample-post.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7, 2)
+     for a, s, t, h, k in zip(ax, samples.T, theta, thetahat, ['$k_r$', '$k_{\mathrm{on}}$', '$k_{\mathrm{off}}$']):
+       a.hist(s[-800:], bins=30, density=True, color='0.7')
+       a.axvline(x=t, c='k', lw=1, label='Ground truth')
+       a.axvline(x=h, c='r', lw=1, label='Moment')
+       a.set_xlabel(k)
+     ax[0].set_ylabel('Posterior density')
+     ax[-1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[50]:
+   [[file:figure/pois-beta.org/slice-sample-post.png]]
    :END:

@@ -45,10 +45,12 @@
   \ldots, x_n)\), and Larsson et al. 2019 use numerical integration to evaluate
   the marginal likelihood. 
 
-  Here, we investigate how the running time of the MLE procedure (using
-  numerical integration) scales, and whether variational inference can improve
-  the running time. We also investigate the effect of size factors (Kim and
-  Marioni 2013) and initialization on the estimates.
+  We collected these different inference algorithms into a Python package
+  [[https://www.github.com/aksarkar/poisbeta][poisbeta]]. Here, we investigate
+  how the running time of the MLE procedure (using numerical integration)
+  scales, and whether variational inference can improve the running time. We
+  also investigate the effect of size factors (Kim and Marioni 2013) and
+  initialization on the estimates.
 
 * Setup
   :PROPERTIES:
@@ -66,7 +68,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar
 
   #+RESULTS:
-  : Submitted batch job 65580527
+  : Submitted batch job 65831937
 
   #+BEGIN_SRC ipython
     import colorcet

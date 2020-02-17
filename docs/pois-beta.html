@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-04 Tue 21:58 -->
+<!-- 2020-02-16 Sun 20:24 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -265,7 +265,7 @@ for the JavaScript code in this tag.
 <li><a href="#mle">Maximum likelihood estimation</a></li>
 <li><a href="#mcmc">Slice-within-Gibbs sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
-<li><a href="#org204a7df">Simulation</a></li>
+<li><a href="#org5bf7b6e">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
@@ -333,10 +333,12 @@ the marginal likelihood.
 </p>
 
 <p>
-Here, we investigate how the running time of the MLE procedure (using
-numerical integration) scales, and whether variational inference can improve
-the running time. We also investigate the effect of size factors (Kim and
-Marioni 2013) and initialization on the estimates.
+We collected these different inference algorithms into a Python package
+<a href="https://www.github.com/aksarkar/poisbeta">poisbeta</a>. Here, we investigate
+how the running time of the MLE procedure (using numerical integration)
+scales, and whether variational inference can improve the running time. We
+also investigate the effect of size factors (Kim and Marioni 2013) and
+initialization on the estimates.
 </p>
 </div>
 </div>
@@ -734,9 +736,9 @@ update \(\kon, \koff\).
 </div>
 </div>
 
-<div id="outline-container-org204a7df" class="outline-3">
-<h3 id="org204a7df">Simulation</h3>
-<div class="outline-text-3" id="text-org204a7df">
+<div id="outline-container-org5bf7b6e" class="outline-3">
+<h3 id="org5bf7b6e">Simulation</h3>
+<div class="outline-text-3" id="text-org5bf7b6e">
 <p>
 Draw data from the basic model.
 </p>
@@ -790,8 +792,8 @@ Draw data from a model with size factors.
 <h2 id="results"><a id="org8f429f7"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-org5bf7b6e" class="outline-3">
-<h3 id="simulation"><a id="org5bf7b6e"></a>Simulation</h3>
+<div id="outline-container-org5ff99fe" class="outline-3">
+<h3 id="simulation"><a id="org5ff99fe"></a>Simulation</h3>
 <div class="outline-text-3" id="text-simulation">
 <p>
 Make sure the implementations work on one example.
@@ -1247,7 +1249,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-04 Tue 21:58</p>
+<p class="date">Created: 2020-02-16 Sun 20:24</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

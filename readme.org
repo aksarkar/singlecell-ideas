@@ -499,6 +499,7 @@
   #+BEGIN_SRC sh :exports code :results example output
     source activate singlecell
     pip install -e /project2/mstephens/aksarkar/projects/anmf/
+    pip install -e /project2/mstephens/aksarkar/projects/poisbeta/
     pip install -e /project2/mstephens/aksarkar/projects/scmodes/
   #+END_SRC
 

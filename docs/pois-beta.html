@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-17 Mon 11:53 -->
+<!-- 2020-02-18 Tue 22:02 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -265,7 +265,7 @@ for the JavaScript code in this tag.
 <li><a href="#mle">Maximum likelihood estimation</a></li>
 <li><a href="#mcmc">Slice-within-Gibbs sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
-<li><a href="#org5ff99fe">Simulation</a></li>
+<li><a href="#org0b6fde9">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
@@ -275,7 +275,8 @@ for the JavaScript code in this tag.
 <li><a href="#org2a8e2d9">Impact of size factors</a></li>
 <li><a href="#org1a579b3">Log likelihood surface</a></li>
 <li><a href="#org2d20171">Impact of initialization</a></li>
-<li><a href="#orgfb20ae8">Slice-within-Gibbs sampling</a></li>
+<li><a href="#org5f1048c">Slice-within-Gibbs sampling</a></li>
+<li><a href="#orge851dc0">Identifiability</a></li>
 </ul>
 </li>
 </ul>
@@ -353,6 +354,7 @@ initialization on the estimates.
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> poisbeta
+<span class="org-keyword">import</span> scmodes
 <span class="org-keyword">import</span> scipy.optimize <span class="org-keyword">as</span> so
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
@@ -483,8 +485,8 @@ the marginal likelihood.
 </div>
 </div>
 
-<div id="outline-container-org860fe85" class="outline-3">
-<h3 id="mcmc"><a id="org860fe85"></a>Slice-within-Gibbs sampling</h3>
+<div id="outline-container-org0ed0716" class="outline-3">
+<h3 id="mcmc"><a id="org0ed0716"></a>Slice-within-Gibbs sampling</h3>
 <div class="outline-text-3" id="text-mcmc">
 <p>
 Kim &amp; Marioni 2013 add priors
@@ -738,9 +740,9 @@ update \(\kon, \koff\).
 </div>
 </div>
 
-<div id="outline-container-org5ff99fe" class="outline-3">
-<h3 id="org5ff99fe">Simulation</h3>
-<div class="outline-text-3" id="text-org5ff99fe">
+<div id="outline-container-org0b6fde9" class="outline-3">
+<h3 id="org0b6fde9">Simulation</h3>
+<div class="outline-text-3" id="text-org0b6fde9">
 <p>
 Draw data from the basic model.
 </p>
@@ -794,8 +796,8 @@ Draw data from a model with size factors.
 <h2 id="results"><a id="org8f429f7"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-orged64f38" class="outline-3">
-<h3 id="simulation"><a id="orged64f38"></a>Simulation</h3>
+<div id="outline-container-org2769b38" class="outline-3">
+<h3 id="simulation"><a id="org2769b38"></a>Simulation</h3>
 <div class="outline-text-3" id="text-simulation">
 <p>
 Make sure the implementations work on one example.
@@ -1247,9 +1249,9 @@ plt.tight_layout()
 </div>
 </div>
 </div>
-<div id="outline-container-orgfb20ae8" class="outline-3">
-<h3 id="orgfb20ae8">Slice-within-Gibbs sampling</h3>
-<div class="outline-text-3" id="text-orgfb20ae8">
+<div id="outline-container-org5f1048c" class="outline-3">
+<h3 id="org5f1048c">Slice-within-Gibbs sampling</h3>
+<div class="outline-text-3" id="text-org5f1048c">
 <p>
 First, try to sample from a standard Gaussian using slice sampling.
 </p>
@@ -1285,8 +1287,7 @@ plt.tight_layout()
 </div>
 
 <p>
-Now, use slice-within-Gibbs to sample from the posterior \(p(\kr, \kon,
-   \koff \mid \cdot)\).
+Now, simulate a simple data set.
 </p>
 
 <div class="org-src-container">
@@ -1297,10 +1298,12 @@ Now, use slice-within-Gibbs to sample from the posterior \(p(\kr, \kon,
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
+<span class="org-variable-name">n</span> = x.shape[0] * np.array([poisbeta.mle.poisson_beta_pmf(log_theta, i, 1) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid]).ravel()
 plt.clf()
 plt.gcf().set_size_inches(4, 2)
 plt.hist(x, bins=grid, color=<span class="org-string">'0.7'</span>)
-plt.plot(grid + 0.5, x.shape[0] * np.array([poisbeta.mle.poisson_beta_pmf(log_theta, i, 1) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid]).ravel(), lw=1, c=<span class="org-string">'k'</span>)
+plt.plot(grid + 0.5, n, lw=1, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Ground truth'</span>)
+plt.legend(frameon=<span class="org-constant">False</span>)
 plt.xlabel(<span class="org-string">'Number of molecules'</span>)
 plt.ylabel(<span class="org-string">'Number of cells'</span>)
 plt.tight_layout()
@@ -1312,6 +1315,11 @@ plt.tight_layout()
 <p><img src="figure/pois-beta.org/slice-sample-ex.png" alt="slice-sample-ex.png">
 </p>
 </div>
+
+<p>
+Use slice-within-Gibbs to sample from the posterior \(p(\kr, \kon, \koff
+   \mid x_1, \ldots, x_n)\).
+</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: Kim &amp; Marioni 2013 use shape/scale parametrization, but write</span>
@@ -1382,11 +1390,148 @@ fig.tight_layout()
 </div>
 </div>
 </div>
+
+<div id="outline-container-orge851dc0" class="outline-3">
+<h3 id="orge851dc0">Identifiability</h3>
+<div class="outline-text-3" id="text-orge851dc0">
+<p>
+Kim and Marioni discuss an identifiability problem with the model. Simulate
+an example data set. Estimate the MLE, and draw samples from the posterior
+of the Poisson-Beta model. Then, fit a Gamma assumption and a unimodal
+assumption on expression variation.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">x, *<span class="org-variable-name">theta</span> = simulate_pois_beta(n=100, kr=32, kon=1.5, koff=1.5, seed=0)
+
+<span class="org-variable-name">samples</span>, <span class="org-variable-name">trace</span> = poisbeta.mcmc.fit_poisson_beta_mcmc(
+  x,
+  n_samples=1000,
+  ar=1,
+  br=1/x.<span class="org-builtin">max</span>(),
+  aon=1,
+  bon=1/100,
+  aoff=1,
+  boff=1/100,
+  trace=<span class="org-constant">True</span>)
+
+<span class="org-variable-name">ebpm_beta_res</span> = poisbeta.fit_poisson_beta_mle(x)
+<span class="org-variable-name">ebpm_gamma_res</span> = scmodes.ebpm.ebpm_gamma(x, 1)
+<span class="org-variable-name">ebpm_unimodal_res</span> = scmodes.ebpm.ebpm_unimodal(x, 1)
+</pre>
+</div>
+
+<p>
+Report the log likelihoods achieved by the point estimates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series({
+  <span class="org-string">'beta'</span>: poisbeta.mle.poisson_beta_logpmf(thetahat, x, 1).<span class="org-builtin">sum</span>(),
+  <span class="org-string">'gamma'</span>: ebpm_gamma_res[-1],
+  <span class="org-string">'unimodal'</span>: np.array(ebpm_unimodal_res.rx2(<span class="org-string">'loglik'</span>))[0],
+})
+</pre>
+</div>
+
+<pre class="example">
+beta       -371.722956
+gamma      -363.271122
+unimodal   -359.050396
+dtype: float64
+</pre>
+
+<p>
+Plot the MCMC trace.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(np.arange(samples.shape[0]), trace, lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Sample'</span>)
+plt.ylabel(<span class="org-string">'Log joint probability'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/slice-sample-ex2-log-joint.png" alt="slice-sample-ex2-log-joint.png">
+</p>
+</div>
+
+<p>
+Plot the estimated posteriors and the point estimates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(7, 2)
+<span class="org-keyword">for</span> a, s, t, h, k <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, samples.T, theta, np.exp(ebpm_beta_res), [<span class="org-string">'$k_r$'</span>, <span class="org-string">'$k_{\mathrm{on}}$'</span>, <span class="org-string">'$k_{\mathrm{off}}$'</span>]):
+  a.hist(s[-800:], bins=20, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+  a.axvline(x=t, c=<span class="org-string">'k'</span>, lw=1, label=<span class="org-string">'Ground truth'</span>)
+  a.axvline(x=h, c=<span class="org-string">'r'</span>, lw=1, label=<span class="org-string">'Moment'</span>)
+  a.set_xlabel(k)
+ax[0].set_ylabel(<span class="org-string">'Posterior density'</span>)
+ax[-1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/slice-sample-ex2-post.png" alt="slice-sample-ex2-post.png">
+</p>
+</div>
+
+<p>
+Plot the simulated data and estimated distributions.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
+plt.clf()
+plt.gcf().set_size_inches(5, 3)
+plt.hist(x, bins=grid, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+
+plt.plot(grid + 0.5, np.array([poisbeta.mle.poisson_beta_pmf(np.log(np.array(theta)), i, 1) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid]).ravel(), lw=1, c=cm(0), label=<span class="org-string">'Ground truth'</span>)
+
+plt.plot(grid + 0.5, np.array([poisbeta.mle.poisson_beta_pmf(ebpm_beta_res, i, 1) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid]).ravel(), lw=1, c=cm(1), label=<span class="org-string">'Beta (MLE)'</span>)
+
+<span class="org-variable-name">pm</span> = np.log(samples[-800:]).mean(axis=0)
+plt.plot(grid + 0.5, np.array([poisbeta.mle.poisson_beta_pmf(pm, i, 1) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> grid]).ravel(), lw=1, c=cm(2), label=<span class="org-string">'Beta (PM)'</span>)
+
+plt.plot(grid + 0.5, st.nbinom(n=np.exp(ebpm_gamma_res[1]), p=1 / (1 + np.exp(ebpm_gamma_res[0] - ebpm_gamma_res[1]))).pmf(grid), lw=1, c=cm(3), label=<span class="org-string">'Gamma'</span>)
+
+<span class="org-variable-name">g</span> = np.array(ebpm_unimodal_res.rx2(<span class="org-string">'fitted_g'</span>))
+<span class="org-variable-name">a</span> = np.fmin(g[1], g[2])
+<span class="org-variable-name">b</span> = np.fmax(g[1], g[2])
+<span class="org-variable-name">comp_dens_conv</span> = np.array([((st.gamma(a=k + 1, scale=1).cdf(b.reshape(1, -1)) - st.gamma(a=k + 1, scale=1).cdf(a.reshape(1, -1))) / (b - a)).mean(axis=0) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> grid])
+<span class="org-variable-name">comp_dens_conv</span>[:,0] = st.poisson(mu=b[0]).pmf(x).mean(axis=0)
+plt.plot(grid + 0.5, comp_dens_conv @ g[0], lw=1, c=cm(4), label=<span class="org-string">'Unimodal'</span>)
+
+plt.legend(frameon=<span class="org-constant">False</span>)
+plt.xlabel(<span class="org-string">'Number of molecules'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/slice-sample-ex2.png" alt="slice-sample-ex2.png">
+</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-17 Mon 11:53</p>
+<p class="date">Created: 2020-02-18 Tue 22:02</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

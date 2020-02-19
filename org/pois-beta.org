@@ -65,10 +65,10 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar
+  #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 65877155
+  : Submitted batch job 65907845
 
   #+BEGIN_SRC ipython
     import colorcet
@@ -76,6 +76,7 @@
     import numpy as np
     import pandas as pd
     import poisbeta
+    import scmodes
     import scipy.optimize as so
     import scipy.special as sp
     import scipy.stats as st
@@ -487,7 +488,7 @@
 
    #+RESULTS: simulate
    :RESULTS:
-   # Out[5]:
+   # Out[4]:
    :END:
 
    #+RESULTS:
@@ -1015,8 +1016,7 @@
    [[file:figure/pois-beta.org/slice-sample-norm.png]]
    :END:
 
-   Now, use slice-within-Gibbs to sample from the posterior \(p(\kr, \kon,
-   \koff \mid \cdot)\).
+   Now, simulate a simple data set.
 
    #+BEGIN_SRC ipython
      x, *theta = simulate_pois_beta(n=100, kr=32, kon=.25, koff=.25, seed=0)
@@ -1030,10 +1030,12 @@
 
    #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/slice-sample-ex.png
      grid = np.arange(x.max() + 1)
+     n = x.shape[0] * np.array([poisbeta.mle.poisson_beta_pmf(log_theta, i, 1) for i in grid]).ravel()
      plt.clf()
      plt.gcf().set_size_inches(4, 2)
      plt.hist(x, bins=grid, color='0.7')
-     plt.plot(grid + 0.5, x.shape[0] * np.array([poisbeta.mle.poisson_beta_pmf(log_theta, i, 1) for i in grid]).ravel(), lw=1, c='k')
+     plt.plot(grid + 0.5, n, lw=1, c='k', label='Ground truth')
+     plt.legend(frameon=False)
      plt.xlabel('Number of molecules')
      plt.ylabel('Number of cells')
      plt.tight_layout()
@@ -1041,9 +1043,12 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[19]:
+   # Out[53]:
    [[file:figure/pois-beta.org/slice-sample-ex.png]]
    :END:
+
+   Use slice-within-Gibbs to sample from the posterior \(p(\kr, \kon, \koff
+   \mid x_1, \ldots, x_n)\).
 
    #+BEGIN_SRC ipython :async t
      # Important: Kim & Marioni 2013 use shape/scale parametrization, but write
@@ -1114,3 +1119,132 @@
    # Out[50]:
    [[file:figure/pois-beta.org/slice-sample-post.png]]
    :END:
+
+** Identifiability
+
+   Kim and Marioni discuss an identifiability problem with the model. Simulate
+   an example data set. Estimate the MLE, and draw samples from the posterior
+   of the Poisson-Beta model. Then, fit a Gamma assumption and a unimodal
+   assumption on expression variation.
+
+   #+BEGIN_SRC ipython :async t
+     x, *theta = simulate_pois_beta(n=100, kr=32, kon=1.5, koff=1.5, seed=0)
+
+     samples, trace = poisbeta.mcmc.fit_poisson_beta_mcmc(
+       x,
+       n_samples=1000,
+       ar=1,
+       br=1/x.max(),
+       aon=1,
+       bon=1/100,
+       aoff=1,
+       boff=1/100,
+       trace=True)
+
+     ebpm_beta_res = poisbeta.fit_poisson_beta_mle(x)
+     ebpm_gamma_res = scmodes.ebpm.ebpm_gamma(x, 1)
+     ebpm_unimodal_res = scmodes.ebpm.ebpm_unimodal(x, 1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[42]:
+   :END:
+
+   Report the log likelihoods achieved by the point estimates.
+
+   #+BEGIN_SRC ipython
+     pd.Series({
+       'beta': poisbeta.mle.poisson_beta_logpmf(thetahat, x, 1).sum(),
+       'gamma': ebpm_gamma_res[-1],
+       'unimodal': np.array(ebpm_unimodal_res.rx2('loglik'))[0],
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   #+BEGIN_EXAMPLE
+     beta       -371.722956
+     gamma      -363.271122
+     unimodal   -359.050396
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+   Plot the MCMC trace.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/slice-sample-ex2-log-joint.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(np.arange(samples.shape[0]), trace, lw=1, c='k')
+     plt.xlabel('Sample')
+     plt.ylabel('Log joint probability')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[45]:
+   [[file:figure/pois-beta.org/slice-sample-ex2-log-joint.png]]
+   :END:
+
+   Plot the estimated posteriors and the point estimates.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/slice-sample-ex2-post.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7, 2)
+     for a, s, t, h, k in zip(ax, samples.T, theta, np.exp(ebpm_beta_res), ['$k_r$', '$k_{\mathrm{on}}$', '$k_{\mathrm{off}}$']):
+       a.hist(s[-800:], bins=20, density=True, color='0.7')
+       a.axvline(x=t, c='k', lw=1, label='Ground truth')
+       a.axvline(x=h, c='r', lw=1, label='Moment')
+       a.set_xlabel(k)
+     ax[0].set_ylabel('Posterior density')
+     ax[-1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[46]:
+   [[file:figure/pois-beta.org/slice-sample-ex2-post.png]]
+   :END:
+
+   Plot the simulated data and estimated distributions.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/slice-sample-ex2.png
+     cm = plt.get_cmap('Dark2')
+     grid = np.arange(x.max() + 1)
+     plt.clf()
+     plt.gcf().set_size_inches(5, 3)
+     plt.hist(x, bins=grid, density=True, color='0.7')
+
+     plt.plot(grid + 0.5, np.array([poisbeta.mle.poisson_beta_pmf(np.log(np.array(theta)), i, 1) for i in grid]).ravel(), lw=1, c=cm(0), label='Ground truth')
+
+     plt.plot(grid + 0.5, np.array([poisbeta.mle.poisson_beta_pmf(ebpm_beta_res, i, 1) for i in grid]).ravel(), lw=1, c=cm(1), label='Beta (MLE)')
+
+     pm = np.log(samples[-800:]).mean(axis=0)
+     plt.plot(grid + 0.5, np.array([poisbeta.mle.poisson_beta_pmf(pm, i, 1) for i in grid]).ravel(), lw=1, c=cm(2), label='Beta (PM)')
+
+     plt.plot(grid + 0.5, st.nbinom(n=np.exp(ebpm_gamma_res[1]), p=1 / (1 + np.exp(ebpm_gamma_res[0] - ebpm_gamma_res[1]))).pmf(grid), lw=1, c=cm(3), label='Gamma')
+
+     g = np.array(ebpm_unimodal_res.rx2('fitted_g'))
+     a = np.fmin(g[1], g[2])
+     b = np.fmax(g[1], g[2])
+     comp_dens_conv = np.array([((st.gamma(a=k + 1, scale=1).cdf(b.reshape(1, -1)) - st.gamma(a=k + 1, scale=1).cdf(a.reshape(1, -1))) / (b - a)).mean(axis=0) for k in grid])
+     comp_dens_conv[:,0] = st.poisson(mu=b[0]).pmf(x).mean(axis=0)
+     plt.plot(grid + 0.5, comp_dens_conv @ g[0], lw=1, c=cm(4), label='Unimodal')
+
+     plt.legend(frameon=False)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[58]:
+   [[file:figure/pois-beta.org/slice-sample-ex2.png]]
+   :END:
+

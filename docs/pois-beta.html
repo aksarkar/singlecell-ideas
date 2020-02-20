@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-20 Thu 14:47 -->
+<!-- 2020-02-20 Thu 16:15 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -265,7 +265,7 @@ for the JavaScript code in this tag.
 <li><a href="#mle">Maximum likelihood estimation</a></li>
 <li><a href="#mcmc">Slice-within-Gibbs sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
-<li><a href="#org6ef624a">Simulation</a></li>
+<li><a href="#org4b6e58b">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
@@ -275,7 +275,7 @@ for the JavaScript code in this tag.
 <li><a href="#org2a8e2d9">Impact of size factors</a></li>
 <li><a href="#org1a579b3">Log likelihood surface</a></li>
 <li><a href="#org2d20171">Impact of initialization</a></li>
-<li><a href="#orgba777e7">Slice-within-Gibbs sampling</a></li>
+<li><a href="#org0125b44">Slice-within-Gibbs sampling</a></li>
 <li><a href="#orge851dc0">Identifiability</a></li>
 </ul>
 </li>
@@ -290,15 +290,15 @@ for the JavaScript code in this tag.
 One idealized model for transcriptional regulation is the <i>telegraph model</i>
 (Peccoud and Ycart 1995, Raj et al. 2006, Kim and Marioni 2013, Munsky et
 al. 2013), whose steady state is described by \(
-  \newcommand\Bin{\operatorname{Binomial}}
-  \newcommand\B{\operatorname{Beta}}
+  \DeclareMathOperator\Bin{Binomial}
+  \DeclareMathOperator\B{Beta}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\betafun{B}
   \newcommand\E[1]{\left\langle #1 \right\rangle}
-  \newcommand\Gam{\operatorname{Gamma}}
-  \newcommand\Pois{\operatorname{Poisson}}
   \newcommand\aoff{a_{\text{off}}}
   \newcommand\aon{a_{\text{on}}}
   \newcommand\ar{a_r}
-  \newcommand\betafun{\operatorname{B}}
   \newcommand\boff{b_{\text{off}}}
   \newcommand\bon{b_{\text{on}}}
   \newcommand\br{b_r}
@@ -434,59 +434,11 @@ the Jacobi polynomial of degree \(k\), and \(w_k\) is the associated
 weight. This procedure can be used as a subroutine to numerically optimize
 the marginal likelihood.
 </p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_logpmf</span>(theta, x, s, n_points=50):
-  <span class="org-variable-name">kr</span>, <span class="org-variable-name">kon</span>, <span class="org-variable-name">koff</span> = np.exp(theta) + 1e-8
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: Gauss-Jacobi quadrature computes the integral over t &#8712; [-1, 1],</span>
-  <span class="org-comment-delimiter"># </span><span class="org-comment">but we want the integral over p &#8712; [0, 1]</span>
-  <span class="org-variable-name">t</span>, <span class="org-variable-name">w</span> = sp.roots_jacobi(n=n_points, alpha=koff - 1, beta=kon - 1)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">(n_points, 1)</span>
-  <span class="org-variable-name">p</span> = ((1 + t) / 2).reshape(-1, 1)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">(1, n_points) @ (n_points, n)</span>
-  <span class="org-variable-name">px</span> = w.reshape(1, -1) @ st.poisson(mu=s * kr * p).pmf(x.reshape(1, -1))
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: extra 1/2 comes from u-substitution</span>
-  <span class="org-keyword">return</span> np.log(px) - sp.betaln(kon, koff) - (kon + koff - 1) * np.log(2)
-
-<span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_pmf</span>(theta, x, s, n_points=50):
-  <span class="org-keyword">return</span> np.exp(poisson_beta_logpmf(theta, x, s, n_points))
-
-<span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_neg_llik</span>(theta, x, s, n_points=50):
-  <span class="org-doc">"""Return the negative log likelihood of the data</span>
-
-<span class="org-doc">  theta - [ln k_r, ln k_on, ln k_off]</span>
-<span class="org-doc">  n_points - number of points used in numerical integration</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-keyword">return</span> -poisson_beta_logpmf(theta, x, s, n_points).<span class="org-builtin">sum</span>()
-
-<span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_mle</span>(x, s=<span class="org-constant">None</span>, init=<span class="org-constant">None</span>, max_iters=1000, n_points=50):
-  <span class="org-doc">"""Return ln k_r, ln k_on, ln k_off</span>
-
-<span class="org-doc">  x - array-like [n,]</span>
-<span class="org-doc">  init - [ln k_r, ln k_on, ln k_off]</span>
-<span class="org-doc">  n_points - number of points used in numerical integration</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-keyword">if</span> init <span class="org-keyword">is</span> <span class="org-constant">None</span>:
-    <span class="org-keyword">try</span>:
-      <span class="org-variable-name">init</span> = fit_poisson_beta_moment(x)
-    <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
-      <span class="org-variable-name">init</span> = np.zeros(3)
-  <span class="org-keyword">if</span> s <span class="org-keyword">is</span> <span class="org-constant">None</span>:
-    <span class="org-variable-name">s</span> = 1
-  <span class="org-variable-name">opt</span> = so.minimize(poisson_beta_neg_llik, x0=init, args=(x, s, n_points),
-                    method=<span class="org-string">'Nelder-Mead'</span>, options={<span class="org-string">'maxiter'</span>: max_iters})
-  <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt.success:
-    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'failed to converge: {opt.message}'</span>)
-  <span class="org-keyword">return</span> opt.x
-</pre>
-</div>
 </div>
 </div>
 
-<div id="outline-container-org206adaa" class="outline-3">
-<h3 id="mcmc"><a id="org206adaa"></a>Slice-within-Gibbs sampling</h3>
+<div id="outline-container-orge9af9e9" class="outline-3">
+<h3 id="mcmc"><a id="orge9af9e9"></a>Slice-within-Gibbs sampling</h3>
 <div class="outline-text-3" id="text-mcmc">
 <p>
 Kim &amp; Marioni 2013 add priors
@@ -513,94 +465,111 @@ The conditional (log) densities are available, up to constants
 Although the conditional distributions are non-standard,
 <a href="https://en.wikipedia.org/wiki/Slice_sampling">slice sampling</a>
 (<a href="https://projecteuclid.org/euclid.aos/1056562461">Neal 2003</a>) only
-requires the target density up to a constant.
+requires the target density up to a constant. However, Kim and Marioni 2013 discuss
+an identifiability problem with the model, which was also investigated by
+<a href="https://margareth2407.github.io/Thesis_single_RNA/MLE_estimates.html">Orlova
+2019</a>.
+</p>
+
+<p>
+First, if \(\kon\) and \(\koff\) are large, then none of the parameters are
+identifiable. Specifically, for some fixed \(\kr\), taking \(\kon
+   \rightarrow \infty\) and \(\koff \rightarrow \infty\), we have \(p_i \sim
+   \delta(p_i - 0.5)\).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">_slice_sample</span>(f, init, width=0.1, max_steps=100, **kwargs):
-  <span class="org-doc">"""Return samples from the density proportional to exp(f)</span>
-
-<span class="org-doc">  f - log density (up to a constant)</span>
-<span class="org-doc">  init - initial value</span>
-<span class="org-doc">  kwargs - additional arguments to f</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Auxiliary variable defines the slice</span>
-  <span class="org-variable-name">z</span> = f(init, **kwargs) - np.random.exponential()
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Step out</span>
-  <span class="org-variable-name">left</span> = init - width * np.random.uniform()
-  <span class="org-variable-name">right</span> = left + width
-  <span class="org-variable-name">left_steps</span> = <span class="org-builtin">int</span>(np.random.uniform() * max_steps)
-  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(left_steps):
-    <span class="org-keyword">if</span> z &lt; f(left, **kwargs):
-      <span class="org-keyword">break</span>
-    <span class="org-variable-name">left</span> -= width
-  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_steps - left_steps):
-    <span class="org-keyword">if</span> z &lt; f(right, **kwargs):
-      <span class="org-keyword">break</span>
-    <span class="org-variable-name">right</span> += width
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Step in</span>
-  <span class="org-keyword">while</span> right &gt; left:
-    <span class="org-variable-name">proposal</span> = left + np.random.uniform() * (right - left)
-    <span class="org-keyword">if</span> z &lt; f(proposal, **kwargs):
-      <span class="org-keyword">return</span> proposal
-    <span class="org-keyword">elif</span> proposal &lt; init:
-      <span class="org-variable-name">left</span> = proposal
-    <span class="org-keyword">else</span>:
-      <span class="org-variable-name">right</span> = proposal
-  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to find an acceptable sample'</span>)
-
-<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_p</span>(p, x, kr, kon, koff):
-  <span class="org-keyword">return</span> (x + kon - 1) * np.log(p) + (koff - 1) * np.log(1 - p) - kr * p
-
-<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_kr</span>(kr, x, p, ar, br):
-  <span class="org-keyword">return</span> ((x + ar - 1) * np.log(kr) - (p + br) * kr).<span class="org-builtin">sum</span>()
-
-<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_kon</span>(kon, p, koff, aon, bon):
-  <span class="org-keyword">return</span> (kon * np.log(p) + (aon - 1) * np.log(kon)
-          - bon * kon - sp.gammaln(kon) + sp.gammaln(kon + koff)).<span class="org-builtin">sum</span>()
-
-<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_koff</span>(koff, p, on, aoff, boff):
-  <span class="org-keyword">return</span> (koff * np.log(1 - p) + (aoff - 1) * np.log(koff)
-          - boff * koff - sp.gammaln(koff) + sp.gammaln(on + koff)).<span class="org-builtin">sum</span>()
-
-<span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_mcmc</span>(x, n_samples, ar, br, aon, bon, aoff, boff, verbose=<span class="org-constant">False</span>):
-  <span class="org-doc">"""Return samples from the posterior p(kon, koff, kr | x)</span>
-
-<span class="org-doc">  x - counts (n,)</span>
-<span class="org-doc">  n_samples - number of samples to draw</span>
-<span class="org-doc">  ar, br - prior parameters kr ~ Gamma(ar, br)</span>
-<span class="org-doc">  aon, bon - prior parameters kon ~ Gamma(aon, bon)</span>
-<span class="org-doc">  aoff, boff - prior parameters koff ~ Gamma(aoff, boff)</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-variable-name">samples</span> = []
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these are fixed</span>
-  <span class="org-variable-name">Fr</span> = st.gamma(a=ar, scale=1 / br)
-  <span class="org-variable-name">Fon</span> = st.gamma(a=aon, scale=1 / bon)
-  <span class="org-variable-name">Foff</span> = st.gamma(a=aoff, scale=1 / boff)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Draw initial sample from the prior</span>
-  <span class="org-variable-name">kr</span> = Fr.rvs(size=1)
-  <span class="org-variable-name">kon</span> = Fon.rvs(size=1)
-  <span class="org-variable-name">koff</span> = Foff.rvs(size=1)
-  <span class="org-variable-name">p</span> = st.beta(a=kon, b=koff).rvs(size=x.shape)
-  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_samples):
-    samples.append((kr, kon, koff))
-    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(x.shape[0]):
-      <span class="org-variable-name">p</span>[i] = _slice_sample(_cond_logpdf_p, init=p[i], x=x[i], kr=kr, kon=kon, koff=koff)
-    <span class="org-variable-name">kr</span> = _slice_sample(_cond_logpdf_kr, init=kr, x=x, p=p, ar=ar, br=br)
-    <span class="org-variable-name">kon</span> = _slice_sample(_cond_logpdf_kon, init=kon, p=p, koff=koff, aon=aon, bon=bon)
-    <span class="org-variable-name">koff</span> = _slice_sample(_cond_logpdf_koff, init=koff, p=p, kon=kon, aoff=aoff, boff=boff)
-    <span class="org-keyword">if</span> verbose:
-      <span class="org-variable-name">log_joint</span> = (st.poisson(mu=kr * p).logpmf(x).<span class="org-builtin">sum</span>()
-                   + st.beta(a=kon, b=koff).logpdf(p).<span class="org-builtin">sum</span>()
-                   + Fr.logpdf(kr)
-                   + Fon.logpdf(kon)
-                   + Foff.logpdf(koff))
-      <span class="org-keyword">print</span>(f<span class="org-string">'sample {t}: {log_joint}'</span>)
-  <span class="org-keyword">return</span> samples
+<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(0, 1, 1000)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-variable-name">a_max</span> = 5
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> np.linspace(0, a_max, 20):
+  plt.plot(grid, st.beta(a=np.exp(a), b=np.exp(a)).pdf(grid), lw=1, c=colorcet.cm[<span class="org-string">'fire'</span>](a / a_max))
+plt.xlabel(<span class="org-string">'$p_i$'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
 </pre>
 </div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/beta-ex.png" alt="beta-ex.png">
+</p>
+</div>
+
+<p>
+But if we take \(\kon \rightarrow \infty\) and \(\koff \rightarrow 0\), we
+get \(p_i \sim \delta(p_i - 1)\), and we could achieve the same likelihood
+by scaling \(\kr / 2\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(0, 1, 1000)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-variable-name">a_max</span> = 2
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> np.linspace(0, a_max, 20):
+  plt.plot(grid, st.beta(a=np.exp(a), b=np.exp(-a)).logpdf(grid), lw=1, c=colorcet.cm[<span class="org-string">'fire'</span>](a / a_max))
+plt.xlabel(<span class="org-string">'$p_i$'</span>)
+plt.ylabel(<span class="org-string">'Log density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/beta-ex2.png" alt="beta-ex2.png">
+</p>
+</div>
+
+<p>
+Second, if \(\koff\) is large, then \(\koff\) and \(\kr\) are
+unidentifiable. Holding \(\kon\) fixed, we have \(E[p_i] = \kon / (\kon +
+   \koff)\), and intuitively we can achieve the same likelihood by taking \(\kr
+   \rightarrow \infty\) as \(\koff \rightarrow \infty\).
+</p>
+
+<p>
+There are two ways we could address this prolblem:
+</p>
+
+<ol class="org-ol">
+<li><p>
+<b>Reparametrize the model:</b> Let \(\gamma\) be the average length of the
+on/off cycle, and \(\delta\) be the average ratio of time spent in the on
+versus off state during that cycle. Then, we have
+</p>
+
+\begin{align*}
+  \delta &= \frac{1 / \kon}{1 / \koff} = \frac{\koff}{\kon}\\
+  \gamma &= \frac{1}{1 / \kon + 1 / \koff} = \frac{\kon\koff}{\kon + \koff}\\
+  \kon &= \frac{\gamma(\delta + 1)}{\delta}\\
+  \koff &= \gamma(\delta + 1)
+\end{align*}
+
+<p>
+This parametrization still implicitly scales time relative to the mRNA
+decay rate, and implies e.g. \(E[x_i] = \kr/(1 + \delta)\).
+However, it suggests very different priors
+</p>
+
+\begin{align*}
+  \gamma &\sim \operatorname{Exponential}(1/\mu)\\
+  \delta &\sim \operatorname{Uniform}(0, 1)
+\end{align*}
+
+<p>
+We can use this parametrization in slice-within-Gibbs:
+</p>
+
+\begin{align*}
+  \ln p(\gamma \mid \cdot) &= \sum_i \left(\frac{\gamma(\delta + 1)}{\delta}\right) \ln p_i + \gamma(\delta + 1) \ln (1 - p_i) - \ln \betafun\left(\frac{\gamma(\delta + 1)}{\delta}, \gamma(\delta + 1)\right) + \const\\
+  \ln p(\delta \mid \cdot) &= \sum_i \left(\frac{\gamma(\delta + 1)}{\delta}\right) \ln p_i + \gamma(\delta + 1) \ln (1 - p_i) + \const
+\end{align*}</li>
+
+<li><b>Use informative priors:</b> Larsson et al. 2019 collected data on mRNA
+decay rates.</li>
+</ol>
 </div>
 </div>
 
@@ -668,81 +637,12 @@ update \(\kon, \koff\).
   \frac{\partial \ell}{\partial \kon} &= \sum_i \psi(\alpha_i) - \psi(\alpha_i - \beta_i) - \psi(\kon) + \psi(\kon + \koff)\\
   \frac{\partial \ell}{\partial \koff} &= \sum_i \psi(\beta_i) - \psi(\alpha_i - \beta_i) - \psi(\koff) + \psi(\kon + \koff)
 \end{align*}
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_elbo</span>(theta, x, mu, alpha, beta):
-  <span class="org-doc">"""Return the evidence lower bound</span>
-
-<span class="org-doc">  theta - [ln k_r, ln k_on, ln k_off]</span>
-<span class="org-doc">  x - array-like [n,]</span>
-<span class="org-doc">  mu - array-like [n,]</span>
-<span class="org-doc">  alpha - array-like [n,]</span>
-<span class="org-doc">  beta - array-like [n,]</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-variable-name">kr</span>, <span class="org-variable-name">kon</span>, <span class="org-variable-name">koff</span> = np.exp(theta)
-  <span class="org-keyword">return</span> ((x + kon - alpha) * (sp.digamma(alpha) - sp.digamma(alpha + beta))
-          + (mu + koff - beta) * (sp.digamma(beta) - sp.digamma(alpha + beta))
-          + (x + mu) * np.log(kr) - kr - mu * np.log(mu) + mu - sp.gammaln(x + 1)
-          - sp.betaln(kon, koff) + sp.betaln(alpha, beta)).<span class="org-builtin">sum</span>()
-
-<span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_delbo_dkon</span>(ln_kon, ln_koff, alpha, beta):
-  <span class="org-doc">"""Return the partial derivative of ELBO wrt kon"""</span>
-  <span class="org-keyword">return</span> (sp.digamma(alpha)
-          - sp.digamma(alpha - beta)
-          - sp.digamma(np.exp(ln_kon))
-          + sp.digamma(np.exp(ln_kon) + np.exp(ln_koff))).<span class="org-builtin">sum</span>()
-
-<span class="org-keyword">def</span> <span class="org-function-name">poisson_beta_delbo_dkoff</span>(ln_koff, ln_kon, alpha, beta):
-  <span class="org-doc">"""Return the partial derivative of ELBO wrt koff"""</span>
-  <span class="org-keyword">return</span> (sp.digamma(beta)
-          - sp.digamma(alpha - beta)
-          - sp.digamma(np.exp(ln_koff))
-          + sp.digamma(np.exp(ln_kon) + np.exp(ln_koff))).<span class="org-builtin">sum</span>()
-
-<span class="org-keyword">def</span> <span class="org-function-name">fit_poisson_beta_vi</span>(x, init=<span class="org-constant">None</span>, atol=1e-8, max_iters=1000, verbose=<span class="org-constant">False</span>):
-  <span class="org-doc">"""Return kr, kon, koff</span>
-
-<span class="org-doc">  init - [ln k_r, ln k_on, ln k_off]</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-keyword">if</span> init <span class="org-keyword">is</span> <span class="org-constant">None</span>:
-    <span class="org-variable-name">init</span> = np.log(fit_poisson_beta_moment(x))
-  <span class="org-variable-name">theta</span> = init
-  <span class="org-variable-name">mu</span> = np.zeros(x.shape)
-  <span class="org-variable-name">alpha</span> = np.ones(x.shape)
-  <span class="org-variable-name">beta</span> = np.ones(x.shape)
-
-  <span class="org-variable-name">obj</span> = -np.inf
-  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
-    <span class="org-variable-name">alpha</span> = x + np.exp(theta[1])
-    <span class="org-variable-name">beta</span> = mu + np.exp(theta[2])
-    <span class="org-variable-name">mu</span> = np.exp(sp.digamma(beta) - sp.digamma(alpha + beta) + theta[0])
-    <span class="org-variable-name">theta</span>[0] = np.log((x + mu).mean())
-    <span class="org-variable-name">opt_kon</span> = so.newton(poisson_beta_delbo_dkon, x0=theta[1], args=(theta[2], alpha, beta))
-    <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt_kon.success:
-      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'k_on update failed: {opt_kon.message}'</span>)
-    <span class="org-variable-name">theta</span>[1] = opt_kon.x
-    <span class="org-variable-name">opt_koff</span> = so.root_scalar(poisson_beta_delbo_dkoff, x0=theta[2], args=(theta[1], alpha, beta))
-    <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt_koff.success:
-      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'k_on update failed: {opt_koff.message}'</span>)
-    <span class="org-variable-name">theta</span>[1] = opt_koff.x
-    <span class="org-variable-name">update</span> = poisson_beta_elbo(theta, x, mu, alpha, beta)
-    <span class="org-keyword">if</span> verbose:
-      <span class="org-keyword">print</span>(f<span class="org-string">'Epoch {t}: {update}'</span>)
-    <span class="org-keyword">if</span> <span class="org-builtin">abs</span>(obj - update) &lt; atol:
-      <span class="org-keyword">return</span> theta
-    <span class="org-keyword">else</span>:
-      <span class="org-variable-name">obj</span> = update
-  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge'</span>)
-</pre>
-</div>
 </div>
 </div>
 
-<div id="outline-container-org6ef624a" class="outline-3">
-<h3 id="org6ef624a">Simulation</h3>
-<div class="outline-text-3" id="text-org6ef624a">
+<div id="outline-container-org4b6e58b" class="outline-3">
+<h3 id="org4b6e58b">Simulation</h3>
+<div class="outline-text-3" id="text-org4b6e58b">
 <p>
 Draw data from the basic model.
 </p>
@@ -796,8 +696,8 @@ Draw data from a model with size factors.
 <h2 id="results"><a id="org8f429f7"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-orgb0129c8" class="outline-3">
-<h3 id="simulation"><a id="orgb0129c8"></a>Simulation</h3>
+<div id="outline-container-orga072c16" class="outline-3">
+<h3 id="simulation"><a id="orga072c16"></a>Simulation</h3>
 <div class="outline-text-3" id="text-simulation">
 <p>
 Make sure the implementations work on one example.
@@ -1249,9 +1149,9 @@ plt.tight_layout()
 </div>
 </div>
 </div>
-<div id="outline-container-orgba777e7" class="outline-3">
-<h3 id="orgba777e7">Slice-within-Gibbs sampling</h3>
-<div class="outline-text-3" id="text-orgba777e7">
+<div id="outline-container-org0125b44" class="outline-3">
+<h3 id="org0125b44">Slice-within-Gibbs sampling</h3>
+<div class="outline-text-3" id="text-org0125b44">
 <p>
 First, try to sample from a standard Gaussian using slice sampling.
 </p>
@@ -1526,111 +1426,12 @@ plt.tight_layout()
 
 <div id="outline-container-orge851dc0" class="outline-3">
 <h3 id="orge851dc0">Identifiability</h3>
-<div class="outline-text-3" id="text-orge851dc0">
-<p>
-Kim and Marioni 2013 discuss an identifiability problem with the model,
-which was also investigated by
-<a href="https://margareth2407.github.io/Thesis_single_RNA/MLE_estimates.html">Orlova
-2019</a>. 
-</p>
-
-<p>
-First, if \(\kon\) and \(\koff\) are large, then none of the parameters are
-identifiable. Specifically, for some fixed \(\kr\), taking \(\kon
-   \rightarrow \infty\) and \(\koff \rightarrow \infty\), we have \(p_i \sim
-   \delta(p_i - 0.5)\).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(0, 1, 1000)
-plt.clf()
-plt.gcf().set_size_inches(3, 3)
-<span class="org-variable-name">a_max</span> = 5
-<span class="org-keyword">for</span> a <span class="org-keyword">in</span> np.linspace(0, a_max, 20):
-  plt.plot(grid, st.beta(a=np.exp(a), b=np.exp(a)).pdf(grid), lw=1, c=colorcet.cm[<span class="org-string">'fire'</span>](a / a_max))
-plt.xlabel(<span class="org-string">'$p_i$'</span>)
-plt.ylabel(<span class="org-string">'Density'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/pois-beta.org/beta-ex.png" alt="beta-ex.png">
-</p>
-</div>
-
-<p>
-But if we take \(\kon \rightarrow \infty\) and \(\koff \rightarrow 0\), we
-get \(p_i \sim \delta(p_i - 1)\), and we could achieve the same likelihood
-by scaling \(\kr / 2\).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(0, 1, 1000)
-plt.clf()
-plt.gcf().set_size_inches(3, 3)
-<span class="org-variable-name">a_max</span> = 2
-<span class="org-keyword">for</span> a <span class="org-keyword">in</span> np.linspace(0, a_max, 20):
-  plt.plot(grid, st.beta(a=np.exp(a), b=np.exp(-a)).logpdf(grid), lw=1, c=colorcet.cm[<span class="org-string">'fire'</span>](a / a_max))
-plt.xlabel(<span class="org-string">'$p_i$'</span>)
-plt.ylabel(<span class="org-string">'Log density'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/pois-beta.org/beta-ex2.png" alt="beta-ex2.png">
-</p>
-</div>
-
-<p>
-Second, if \(\koff\) is large, then \(\koff\) and \(\kr\) are
-unidentifiable. Holding \(\kon\) fixed, we have \(E[p_i] = \kon / (\kon +
-   \koff)\), and intuitively we can achieve the same likelihood by taking \(\kr
-   \rightarrow \infty\) as \(\koff \rightarrow \infty\).
-</p>
-
-<p>
-There are two ways we could address this problem:
-</p>
-
-<ol class="org-ol">
-<li><p>
-<b>Reparametrize the model:</b> Let \(\gamma\) be the average length of the
-on/off cycle, and \(\delta\) be the average ratio of time spent in the on
-versus off state during that cycle. Then, we have
-</p>
-
-\begin{align*}
-  \delta &= \frac{1 / \kon}{1 / \koff} = \frac{\koff}{\kon}\\
-  \gamma &= \frac{1}{1 / \kon + 1 / \koff} = \frac{\kon\koff}{\kon + \koff}\\
-  \kon &= \frac{\gamma(\delta + 1)}{\delta}\\
-  \koff &= \gamma(\delta + 1)
-\end{align*}
-
-<p>
-This parametrization still implicitly scales time relative to the mRNA
-decay rate, and implies e.g. \(E[x_i] = \kr/(1 + \delta)\).
-However, it suggests very different priors
-</p>
-
-\begin{align*}
-  \gamma &\sim \operatorname{Exponential}(1/\mu)\\
-  \delta &\sim \operatorname{Uniform}(0, 1)
-\end{align*}</li>
-
-<li><b>Use informative priors:</b> Larsson et al. 2019 collected data on mRNA
-decay rates.</li>
-</ol>
-</div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-20 Thu 14:47</p>
+<p class="date">Created: 2020-02-20 Thu 16:15</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

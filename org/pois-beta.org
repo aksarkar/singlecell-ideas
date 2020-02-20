@@ -68,7 +68,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/ideas
 
   #+RESULTS:
-  : Submitted batch job 65907845
+  : Submitted batch job 65939901
 
   #+BEGIN_SRC ipython
     import colorcet
@@ -1120,7 +1120,6 @@
    [[file:figure/pois-beta.org/slice-sample-post.png]]
    :END:
 
-** Identifiability
 
    Kim and Marioni discuss an identifiability problem with the model. Simulate
    an example data set. Estimate the MLE, and draw samples from the posterior
@@ -1248,3 +1247,84 @@
    [[file:figure/pois-beta.org/slice-sample-ex2.png]]
    :END:
 
+** Identifiability
+
+   Kim and Marioni 2013 discuss an identifiability problem with the model,
+   which was also investigated by
+   [[https://margareth2407.github.io/Thesis_single_RNA/MLE_estimates.html][Orlova
+   2019]]. 
+
+   First, if \(\kon\) and \(\koff\) are large, then none of the parameters are
+   identifiable. Specifically, for some fixed \(\kr\), taking \(\kon
+   \rightarrow \infty\) and \(\koff \rightarrow \infty\), we have \(p_i \sim
+   \delta(p_i - 0.5)\).
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/beta-ex.png
+     grid = np.linspace(0, 1, 1000)
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     a_max = 5
+     for a in np.linspace(0, a_max, 20):
+       plt.plot(grid, st.beta(a=np.exp(a), b=np.exp(a)).pdf(grid), lw=1, c=colorcet.cm['fire'](a / a_max))
+     plt.xlabel('$p_i$')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   [[file:figure/pois-beta.org/beta-ex.png]]
+   :END:
+
+   But if we take \(\kon \rightarrow \infty\) and \(\koff \rightarrow 0\), we
+   get \(p_i \sim \delta(p_i - 1)\), and we could achieve the same likelihood
+   by scaling \(\kr / 2\).
+
+   #+BEGIN_SRC ipython :ipyfile figure/pois-beta.org/beta-ex2.png
+     grid = np.linspace(0, 1, 1000)
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     a_max = 2
+     for a in np.linspace(0, a_max, 20):
+       plt.plot(grid, st.beta(a=np.exp(a), b=np.exp(-a)).logpdf(grid), lw=1, c=colorcet.cm['fire'](a / a_max))
+     plt.xlabel('$p_i$')
+     plt.ylabel('Log density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[20]:
+   [[file:figure/pois-beta.org/beta-ex2.png]]
+   :END:
+
+   Second, if \(\koff\) is large, then \(\koff\) and \(\kr\) are
+   unidentifiable. Holding \(\kon\) fixed, we have \(E[p_i] = \kon / (\kon +
+   \koff)\), and intuitively we can achieve the same likelihood by taking \(\kr
+   \rightarrow \infty\) as \(\koff \rightarrow \infty\).
+
+   There are two ways we could address this problem:
+
+   1. *Reparametrize the model:* Let \(\gamma\) be the average length of the
+      on/off cycle, and \(\delta\) be the average ratio of time spent in the on
+      versus off state during that cycle. Then, we have
+
+      \begin{align*}
+        \delta &= \frac{1 / \kon}{1 / \koff} = \frac{\koff}{\kon}\\
+        \gamma &= \frac{1}{1 / \kon + 1 / \koff} = \frac{\kon\koff}{\kon + \koff}\\
+        \kon &= \frac{\gamma(\delta + 1)}{\delta}\\
+        \koff &= \gamma(\delta + 1)
+      \end{align*}
+
+      This parametrization still implicitly scales time relative to the mRNA
+      decay rate, and implies e.g. \(E[x_i] = \kr/(1 + \delta)\).
+      However, it suggests very different priors
+
+      \begin{align*}
+        \gamma &\sim \operatorname{Exponential}(1/\mu)\\
+        \delta &\sim \operatorname{Uniform}(0, 1)
+      \end{align*}
+
+   2. *Use informative priors:* Larsson et al. 2019 collected data on mRNA
+      decay rates.

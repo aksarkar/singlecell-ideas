@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-18 Tue 22:02 -->
+<!-- 2020-02-20 Thu 14:47 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -265,7 +265,7 @@ for the JavaScript code in this tag.
 <li><a href="#mle">Maximum likelihood estimation</a></li>
 <li><a href="#mcmc">Slice-within-Gibbs sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
-<li><a href="#org0b6fde9">Simulation</a></li>
+<li><a href="#org6ef624a">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
@@ -275,7 +275,7 @@ for the JavaScript code in this tag.
 <li><a href="#org2a8e2d9">Impact of size factors</a></li>
 <li><a href="#org1a579b3">Log likelihood surface</a></li>
 <li><a href="#org2d20171">Impact of initialization</a></li>
-<li><a href="#org5f1048c">Slice-within-Gibbs sampling</a></li>
+<li><a href="#orgba777e7">Slice-within-Gibbs sampling</a></li>
 <li><a href="#orge851dc0">Identifiability</a></li>
 </ul>
 </li>
@@ -485,8 +485,8 @@ the marginal likelihood.
 </div>
 </div>
 
-<div id="outline-container-org0ed0716" class="outline-3">
-<h3 id="mcmc"><a id="org0ed0716"></a>Slice-within-Gibbs sampling</h3>
+<div id="outline-container-org206adaa" class="outline-3">
+<h3 id="mcmc"><a id="org206adaa"></a>Slice-within-Gibbs sampling</h3>
 <div class="outline-text-3" id="text-mcmc">
 <p>
 Kim &amp; Marioni 2013 add priors
@@ -740,9 +740,9 @@ update \(\kon, \koff\).
 </div>
 </div>
 
-<div id="outline-container-org0b6fde9" class="outline-3">
-<h3 id="org0b6fde9">Simulation</h3>
-<div class="outline-text-3" id="text-org0b6fde9">
+<div id="outline-container-org6ef624a" class="outline-3">
+<h3 id="org6ef624a">Simulation</h3>
+<div class="outline-text-3" id="text-org6ef624a">
 <p>
 Draw data from the basic model.
 </p>
@@ -796,8 +796,8 @@ Draw data from a model with size factors.
 <h2 id="results"><a id="org8f429f7"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-org2769b38" class="outline-3">
-<h3 id="simulation"><a id="org2769b38"></a>Simulation</h3>
+<div id="outline-container-orgb0129c8" class="outline-3">
+<h3 id="simulation"><a id="orgb0129c8"></a>Simulation</h3>
 <div class="outline-text-3" id="text-simulation">
 <p>
 Make sure the implementations work on one example.
@@ -1249,9 +1249,9 @@ plt.tight_layout()
 </div>
 </div>
 </div>
-<div id="outline-container-org5f1048c" class="outline-3">
-<h3 id="org5f1048c">Slice-within-Gibbs sampling</h3>
-<div class="outline-text-3" id="text-org5f1048c">
+<div id="outline-container-orgba777e7" class="outline-3">
+<h3 id="orgba777e7">Slice-within-Gibbs sampling</h3>
+<div class="outline-text-3" id="text-orgba777e7">
 <p>
 First, try to sample from a standard Gaussian using slice sampling.
 </p>
@@ -1388,12 +1388,8 @@ fig.tight_layout()
 <p><img src="figure/pois-beta.org/slice-sample-post.png" alt="slice-sample-post.png">
 </p>
 </div>
-</div>
-</div>
 
-<div id="outline-container-orge851dc0" class="outline-3">
-<h3 id="orge851dc0">Identifiability</h3>
-<div class="outline-text-3" id="text-orge851dc0">
+
 <p>
 Kim and Marioni discuss an identifiability problem with the model. Simulate
 an example data set. Estimate the MLE, and draw samples from the posterior
@@ -1527,11 +1523,114 @@ plt.tight_layout()
 </div>
 </div>
 </div>
+
+<div id="outline-container-orge851dc0" class="outline-3">
+<h3 id="orge851dc0">Identifiability</h3>
+<div class="outline-text-3" id="text-orge851dc0">
+<p>
+Kim and Marioni 2013 discuss an identifiability problem with the model,
+which was also investigated by
+<a href="https://margareth2407.github.io/Thesis_single_RNA/MLE_estimates.html">Orlova
+2019</a>. 
+</p>
+
+<p>
+First, if \(\kon\) and \(\koff\) are large, then none of the parameters are
+identifiable. Specifically, for some fixed \(\kr\), taking \(\kon
+   \rightarrow \infty\) and \(\koff \rightarrow \infty\), we have \(p_i \sim
+   \delta(p_i - 0.5)\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(0, 1, 1000)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-variable-name">a_max</span> = 5
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> np.linspace(0, a_max, 20):
+  plt.plot(grid, st.beta(a=np.exp(a), b=np.exp(a)).pdf(grid), lw=1, c=colorcet.cm[<span class="org-string">'fire'</span>](a / a_max))
+plt.xlabel(<span class="org-string">'$p_i$'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/beta-ex.png" alt="beta-ex.png">
+</p>
+</div>
+
+<p>
+But if we take \(\kon \rightarrow \infty\) and \(\koff \rightarrow 0\), we
+get \(p_i \sim \delta(p_i - 1)\), and we could achieve the same likelihood
+by scaling \(\kr / 2\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(0, 1, 1000)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-variable-name">a_max</span> = 2
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> np.linspace(0, a_max, 20):
+  plt.plot(grid, st.beta(a=np.exp(a), b=np.exp(-a)).logpdf(grid), lw=1, c=colorcet.cm[<span class="org-string">'fire'</span>](a / a_max))
+plt.xlabel(<span class="org-string">'$p_i$'</span>)
+plt.ylabel(<span class="org-string">'Log density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pois-beta.org/beta-ex2.png" alt="beta-ex2.png">
+</p>
+</div>
+
+<p>
+Second, if \(\koff\) is large, then \(\koff\) and \(\kr\) are
+unidentifiable. Holding \(\kon\) fixed, we have \(E[p_i] = \kon / (\kon +
+   \koff)\), and intuitively we can achieve the same likelihood by taking \(\kr
+   \rightarrow \infty\) as \(\koff \rightarrow \infty\).
+</p>
+
+<p>
+There are two ways we could address this problem:
+</p>
+
+<ol class="org-ol">
+<li><p>
+<b>Reparametrize the model:</b> Let \(\gamma\) be the average length of the
+on/off cycle, and \(\delta\) be the average ratio of time spent in the on
+versus off state during that cycle. Then, we have
+</p>
+
+\begin{align*}
+  \delta &= \frac{1 / \kon}{1 / \koff} = \frac{\koff}{\kon}\\
+  \gamma &= \frac{1}{1 / \kon + 1 / \koff} = \frac{\kon\koff}{\kon + \koff}\\
+  \kon &= \frac{\gamma(\delta + 1)}{\delta}\\
+  \koff &= \gamma(\delta + 1)
+\end{align*}
+
+<p>
+This parametrization still implicitly scales time relative to the mRNA
+decay rate, and implies e.g. \(E[x_i] = \kr/(1 + \delta)\).
+However, it suggests very different priors
+</p>
+
+\begin{align*}
+  \gamma &\sim \operatorname{Exponential}(1/\mu)\\
+  \delta &\sim \operatorname{Uniform}(0, 1)
+\end{align*}</li>
+
+<li><b>Use informative priors:</b> Larsson et al. 2019 collected data on mRNA
+decay rates.</li>
+</ol>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-18 Tue 22:02</p>
+<p class="date">Created: 2020-02-20 Thu 14:47</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

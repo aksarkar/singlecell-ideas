@@ -192,8 +192,70 @@
    Although the conditional distributions are non-standard,
    [[https://en.wikipedia.org/wiki/Slice_sampling][slice sampling]]
    ([[https://projecteuclid.org/euclid.aos/1056562461][Neal 2003]]) only
-   requires the target density up to a constant. However, Kim and Marioni 2013 discuss
-   an identifiability problem with the model, which was also investigated by
+   requires the target density up to a constant. 
+
+** Variational inference
+   :PROPERTIES:
+   :CUSTOM_ID: vi
+   :END:
+
+   To make the model amenable for VI, introduce latent variables \(z_i\)
+
+   \begin{align*}
+     x_i \mid z_i, p_i &\sim \Bin(z_i, p_i)\\
+     z_i \mid \kr &\sim \Pois(\kr)\\
+     p_i \mid \kon, \koff &\sim \B(\kon, \koff)
+   \end{align*}
+
+   Then, we have
+
+   \begin{multline*}
+     \ln p(x_i, z_i, p_i \mid \kr, \kon, \koff) = (x + \kon - 1) \ln p_i + (z_i - x_i + \koff - 1) \ln(1 - p_i)\\
+     + (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
+   \end{multline*}
+
+   where we have added and subtracted \(x_i \ln \kr\) to more easily derive
+   coordinate updates
+
+   \begin{align*}
+     q^*(z_i - x_i) &= \Pois(\exp(\E{\ln (1 - p_i)} + \ln k_r)) \triangleq \Pois(\mu_i) \\
+     q^*(p_i) &= \B(x_i + \kon, \E{z_i - x_i} + \koff) \triangleq \B(\alpha_i, \beta_i)
+   \end{align*}
+
+   where expectations are taken with respect to the variational approximation
+   \(q\). [[https://en.wikipedia.org/wiki/Beta_distribution#Moments_of_logarithmically_transformed_random_variables][Using
+   properties of the Beta distribution]]
+
+   \begin{align*}
+     \E{\ln p_i} &= \psi(\alpha_i) - \psi(\alpha_i + \beta_i)\\
+     \E{\ln (1 - p_i)} &= \psi(\beta_i) - \psi(\alpha_i + \beta_i)
+   \end{align*}   
+
+   where \(\psi\) is the digamma function. The evidence lower bound is
+
+   \begin{multline*}
+     \ell = \sum_i (x_i + \kon - \alpha_i) \E{\ln p_i} + (\mu_i + \koff - \beta_i) \E{\ln(1 - p_i)}\\
+     + (x_i + \mu_i) \ln \kr - k_r - \mu_i \ln \mu_i + \mu_i - \ln\Gamma(x_i + 1) - \ln\betafun(\kon, \koff) + \ln\betafun(\alpha_i, \beta_i)
+   \end{multline*}
+
+   We can derive the Jacobian with respect to \(\kr, \kon, \koff\), leading to
+   an analytic update for \(\kr\). We can use Brent's method to numerically
+   update \(\kon, \koff\).
+
+   \begin{align*}
+     \frac{\partial \ell}{\partial \kr} &= \sum_i \frac{x_i + \mu_i}{\kr} - 1\\
+     \kr &:= \frac{1}{n} \sum_i x_i + \mu_i\\
+     \frac{\partial \ell}{\partial \kon} &= \sum_i \psi(\alpha_i) - \psi(\alpha_i - \beta_i) - \psi(\kon) + \psi(\kon + \koff)\\
+     \frac{\partial \ell}{\partial \koff} &= \sum_i \psi(\beta_i) - \psi(\alpha_i - \beta_i) - \psi(\koff) + \psi(\kon + \koff)
+   \end{align*}
+
+** Identifiability
+   :PROPERTIES:
+   :CUSTOM_ID: identifability
+   :END:
+
+   Kim and Marioni 2013 discuss an identifiability problem with the model,
+   which was also investigated by
    [[https://margareth2407.github.io/Thesis_single_RNA/MLE_estimates.html][Orlova
    2019]].
 
@@ -278,61 +340,6 @@
 
    2. *Use informative priors:* Larsson et al. 2019 collected data on mRNA
       decay rates.
-
-** Variational inference
-   :PROPERTIES:
-   :CUSTOM_ID: vi
-   :END:
-
-   To make the model amenable for VI, introduce latent variables \(z_i\)
-
-   \begin{align*}
-     x_i \mid z_i, p_i &\sim \Bin(z_i, p_i)\\
-     z_i \mid \kr &\sim \Pois(\kr)\\
-     p_i \mid \kon, \koff &\sim \B(\kon, \koff)
-   \end{align*}
-
-   Then, we have
-
-   \begin{multline*}
-     \ln p(x_i, z_i, p_i \mid \kr, \kon, \koff) = (x + \kon - 1) \ln p_i + (z_i - x_i + \koff - 1) \ln(1 - p_i)\\
-     + (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
-   \end{multline*}
-
-   where we have added and subtracted \(x_i \ln \kr\) to more easily derive
-   coordinate updates
-
-   \begin{align*}
-     q^*(z_i - x_i) &= \Pois(\exp(\E{\ln (1 - p_i)} + \ln k_r)) \triangleq \Pois(\mu_i) \\
-     q^*(p_i) &= \B(x_i + \kon, \E{z_i - x_i} + \koff) \triangleq \B(\alpha_i, \beta_i)
-   \end{align*}
-
-   where expectations are taken with respect to the variational approximation
-   \(q\). [[https://en.wikipedia.org/wiki/Beta_distribution#Moments_of_logarithmically_transformed_random_variables][Using
-   properties of the Beta distribution]]
-
-   \begin{align*}
-     \E{\ln p_i} &= \psi(\alpha_i) - \psi(\alpha_i + \beta_i)\\
-     \E{\ln (1 - p_i)} &= \psi(\beta_i) - \psi(\alpha_i + \beta_i)
-   \end{align*}   
-
-   where \(\psi\) is the digamma function. The evidence lower bound is
-
-   \begin{multline*}
-     \ell = \sum_i (x_i + \kon - \alpha_i) \E{\ln p_i} + (\mu_i + \koff - \beta_i) \E{\ln(1 - p_i)}\\
-     + (x_i + \mu_i) \ln \kr - k_r - \mu_i \ln \mu_i + \mu_i - \ln\Gamma(x_i + 1) - \ln\betafun(\kon, \koff) + \ln\betafun(\alpha_i, \beta_i)
-   \end{multline*}
-
-   We can derive the Jacobian with respect to \(\kr, \kon, \koff\), leading to
-   an analytic update for \(\kr\). We can use Brent's method to numerically
-   update \(\kon, \koff\).
-
-   \begin{align*}
-     \frac{\partial \ell}{\partial \kr} &= \sum_i \frac{x_i + \mu_i}{\kr} - 1\\
-     \kr &:= \frac{1}{n} \sum_i x_i + \mu_i\\
-     \frac{\partial \ell}{\partial \kon} &= \sum_i \psi(\alpha_i) - \psi(\alpha_i - \beta_i) - \psi(\kon) + \psi(\kon + \koff)\\
-     \frac{\partial \ell}{\partial \koff} &= \sum_i \psi(\beta_i) - \psi(\alpha_i - \beta_i) - \psi(\koff) + \psi(\kon + \koff)
-   \end{align*}
 
 ** Simulation
 
@@ -1116,6 +1123,4 @@
    # Out[58]:
    [[file:figure/pois-beta.org/slice-sample-ex2.png]]
    :END:
-
-** Identifiability
 

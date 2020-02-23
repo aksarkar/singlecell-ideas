@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-20 Thu 16:15 -->
+<!-- 2020-02-23 Sun 12:29 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -265,7 +265,8 @@ for the JavaScript code in this tag.
 <li><a href="#mle">Maximum likelihood estimation</a></li>
 <li><a href="#mcmc">Slice-within-Gibbs sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
-<li><a href="#org4b6e58b">Simulation</a></li>
+<li><a href="#identifability">Identifiability</a></li>
+<li><a href="#orga072c16">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
@@ -275,8 +276,7 @@ for the JavaScript code in this tag.
 <li><a href="#org2a8e2d9">Impact of size factors</a></li>
 <li><a href="#org1a579b3">Log likelihood surface</a></li>
 <li><a href="#org2d20171">Impact of initialization</a></li>
-<li><a href="#org0125b44">Slice-within-Gibbs sampling</a></li>
-<li><a href="#orge851dc0">Identifiability</a></li>
+<li><a href="#org74713bf">Slice-within-Gibbs sampling</a></li>
 </ul>
 </li>
 </ul>
@@ -437,8 +437,8 @@ the marginal likelihood.
 </div>
 </div>
 
-<div id="outline-container-orge9af9e9" class="outline-3">
-<h3 id="mcmc"><a id="orge9af9e9"></a>Slice-within-Gibbs sampling</h3>
+<div id="outline-container-org0125b44" class="outline-3">
+<h3 id="mcmc"><a id="org0125b44"></a>Slice-within-Gibbs sampling</h3>
 <div class="outline-text-3" id="text-mcmc">
 <p>
 Kim &amp; Marioni 2013 add priors
@@ -465,8 +465,84 @@ The conditional (log) densities are available, up to constants
 Although the conditional distributions are non-standard,
 <a href="https://en.wikipedia.org/wiki/Slice_sampling">slice sampling</a>
 (<a href="https://projecteuclid.org/euclid.aos/1056562461">Neal 2003</a>) only
-requires the target density up to a constant. However, Kim and Marioni 2013 discuss
-an identifiability problem with the model, which was also investigated by
+requires the target density up to a constant. 
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgafe29a8" class="outline-3">
+<h3 id="vi"><a id="orgafe29a8"></a>Variational inference</h3>
+<div class="outline-text-3" id="text-vi">
+<p>
+To make the model amenable for VI, introduce latent variables \(z_i\)
+</p>
+
+\begin{align*}
+  x_i \mid z_i, p_i &\sim \Bin(z_i, p_i)\\
+  z_i \mid \kr &\sim \Pois(\kr)\\
+  p_i \mid \kon, \koff &\sim \B(\kon, \koff)
+\end{align*}
+
+<p>
+Then, we have
+</p>
+
+\begin{multline*}
+  \ln p(x_i, z_i, p_i \mid \kr, \kon, \koff) = (x + \kon - 1) \ln p_i + (z_i - x_i + \koff - 1) \ln(1 - p_i)\\
+  + (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
+\end{multline*}
+
+<p>
+where we have added and subtracted \(x_i \ln \kr\) to more easily derive
+coordinate updates
+</p>
+
+\begin{align*}
+  q^*(z_i - x_i) &= \Pois(\exp(\E{\ln (1 - p_i)} + \ln k_r)) \triangleq \Pois(\mu_i) \\
+  q^*(p_i) &= \B(x_i + \kon, \E{z_i - x_i} + \koff) \triangleq \B(\alpha_i, \beta_i)
+\end{align*}
+
+<p>
+where expectations are taken with respect to the variational approximation
+\(q\). <a href="https://en.wikipedia.org/wiki/Beta_distribution#Moments_of_logarithmically_transformed_random_variables">Using
+properties of the Beta distribution</a>
+</p>
+
+\begin{align*}
+  \E{\ln p_i} &= \psi(\alpha_i) - \psi(\alpha_i + \beta_i)\\
+  \E{\ln (1 - p_i)} &= \psi(\beta_i) - \psi(\alpha_i + \beta_i)
+\end{align*}   
+
+<p>
+where \(\psi\) is the digamma function. The evidence lower bound is
+</p>
+
+\begin{multline*}
+  \ell = \sum_i (x_i + \kon - \alpha_i) \E{\ln p_i} + (\mu_i + \koff - \beta_i) \E{\ln(1 - p_i)}\\
+  + (x_i + \mu_i) \ln \kr - k_r - \mu_i \ln \mu_i + \mu_i - \ln\Gamma(x_i + 1) - \ln\betafun(\kon, \koff) + \ln\betafun(\alpha_i, \beta_i)
+\end{multline*}
+
+<p>
+We can derive the Jacobian with respect to \(\kr, \kon, \koff\), leading to
+an analytic update for \(\kr\). We can use Brent's method to numerically
+update \(\kon, \koff\).
+</p>
+
+\begin{align*}
+  \frac{\partial \ell}{\partial \kr} &= \sum_i \frac{x_i + \mu_i}{\kr} - 1\\
+  \kr &:= \frac{1}{n} \sum_i x_i + \mu_i\\
+  \frac{\partial \ell}{\partial \kon} &= \sum_i \psi(\alpha_i) - \psi(\alpha_i - \beta_i) - \psi(\kon) + \psi(\kon + \koff)\\
+  \frac{\partial \ell}{\partial \koff} &= \sum_i \psi(\beta_i) - \psi(\alpha_i - \beta_i) - \psi(\koff) + \psi(\kon + \koff)
+\end{align*}
+</div>
+</div>
+
+<div id="outline-container-orge851dc0" class="outline-3">
+<h3 id="identifability"><a id="orge851dc0"></a>Identifiability</h3>
+<div class="outline-text-3" id="text-identifability">
+<p>
+Kim and Marioni 2013 discuss an identifiability problem with the model,
+which was also investigated by
 <a href="https://margareth2407.github.io/Thesis_single_RNA/MLE_estimates.html">Orlova
 2019</a>.
 </p>
@@ -573,76 +649,9 @@ decay rates.</li>
 </div>
 </div>
 
-<div id="outline-container-orgafe29a8" class="outline-3">
-<h3 id="vi"><a id="orgafe29a8"></a>Variational inference</h3>
-<div class="outline-text-3" id="text-vi">
-<p>
-To make the model amenable for VI, introduce latent variables \(z_i\)
-</p>
-
-\begin{align*}
-  x_i \mid z_i, p_i &\sim \Bin(z_i, p_i)\\
-  z_i \mid \kr &\sim \Pois(\kr)\\
-  p_i \mid \kon, \koff &\sim \B(\kon, \koff)
-\end{align*}
-
-<p>
-Then, we have
-</p>
-
-\begin{multline*}
-  \ln p(x_i, z_i, p_i \mid \kr, \kon, \koff) = (x + \kon - 1) \ln p_i + (z_i - x_i + \koff - 1) \ln(1 - p_i)\\
-  + (z_i - x_i) \ln \kr - \kr + x_i \ln \kr - \ln\Gamma(x_i + 1) - \ln\Gamma(z_i - x_i + 1) - \ln\betafun(\kon, \koff)
-\end{multline*}
-
-<p>
-where we have added and subtracted \(x_i \ln \kr\) to more easily derive
-coordinate updates
-</p>
-
-\begin{align*}
-  q^*(z_i - x_i) &= \Pois(\exp(\E{\ln (1 - p_i)} + \ln k_r)) \triangleq \Pois(\mu_i) \\
-  q^*(p_i) &= \B(x_i + \kon, \E{z_i - x_i} + \koff) \triangleq \B(\alpha_i, \beta_i)
-\end{align*}
-
-<p>
-where expectations are taken with respect to the variational approximation
-\(q\). <a href="https://en.wikipedia.org/wiki/Beta_distribution#Moments_of_logarithmically_transformed_random_variables">Using
-properties of the Beta distribution</a>
-</p>
-
-\begin{align*}
-  \E{\ln p_i} &= \psi(\alpha_i) - \psi(\alpha_i + \beta_i)\\
-  \E{\ln (1 - p_i)} &= \psi(\beta_i) - \psi(\alpha_i + \beta_i)
-\end{align*}   
-
-<p>
-where \(\psi\) is the digamma function. The evidence lower bound is
-</p>
-
-\begin{multline*}
-  \ell = \sum_i (x_i + \kon - \alpha_i) \E{\ln p_i} + (\mu_i + \koff - \beta_i) \E{\ln(1 - p_i)}\\
-  + (x_i + \mu_i) \ln \kr - k_r - \mu_i \ln \mu_i + \mu_i - \ln\Gamma(x_i + 1) - \ln\betafun(\kon, \koff) + \ln\betafun(\alpha_i, \beta_i)
-\end{multline*}
-
-<p>
-We can derive the Jacobian with respect to \(\kr, \kon, \koff\), leading to
-an analytic update for \(\kr\). We can use Brent's method to numerically
-update \(\kon, \koff\).
-</p>
-
-\begin{align*}
-  \frac{\partial \ell}{\partial \kr} &= \sum_i \frac{x_i + \mu_i}{\kr} - 1\\
-  \kr &:= \frac{1}{n} \sum_i x_i + \mu_i\\
-  \frac{\partial \ell}{\partial \kon} &= \sum_i \psi(\alpha_i) - \psi(\alpha_i - \beta_i) - \psi(\kon) + \psi(\kon + \koff)\\
-  \frac{\partial \ell}{\partial \koff} &= \sum_i \psi(\beta_i) - \psi(\alpha_i - \beta_i) - \psi(\koff) + \psi(\kon + \koff)
-\end{align*}
-</div>
-</div>
-
-<div id="outline-container-org4b6e58b" class="outline-3">
-<h3 id="org4b6e58b">Simulation</h3>
-<div class="outline-text-3" id="text-org4b6e58b">
+<div id="outline-container-orga072c16" class="outline-3">
+<h3 id="orga072c16">Simulation</h3>
+<div class="outline-text-3" id="text-orga072c16">
 <p>
 Draw data from the basic model.
 </p>
@@ -696,8 +705,8 @@ Draw data from a model with size factors.
 <h2 id="results"><a id="org8f429f7"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-orga072c16" class="outline-3">
-<h3 id="simulation"><a id="orga072c16"></a>Simulation</h3>
+<div id="outline-container-orgb6312fb" class="outline-3">
+<h3 id="simulation"><a id="orgb6312fb"></a>Simulation</h3>
 <div class="outline-text-3" id="text-simulation">
 <p>
 Make sure the implementations work on one example.
@@ -1149,9 +1158,9 @@ plt.tight_layout()
 </div>
 </div>
 </div>
-<div id="outline-container-org0125b44" class="outline-3">
-<h3 id="org0125b44">Slice-within-Gibbs sampling</h3>
-<div class="outline-text-3" id="text-org0125b44">
+<div id="outline-container-org74713bf" class="outline-3">
+<h3 id="org74713bf">Slice-within-Gibbs sampling</h3>
+<div class="outline-text-3" id="text-org74713bf">
 <p>
 First, try to sample from a standard Gaussian using slice sampling.
 </p>
@@ -1423,15 +1432,11 @@ plt.tight_layout()
 </div>
 </div>
 </div>
-
-<div id="outline-container-orge851dc0" class="outline-3">
-<h3 id="orge851dc0">Identifiability</h3>
-</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-20 Thu 16:15</p>
+<p class="date">Created: 2020-02-23 Sun 12:29</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

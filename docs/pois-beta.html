@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-23 Sun 12:29 -->
+<!-- 2020-02-23 Sun 12:35 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson-Beta model</title>
@@ -266,7 +266,7 @@ for the JavaScript code in this tag.
 <li><a href="#mcmc">Slice-within-Gibbs sampling</a></li>
 <li><a href="#vi">Variational inference</a></li>
 <li><a href="#identifability">Identifiability</a></li>
-<li><a href="#orga072c16">Simulation</a></li>
+<li><a href="#orgb6312fb">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
@@ -276,7 +276,7 @@ for the JavaScript code in this tag.
 <li><a href="#org2a8e2d9">Impact of size factors</a></li>
 <li><a href="#org1a579b3">Log likelihood surface</a></li>
 <li><a href="#org2d20171">Impact of initialization</a></li>
-<li><a href="#org74713bf">Slice-within-Gibbs sampling</a></li>
+<li><a href="#org743c943">Slice-within-Gibbs sampling</a></li>
 </ul>
 </li>
 </ul>
@@ -437,8 +437,8 @@ the marginal likelihood.
 </div>
 </div>
 
-<div id="outline-container-org0125b44" class="outline-3">
-<h3 id="mcmc"><a id="org0125b44"></a>Slice-within-Gibbs sampling</h3>
+<div id="outline-container-org74713bf" class="outline-3">
+<h3 id="mcmc"><a id="org74713bf"></a>Slice-within-Gibbs sampling</h3>
 <div class="outline-text-3" id="text-mcmc">
 <p>
 Kim &amp; Marioni 2013 add priors
@@ -639,7 +639,7 @@ We can use this parametrization in slice-within-Gibbs:
 </p>
 
 \begin{align*}
-  \ln p(\gamma \mid \cdot) &= \sum_i \left(\frac{\gamma(\delta + 1)}{\delta}\right) \ln p_i + \gamma(\delta + 1) \ln (1 - p_i) - \ln \betafun\left(\frac{\gamma(\delta + 1)}{\delta}, \gamma(\delta + 1)\right) + \const\\
+  \ln p(\gamma \mid \cdot) &= \sum_i \left(\frac{\gamma(\delta + 1)}{\delta}\right) \ln p_i + \gamma(\delta + 1) \ln (1 - p_i) - \ln \betafun\left(\frac{\gamma(\delta + 1)}{\delta}, \gamma(\delta + 1)\right) - \frac{\gamma}{\mu} + \const\\
   \ln p(\delta \mid \cdot) &= \sum_i \left(\frac{\gamma(\delta + 1)}{\delta}\right) \ln p_i + \gamma(\delta + 1) \ln (1 - p_i) + \const
 \end{align*}</li>
 
@@ -649,9 +649,9 @@ decay rates.</li>
 </div>
 </div>
 
-<div id="outline-container-orga072c16" class="outline-3">
-<h3 id="orga072c16">Simulation</h3>
-<div class="outline-text-3" id="text-orga072c16">
+<div id="outline-container-orgb6312fb" class="outline-3">
+<h3 id="orgb6312fb">Simulation</h3>
+<div class="outline-text-3" id="text-orgb6312fb">
 <p>
 Draw data from the basic model.
 </p>
@@ -705,8 +705,8 @@ Draw data from a model with size factors.
 <h2 id="results"><a id="org8f429f7"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-orgb6312fb" class="outline-3">
-<h3 id="simulation"><a id="orgb6312fb"></a>Simulation</h3>
+<div id="outline-container-orgb528b79" class="outline-3">
+<h3 id="simulation"><a id="orgb528b79"></a>Simulation</h3>
 <div class="outline-text-3" id="text-simulation">
 <p>
 Make sure the implementations work on one example.
@@ -1158,9 +1158,9 @@ plt.tight_layout()
 </div>
 </div>
 </div>
-<div id="outline-container-org74713bf" class="outline-3">
-<h3 id="org74713bf">Slice-within-Gibbs sampling</h3>
-<div class="outline-text-3" id="text-org74713bf">
+<div id="outline-container-org743c943" class="outline-3">
+<h3 id="org743c943">Slice-within-Gibbs sampling</h3>
+<div class="outline-text-3" id="text-org743c943">
 <p>
 First, try to sample from a standard Gaussian using slice sampling.
 </p>
@@ -1436,7 +1436,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-23 Sun 12:29</p>
+<p class="date">Created: 2020-02-23 Sun 12:35</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

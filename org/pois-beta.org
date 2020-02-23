@@ -334,7 +334,7 @@
       We can use this parametrization in slice-within-Gibbs:
 
       \begin{align*}
-        \ln p(\gamma \mid \cdot) &= \sum_i \left(\frac{\gamma(\delta + 1)}{\delta}\right) \ln p_i + \gamma(\delta + 1) \ln (1 - p_i) - \ln \betafun\left(\frac{\gamma(\delta + 1)}{\delta}, \gamma(\delta + 1)\right) + \const\\
+        \ln p(\gamma \mid \cdot) &= \sum_i \left(\frac{\gamma(\delta + 1)}{\delta}\right) \ln p_i + \gamma(\delta + 1) \ln (1 - p_i) - \ln \betafun\left(\frac{\gamma(\delta + 1)}{\delta}, \gamma(\delta + 1)\right) - \frac{\gamma}{\mu} + \const\\
         \ln p(\delta \mid \cdot) &= \sum_i \left(\frac{\gamma(\delta + 1)}{\delta}\right) \ln p_i + \gamma(\delta + 1) \ln (1 - p_i) + \const
       \end{align*}
 

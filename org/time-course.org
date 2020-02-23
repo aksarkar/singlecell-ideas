@@ -68,20 +68,23 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 65478911
+  : Submitted batch job 65996462
 
   #+BEGIN_SRC ipython
+    import anmf
     import anndata
     import numpy as np
     import pandas as pd
     import scipy.sparse as ss
+    import scipy.stats as st
     import sklearn.decomposition as skd
     import torch
+    import torch.utils.data as td
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[33]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -190,8 +193,107 @@
    # Out[33]:
    :END:
 
+** Census of Immune Cells data
+
+   We previously processed the Census of Immune Cells.
+
+   Read the sparse data. (20 seconds)
+
+   #+BEGIN_SRC ipython :async t
+     y_csr = ss.load_npz('/scratch/midway2/aksarkar/modes/immune-cell-census.npz')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[46]:
+   :END:
+
+   Read the metadata.
+
+   #+BEGIN_SRC ipython
+     genes = pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz', sep='\t', index_col=0)
+     donor = pd.Categorical(pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz', sep='\t', index_col=0)['0'])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   :END:
+
 * Results
-** Unsupervised NMF on iPSCs
+** Simulation
+
+   Simulate a simple example.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(0)
+     n = 512
+     p = 1000
+     k = 10
+     l = np.random.lognormal(sigma=0.5, size=(n, k))
+     f = np.random.lognormal(sigma=0.5, size=(p, k))
+     x = np.random.poisson(l.dot(f.T))
+     s = x.sum(axis=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     sparse_data = anmf.dataset.ExprDataset(x, s)
+     data = td.DataLoader(sparse_data, batch_size=512, shuffle=False, collate_fn=sparse_data.collate_fn)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[91]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     fit = anmf.modules.ANMF(input_dim=x.shape[1]).fit(data, max_epochs=1, trace=True, verbose=True, lr=5e-3)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[95]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-trace.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(fit.trace, lw=1, c='k')
+     plt.xlabel('Minibatch')
+     plt.ylabel('Neg log lik')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[39]:
+   [[file:figure/time-course.org/sim-trace.png]]
+   :END:
+
+   Peter Carbonetto previously derived the KKT conditions for the NMF
+   objective.
+
+   #+BEGIN_SRC ipython :async t
+     lhat = np.vstack([fit.encoder.forward(b).detach().numpy() for (b, s) in data])
+     fhat = torch.nn.functional.softmax(fit.decoder.logit_f, dim=1).detach().numpy()
+     A = x / (s.reshape(-1, 1) * lhat.dot(fhat))
+     l_resid = (fhat.T * ((1 - A).T @ lhat)).max()
+     f_resid = (lhat * ((1 - A) @ fhat.T)).max()
+     l_resid, f_resid
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[90]:
+   : (0.010334900542034623, -0.0)
+   :END:
+
+** ANMF on Census of Immune Cells
 
    #+BEGIN_SRC ipython
      x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')

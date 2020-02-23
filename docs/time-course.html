@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-13 Thu 21:48 -->
+<!-- 2020-02-23 Sun 12:29 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -263,11 +263,13 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#orgdd042e9">Amortized NMF/LDA</a></li>
 <li><a href="#orga68114a">iPSC data</a></li>
+<li><a href="#org6dd7c96">Census of Immune Cells data</a></li>
 </ul>
 </li>
 <li><a href="#org1cce9ff">Results</a>
 <ul>
-<li><a href="#org37c13a2">Unsupervised NMF on iPSCs</a></li>
+<li><a href="#org13ff0f7">Simulation</a></li>
+<li><a href="#org1fc2b6f">ANMF on Census of Immune Cells</a></li>
 </ul>
 </li>
 </ul>
@@ -342,12 +344,15 @@ e.g. Human Cell Atlas? As references, compare against
 <h2 id="setup"><a id="orgaef0b05"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> anndata
+<pre class="src src-ipython"><span class="org-keyword">import</span> anmf
+<span class="org-keyword">import</span> anndata
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> sklearn.decomposition <span class="org-keyword">as</span> skd
 <span class="org-keyword">import</span> torch
+<span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 </pre>
 </div>
 
@@ -473,15 +478,111 @@ x.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlece
 </div>
 </div>
 </div>
+
+<div id="outline-container-org6dd7c96" class="outline-3">
+<h3 id="org6dd7c96">Census of Immune Cells data</h3>
+<div class="outline-text-3" id="text-org6dd7c96">
+<p>
+We previously processed the Census of Immune Cells.
+</p>
+
+<p>
+Read the sparse data. (20 seconds)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y_csr</span> = ss.load_npz(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census.npz'</span>)
+</pre>
+</div>
+
+<p>
+Read the metadata.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">genes</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
+<span class="org-variable-name">donor</span> = pd.Categorical(pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)[<span class="org-string">'0'</span>])
+</pre>
+</div>
+</div>
+</div>
 </div>
 
 <div id="outline-container-org1cce9ff" class="outline-2">
 <h2 id="org1cce9ff">Results</h2>
 <div class="outline-text-2" id="text-org1cce9ff">
 </div>
-<div id="outline-container-org37c13a2" class="outline-3">
-<h3 id="org37c13a2">Unsupervised NMF on iPSCs</h3>
-<div class="outline-text-3" id="text-org37c13a2">
+<div id="outline-container-org13ff0f7" class="outline-3">
+<h3 id="org13ff0f7">Simulation</h3>
+<div class="outline-text-3" id="text-org13ff0f7">
+<p>
+Simulate a simple example.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(0)
+<span class="org-variable-name">n</span> = 512
+<span class="org-variable-name">p</span> = 1000
+<span class="org-variable-name">k</span> = 10
+<span class="org-variable-name">l</span> = np.random.lognormal(sigma=0.5, size=(n, k))
+<span class="org-variable-name">f</span> = np.random.lognormal(sigma=0.5, size=(p, k))
+<span class="org-variable-name">x</span> = np.random.poisson(l.dot(f.T))
+<span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x, s)
+<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=512, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1]).fit(data, max_epochs=1, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=5e-3)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(fit.trace, lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Minibatch'</span>)
+plt.ylabel(<span class="org-string">'Neg log lik'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/sim-trace.png" alt="sim-trace.png">
+</p>
+</div>
+
+<p>
+Peter Carbonetto previously derived the KKT conditions for the NMF
+objective.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span> = np.vstack([fit.encoder.forward(b).detach().numpy() <span class="org-keyword">for</span> (b, s) <span class="org-keyword">in</span> data])
+<span class="org-variable-name">fhat</span> = torch.nn.functional.softmax(fit.decoder.logit_f, dim=1).detach().numpy()
+<span class="org-variable-name">A</span> = x / (s.reshape(-1, 1) * lhat.dot(fhat))
+<span class="org-variable-name">l_resid</span> = (fhat.T * ((1 - A).T @ lhat)).<span class="org-builtin">max</span>()
+<span class="org-variable-name">f_resid</span> = (lhat * ((1 - A) @ fhat.T)).<span class="org-builtin">max</span>()
+l_resid, f_resid
+</pre>
+</div>
+
+<pre class="example">
+(0.010334900542034623, -0.0)
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org1fc2b6f" class="outline-3">
+<h3 id="org1fc2b6f">ANMF on Census of Immune Cells</h3>
+<div class="outline-text-3" id="text-org1fc2b6f">
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
 </pre>
@@ -503,7 +604,7 @@ x.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlece
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-13 Thu 21:48</p>
+<p class="date">Created: 2020-02-23 Sun 12:29</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

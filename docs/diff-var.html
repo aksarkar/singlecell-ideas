@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-12 Wed 19:38 -->
+<!-- 2020-02-18 Tue 22:01 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -285,8 +285,8 @@ for the JavaScript code in this tag.
 \newcommand\koff{k_{\text{off}}}
 \]
 </p>
-<div id="outline-container-org0a63af7" class="outline-2">
-<h2 id="intro"><a id="org0a63af7"></a>Introduction</h2>
+<div id="outline-container-org688f67f" class="outline-2">
+<h2 id="intro"><a id="org688f67f"></a>Introduction</h2>
 <div class="outline-text-2" id="text-intro">
 <p>
 We previously hypothesized that QTLs could disrupt the mechanisms controlling
@@ -337,7 +337,6 @@ expression variance <i>independent</i> of altering mean gene expression.
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> scmodes
-<span class="org-keyword">import</span> scqtl
 </pre>
 </div>
 
@@ -357,12 +356,12 @@ expression variance <i>independent</i> of altering mean gene expression.
 </div>
 </div>
 
-<div id="outline-container-orgdddbad3" class="outline-2">
-<h2 id="methods"><a id="orgdddbad3"></a>Methods</h2>
+<div id="outline-container-org41d64dc" class="outline-2">
+<h2 id="methods"><a id="org41d64dc"></a>Methods</h2>
 <div class="outline-text-2" id="text-methods">
 </div>
-<div id="outline-container-org834badd" class="outline-3">
-<h3 id="poisson-beta"><a id="org834badd"></a>Mechanistic basis of effects on variance</h3>
+<div id="outline-container-orgce88f0d" class="outline-3">
+<h3 id="poisson-beta"><a id="orgce88f0d"></a>Mechanistic basis of effects on variance</h3>
 <div class="outline-text-3" id="text-poisson-beta">
 <p>
 A simple model for transcriptional regulation is the <i>telegraph model</i>
@@ -501,15 +500,15 @@ related to each other, through their dependence on \(\kr, \kon,
 of effects on \(\mu\)?</li>
 <li><a href="https://dx.doi.org/10.1126/science.1216379">Eling et al. 2018</a> claim
 data demonstrate this relationship, and propose to correct the
-relationship between \(\mu\) and \(\phi\). Will this approach estimate
-differences in kinetic parameters? Will a different approach estimate the
-kinetic parameters?</li>
+relationship between \(\mu\) and \(\phi\).</li>
+<li>Will this approach find something other than differences in kinetic
+parameters? Why not just test for parameter differences in that model?</li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-orgcb42ca9" class="outline-3">
-<h3 id="diff-var"><a id="orgcb42ca9"></a>Differential variance</h3>
+<div id="outline-container-org5b941e7" class="outline-3">
+<h3 id="diff-var"><a id="org5b941e7"></a>Differential variance</h3>
 <div class="outline-text-3" id="text-diff-var">
 <p>
 We assume the following generative model for the data:
@@ -582,17 +581,10 @@ to take a hierarchical approach in this setting due to lack of conjugacy.</li>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">est_diff_var</span>(x, s, z):
-  <span class="org-variable-name">g1</span> = scqtl.simple.fit_zinb(x[z], s[z])
-  <span class="org-variable-name">var1</span> = g1[0] * g1[0] / g1[1]
-  <span class="org-keyword">if</span> g1[-1] &gt; 0:
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Inverse dispersion exploded</span>
-    <span class="org-variable-name">g1</span> = scqtl.simple.fit_pois(x[z], s[z])
-    <span class="org-variable-name">var1</span> = g1[0]
-  <span class="org-variable-name">g2</span> = scqtl.simple.fit_zinb(x[~z], s[~z])
-  <span class="org-variable-name">var2</span> = g2[0] * g2[0] / g1[1]
-  <span class="org-keyword">if</span> g2[-1] &gt; 0:
-    <span class="org-variable-name">g2</span> = scqtl.simple.fit_pois(x[~z], s[~z])
-    <span class="org-variable-name">var2</span> = g2[0]
+  <span class="org-variable-name">g1</span> = scmodes.ebpm.ebpm_gamma(x[z], s[z])
+  <span class="org-variable-name">var1</span> = np.exp(2 * g1[0] + g1[1])
+  <span class="org-variable-name">g2</span> = scmodes.ebpm.ebpm_gamma(x[~z], s[~z])
+  <span class="org-variable-name">var2</span> = np.exp(2 * g2[0] + g2[1])
   <span class="org-keyword">return</span> var2 - var1
 
 <span class="org-keyword">def</span> <span class="org-function-name">diff_var_bootstrap</span>(x, s, z, random_state=<span class="org-constant">None</span>, n_bootstrap=1000):
@@ -625,11 +617,23 @@ Empirical Bayes, and then recover the posterior distribution:
 We can then take sample variances of latent gene expression values
 \(E[\lambda_i \mid \cdot]\) across groups.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">post_mean</span>(x, s, log_mu, neg_log_phi):
+  <span class="org-keyword">return</span> (x + np.exp(neg_log_phi)) / (s + np.exp(-log_mu + neg_log_phi))
+
+<span class="org-keyword">def</span> <span class="org-function-name">diff_var_pm</span>(x, s, z):
+  <span class="org-variable-name">g1</span> = scmodes.ebpm.ebpm_gamma(x[z], s[z])
+  <span class="org-variable-name">lam1</span> = post_mean(x, s, *g1[:-1])
+  <span class="org-variable-name">g2</span> = scmodes.ebpm.ebpm_gamma(x[~z], s[~z])
+  <span class="org-variable-name">lam2</span> = post_mean(x, s, *g2[:-1])
+</pre>
+</div>
 </div>
 </div>
 
-<div id="outline-container-org582162f" class="outline-3">
-<h3 id="data"><a id="org582162f"></a>Data sets</h3>
+<div id="outline-container-orga85492c" class="outline-3">
+<h3 id="data"><a id="orga85492c"></a>Data sets</h3>
 <div class="outline-text-3" id="text-data">
 <p>
 For null simulations, we use homogeneous populations of sorted cells (Zheng
@@ -663,6 +667,11 @@ Submitted batch job 61624943
 
 </pre>
 
+<div class="org-src-container">
+<pre class="src src-ipython">
+</pre>
+</div>
+
 <p>
 We then analyze single cell RNA-seq time course data through differentiation
 of iPSCs into cardiomyocytes (Selewa et al. 2019).
@@ -671,12 +680,12 @@ of iPSCs into cardiomyocytes (Selewa et al. 2019).
 </div>
 </div>
 
-<div id="outline-container-orgf61cca5" class="outline-2">
-<h2 id="results"><a id="orgf61cca5"></a>Results</h2>
+<div id="outline-container-org70446ab" class="outline-2">
+<h2 id="results"><a id="org70446ab"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-org0ccad8b" class="outline-3">
-<h3 id="mean-disp-rel"><a id="org0ccad8b"></a>Mean-dispersion relationship</h3>
+<div id="outline-container-orgea903e8" class="outline-3">
+<h3 id="mean-disp-rel"><a id="orgea903e8"></a>Mean-dispersion relationship</h3>
 <div class="outline-text-3" id="text-mean-disp-rel">
 <p>
 Use scRNA-seq of 9,957 genes in 5,597 iPSCs from 53 donors (Sarkar et
@@ -743,12 +752,12 @@ averaging over all 53 individuals.
 </div>
 </div>
 
-<div id="outline-container-orge8d934b" class="outline-3">
-<h3 id="null-sim"><a id="orge8d934b"></a>Null simulation</h3>
+<div id="outline-container-org6f92f80" class="outline-3">
+<h3 id="null-sim"><a id="org6f92f80"></a>Null simulation</h3>
 <div class="outline-text-3" id="text-null-sim">
 <p>
-Randomly split a homogeneous collections of cells into two groups to
-generate null data sets.
+Randomly split a homogeneous sample into two groups to generate null data
+sets.
 </p>
 
 <div class="org-src-container">
@@ -760,17 +769,17 @@ generate null data sets.
   <span class="org-variable-name">z</span>[:n1] = 1
   <span class="org-keyword">return</span> x_sub, z
 
-<span class="org-keyword">def</span> <span class="org-function-name">evaluate_null_type1</span>(data, n_trials):
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_null_type1</span>(data, n=100, n_trials=10):
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">z</span> = null_sim(data, 100, 100, seed=trial)
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">z</span> = null_sim(data, n, n, seed=trial)
     <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
     <span class="org-keyword">for</span> gene, counts <span class="org-keyword">in</span> x.iteritems():
       <span class="org-keyword">try</span>:
-        <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = diff_var_bootstrap(counts.values, s, z)
+        <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = diff_var_bootstrap(counts.values, s, z, n_bootstrap=200)
       <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
         <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = np.nan, np.nan
-    result.append(pd.Series({<span class="org-string">'trial'</span>: trial, <span class="org-string">'gene'</span>: gene, <span class="org-string">'n'</span>: 100, <span class="org-string">'llr'</span>: llr, <span class="org-string">'p'</span>: p}))
+      result.append(pd.Series({<span class="org-string">'trial'</span>: trial, <span class="org-string">'gene'</span>: gene, <span class="org-string">'n'</span>: n, <span class="org-string">'llr'</span>: llr, <span class="org-string">'p'</span>: p}))
   <span class="org-variable-name">result</span> = pd.DataFrame(result)
   <span class="org-keyword">return</span> result
 </pre>
@@ -781,23 +790,43 @@ Read the data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cytotoxic_t</span> = scmodes.dataset.read_10x(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cytotoxic_t/filtered_matrices_mex/hg19'</span>, return_df=<span class="org-constant">True</span>)
+<pre class="src src-ipython"><span class="org-variable-name">cytotoxic_t</span> = scmodes.dataset.read_10x(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cytotoxic_t/filtered_matrices_mex/hg19'</span>, min_detect=0.25, return_df=<span class="org-constant">True</span>)
 </pre>
 </div>
+
+<p>
+First, apply our approach to a single example.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">z</span> = null_sim(cytotoxic_t, n1=200, n2=200, seed=1)
+<span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
+diff_var_bootstrap(x.iloc[:,1], s, z, n_bootstrap=200, random_state=1)
+</pre>
+</div>
+
+<pre class="example">
+(-6.193533177784196e-07, 0.15)
+
+</pre>
 
 <p>
 Test the benchmark.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">test_result</span> = evaluate_null_type1(cytotoxic_t, n_trials=1)
+<pre class="src src-ipython"><span class="org-variable-name">test_result</span> = evaluate_null_type1(cytotoxic_t.iloc[:,:5], n=200, n_trials=1)
+test_result.head()
 </pre>
 </div>
 
 <pre class="example">
-Empty DataFrame
-Columns: []
-Index: []
+trial             gene    n  llr   p
+0      0  ENSG00000116251  200  NaN NaN
+1      0  ENSG00000116288  200  NaN NaN
+2      0  ENSG00000074800  200  NaN NaN
+3      0  ENSG00000077549  200  NaN NaN
+4      0  ENSG00000142676  200  NaN NaN
 </pre>
 </div>
 </div>
@@ -805,7 +834,7 @@ Index: []
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-12 Wed 19:38</p>
+<p class="date">Created: 2020-02-18 Tue 22:01</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

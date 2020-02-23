@@ -62,19 +62,18 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 61629987
+  : Submitted batch job 65865037
 
   #+BEGIN_SRC ipython
     import numpy as np
     import pandas as pd
     import scipy.stats as st
     import scmodes
-    import scqtl
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[56]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -96,7 +95,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[21]:
+  # Out[3]:
   :END:
 
 * Methods
@@ -206,9 +205,9 @@
      of effects on \(\mu\)?
    - [[https://dx.doi.org/10.1126/science.1216379][Eling et al. 2018]] claim
      data demonstrate this relationship, and propose to correct the
-     relationship between \(\mu\) and \(\phi\). Will this approach estimate
-     differences in kinetic parameters? Will a different approach estimate the
-     kinetic parameters?
+     relationship between \(\mu\) and \(\phi\).
+   - Will this approach find something other than differences in kinetic
+     parameters? Why not just test for parameter differences in that model?
 
 ** Differential variance
    :PROPERTIES:
@@ -266,17 +265,10 @@
 
    #+BEGIN_SRC ipython
      def est_diff_var(x, s, z):
-       g1 = scqtl.simple.fit_zinb(x[z], s[z])
-       var1 = g1[0] * g1[0] / g1[1]
-       if g1[-1] > 0:
-         # Inverse dispersion exploded
-         g1 = scqtl.simple.fit_pois(x[z], s[z])
-         var1 = g1[0]
-       g2 = scqtl.simple.fit_zinb(x[~z], s[~z])
-       var2 = g2[0] * g2[0] / g1[1]
-       if g2[-1] > 0:
-         g2 = scqtl.simple.fit_pois(x[~z], s[~z])
-         var2 = g2[0]
+       g1 = scmodes.ebpm.ebpm_gamma(x[z], s[z])
+       var1 = np.exp(2 * g1[0] + g1[1])
+       g2 = scmodes.ebpm.ebpm_gamma(x[~z], s[~z])
+       var2 = np.exp(2 * g2[0] + g2[1])
        return var2 - var1
 
      def diff_var_bootstrap(x, s, z, random_state=None, n_bootstrap=1000):
@@ -295,7 +287,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[86]:
+   # Out[69]:
    :END:
 
    As a second alternative, for each gene \(j\) we can estimate \(g_0\) via
@@ -309,6 +301,17 @@
 
    We can then take sample variances of latent gene expression values
    \(E[\lambda_i \mid \cdot]\) across groups.
+
+   #+BEGIN_SRC ipython
+     def post_mean(x, s, log_mu, neg_log_phi):
+       return (x + np.exp(neg_log_phi)) / (s + np.exp(-log_mu + neg_log_phi))
+
+     def diff_var_pm(x, s, z):
+       g1 = scmodes.ebpm.ebpm_gamma(x[z], s[z])
+       lam1 = post_mean(x, s, *g1[:-1])
+       g2 = scmodes.ebpm.ebpm_gamma(x[~z], s[~z])
+       lam2 = post_mean(x, s, *g2[:-1])
+   #+END_SRC
 
 ** Data sets
    :PROPERTIES:
@@ -337,6 +340,10 @@
 
    #+RESULTS:
    : Submitted batch job 61624943
+
+   #+BEGIN_SRC ipython
+   
+   #+END_SRC
 
    We then analyze single cell RNA-seq time course data through differentiation
    of iPSCs into cardiomyocytes (Selewa et al. 2019).
@@ -410,8 +417,8 @@
    :CUSTOM_ID: null-sim
    :END:
 
-   Randomly split a homogeneous collections of cells into two groups to
-   generate null data sets.
+   Randomly split a homogeneous sample into two groups to generate null data
+   sets.
 
    #+BEGIN_SRC ipython
      def null_sim(x, n1, n2, seed=0):
@@ -422,49 +429,67 @@
        z[:n1] = 1
        return x_sub, z
 
-     def evaluate_null_type1(data, n_trials):
+     def evaluate_null_type1(data, n=100, n_trials=10):
        result = []
        for trial in range(n_trials):
-         x, z = null_sim(data, 100, 100, seed=trial)
+         x, z = null_sim(data, n, n, seed=trial)
          s = x.sum(axis=1)
          for gene, counts in x.iteritems():
            try:
-             llr, p = diff_var_bootstrap(counts.values, s, z)
+             llr, p = diff_var_bootstrap(counts.values, s, z, n_bootstrap=200)
            except RuntimeError:
              llr, p = np.nan, np.nan
-         result.append(pd.Series({'trial': trial, 'gene': gene, 'n': 100, 'llr': llr, 'p': p}))
+           result.append(pd.Series({'trial': trial, 'gene': gene, 'n': n, 'llr': llr, 'p': p}))
        result = pd.DataFrame(result)
        return result
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[87]:
+   # Out[97]:
    :END:
 
    Read the data.
 
    #+BEGIN_SRC ipython
-     cytotoxic_t = scmodes.dataset.read_10x('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cytotoxic_t/filtered_matrices_mex/hg19', return_df=True)
+     cytotoxic_t = scmodes.dataset.read_10x('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cytotoxic_t/filtered_matrices_mex/hg19', min_detect=0.25, return_df=True)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[57]:
+   :END:
+
+   First, apply our approach to a single example.
+
+   #+BEGIN_SRC ipython :async t
+     x, z = null_sim(cytotoxic_t, n1=200, n2=200, seed=1)
+     s = x.sum(axis=1)
+     diff_var_bootstrap(x.iloc[:,1], s, z, n_bootstrap=200, random_state=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[87]:
+   : (-6.193533177784196e-07, 0.15)
    :END:
 
    Test the benchmark.
 
    #+BEGIN_SRC ipython :async t
-     test_result = evaluate_null_type1(cytotoxic_t, n_trials=1)
+     test_result = evaluate_null_type1(cytotoxic_t.iloc[:,:5], n=200, n_trials=1)
+     test_result.head()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[42]:
+   # Out[98]:
    #+BEGIN_EXAMPLE
-     Empty DataFrame
-     Columns: []
-     Index: []
+     trial             gene    n  llr   p
+     0      0  ENSG00000116251  200  NaN NaN
+     1      0  ENSG00000116288  200  NaN NaN
+     2      0  ENSG00000074800  200  NaN NaN
+     3      0  ENSG00000077549  200  NaN NaN
+     4      0  ENSG00000142676  200  NaN NaN
    #+END_EXAMPLE
    :END:

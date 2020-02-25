@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-18 Tue 22:01 -->
+<!-- 2020-02-24 Mon 19:54 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -270,6 +270,7 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#mean-disp-rel">Mean-dispersion relationship</a></li>
 <li><a href="#null-sim">Null simulation</a></li>
+<li><a href="#org8c5fc24">Fitting kinetic models directly</a></li>
 </ul>
 </li>
 </ul>
@@ -315,7 +316,8 @@ et al. 2018</a> (re-analyzed by
 <a href="https://www.cell.com/cell-systems/fulltext/S2405-4712(18)30278-3">Eling et
 al. 2018</a>) showed that aging changes variability of mouse CD4+ cell gene
 expression; however, clearly this perturbation is a complex combination of
-environmental factors. The strongest evidence is presented by
+environmental factors. (This data was not generated using UMIs, further
+complicating the analysis.) The strongest evidence is presented by
 <a href="http://dx.doi.org/10.1038/nbt.2642">Wills et al. 2013</a>, who demonstrated
 that perturbation of human naive B lymphocytes with a GSK3 inhibitor leads to
 changes in variance of downstream gene expression (as measured by qPCR).
@@ -333,10 +335,15 @@ expression variance <i>independent</i> of altering mean gene expression.
 <h2 id="setup"><a id="org07ce98a"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<pre class="src src-ipython"><span class="org-keyword">import</span> anndata
+<span class="org-keyword">import</span> itertools <span class="org-keyword">as</span> it
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> poisbeta
+<span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> scmodes
+<span class="org-keyword">import</span> sqlite3
 </pre>
 </div>
 
@@ -830,11 +837,231 @@ trial             gene    n  llr   p
 </pre>
 </div>
 </div>
+<div id="outline-container-org8c5fc24" class="outline-3">
+<h3 id="org8c5fc24">Fitting kinetic models directly</h3>
+<div class="outline-text-3" id="text-org8c5fc24">
+<p>
+Instead of assuming variance of gene expression is driven by stochastic
+transcription and asking whether the variance changes after some
+perturbation, we could attempt to ask directly whether the underlying
+stochastic process changes. We previously identified 5 variance QTLs in
+iPSCs, but also found they were all mean QTLs.
+</p>
+
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">vqtls</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/variance.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">vqtls.sort_values(<span class="org-string">'p_beta'</span>).head(n=5)
+</pre>
+</div>
+
+<pre class="example">
+chr      start        end strand  num_vars  distance  \
+gene
+ENSG00000184674  chr22   24384681   24384680      -       477       0.0
+ENSG00000113558   chr5  133512730  133512729      -       673   -2801.0
+ENSG00000132507  chr17    7210319    7210318      +       496    5218.0
+ENSG00000148680  chr10   92617672   92617671      -       669   47915.0
+ENSG00000131469  chr17   41150291   41150290      +       515  -32887.0
+
+id var_chr    var_start      var_end  \
+gene
+ENSG00000184674   esv2669470.chr22.24343050   chr22   24343050.0   24397301.0
+ENSG00000113558   rs13356194.chr5.133515530    chr5  133515530.0  133515530.0
+ENSG00000132507     rs1054378.chr17.7215536   chr17    7215536.0    7215536.0
+ENSG00000148680  rs138704692.chr10.92569757   chr10   92569757.0   92569757.0
+ENSG00000131469   rs12947287.chr17.41117404   chr17   41117404.0   41117404.0
+
+df    dummy         a        b     p_nominal      beta  \
+gene
+ENSG00000184674  51.0  43.2504  1.033960  59.1680  4.192900e-11 -1.182590
+ENSG00000113558  51.0  39.5051  1.066360  37.1031  1.387570e-10 -0.796700
+ENSG00000132507  51.0  42.2941  1.069530  73.9335  7.525920e-10 -1.214550
+ENSG00000148680  51.0  42.9914  1.035830  43.6306  4.632030e-09 -1.044440
+ENSG00000131469  51.0  34.8434  0.902717  23.8075  8.796860e-11 -0.848284
+
+p_empirical        p_beta
+gene
+ENSG00000184674       0.0001  4.266760e-08
+ENSG00000113558       0.0001  2.371110e-07
+ENSG00000132507       0.0001  6.094700e-07
+ENSG00000148680       0.0001  2.088450e-06
+ENSG00000131469       0.0001  7.746900e-06
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">x.var.loc[<span class="org-string">'ENSG00000184674'</span>]
+</pre>
+</div>
+
+<pre class="example">
+chr             hs22
+start       24376133
+end         24384680
+name           GSTT1
+strand             -
+source    H. sapiens
+Name: ENSG00000184674, dtype: object
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> sqlite3.connect(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db'</span>) <span class="org-keyword">as</span> conn:
+  <span class="org-variable-name">geno</span> = pd.read_sql(<span class="org-string">'select * from mean_qtl_geno where gene = ?'</span>, con=conn, params=(<span class="org-string">'ENSG00000184674'</span>,)).set_index(<span class="org-string">'ind'</span>)[<span class="org-string">'value'</span>]
+</pre>
+</div>
+
+<p>
+Read the previously fitted point-Gamma distribution for each individual.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mu</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-mu.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+<span class="org-variable-name">log_phi</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-phi.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+<span class="org-variable-name">logodds</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-logodds.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+</pre>
+</div>
+
+<p>
+Plot the observed data and the fitted distributions.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = x.X.tocsc()[:,(x.var[<span class="org-string">'name'</span>] == <span class="org-string">'GSTT1'</span>).values].A.ravel()
+<span class="org-variable-name">lam</span> = query / x.obs[<span class="org-string">'mol_hs'</span>]
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+<span class="org-variable-name">k</span> = <span class="org-string">'ENSG00000184674'</span>
+
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(6, 4)
+<span class="org-variable-name">bins</span> = np.arange(query.<span class="org-builtin">max</span>() + 1)
+ax[0].hist(query, bins=bins, color=<span class="org-string">'k'</span>)
+ax[0].set_xlabel(<span class="org-string">'Number of molecules'</span>)
+ax[0].set_ylabel(<span class="org-string">'Number of cells'</span>)
+ax[0].set_title(x.var.loc[k, <span class="org-string">'name'</span>])
+ax[0].set_xticks(bins[::2])
+
+<span class="org-variable-name">grid</span> = np.linspace(0, lam.<span class="org-builtin">max</span>(), 1000)
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> log_mu.columns:
+  <span class="org-keyword">if</span> i <span class="org-keyword">in</span> geno.index:
+    <span class="org-variable-name">t</span> = log_mu.loc[k, i], log_phi.loc[k, i], logodds.loc[k, i]
+    <span class="org-variable-name">F</span> = st.gamma(a=np.exp(-t[1]), scale=np.exp(t[0] + t[1])).cdf(grid)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: we need to round the imputed dosages</span>
+    ax[1].plot(grid, F, lw=1, alpha=0.35, c=cm(<span class="org-builtin">int</span>(np.<span class="org-builtin">round</span>(geno.loc[i]))))
+<span class="org-variable-name">dummy</span> = [plt.Line2D([0], [0], c=cm(i)) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(3)]
+ax[1].legend(dummy, np.arange(3), title=vqtls.loc[k, <span class="org-string">'id'</span>].split(<span class="org-string">'.'</span>)[0], frameon=<span class="org-constant">False</span>)
+ax[1].set_xlabel(<span class="org-string">'Latent gene expression'</span>)
+ax[1].set_ylabel(<span class="org-string">'CDF'</span>)
+ax[1].set_xlim(0, 7e-5)
+
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/ipsc-gstt1.png" alt="ipsc-gstt1.png">
+</p>
+</div>
+
+<p>
+Estimate the posterior distribution of kinetic parameters for each individual.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">k_params</span> = <span class="org-builtin">dict</span>()
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> geno.index:
+  <span class="org-keyword">print</span>(f<span class="org-string">'Fitting individual {i}'</span>)
+  <span class="org-variable-name">keep</span> = (x.obs[<span class="org-string">'chip_id'</span>] == i).values.ravel()
+  <span class="org-variable-name">xg</span> = query[keep]
+  <span class="org-variable-name">sg</span> = x.obs[<span class="org-string">'mol_hs'</span>].values[keep]
+  <span class="org-variable-name">samples</span>, <span class="org-variable-name">_</span> = poisbeta.fit_poisson_beta_mcmc(xg, n_samples=1000, ar=1, br=xg.<span class="org-builtin">max</span>(), aon=1, bon=100, aoff=1, boff=100)
+  <span class="org-variable-name">k_params</span>[i] = samples
+</pre>
+</div>
+
+<p>
+Plot the 95% credible intervals for each parameter in each individual,
+against genotype.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(8, 3)
+<span class="org-variable-name">n</span> = geno.shape[0]
+<span class="org-keyword">for</span> j, (a, t) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>(ax, [<span class="org-string">'$\log\,k_r$'</span>, <span class="org-string">'$\log\,k_{\mathrm{on}}$'</span>, <span class="org-string">'$\log\,k_{\mathrm{off}}$'</span>])):
+  <span class="org-variable-name">y</span> = np.array([np.log(k_params[i][-800:,j]).mean() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> geno.index])
+  <span class="org-variable-name">ci</span> = np.array([np.percentile(np.log(k_params[i][-800:,j]), [2.5, 97.5]) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> geno.index]).T
+  ax[j].errorbar(x=geno.values + np.random.normal(scale=0.1, size=n),
+                 y=y,
+                 yerr=<span class="org-builtin">abs</span>(ci - y),
+                 fmt=<span class="org-string">'.'</span>,
+                 c=<span class="org-string">'k'</span>,
+                 ecolor=<span class="org-string">'0.7'</span>,
+                 elinewidth=1,
+                 ms=4,
+  )
+  ax[j].set_xlabel(<span class="org-string">'Imputed dosage'</span>)
+  ax[j].set_ylabel(t)
+  fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/ipsc-gstt1-params.png" alt="ipsc-gstt1-params.png">
+</p>
+</div>
+
+<p>
+Plot one of the joint posteriors.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">names</span> = [<span class="org-string">'$\log\,k_r$'</span>, <span class="org-string">'$\log\,k_{\mathrm{on}}$'</span>, <span class="org-string">'$\log\,k_{\mathrm{off}}$'</span>]
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(8, 3)
+<span class="org-keyword">for</span> (s, t), a <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(it.combinations(<span class="org-builtin">range</span>(3), 2), ax):
+  <span class="org-variable-name">x</span> = np.array([np.log(k_params[<span class="org-string">'NA19127'</span>][-800:,s]) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> geno.index])
+  <span class="org-variable-name">y</span> = np.array([np.log(k_params[<span class="org-string">'NA19127'</span>][-800:,t]) <span class="org-keyword">for</span> i <span class="org-keyword">in</span> geno.index])
+  a.hexbin(x=x, y=y, gridsize=15, cmap=colorcet.cm[<span class="org-string">'gray_r'</span>])
+  a.set_xlabel(names[s])
+  a.set_ylabel(names[t])
+  a.set_title(<span class="org-string">'NA19127'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/ipsc-gstt1-joint.png" alt="ipsc-gstt1-joint.png">
+</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-18 Tue 22:01</p>
+<p class="date">Created: 2020-02-24 Mon 19:54</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

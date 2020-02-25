@@ -63,13 +63,14 @@
   #+CALL: ipython3(venv="singlecell",partition="broadwl",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 66024502
+  : Submitted batch job 66053695
 
   #+BEGIN_SRC ipython
     import anndata
     import itertools as it
     import numpy as np
     import pandas as pd
+    import pickle
     import poisbeta
     import scipy.special as sp
     import scipy.stats as st
@@ -79,7 +80,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[72]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -515,7 +516,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -524,7 +525,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[6]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -676,6 +677,18 @@
    # Out[33]:
    :END:
 
+   Write out the samples.
+
+   #+BEGIN_SRC ipython
+     with open('/scratch/midway2/aksarkar/ideas/ipsc-gstt1-post.pkl', 'wb') as f:
+       pickle.dump(k_params, f)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[109]:
+   :END:
+
    Plot the 95% credible intervals for each parameter in each individual,
    against genotype.
 
@@ -715,17 +728,117 @@
      fig, ax = plt.subplots(1, 3)
      fig.set_size_inches(8, 3)
      for (s, t), a in zip(it.combinations(range(3), 2), ax):
-       x = np.array([np.log(k_params['NA19127'][-800:,s]) for i in geno.index])
-       y = np.array([np.log(k_params['NA19127'][-800:,t]) for i in geno.index])
+       x = np.array([np.log(k_params['NA18852'][-800:,s]) for i in geno.index])
+       y = np.array([np.log(k_params['NA18852'][-800:,t]) for i in geno.index])
        a.hexbin(x=x, y=y, gridsize=15, cmap=colorcet.cm['gray_r'])
        a.set_xlabel(names[s])
        a.set_ylabel(names[t])
-       a.set_title('NA19127')
+       a.set_title('NA18852')
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[100]:
+   # Out[106]:
    [[file:figure/diff-var.org/ipsc-gstt1-joint.png]]
+   :END:
+
+   Repeat the analysis for the rest of the vQTLs.
+
+   #+BEGIN_SRC ipython :async t
+     k = 'ENSG00000113558'
+     with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as conn:
+       geno = pd.read_sql('select * from mean_qtl_geno where gene = ?', con=conn, params=(k,)).set_index('ind')['value']
+     query = x.X.tocsc()[:,list(x.var.index).index(k)].A.ravel()
+     k_params = dict()
+     for i in geno.index:
+       print(f'Fitting individual {i}')
+       keep = (x.obs['chip_id'] == i).values.ravel()
+       xg = query[keep]
+       sg = x.obs['mol_hs'].values[keep]
+       samples, _ = poisbeta.fit_poisson_beta_mcmc(xg, n_samples=1000, ar=1, br=xg.max(), aon=1, bon=100, aoff=1, boff=100)
+       k_params[i] = samples
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-skp1.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(8, 3)
+     n = geno.shape[0]
+     for j, (a, t) in enumerate(zip(ax, ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$'])):
+       y = np.array([np.log(k_params[i][-800:,j]).mean() for i in geno.index])
+       ci = np.array([np.percentile(np.log(k_params[i][-800:,j]), [2.5, 97.5]) for i in geno.index]).T
+       ax[j].errorbar(x=geno.values + np.random.normal(scale=0.1, size=n),
+                      y=y,
+                      yerr=abs(ci - y),
+                      fmt='.',
+                      c='k',
+                      ecolor='0.7',
+                      elinewidth=1,
+                      ms=4,
+       )
+       ax[j].set_title(x.var.loc['ENSG00000113558', 'name'])
+       ax[j].set_xlabel('Imputed dosage')
+       ax[j].set_ylabel(t)
+       fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   [[file:figure/diff-var.org/ipsc-skp1.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     k = 'ENSG00000132507'
+     with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as conn:
+       geno = pd.read_sql('select * from mean_qtl_geno where gene = ?', con=conn, params=(k,)).set_index('ind')['value']
+     query = x.X.tocsc()[:,list(x.var.index).index(k)].A.ravel()
+     k_params = dict()
+     for i in geno.index:
+       print(f'Fitting individual {i}')
+       keep = (x.obs['chip_id'] == i).values.ravel()
+       xg = query[keep]
+       sg = x.obs['mol_hs'].values[keep]
+       samples, _ = poisbeta.fit_poisson_beta_mcmc(xg, n_samples=1000, ar=1, br=xg.max(), aon=1, bon=100, aoff=1, boff=100)
+       k_params[i] = samples
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-ENSG00000132507.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(8, 3)
+     n = geno.shape[0]
+     for j, (a, t) in enumerate(zip(ax, ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$'])):
+       y = np.array([np.log(k_params[i][-800:,j]).mean() for i in geno.index])
+       ci = np.array([np.percentile(np.log(k_params[i][-800:,j]), [2.5, 97.5]) for i in geno.index]).T
+       ax[j].errorbar(x=geno.values + np.random.normal(scale=0.1, size=n),
+                      y=y,
+                      yerr=abs(ci - y),
+                      fmt='.',
+                      c='k',
+                      ecolor='0.7',
+                      elinewidth=1,
+                      ms=4,
+       )
+       ax[j].set_title(x.var.loc[k, 'name'])
+       ax[j].set_xlabel('Imputed dosage')
+       ax[j].set_ylabel(t)
+       fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[9]:
+   [[file:figure/diff-var.org/ipsc-ENSG00000132507.png]]
    :END:

@@ -739,7 +739,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[106]:
+   # Out[10]:
    [[file:figure/diff-var.org/ipsc-gstt1-joint.png]]
    :END:
 

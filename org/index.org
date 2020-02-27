@@ -14,6 +14,7 @@ analysis plus some related topics.
 - [[file:mediation.org][Causal mediation analysis]]
 - [[file:montoro.org][Deconvolution of Montoro et al.]]
 - [[file:gom.org][Two-group grade of membership model]]
+- [[file:trajectory.org][Cardiac trajectory prediction]]
 - [[file:alignment.org][Single cell alignment]]
 - [[file:wlra.org][Weighted low rank approximation]]
 - [[file:susie.org][Multivariate fine mapping]]

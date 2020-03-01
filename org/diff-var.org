@@ -65,7 +65,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 66109578
+  : Submitted batch job 66148571
 
   #+BEGIN_SRC ipython
     import anndata
@@ -550,342 +550,342 @@
 *** iPSC data
 
     We previously identified 5 variance QTLs in iPSCs, but also found they were
-   all mean QTLs.
+    all mean QTLs.
 
-   Read the data.
+    Read the data.
 
-   #+BEGIN_SRC ipython :async t
-     x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
-   #+END_SRC
+    #+BEGIN_SRC ipython :async t
+      x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[5]:
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[4]:
+    :END:
 
-   #+BEGIN_SRC ipython
-     vqtls = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/variance.txt.gz', sep=' ', index_col=0)
-   #+END_SRC
+    #+BEGIN_SRC ipython
+      vqtls = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/variance.txt.gz', sep=' ', index_col=0)
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[6]:
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[6]:
+    :END:
 
-   #+BEGIN_SRC ipython
-     vqtls.sort_values('p_beta').head(n=5)
-   #+END_SRC
+    #+BEGIN_SRC ipython
+      vqtls.sort_values('p_beta').head(n=5)
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[101]:
-   #+BEGIN_EXAMPLE
-     chr      start        end strand  num_vars  distance  \
-     gene
-     ENSG00000184674  chr22   24384681   24384680      -       477       0.0
-     ENSG00000113558   chr5  133512730  133512729      -       673   -2801.0
-     ENSG00000132507  chr17    7210319    7210318      +       496    5218.0
-     ENSG00000148680  chr10   92617672   92617671      -       669   47915.0
-     ENSG00000131469  chr17   41150291   41150290      +       515  -32887.0
+    #+RESULTS:
+    :RESULTS:
+    # Out[101]:
+    #+BEGIN_EXAMPLE
+      chr      start        end strand  num_vars  distance  \
+      gene
+      ENSG00000184674  chr22   24384681   24384680      -       477       0.0
+      ENSG00000113558   chr5  133512730  133512729      -       673   -2801.0
+      ENSG00000132507  chr17    7210319    7210318      +       496    5218.0
+      ENSG00000148680  chr10   92617672   92617671      -       669   47915.0
+      ENSG00000131469  chr17   41150291   41150290      +       515  -32887.0
 
-     id var_chr    var_start      var_end  \
-     gene
-     ENSG00000184674   esv2669470.chr22.24343050   chr22   24343050.0   24397301.0
-     ENSG00000113558   rs13356194.chr5.133515530    chr5  133515530.0  133515530.0
-     ENSG00000132507     rs1054378.chr17.7215536   chr17    7215536.0    7215536.0
-     ENSG00000148680  rs138704692.chr10.92569757   chr10   92569757.0   92569757.0
-     ENSG00000131469   rs12947287.chr17.41117404   chr17   41117404.0   41117404.0
+      id var_chr    var_start      var_end  \
+      gene
+      ENSG00000184674   esv2669470.chr22.24343050   chr22   24343050.0   24397301.0
+      ENSG00000113558   rs13356194.chr5.133515530    chr5  133515530.0  133515530.0
+      ENSG00000132507     rs1054378.chr17.7215536   chr17    7215536.0    7215536.0
+      ENSG00000148680  rs138704692.chr10.92569757   chr10   92569757.0   92569757.0
+      ENSG00000131469   rs12947287.chr17.41117404   chr17   41117404.0   41117404.0
 
-     df    dummy         a        b     p_nominal      beta  \
-     gene
-     ENSG00000184674  51.0  43.2504  1.033960  59.1680  4.192900e-11 -1.182590
-     ENSG00000113558  51.0  39.5051  1.066360  37.1031  1.387570e-10 -0.796700
-     ENSG00000132507  51.0  42.2941  1.069530  73.9335  7.525920e-10 -1.214550
-     ENSG00000148680  51.0  42.9914  1.035830  43.6306  4.632030e-09 -1.044440
-     ENSG00000131469  51.0  34.8434  0.902717  23.8075  8.796860e-11 -0.848284
+      df    dummy         a        b     p_nominal      beta  \
+      gene
+      ENSG00000184674  51.0  43.2504  1.033960  59.1680  4.192900e-11 -1.182590
+      ENSG00000113558  51.0  39.5051  1.066360  37.1031  1.387570e-10 -0.796700
+      ENSG00000132507  51.0  42.2941  1.069530  73.9335  7.525920e-10 -1.214550
+      ENSG00000148680  51.0  42.9914  1.035830  43.6306  4.632030e-09 -1.044440
+      ENSG00000131469  51.0  34.8434  0.902717  23.8075  8.796860e-11 -0.848284
 
-     p_empirical        p_beta
-     gene
-     ENSG00000184674       0.0001  4.266760e-08
-     ENSG00000113558       0.0001  2.371110e-07
-     ENSG00000132507       0.0001  6.094700e-07
-     ENSG00000148680       0.0001  2.088450e-06
-     ENSG00000131469       0.0001  7.746900e-06
-   #+END_EXAMPLE
-   :END:
+      p_empirical        p_beta
+      gene
+      ENSG00000184674       0.0001  4.266760e-08
+      ENSG00000113558       0.0001  2.371110e-07
+      ENSG00000132507       0.0001  6.094700e-07
+      ENSG00000148680       0.0001  2.088450e-06
+      ENSG00000131469       0.0001  7.746900e-06
+    #+END_EXAMPLE
+    :END:
 
-   #+BEGIN_SRC ipython
-     x.var.loc['ENSG00000184674']
-   #+END_SRC
+    #+BEGIN_SRC ipython
+      x.var.loc['ENSG00000184674']
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[7]:
-   #+BEGIN_EXAMPLE
-     chr             hs22
-     start       24376133
-     end         24384680
-     name           GSTT1
-     strand             -
-     source    H. sapiens
-     Name: ENSG00000184674, dtype: object
-   #+END_EXAMPLE
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[7]:
+    #+BEGIN_EXAMPLE
+      chr             hs22
+      start       24376133
+      end         24384680
+      name           GSTT1
+      strand             -
+      source    H. sapiens
+      Name: ENSG00000184674, dtype: object
+    #+END_EXAMPLE
+    :END:
 
-   #+BEGIN_SRC ipython
-     with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as conn:
-       geno = pd.read_sql('select * from mean_qtl_geno where gene = ?', con=conn, params=('ENSG00000184674',)).set_index('ind')['value']
-   #+END_SRC
+    #+BEGIN_SRC ipython
+      with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as conn:
+        geno = pd.read_sql('select * from mean_qtl_geno where gene = ?', con=conn, params=('ENSG00000184674',)).set_index('ind')['value']
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[6]:
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[6]:
+    :END:
 
-   Read the previously fitted point-Gamma distribution for each individual.
+    Read the previously fitted point-Gamma distribution for each individual.
 
-   #+BEGIN_SRC ipython
-     log_mu = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-mu.txt.gz', sep=' ', index_col=0)
-     log_phi = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-phi.txt.gz', sep=' ', index_col=0)
-     logodds = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-logodds.txt.gz', sep=' ', index_col=0)
-   #+END_SRC
+    #+BEGIN_SRC ipython
+      log_mu = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-mu.txt.gz', sep=' ', index_col=0)
+      log_phi = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-phi.txt.gz', sep=' ', index_col=0)
+      logodds = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-logodds.txt.gz', sep=' ', index_col=0)
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[7]:
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[7]:
+    :END:
 
-   Plot the observed data and the fitted distributions.
+    Plot the observed data and the fitted distributions.
 
-   #+BEGIN_SRC ipython :async t
-     query = x.X.tocsc()[:,(x.var['name'] == 'GSTT1').values].A.ravel()
-     lam = query / x.obs['mol_hs']
-   #+END_SRC
+    #+BEGIN_SRC ipython :async t
+      query = x.X.tocsc()[:,(x.var['name'] == 'GSTT1').values].A.ravel()
+      lam = query / x.obs['mol_hs']
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[8]:
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[8]:
+    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-gstt1.png
-     cm = plt.get_cmap('Dark2')
-     k = 'ENSG00000184674'
+    #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-gstt1.png
+      cm = plt.get_cmap('Dark2')
+      k = 'ENSG00000184674'
 
-     plt.clf()
-     fig, ax = plt.subplots(2, 1)
-     fig.set_size_inches(6, 4)
-     bins = np.arange(query.max() + 1)
-     ax[0].hist(query, bins=bins, color='k')
-     ax[0].set_xlabel('Number of molecules')
-     ax[0].set_ylabel('Number of cells')
-     ax[0].set_title(x.var.loc[k, 'name'])
-     ax[0].set_xticks(bins[::2])
+      plt.clf()
+      fig, ax = plt.subplots(2, 1)
+      fig.set_size_inches(6, 4)
+      bins = np.arange(query.max() + 1)
+      ax[0].hist(query, bins=bins, color='k')
+      ax[0].set_xlabel('Number of molecules')
+      ax[0].set_ylabel('Number of cells')
+      ax[0].set_title(x.var.loc[k, 'name'])
+      ax[0].set_xticks(bins[::2])
 
-     grid = np.linspace(0, lam.max(), 1000)
-     for i in log_mu.columns:
-       if i in geno.index:
-         t = log_mu.loc[k, i], log_phi.loc[k, i], logodds.loc[k, i]
-         F = st.gamma(a=np.exp(-t[1]), scale=np.exp(t[0] + t[1])).cdf(grid)
-         # Important: we need to round the imputed dosages
-         ax[1].plot(grid, F, lw=1, alpha=0.35, c=cm(int(np.round(geno.loc[i]))))
-     dummy = [plt.Line2D([0], [0], c=cm(i)) for i in range(3)]
-     ax[1].legend(dummy, np.arange(3), title=vqtls.loc[k, 'id'].split('.')[0], frameon=False)
-     ax[1].set_xlabel('Latent gene expression')
-     ax[1].set_ylabel('CDF')
-     ax[1].set_xlim(0, 7e-5)
+      grid = np.linspace(0, lam.max(), 1000)
+      for i in log_mu.columns:
+        if i in geno.index:
+          t = log_mu.loc[k, i], log_phi.loc[k, i], logodds.loc[k, i]
+          F = st.gamma(a=np.exp(-t[1]), scale=np.exp(t[0] + t[1])).cdf(grid)
+          # Important: we need to round the imputed dosages
+          ax[1].plot(grid, F, lw=1, alpha=0.35, c=cm(int(np.round(geno.loc[i]))))
+      dummy = [plt.Line2D([0], [0], c=cm(i)) for i in range(3)]
+      ax[1].legend(dummy, np.arange(3), title=vqtls.loc[k, 'id'].split('.')[0], frameon=False)
+      ax[1].set_xlabel('Latent gene expression')
+      ax[1].set_ylabel('CDF')
+      ax[1].set_xlim(0, 7e-5)
 
-     fig.tight_layout()
-   #+END_SRC
+      fig.tight_layout()
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[91]:
-   [[file:figure/diff-var.org/ipsc-gstt1.png]]
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[91]:
+    [[file:figure/diff-var.org/ipsc-gstt1.png]]
+    :END:
 
-   Estimate the posterior distribution of kinetic parameters for each individual.
+    Estimate the posterior distribution of kinetic parameters for each individual.
 
-   #+BEGIN_SRC ipython :async t
-     k_params = dict()
-     for i in geno.index:
-       print(f'Fitting individual {i}')
-       keep = (x.obs['chip_id'] == i).values.ravel()
-       xg = query[keep]
-       sg = x.obs['mol_hs'].values[keep]
-       samples, _ = poisbeta.fit_poisson_beta_mcmc(xg, n_samples=1000, ar=1, br=xg.max(), aon=1, bon=100, aoff=1, boff=100)
-       k_params[i] = samples
-   #+END_SRC
+    #+BEGIN_SRC ipython :async t
+      k_params = dict()
+      for i in geno.index:
+        print(f'Fitting individual {i}')
+        keep = (x.obs['chip_id'] == i).values.ravel()
+        xg = query[keep]
+        sg = x.obs['mol_hs'].values[keep]
+        samples, _ = poisbeta.fit_poisson_beta_mcmc(xg, n_samples=1000, ar=1, br=xg.max(), aon=1, bon=100, aoff=1, boff=100)
+        k_params[i] = samples
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[33]:
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[33]:
+    :END:
 
-   Write out the samples.
+    Write out the samples.
 
-   #+BEGIN_SRC ipython
-     with open('/scratch/midway2/aksarkar/ideas/ipsc-gstt1-post.pkl', 'wb') as f:
-       pickle.dump(k_params, f)
-   #+END_SRC
+    #+BEGIN_SRC ipython
+      with open('/scratch/midway2/aksarkar/ideas/ipsc-gstt1-post.pkl', 'wb') as f:
+        pickle.dump(k_params, f)
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[109]:
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[109]:
+    :END:
 
-   Plot the 95% credible intervals for each parameter in each individual,
-   against genotype.
+    Plot the 95% credible intervals for each parameter in each individual,
+    against genotype.
 
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-gstt1-params.png
-     plt.clf()
-     fig, ax = plt.subplots(1, 3)
-     fig.set_size_inches(8, 3)
-     n = geno.shape[0]
-     for j, (a, t) in enumerate(zip(ax, ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$'])):
-       y = np.array([np.log(k_params[i][-800:,j]).mean() for i in geno.index])
-       ci = np.array([np.percentile(np.log(k_params[i][-800:,j]), [2.5, 97.5]) for i in geno.index]).T
-       ax[j].errorbar(x=geno.values + np.random.normal(scale=0.1, size=n),
-                      y=y,
-                      yerr=abs(ci - y),
-                      fmt='.',
-                      c='k',
-                      ecolor='0.7',
-                      elinewidth=1,
-                      ms=4,
-       )
-       ax[j].set_xlabel('Imputed dosage')
-       ax[j].set_ylabel(t)
-       fig.tight_layout()
-   #+END_SRC
+    #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-gstt1-params.png
+      plt.clf()
+      fig, ax = plt.subplots(1, 3)
+      fig.set_size_inches(8, 3)
+      n = geno.shape[0]
+      for j, (a, t) in enumerate(zip(ax, ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$'])):
+        y = np.array([np.log(k_params[i][-800:,j]).mean() for i in geno.index])
+        ci = np.array([np.percentile(np.log(k_params[i][-800:,j]), [2.5, 97.5]) for i in geno.index]).T
+        ax[j].errorbar(x=geno.values + np.random.normal(scale=0.1, size=n),
+                       y=y,
+                       yerr=abs(ci - y),
+                       fmt='.',
+                       c='k',
+                       ecolor='0.7',
+                       elinewidth=1,
+                       ms=4,
+        )
+        ax[j].set_xlabel('Imputed dosage')
+        ax[j].set_ylabel(t)
+        fig.tight_layout()
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[71]:
-   [[file:figure/diff-var.org/ipsc-gstt1-params.png]]
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[71]:
+    [[file:figure/diff-var.org/ipsc-gstt1-params.png]]
+    :END:
 
-   Plot one of the joint posteriors.
+    Plot one of the joint posteriors.
 
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-gstt1-joint.png
-     names = ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$']
-     plt.clf()
-     fig, ax = plt.subplots(1, 3)
-     fig.set_size_inches(8, 3)
-     for (s, t), a in zip(it.combinations(range(3), 2), ax):
-       x = np.array([np.log(k_params['NA18852'][-800:,s]) for i in geno.index])
-       y = np.array([np.log(k_params['NA18852'][-800:,t]) for i in geno.index])
-       a.hexbin(x=x, y=y, gridsize=15, cmap=colorcet.cm['gray_r'])
-       a.set_xlabel(names[s])
-       a.set_ylabel(names[t])
-       a.set_title('NA18852')
-     fig.tight_layout()
-   #+END_SRC
+    #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-gstt1-joint.png
+      names = ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$']
+      plt.clf()
+      fig, ax = plt.subplots(1, 3)
+      fig.set_size_inches(8, 3)
+      for (s, t), a in zip(it.combinations(range(3), 2), ax):
+        x = np.array([np.log(k_params['NA18852'][-800:,s]) for i in geno.index])
+        y = np.array([np.log(k_params['NA18852'][-800:,t]) for i in geno.index])
+        a.hexbin(x=x, y=y, gridsize=15, cmap=colorcet.cm['gray_r'])
+        a.set_xlabel(names[s])
+        a.set_ylabel(names[t])
+        a.set_title('NA18852')
+      fig.tight_layout()
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[10]:
-   [[file:figure/diff-var.org/ipsc-gstt1-joint.png]]
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[10]:
+    [[file:figure/diff-var.org/ipsc-gstt1-joint.png]]
+    :END:
 
-   Repeat the analysis for the rest of the vQTLs.
+    Repeat the analysis for the rest of the vQTLs.
 
-   #+BEGIN_SRC ipython :async t
-     k = 'ENSG00000113558'
-     with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as conn:
-       geno = pd.read_sql('select * from mean_qtl_geno where gene = ?', con=conn, params=(k,)).set_index('ind')['value']
-     query = x.X.tocsc()[:,list(x.var.index).index(k)].A.ravel()
-     k_params = dict()
-     for i in geno.index:
-       print(f'Fitting individual {i}')
-       keep = (x.obs['chip_id'] == i).values.ravel()
-       xg = query[keep]
-       sg = x.obs['mol_hs'].values[keep]
-       samples, _ = poisbeta.fit_poisson_beta_mcmc(xg, n_samples=1000, ar=1, br=xg.max(), aon=1, bon=100, aoff=1, boff=100)
-       k_params[i] = samples
-   #+END_SRC
+    #+BEGIN_SRC ipython :async t
+      k = 'ENSG00000113558'
+      with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as conn:
+        geno = pd.read_sql('select * from mean_qtl_geno where gene = ?', con=conn, params=(k,)).set_index('ind')['value']
+      query = x.X.tocsc()[:,list(x.var.index).index(k)].A.ravel()
+      k_params = dict()
+      for i in geno.index:
+        print(f'Fitting individual {i}')
+        keep = (x.obs['chip_id'] == i).values.ravel()
+        xg = query[keep]
+        sg = x.obs['mol_hs'].values[keep]
+        samples, _ = poisbeta.fit_poisson_beta_mcmc(xg, n_samples=1000, ar=1, br=xg.max(), aon=1, bon=100, aoff=1, boff=100)
+        k_params[i] = samples
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[6]:
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[6]:
+    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-skp1.png
-     plt.clf()
-     fig, ax = plt.subplots(1, 3)
-     fig.set_size_inches(8, 3)
-     n = geno.shape[0]
-     for j, (a, t) in enumerate(zip(ax, ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$'])):
-       y = np.array([np.log(k_params[i][-800:,j]).mean() for i in geno.index])
-       ci = np.array([np.percentile(np.log(k_params[i][-800:,j]), [2.5, 97.5]) for i in geno.index]).T
-       ax[j].errorbar(x=geno.values + np.random.normal(scale=0.1, size=n),
-                      y=y,
-                      yerr=abs(ci - y),
-                      fmt='.',
-                      c='k',
-                      ecolor='0.7',
-                      elinewidth=1,
-                      ms=4,
-       )
-       ax[j].set_title(x.var.loc['ENSG00000113558', 'name'])
-       ax[j].set_xlabel('Imputed dosage')
-       ax[j].set_ylabel(t)
-       fig.tight_layout()
-   #+END_SRC
+    #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-skp1.png
+      plt.clf()
+      fig, ax = plt.subplots(1, 3)
+      fig.set_size_inches(8, 3)
+      n = geno.shape[0]
+      for j, (a, t) in enumerate(zip(ax, ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$'])):
+        y = np.array([np.log(k_params[i][-800:,j]).mean() for i in geno.index])
+        ci = np.array([np.percentile(np.log(k_params[i][-800:,j]), [2.5, 97.5]) for i in geno.index]).T
+        ax[j].errorbar(x=geno.values + np.random.normal(scale=0.1, size=n),
+                       y=y,
+                       yerr=abs(ci - y),
+                       fmt='.',
+                       c='k',
+                       ecolor='0.7',
+                       elinewidth=1,
+                       ms=4,
+        )
+        ax[j].set_title(x.var.loc['ENSG00000113558', 'name'])
+        ax[j].set_xlabel('Imputed dosage')
+        ax[j].set_ylabel(t)
+        fig.tight_layout()
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[7]:
-   [[file:figure/diff-var.org/ipsc-skp1.png]]
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[7]:
+    [[file:figure/diff-var.org/ipsc-skp1.png]]
+    :END:
 
-   #+BEGIN_SRC ipython :async t
-     k = 'ENSG00000132507'
-     with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as conn:
-       geno = pd.read_sql('select * from mean_qtl_geno where gene = ?', con=conn, params=(k,)).set_index('ind')['value']
-     query = x.X.tocsc()[:,list(x.var.index).index(k)].A.ravel()
-     k_params = dict()
-     for i in geno.index:
-       print(f'Fitting individual {i}')
-       keep = (x.obs['chip_id'] == i).values.ravel()
-       xg = query[keep]
-       sg = x.obs['mol_hs'].values[keep]
-       samples, _ = poisbeta.fit_poisson_beta_mcmc(xg, n_samples=1000, ar=1, br=xg.max(), aon=1, bon=100, aoff=1, boff=100)
-       k_params[i] = samples
-   #+END_SRC
+    #+BEGIN_SRC ipython :async t
+      k = 'ENSG00000132507'
+      with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as conn:
+        geno = pd.read_sql('select * from mean_qtl_geno where gene = ?', con=conn, params=(k,)).set_index('ind')['value']
+      query = x.X.tocsc()[:,list(x.var.index).index(k)].A.ravel()
+      k_params = dict()
+      for i in geno.index:
+        print(f'Fitting individual {i}')
+        keep = (x.obs['chip_id'] == i).values.ravel()
+        xg = query[keep]
+        sg = x.obs['mol_hs'].values[keep]
+        samples, _ = poisbeta.fit_poisson_beta_mcmc(xg, n_samples=1000, ar=1, br=xg.max(), aon=1, bon=100, aoff=1, boff=100)
+        k_params[i] = samples
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[8]:
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[8]:
+    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-ENSG00000132507.png
-     plt.clf()
-     fig, ax = plt.subplots(1, 3)
-     fig.set_size_inches(8, 3)
-     n = geno.shape[0]
-     for j, (a, t) in enumerate(zip(ax, ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$'])):
-       y = np.array([np.log(k_params[i][-800:,j]).mean() for i in geno.index])
-       ci = np.array([np.percentile(np.log(k_params[i][-800:,j]), [2.5, 97.5]) for i in geno.index]).T
-       ax[j].errorbar(x=geno.values + np.random.normal(scale=0.1, size=n),
-                      y=y,
-                      yerr=abs(ci - y),
-                      fmt='.',
-                      c='k',
-                      ecolor='0.7',
-                      elinewidth=1,
-                      ms=4,
-       )
-       ax[j].set_title(x.var.loc[k, 'name'])
-       ax[j].set_xlabel('Imputed dosage')
-       ax[j].set_ylabel(t)
-       fig.tight_layout()
-   #+END_SRC
+    #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-ENSG00000132507.png
+      plt.clf()
+      fig, ax = plt.subplots(1, 3)
+      fig.set_size_inches(8, 3)
+      n = geno.shape[0]
+      for j, (a, t) in enumerate(zip(ax, ['$\log\,k_r$', '$\log\,k_{\mathrm{on}}$', '$\log\,k_{\mathrm{off}}$'])):
+        y = np.array([np.log(k_params[i][-800:,j]).mean() for i in geno.index])
+        ci = np.array([np.percentile(np.log(k_params[i][-800:,j]), [2.5, 97.5]) for i in geno.index]).T
+        ax[j].errorbar(x=geno.values + np.random.normal(scale=0.1, size=n),
+                       y=y,
+                       yerr=abs(ci - y),
+                       fmt='.',
+                       c='k',
+                       ecolor='0.7',
+                       elinewidth=1,
+                       ms=4,
+        )
+        ax[j].set_title(x.var.loc[k, 'name'])
+        ax[j].set_xlabel('Imputed dosage')
+        ax[j].set_ylabel(t)
+        fig.tight_layout()
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[9]:
-   [[file:figure/diff-var.org/ipsc-ENSG00000132507.png]]
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[9]:
+    [[file:figure/diff-var.org/ipsc-ENSG00000132507.png]]
+    :END:
 
 *** iPSC-CM time course data
 
@@ -910,26 +910,27 @@
     :END:
 
     #+BEGIN_SRC ipython
-      x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/czi-ipsc-cm.h5ad')
-    #+END_SRC
-
-    #+RESULTS:
-    :RESULTS:
-    # Out[4]:
-    :END:
-    
-    #+BEGIN_SRC ipython
       y = x[x.obs['ind'] == 'Rep1']
       sc.pp.filter_genes(y, min_counts=.01 * y.shape[0])
+      y.var = y.var.reset_index(drop=True)
       y.shape
+      y.write('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/czi-ipsc-cm-rep1.h5ad')
     #+END_SRC
 
     #+RESULTS:
     :RESULTS:
-    # Out[5]:
-    : (10914, 11460)
+    # Out[17]:
     :END:
 
+    #+BEGIN_SRC ipython
+      y = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/czi-ipsc-cm-rep1.h5ad')
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[6]:
+    :END:
+    
     Fit a fully unsupervised NMF model to achieve two goals:
 
     1. Merge cells across time points which are in the same cell state
@@ -1074,27 +1075,48 @@
 
     #+RESULTS:
     :RESULTS:
-    # Out[4]:
+    # Out[27]:
     :END:
 
     Look at the trajectories of dispersion over time.
 
     #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-cm-log-phi.png
       plt.clf()
-      plt.gcf().set_size_inches(3, 6)
+      plt.gcf().set_size_inches(3, 3)
       for k, z in res.loc(axis=1)[:,'neg_log_phi'].iterrows():
         if z.mean() > -10:
-          plt.plot(z.values.ravel(), c='k', lw=1, alpha=0.25)
+          plt.plot(z.values.ravel(), c='k', lw=1, alpha=0.1)
       plt.xlabel('Day')
       plt.xticks(np.arange(4), [0, 1, 3, 7])
-      plt.ylabel('$-\log\phi$')
+      plt.ylabel('$-\log\ \phi$')
       plt.tight_layout()
     #+END_SRC
 
     #+RESULTS:
     :RESULTS:
-    # Out[9]:
+    # Out[49]:
     [[file:figure/diff-var.org/ipsc-cm-log-phi.png]]
+    :END:
+
+    Look at the trajectories of variance over time.
+
+    #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-cm-var.png
+      plt.clf()
+      plt.gcf().set_size_inches(3, 3)
+      for k, z in res.iterrows():
+        var = np.exp(2 * z.loc[:,'log_mu'] - z.loc[:,'neg_log_phi'])
+        if np.median(var) > 1e-6:
+          plt.plot(var.values.ravel(), c='k', lw=1, alpha=0.25)
+      plt.xlabel('Day')
+      plt.xticks(np.arange(4), [0, 1, 3, 7])
+      plt.ylabel('Variance of latent gene expression')
+      plt.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[50]:
+    [[file:figure/diff-var.org/ipsc-cm-var.png]]
     :END:
 
     Extract some interesting examples.
@@ -1178,6 +1200,8 @@
     [[file:figure/diff-var.org/ipsc-cm-NDUFAB1.png]]
     :END:
 
+    Look at examples with the opposite trajectory.
+
     #+BEGIN_SRC ipython
       res[np.logical_and(res.loc(axis=1)['0', 'neg_log_phi'] > 8, res.loc(axis=1)['1', 'neg_log_phi'] < 4)].head()
     #+END_SRC
@@ -1218,9 +1242,8 @@
       fig, ax = plt.subplots(2, 1)
       fig.set_size_inches(5, 4)
 
-      idx = 5851
       days = [0, 1, 3, 7]
-      query = y.X[:,idx].A.ravel()
+      query = y.X[:,(y.var['name'] == 'PRCP').values].A.ravel()
       bins = np.arange(query.max() + 1)
       for i, k in enumerate(days):
         ax[0].hist(query[y.obs['day'] == k], bins=bins, color=f'C{i}', alpha=0.5)
@@ -1257,17 +1280,133 @@
       for k in [0, 1, 3, 7]:
         print(f'Fitting day {k}')
         query = y.X[:,idx].A.ravel()
-        samples, trace = poisbeta.fit_poisson_beta_mcmc(query, n_samples=1000, ar=1, br=query.max(), aon=1, bon=100, aoff=1, boff=100)
+        # Default hyperparameters follow Kim & Marioni 2013
+        samples, trace = poisbeta.fit_poisson_beta_mcmc(query, n_samples=1000)
         k_params[k] = samples
         traces[k] = trace
-      with open('/scratch/midway2/aksarkar/ideas/ipsc-cm-mcmc.pkl', 'wb') as f:
-        pickle.save((k_params, traces), f)
     #+END_SRC
 
     #+RESULTS:
     :RESULTS:
-    # Out[7]:
     :END:
 
     #+BEGIN_SRC ipython
+      with open('/scratch/midway2/aksarkar/ideas/ipsc-cm-mcmc.pkl', 'wb') as f:
+        pickle.dump((k_params, traces), f)
     #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[8]:
+    :END:
+
+    #+BEGIN_SRC ipython
+      with open('/scratch/midway2/aksarkar/ideas/ipsc-cm-mcmc.pkl', 'rb') as f:
+        k_params, traces = pickle.load(f)
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[8]:
+    :END:
+
+    #+BEGIN_SRC ipython
+      mcmc_res = pd.concat({k: pd.DataFrame(k_params[k], columns=['log_k_r', 'log_k_on', 'log_k_koff']) for k in k_params}, axis='columns')
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[9]:
+    :END:
+
+    #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-cm-post.png
+      plt.clf()
+      fig, ax = plt.subplots(1, 3)
+      fig.set_size_inches(7, 3)
+      for a, k, t in zip(ax, ['log_k_r', 'log_k_on', 'log_k_koff'], ['$\log\ k_r$', '$\log\ k_{\mathrm{on}}$', '$\log\ k_{\mathrm{off}}$']):
+        samples = mcmc_res.loc(axis=1)[:,k][-800:]
+        pm = samples.mean()
+        a.errorbar(x=np.arange(4),
+                   y=pm,
+                   yerr=abs(np.percentile(samples, [2.5, 97.5], axis=0) - pm.values.reshape(1, -1)),
+                   fmt='.',
+                   c='k',
+                   ecolor='0.7',
+                   elinewidth=1,
+                   ms=4,)
+        a.set_xlabel('Day')
+        a.set_xticks(np.arange(4))
+        a.set_xticklabels([0, 1, 3, 7])
+        a.set_ylabel(t)
+        a.set_title(y.var.loc[str(idx), 'name'])
+      fig.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[35]:
+    [[file:figure/diff-var.org/ipsc-cm-post.png]]
+    :END:
+
+    Look at the most variable gene.
+
+    #+BEGIN_SRC ipython
+      order = np.argsort(-np.median(np.exp(2 * res.loc(axis=1)[:,'log_mu'].values - res.loc(axis=1)[:,'neg_log_phi'].values), axis=1))[:10]
+      y.var.loc[order]
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[28]:
+    #+BEGIN_EXAMPLE
+      name  n_counts
+      10227   MALAT1   53633.0
+      3178    EXOSC8    5236.0
+      8226    RPL35A   36692.0
+      8929    RPL37A   29614.0
+      9331   MT-ND4L   12695.0
+      8645    COMMD6    6545.0
+      2993     RPS25   11410.0
+      10449   MRPS21    9434.0
+      7942     DDX10    1003.0
+      2640   SELENOK    2380.0
+    #+END_EXAMPLE
+    :END:
+
+    #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/ipsc-cm-COMMD6.png
+      plt.set_cmap('Dark2')
+      plt.clf()
+      fig, ax = plt.subplots(2, 1)
+      fig.set_size_inches(5, 4)
+
+      idx = 10227
+      days = [0, 1, 3, 7]
+      query = y.X[:,idx].A.ravel()
+      bins = np.arange(query.max() + 1)
+      for i, k in enumerate(days):
+        h, e = np.histogram(query[y.obs['day'] == k], bins=bins)
+        ax[0].plot(bins[:-1] + 0.5, h, color=f'C{i}', lw=1)
+      ax[0].set_xlabel('Number of molecules')
+      ax[0].set_ylabel('Number of cells')
+      ax[0].set_title(y.var.iloc[idx]['name'])
+
+      lam = query / y.X.sum(axis=1).A.ravel()
+      grid = np.linspace(lam.min(), lam.max(), 1000)
+      for i, k in enumerate([str(d) for d in days]):
+        log_mu = res.loc[idx, (k, 'log_mu')]
+        neg_log_phi = res.loc[idx, (k, 'neg_log_phi')]
+        logodds = res.loc[idx, (k, 'logodds')]
+        F = st.gamma(a=np.exp(neg_log_phi), scale=np.exp(log_mu - neg_log_phi)).cdf(grid)
+        F = sp.expit(logodds) + sp.expit(-logodds) * F
+        ax[1].plot(grid, F, lw=1, color=f'C{i}', label=f'Day {k}')
+      ax[1].legend(frameon=False)
+      ax[1].set_xlabel('Latent gene expression')
+      ax[1].set_ylabel('CDF')
+      fig.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[73]:
+    [[file:figure/diff-var.org/ipsc-cm-COMMD6.png]]
+    :END:

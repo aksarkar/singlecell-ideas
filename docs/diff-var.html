@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-27 Thu 13:48 -->
+<!-- 2020-02-29 Sat 20:09 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -336,7 +336,7 @@ expression variance <i>independent</i> of altering mean gene expression.
 <h2 id="setup"><a id="org07ce98a"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <pre class="example">
-Submitted batch job 66109578
+Submitted batch job 66148571
 
 </pre>
 
@@ -898,7 +898,7 @@ stochastic process changes.
 <h4 id="org702bb0f">iPSC data</h4>
 <div class="outline-text-4" id="text-org702bb0f">
 <p>
- We previously identified 5 variance QTLs in iPSCs, but also found they were
+We previously identified 5 variance QTLs in iPSCs, but also found they were
 all mean QTLs.
 </p>
 
@@ -1240,21 +1240,18 @@ x.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlece
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/czi-ipsc-cm.h5ad'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = x[x.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>]
+sc.pp.filter_genes(y, min_counts=.01 * y.shape[0])
+<span class="org-variable-name">y.var</span> = y.var.reset_index(drop=<span class="org-constant">True</span>)
+y.shape
+y.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/czi-ipsc-cm-rep1.h5ad'</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">y</span> = x[x.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>]
-sc.pp.filter_genes(y, min_counts=.01 * y.shape[0])
-y.shape
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/czi-ipsc-cm-rep1.h5ad'</span>)
 </pre>
 </div>
-
-<pre class="example">
-(10914, 11460)
-
-</pre>
 
 <p>
 Fit a fully unsupervised NMF model to achieve two goals:
@@ -1399,13 +1396,13 @@ Look at the trajectories of dispersion over time.
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
-plt.gcf().set_size_inches(3, 6)
+plt.gcf().set_size_inches(3, 3)
 <span class="org-keyword">for</span> k, z <span class="org-keyword">in</span> res.loc(axis=1)[:,<span class="org-string">'neg_log_phi'</span>].iterrows():
   <span class="org-keyword">if</span> z.mean() &gt; -10:
-    plt.plot(z.values.ravel(), c=<span class="org-string">'k'</span>, lw=1, alpha=0.25)
+    plt.plot(z.values.ravel(), c=<span class="org-string">'k'</span>, lw=1, alpha=0.1)
 plt.xlabel(<span class="org-string">'Day'</span>)
 plt.xticks(np.arange(4), [0, 1, 3, 7])
-plt.ylabel(<span class="org-string">'$-\log\phi$'</span>)
+plt.ylabel(<span class="org-string">'$-\log\ \phi$'</span>)
 plt.tight_layout()
 </pre>
 </div>
@@ -1413,6 +1410,30 @@ plt.tight_layout()
 
 <div class="figure">
 <p><img src="figure/diff-var.org/ipsc-cm-log-phi.png" alt="ipsc-cm-log-phi.png">
+</p>
+</div>
+
+<p>
+Look at the trajectories of variance over time.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-keyword">for</span> k, z <span class="org-keyword">in</span> res.iterrows():
+  <span class="org-variable-name">var</span> = np.exp(2 * z.loc[:,<span class="org-string">'log_mu'</span>] - z.loc[:,<span class="org-string">'neg_log_phi'</span>])
+  <span class="org-keyword">if</span> np.median(var) &gt; 1e-6:
+    plt.plot(var.values.ravel(), c=<span class="org-string">'k'</span>, lw=1, alpha=0.25)
+plt.xlabel(<span class="org-string">'Day'</span>)
+plt.xticks(np.arange(4), [0, 1, 3, 7])
+plt.ylabel(<span class="org-string">'Variance of latent gene expression'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/ipsc-cm-var.png" alt="ipsc-cm-var.png">
 </p>
 </div>
 
@@ -1498,6 +1519,10 @@ fig.tight_layout()
 </p>
 </div>
 
+<p>
+Look at examples with the opposite trajectory.
+</p>
+
 <div class="org-src-container">
 <pre class="src src-ipython">res[np.logical_and(res.loc(axis=1)[<span class="org-string">'0'</span>, <span class="org-string">'neg_log_phi'</span>] &gt; 8, res.loc(axis=1)[<span class="org-string">'1'</span>, <span class="org-string">'neg_log_phi'</span>] &lt; 4)].head()
 </pre>
@@ -1532,9 +1557,8 @@ plt.clf()
 <span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
 fig.set_size_inches(5, 4)
 
-<span class="org-variable-name">idx</span> = 5851
 <span class="org-variable-name">days</span> = [0, 1, 3, 7]
-<span class="org-variable-name">query</span> = y.X[:,idx].A.ravel()
+<span class="org-variable-name">query</span> = y.X[:,(y.var[<span class="org-string">'name'</span>] == <span class="org-string">'PRCP'</span>).values].A.ravel()
 <span class="org-variable-name">bins</span> = np.arange(query.<span class="org-builtin">max</span>() + 1)
 <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(days):
   ax[0].hist(query[y.obs[<span class="org-string">'day'</span>] == k], bins=bins, color=f<span class="org-string">'C{i}'</span>, alpha=0.5)
@@ -1574,17 +1598,121 @@ Fit kinetic models for <i>PRCP</i> gene expression at each time point.
 <span class="org-keyword">for</span> k <span class="org-keyword">in</span> [0, 1, 3, 7]:
   <span class="org-keyword">print</span>(f<span class="org-string">'Fitting day {k}'</span>)
   <span class="org-variable-name">query</span> = y.X[:,idx].A.ravel()
-  <span class="org-variable-name">samples</span>, <span class="org-variable-name">trace</span> = poisbeta.fit_poisson_beta_mcmc(query, n_samples=1000, ar=1, br=query.<span class="org-builtin">max</span>(), aon=1, bon=100, aoff=1, boff=100)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Default hyperparameters follow Kim &amp; Marioni 2013</span>
+  <span class="org-variable-name">samples</span>, <span class="org-variable-name">trace</span> = poisbeta.fit_poisson_beta_mcmc(query, n_samples=1000)
   <span class="org-variable-name">k_params</span>[k] = samples
   <span class="org-variable-name">traces</span>[k] = trace
-<span class="org-keyword">with</span> <span class="org-builtin">open</span>(<span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-cm-mcmc.pkl'</span>, <span class="org-string">'wb'</span>) <span class="org-keyword">as</span> f:
-  pickle.save((k_params, traces), f)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython">
+<pre class="src src-ipython"><span class="org-keyword">with</span> <span class="org-builtin">open</span>(<span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-cm-mcmc.pkl'</span>, <span class="org-string">'wb'</span>) <span class="org-keyword">as</span> f:
+  pickle.dump((k_params, traces), f)
 </pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> <span class="org-builtin">open</span>(<span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-cm-mcmc.pkl'</span>, <span class="org-string">'rb'</span>) <span class="org-keyword">as</span> f:
+  <span class="org-variable-name">k_params</span>, <span class="org-variable-name">traces</span> = pickle.load(f)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mcmc_res</span> = pd.concat({k: pd.DataFrame(k_params[k], columns=[<span class="org-string">'log_k_r'</span>, <span class="org-string">'log_k_on'</span>, <span class="org-string">'log_k_koff'</span>]) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> k_params}, axis=<span class="org-string">'columns'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(7, 3)
+<span class="org-keyword">for</span> a, k, t <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'log_k_r'</span>, <span class="org-string">'log_k_on'</span>, <span class="org-string">'log_k_koff'</span>], [<span class="org-string">'$\log\ k_r$'</span>, <span class="org-string">'$\log\ k_{\mathrm{on}}$'</span>, <span class="org-string">'$\log\ k_{\mathrm{off}}$'</span>]):
+  <span class="org-variable-name">samples</span> = mcmc_res.loc(axis=1)[:,k][-800:]
+  <span class="org-variable-name">pm</span> = samples.mean()
+  a.errorbar(x=np.arange(4),
+             y=pm,
+             yerr=<span class="org-builtin">abs</span>(np.percentile(samples, [2.5, 97.5], axis=0) - pm.values.reshape(1, -1)),
+             fmt=<span class="org-string">'.'</span>,
+             c=<span class="org-string">'k'</span>,
+             ecolor=<span class="org-string">'0.7'</span>,
+             elinewidth=1,
+             ms=4,)
+  a.set_xlabel(<span class="org-string">'Day'</span>)
+  a.set_xticks(np.arange(4))
+  a.set_xticklabels([0, 1, 3, 7])
+  a.set_ylabel(t)
+  a.set_title(y.var.loc[<span class="org-builtin">str</span>(idx), <span class="org-string">'name'</span>])
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/ipsc-cm-post.png" alt="ipsc-cm-post.png">
+</p>
+</div>
+
+<p>
+Look at the most variable gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">order</span> = np.argsort(-np.median(np.exp(2 * res.loc(axis=1)[:,<span class="org-string">'log_mu'</span>].values - res.loc(axis=1)[:,<span class="org-string">'neg_log_phi'</span>].values), axis=1))[:10]
+y.var.loc[order]
+</pre>
+</div>
+
+<pre class="example">
+name  n_counts
+10227   MALAT1   53633.0
+3178    EXOSC8    5236.0
+8226    RPL35A   36692.0
+8929    RPL37A   29614.0
+9331   MT-ND4L   12695.0
+8645    COMMD6    6545.0
+2993     RPS25   11410.0
+10449   MRPS21    9434.0
+7942     DDX10    1003.0
+2640   SELENOK    2380.0
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.set_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(5, 4)
+
+<span class="org-variable-name">idx</span> = 10227
+<span class="org-variable-name">days</span> = [0, 1, 3, 7]
+<span class="org-variable-name">query</span> = y.X[:,idx].A.ravel()
+<span class="org-variable-name">bins</span> = np.arange(query.<span class="org-builtin">max</span>() + 1)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(days):
+  <span class="org-variable-name">h</span>, <span class="org-variable-name">e</span> = np.histogram(query[y.obs[<span class="org-string">'day'</span>] == k], bins=bins)
+  ax[0].plot(bins[:-1] + 0.5, h, color=f<span class="org-string">'C{i}'</span>, lw=1)
+ax[0].set_xlabel(<span class="org-string">'Number of molecules'</span>)
+ax[0].set_ylabel(<span class="org-string">'Number of cells'</span>)
+ax[0].set_title(y.var.iloc[idx][<span class="org-string">'name'</span>])
+
+<span class="org-variable-name">lam</span> = query / y.X.<span class="org-builtin">sum</span>(axis=1).A.ravel()
+<span class="org-variable-name">grid</span> = np.linspace(lam.<span class="org-builtin">min</span>(), lam.<span class="org-builtin">max</span>(), 1000)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>([<span class="org-builtin">str</span>(d) <span class="org-keyword">for</span> d <span class="org-keyword">in</span> days]):
+  <span class="org-variable-name">log_mu</span> = res.loc[idx, (k, <span class="org-string">'log_mu'</span>)]
+  <span class="org-variable-name">neg_log_phi</span> = res.loc[idx, (k, <span class="org-string">'neg_log_phi'</span>)]
+  <span class="org-variable-name">logodds</span> = res.loc[idx, (k, <span class="org-string">'logodds'</span>)]
+  <span class="org-variable-name">F</span> = st.gamma(a=np.exp(neg_log_phi), scale=np.exp(log_mu - neg_log_phi)).cdf(grid)
+  <span class="org-variable-name">F</span> = sp.expit(logodds) + sp.expit(-logodds) * F
+  ax[1].plot(grid, F, lw=1, color=f<span class="org-string">'C{i}'</span>, label=f<span class="org-string">'Day {k}'</span>)
+ax[1].legend(frameon=<span class="org-constant">False</span>)
+ax[1].set_xlabel(<span class="org-string">'Latent gene expression'</span>)
+ax[1].set_ylabel(<span class="org-string">'CDF'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/ipsc-cm-COMMD6.png" alt="ipsc-cm-COMMD6.png">
+</p>
 </div>
 </div>
 </div>
@@ -1593,7 +1721,7 @@ Fit kinetic models for <i>PRCP</i> gene expression at each time point.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-27 Thu 13:48</p>
+<p class="date">Created: 2020-02-29 Sat 20:09</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

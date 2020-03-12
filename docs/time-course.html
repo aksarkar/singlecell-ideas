@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-11 Wed 21:50 -->
+<!-- 2020-03-11 Wed 22:59 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -262,6 +262,7 @@ for the JavaScript code in this tag.
 <li><a href="#org1860a88">Methods</a>
 <ul>
 <li><a href="#org7d4bcf5">Amortized NMF</a></li>
+<li><a href="#org7c79f06">Amortized LDA</a></li>
 <li><a href="#orga68114a">iPSC data</a></li>
 <li><a href="#org042cb98">10-way mixture</a></li>
 <li><a href="#org6dd7c96">Census of Immune Cells data</a></li>
@@ -392,13 +393,13 @@ problems:
 </p>
 
 <p>
-\[ \theta^* = \argmin_\theta f(\theta, \phi) \]
+\[ \theta_i^* = \argmin_\theta_i f(\theta_i, \phi_i) \]
 </p>
 
 <p>
-where \(\phi \in \Phi\) is some context variable. Rather than solving one
-problem for each \(\phi\), we learn a function \(h_\alpha: \phi \rightarrow
-   \theta^*\) parameterized by \(\alpha\)
+where \(\phi_i \in \Phi\) is some context variable. Rather than solving one
+problem for each \(\phi_i\), we learn a function \(h_\alpha\) parameterized
+by \(\alpha\) mapping \(\phi_i \rightarrow \theta_i^*\)
 </p>
 
 <p>
@@ -426,7 +427,12 @@ can be achieved by introducing an <i>encoder network</i> \(h_\alpha\), which has
 been previously proposed (<a href="10.1038/s41592-018-0229-2">Lopez et
 al. 2018</a>, <a href="10.1038/s41467-018-07931-2">Eraslan et al. 2018</a>).
 </p>
+</div>
+</div>
 
+<div id="outline-container-org7c79f06" class="outline-3">
+<h3 id="org7c79f06">Amortized LDA</h3>
+<div class="outline-text-3" id="text-org7c79f06">
 <p>
 NMF is intimately connected to LDA via the Multinomial-Poisson transform
 (<a href="http://www.jstor.org/stable/2348134">Baker 1994</a>). Briefly, if we have
@@ -521,18 +527,7 @@ cells.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">x</span> = data[keys[0]].concatenate(*[data[k] <span class="org-keyword">for</span> k <span class="org-keyword">in</span> keys[1:]], join=<span class="org-string">'inner'</span>, batch_key=<span class="org-string">'cell_type'</span>, batch_categories=keys)
-sc.pp.filter_genes(x, min_cells=.001 * x.shape[0])
-</pre>
-</div>
-
-<p>
-Write out the data.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">x.obs</span> = x.obs.rename({0: <span class="org-string">'barcode'</span>}, axis=1)
-<span class="org-variable-name">x.var</span> = x.var.rename({0: <span class="org-string">'ensg'</span>, 1: <span class="org-string">'name'</span>}, axis=1)
-x.write(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
+sc.pp.filter_genes(x, min_cells=1)
 </pre>
 </div>
 
@@ -546,9 +541,20 @@ Report the dimensions.
 </div>
 
 <pre class="example">
-(94655, 12906)
+(94655, 21952)
 
 </pre>
+
+<p>
+Write out the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x.obs</span> = x.obs.rename({0: <span class="org-string">'barcode'</span>}, axis=1)
+<span class="org-variable-name">x.var</span> = x.var.rename({0: <span class="org-string">'ensg'</span>, 1: <span class="org-string">'name'</span>}, axis=1)
+x.write(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
+</pre>
+</div>
 </div>
 </div>
 
@@ -813,8 +819,6 @@ Read the data.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
 <span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1)
-<span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
-<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=128, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
 </pre>
 </div>
 
@@ -830,7 +834,8 @@ Fit ANMF.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1]).fit(data, max_epochs=10, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=1e-2)
+<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1])
+       .fit(data, max_epochs=10, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=5e-3))
 <span class="org-variable-name">elapsed</span> = time.time() - start
 </pre>
 </div>
@@ -843,6 +848,11 @@ Report how long the optimization took (seconds).
 <pre class="src src-ipython">elapsed
 </pre>
 </div>
+
+<pre class="example">
+285.05831122398376
+
+</pre>
 
 <p>
 Plot the optimization trace, focusing on the tail.
@@ -861,7 +871,7 @@ plt.tight_layout()
 
 
 <div class="figure">
-<p><img src="figure/time-course.org/pbmc-trace.png" alt="pbmc-trace.png">
+<p><img src="figure/time-course.org/zheng-10-way-trace.png" alt="zheng-10-way-trace.png">
 </p>
 </div>
 </div>
@@ -870,7 +880,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-11 Wed 21:50</p>
+<p class="date">Created: 2020-03-11 Wed 22:59</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

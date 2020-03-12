@@ -68,7 +68,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 66342011
+  : Submitted batch job 66342555
 
   #+BEGIN_SRC ipython
     import anmf
@@ -120,11 +120,11 @@
    et al. 2018]]) refers to a general solution to coupled optimization
    problems:
 
-   \[ \theta^* = \argmin_\theta f(\theta, \phi) \]
+   \[ \theta_i^* = \argmin_\theta_i f(\theta_i, \phi_i) \]
 
-   where \(\phi \in \Phi\) is some context variable. Rather than solving one
-   problem for each \(\phi\), we learn a function \(h_\alpha: \phi \rightarrow
-   \theta^*\) parameterized by \(\alpha\)
+   where \(\phi_i \in \Phi\) is some context variable. Rather than solving one
+   problem for each \(\phi_i\), we learn a function \(h_\alpha\) parameterized
+   by \(\alpha\) mapping \(\phi_i \rightarrow \theta_i^*\)
 
    \[ \alpha^* = \argmin_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi) \]
 
@@ -143,6 +143,8 @@
    can be achieved by introducing an /encoder network/ \(h_\alpha\), which has
    been previously proposed ([[doi:10.1038/s41592-018-0229-2][Lopez et
    al. 2018]], [[doi:10.1038/s41467-018-07931-2][Eraslan et al. 2018]]).
+
+** Amortized LDA
 
    NMF is intimately connected to LDA via the Multinomial-Poisson transform
    ([[http://www.jstor.org/stable/2348134][Baker 1994]]). Briefly, if we have
@@ -218,7 +220,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[37]:
+   # Out[71]:
    :END:
 
    #+BEGIN_SRC ipython :async t
@@ -228,7 +230,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[36]:
+   # Out[72]:
    :END:
 
    Concatenate the data, then take genes with observations in at least 0.1% of
@@ -236,12 +238,24 @@
 
    #+BEGIN_SRC ipython :async t
      x = data[keys[0]].concatenate(*[data[k] for k in keys[1:]], join='inner', batch_key='cell_type', batch_categories=keys)
-     sc.pp.filter_genes(x, min_cells=.001 * x.shape[0])
+     sc.pp.filter_genes(x, min_cells=1)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[50]:
+   # Out[73]:
+   :END:
+
+   Report the dimensions.
+
+   #+BEGIN_SRC ipython
+     x.shape
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[74]:
+   : (94655, 21952)
    :END:
 
    Write out the data.
@@ -254,19 +268,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[55]:
-   :END:
-
-   Report the dimensions.
-
-   #+BEGIN_SRC ipython
-     x.shape
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[47]:
-   : (94655, 12906)
+   # Out[75]:
    :END:
 
 ** Census of Immune Cells data
@@ -516,9 +518,12 @@
    #+BEGIN_SRC ipython
      x = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad')
      s = x.X.sum(axis=1)
-     sparse_data = anmf.dataset.ExprDataset(x.X, s.A)
-     data = td.DataLoader(sparse_data, batch_size=128, shuffle=False, collate_fn=sparse_data.collate_fn)
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
 
    Fit ANMF.
 
@@ -527,15 +532,21 @@
      data = td.DataLoader(sparse_data, batch_size=128, shuffle=False, collate_fn=sparse_data.collate_fn)
    #+END_SRC
 
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
    #+BEGIN_SRC ipython :async t
      start = time.time()
-     fit = anmf.modules.ANMF(input_dim=x.shape[1]).fit(data, max_epochs=10, trace=True, verbose=True, lr=1e-2)
+     fit = (anmf.modules.ANMF(input_dim=x.shape[1])
+            .fit(data, max_epochs=10, trace=True, verbose=True, lr=5e-3))
      elapsed = time.time() - start
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[31]:
+   # Out[7]:
    :END:
 
    Report how long the optimization took (seconds).
@@ -544,9 +555,15 @@
      elapsed
    #+END_SRC
 
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   : 285.05831122398376
+   :END:
+
    Plot the optimization trace, focusing on the tail.
 
-   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/pbmc-trace.png
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/zheng-10-way-trace.png
      plt.clf()
      plt.gcf().set_size_inches(4, 2)
      plt.plot(np.array(fit.trace).ravel()[-2000:] / (128 * x.shape[1]), lw=1, c='k')
@@ -558,6 +575,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[33]:
-   [[file:figure/time-course.org/pbmc-trace.png]]
+   # Out[9]:
+   [[file:figure/time-course.org/zheng-10-way-trace.png]]
    :END:

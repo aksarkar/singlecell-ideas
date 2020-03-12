@@ -120,7 +120,7 @@
    et al. 2018]]) refers to a general solution to coupled optimization
    problems:
 
-   \[ \theta_i^* = \argmin_\theta_i f(\theta_i, \phi_i) \]
+   \[ \theta_i^* = \argmin_{\theta_i} f(\theta_i, \phi_i) \]
 
    where \(\phi_i \in \Phi\) is some context variable. Rather than solving one
    problem for each \(\phi_i\), we learn a function \(h_\alpha\) parameterized
@@ -131,7 +131,8 @@
    where \(\hat{p}(\phi)\) denotes the empirical distribution of \(\phi\) in
    the training data. As a concrete example, NMF
    ([[http://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization][Lee
-   and Seung 2001]]) can be written
+   and Seung 2001]], [[https://dx.doi.org/10.1155/2009/785152][Cemgil 2009]])
+   can be written
 
    \[ \vl_i^* = \argmin_{\vl_i} \sum_j \operatorname{Poisson}(x_{ij}; \sum_k l_{ik} f_{jk})\]
 
@@ -142,7 +143,13 @@
    variable. These can be optimized in alternating phases.) The optimization
    can be achieved by introducing an /encoder network/ \(h_\alpha\), which has
    been previously proposed ([[doi:10.1038/s41592-018-0229-2][Lopez et
-   al. 2018]], [[doi:10.1038/s41467-018-07931-2][Eraslan et al. 2018]]).
+   al. 2018]], [[doi:10.1038/s41467-018-07931-2][Eraslan et
+   al. 2018]]). 
+
+   However, existing methods have a major limitation: they do not support
+   sparse matrices on the GPU, making it either impossible to analyze complete
+   data sets, or introducing a major bottleneck in moving minibatches to the
+   GPU. We implement this functionality in the Python package ~anmf~.
 
 ** Amortized LDA
 
@@ -162,9 +169,7 @@
    approaches for amortized inference in topic models
    ([[https://arxiv.org/pdf/1703.01488][Srivastava et al. 2017]]), we are not
    concerned with recovering an approximate posterior over \(\mathbf{L},
-   \mathbf{F}\), simplifying the problem. Our scheme suggests a fast GPU
-   implementation based on minibatch gradient descent, which we provide in the
-   Python package ~anmf~.
+   \mathbf{F}\), simplifying the problem.
 
 ** iPSC data
 
@@ -427,6 +432,86 @@
    :RESULTS:
    # Out[60]:
    : (0.023548399419082357, 0.029147694241919264)
+   :END:
+
+** ANMF on iPSC data
+
+   Read the data.
+
+   #+BEGIN_SRC ipython
+     x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+     s = x.X.sum(axis=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     sparse_data = anmf.dataset.ExprDataset(x.X, s.A)
+     data = td.DataLoader(sparse_data, batch_size=64, shuffle=False, collate_fn=sparse_data.collate_fn)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[23]:
+   :END:
+
+   Run ANMF on the data. A priori, we might expect the data to be rank 53
+   (equal to the number of donor individuals). Indeed, this is the rank of the
+   implicit factor model we originally fit to the data.
+
+   #+BEGIN_SRC ipython :async t
+     start = time.time()
+     fit = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)
+            .fit(data, max_epochs=40, trace=True, verbose=True, lr=1e-2))
+     elapsed = time.time() - start
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   :END:
+
+   Report how long the optimization took (minutes).
+
+   #+BEGIN_SRC ipython
+     elapsed / 60
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[28]:
+   : 2.7217764496803283
+   :END:
+
+   Plot the end of the optimization trace.
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/ipsc-trace.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(np.array(fit.trace).ravel()[-100:] / (128 * x.shape[1]), lw=1, c='k')
+     plt.xlabel('Minibatches before maximum')
+     plt.ylabel('Neg log lik per obs')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[26]:
+   [[file:figure/time-course.org/ipsc-trace.png]]
+   :END:
+
+   Save the fitted model.
+
+   #+BEGIN_SRC ipython
+     torch.save(fit.state_dict(), '/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[27]:
    :END:
 
 ** ANMF on 68K PBMCs

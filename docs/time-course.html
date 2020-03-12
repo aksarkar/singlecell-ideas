@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-11 Wed 22:59 -->
+<!-- 2020-03-11 Wed 23:24 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -271,6 +271,7 @@ for the JavaScript code in this tag.
 <li><a href="#org1cce9ff">Results</a>
 <ul>
 <li><a href="#org13ff0f7">Simulation</a></li>
+<li><a href="#org687e657">ANMF on iPSC data</a></li>
 <li><a href="#orgb7e7231">ANMF on 68K PBMCs</a></li>
 <li><a href="#org8ec4008">ANMF on 10-way mixture</a></li>
 </ul>
@@ -393,7 +394,7 @@ problems:
 </p>
 
 <p>
-\[ \theta_i^* = \argmin_\theta_i f(\theta_i, \phi_i) \]
+\[ \theta_i^* = \argmin_{\theta_i} f(\theta_i, \phi_i) \]
 </p>
 
 <p>
@@ -410,7 +411,8 @@ by \(\alpha\) mapping \(\phi_i \rightarrow \theta_i^*\)
 where \(\hat{p}(\phi)\) denotes the empirical distribution of \(\phi\) in
 the training data. As a concrete example, NMF
 (<a href="http://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization">Lee
-and Seung 2001</a>) can be written
+and Seung 2001</a>, <a href="https://dx.doi.org/10.1155/2009/785152">Cemgil 2009</a>)
+can be written
 </p>
 
 <p>
@@ -425,7 +427,15 @@ we are simplifying by holding \(\mf\) fixed. In this setup, we treat the
 variable. These can be optimized in alternating phases.) The optimization
 can be achieved by introducing an <i>encoder network</i> \(h_\alpha\), which has
 been previously proposed (<a href="10.1038/s41592-018-0229-2">Lopez et
-al. 2018</a>, <a href="10.1038/s41467-018-07931-2">Eraslan et al. 2018</a>).
+al. 2018</a>, <a href="10.1038/s41467-018-07931-2">Eraslan et
+al. 2018</a>). 
+</p>
+
+<p>
+However, existing methods have a major limitation: they do not support
+sparse matrices on the GPU, making it either impossible to analyze complete
+data sets, or introducing a major bottleneck in moving minibatches to the
+GPU. We implement this functionality in the Python package <code>anmf</code>.
 </p>
 </div>
 </div>
@@ -452,9 +462,7 @@ where \(h\) is a neural network with softmax output. Unlike previous
 approaches for amortized inference in topic models
 (<a href="https://arxiv.org/pdf/1703.01488">Srivastava et al. 2017</a>), we are not
 concerned with recovering an approximate posterior over \(\mathbf{L},
-   \mathbf{F}\), simplifying the problem. Our scheme suggests a fast GPU
-implementation based on minibatch gradient descent, which we provide in the
-Python package <code>anmf</code>.
+   \mathbf{F}\), simplifying the problem.
 </p>
 </div>
 </div>
@@ -725,6 +733,84 @@ l_resid, f_resid
 </div>
 </div>
 
+<div id="outline-container-org687e657" class="outline-3">
+<h3 id="org687e657">ANMF on iPSC data</h3>
+<div class="outline-text-3" id="text-org687e657">
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
+<span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
+<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=64, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
+</pre>
+</div>
+
+<p>
+Run ANMF on the data. A priori, we might expect the data to be rank 53
+(equal to the number of donor individuals). Indeed, this is the rank of the
+implicit factor model we originally fit to the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)
+       .fit(data, max_epochs=40, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=1e-2))
+<span class="org-variable-name">elapsed</span> = time.time() - start
+</pre>
+</div>
+
+<p>
+Report how long the optimization took (minutes).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">elapsed / 60
+</pre>
+</div>
+
+<pre class="example">
+2.7217764496803283
+
+</pre>
+
+<p>
+Plot the end of the optimization trace.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(np.array(fit.trace).ravel()[-100:] / (128 * x.shape[1]), lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Minibatches before maximum'</span>)
+plt.ylabel(<span class="org-string">'Neg log lik per obs'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-trace.png" alt="ipsc-trace.png">
+</p>
+</div>
+
+<p>
+Save the fitted model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">torch.save(fit.state_dict(), <span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl'</span>)
+</pre>
+</div>
+</div>
+</div>
+
 <div id="outline-container-orgb7e7231" class="outline-3">
 <h3 id="orgb7e7231">ANMF on 68K PBMCs</h3>
 <div class="outline-text-3" id="text-orgb7e7231">
@@ -880,7 +966,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-11 Wed 22:59</p>
+<p class="date">Created: 2020-03-11 Wed 23:24</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

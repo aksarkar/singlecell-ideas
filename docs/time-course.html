@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-02-23 Sun 12:29 -->
+<!-- 2020-03-11 Wed 21:50 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -261,15 +261,17 @@ for the JavaScript code in this tag.
 <li><a href="#setup">Setup</a></li>
 <li><a href="#org1860a88">Methods</a>
 <ul>
-<li><a href="#orgdd042e9">Amortized NMF/LDA</a></li>
+<li><a href="#org7d4bcf5">Amortized NMF</a></li>
 <li><a href="#orga68114a">iPSC data</a></li>
+<li><a href="#org042cb98">10-way mixture</a></li>
 <li><a href="#org6dd7c96">Census of Immune Cells data</a></li>
 </ul>
 </li>
 <li><a href="#org1cce9ff">Results</a>
 <ul>
 <li><a href="#org13ff0f7">Simulation</a></li>
-<li><a href="#org1fc2b6f">ANMF on Census of Immune Cells</a></li>
+<li><a href="#orgb7e7231">ANMF on 68K PBMCs</a></li>
+<li><a href="#org8ec4008">ANMF on 10-way mixture</a></li>
 </ul>
 </li>
 </ul>
@@ -348,9 +350,12 @@ e.g. Human Cell Atlas? As references, compare against
 <span class="org-keyword">import</span> anndata
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
+<span class="org-keyword">import</span> scmodes
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> sklearn.decomposition <span class="org-keyword">as</span> skd
+<span class="org-keyword">import</span> time
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 </pre>
@@ -375,9 +380,9 @@ e.g. Human Cell Atlas? As references, compare against
 <h2 id="org1860a88">Methods</h2>
 <div class="outline-text-2" id="text-org1860a88">
 </div>
-<div id="outline-container-orgdd042e9" class="outline-3">
-<h3 id="orgdd042e9">Amortized NMF/LDA</h3>
-<div class="outline-text-3" id="text-orgdd042e9">
+<div id="outline-container-org7d4bcf5" class="outline-3">
+<h3 id="org7d4bcf5">Amortized NMF</h3>
+<div class="outline-text-3" id="text-org7d4bcf5">
 <p>
 Amortized inference
 (<a href="http://ruishu.io/2017/11/07/amortized-optimization/">Shu 2017</a>,
@@ -479,6 +484,74 @@ x.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlece
 </div>
 </div>
 
+<div id="outline-container-org042cb98" class="outline-3">
+<h3 id="org042cb98">10-way mixture</h3>
+<div class="outline-text-3" id="text-org042cb98">
+<p>
+Read the FACS sorted data sets from
+<a href="https://dx.doi.org/10.1038/ncomms14049">Zheng et al 2017</a>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">keys</span> = (
+  <span class="org-string">'b_cells'</span>,
+  <span class="org-string">'cd34'</span>,
+  <span class="org-string">'cd4_t_helper'</span>,
+  <span class="org-string">'cd56_nk'</span>,
+  <span class="org-string">'cytotoxic_t'</span>,
+  <span class="org-string">'memory_t'</span>,
+  <span class="org-string">'naive_cytotoxic'</span>,
+  <span class="org-string">'naive_t'</span>,
+  <span class="org-string">'regulatory_t'</span>,
+  <span class="org-string">'cd14_monocytes'</span>,
+)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">data</span> = {k: scmodes.dataset.read_10x(f<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/{k}/filtered_matrices_mex/hg19/'</span>, return_adata=<span class="org-constant">True</span>, min_detect=0)
+        <span class="org-keyword">for</span> k <span class="org-keyword">in</span> keys}
+</pre>
+</div>
+
+<p>
+Concatenate the data, then take genes with observations in at least 0.1% of
+cells.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = data[keys[0]].concatenate(*[data[k] <span class="org-keyword">for</span> k <span class="org-keyword">in</span> keys[1:]], join=<span class="org-string">'inner'</span>, batch_key=<span class="org-string">'cell_type'</span>, batch_categories=keys)
+sc.pp.filter_genes(x, min_cells=.001 * x.shape[0])
+</pre>
+</div>
+
+<p>
+Write out the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x.obs</span> = x.obs.rename({0: <span class="org-string">'barcode'</span>}, axis=1)
+<span class="org-variable-name">x.var</span> = x.var.rename({0: <span class="org-string">'ensg'</span>, 1: <span class="org-string">'name'</span>}, axis=1)
+x.write(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
+</pre>
+</div>
+
+<p>
+Report the dimensions.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">x.shape
+</pre>
+</div>
+
+<pre class="example">
+(94655, 12906)
+
+</pre>
+</div>
+</div>
+
 <div id="outline-container-org6dd7c96" class="outline-3">
 <h3 id="org6dd7c96">Census of Immune Cells data</h3>
 <div class="outline-text-3" id="text-org6dd7c96">
@@ -531,23 +604,89 @@ Simulate a simple example.
 </pre>
 </div>
 
+<p>
+Fit NMF via EM.
+</p>
+
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x, s)
-<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=512, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span>, <span class="org-variable-name">loss</span> = scmodes.lra.nmf(x, rank=10, tol=1e-2, max_iters=10000, verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">elapsed</span> = time.time() - start
+</pre>
+</div>
+
+<p>
+Report the time elapsed (seconds).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">elapsed
+</pre>
+</div>
+
+<pre class="example">
+200.11741995811462
+
+</pre>
+
+<p>
+Report the oracle loss, and the EM loss.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">-st.poisson(mu=x).logpmf(x).<span class="org-builtin">sum</span>(), loss
+</pre>
+</div>
+
+<pre class="example">
+(1104395.014892481, 1356432.0729535678)
+
+</pre>
+
+<p>
+Fit ANMF.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">assert</span> torch.cuda.is_available()
+<span class="org-variable-name">dense_data</span> = td.TensorDataset(torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>).cuda(),
+                              torch.tensor(s, dtype=torch.<span class="org-builtin">float</span>).cuda())
+<span class="org-variable-name">data</span> = td.DataLoader(dense_data, batch_size=64, shuffle=<span class="org-constant">True</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1]).fit(data, max_epochs=1, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=5e-3)
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1])
+       .fit(data, max_epochs=400, trace=<span class="org-constant">True</span>, lr=5e-3))
+<span class="org-variable-name">elapsed</span> = time.time() - start
 </pre>
 </div>
+
+<p>
+Report the time elapsed (seconds).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">elapsed
+</pre>
+</div>
+
+<pre class="example">
+7.6526994705200195
+
+</pre>
+
+<p>
+Plot the optimization trace, focusing on the last 100 iterations.
+</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
 plt.gcf().set_size_inches(4, 2)
-plt.plot(fit.trace, lw=1, c=<span class="org-string">'k'</span>)
+plt.plot(np.array(fit.trace).ravel()[-400:] / (64 * p), lw=1, c=<span class="org-string">'k'</span>)
 plt.xlabel(<span class="org-string">'Minibatch'</span>)
-plt.ylabel(<span class="org-string">'Neg log lik'</span>)
+plt.ylabel(<span class="org-string">'Per obs neg log lik'</span>)
 plt.tight_layout()
 </pre>
 </div>
@@ -564,47 +703,174 @@ objective.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">lhat</span> = np.vstack([fit.encoder.forward(b).detach().numpy() <span class="org-keyword">for</span> (b, s) <span class="org-keyword">in</span> data])
-<span class="org-variable-name">fhat</span> = torch.nn.functional.softmax(fit.decoder.logit_f, dim=1).detach().numpy()
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span> = np.vstack([fit.loadings(b) <span class="org-keyword">for</span> (b, s) <span class="org-keyword">in</span> data])
+<span class="org-variable-name">fhat</span> = fit.factors()
 <span class="org-variable-name">A</span> = x / (s.reshape(-1, 1) * lhat.dot(fhat))
-<span class="org-variable-name">l_resid</span> = (fhat.T * ((1 - A).T @ lhat)).<span class="org-builtin">max</span>()
-<span class="org-variable-name">f_resid</span> = (lhat * ((1 - A) @ fhat.T)).<span class="org-builtin">max</span>()
+<span class="org-variable-name">l_resid</span> = <span class="org-builtin">abs</span>(fhat.T * ((1 - A).T @ lhat)).<span class="org-builtin">max</span>()
+<span class="org-variable-name">f_resid</span> = <span class="org-builtin">abs</span>(lhat * ((1 - A) @ fhat.T)).<span class="org-builtin">max</span>()
 l_resid, f_resid
 </pre>
 </div>
 
 <pre class="example">
-(0.010334900542034623, -0.0)
+(0.023548399419082357, 0.029147694241919264)
 
 </pre>
 </div>
 </div>
 
-<div id="outline-container-org1fc2b6f" class="outline-3">
-<h3 id="org1fc2b6f">ANMF on Census of Immune Cells</h3>
-<div class="outline-text-3" id="text-org1fc2b6f">
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
-</pre>
-</div>
+<div id="outline-container-orgb7e7231" class="outline-3">
+<h3 id="orgb7e7231">ANMF on 68K PBMCs</h3>
+<div class="outline-text-3" id="text-orgb7e7231">
+<p>
+Read the data, restricting to genes with non-zero observations in at least 1
+cell.
+</p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">m</span> = skd.NMF(n_components=53, beta_loss=1, solver=<span class="org-string">'mu'</span>, verbose=<span class="org-constant">True</span>).fit(x.X)
-<span class="org-variable-name">f</span> = m.components_.T
-<span class="org-variable-name">l</span> = m.transform(x.X)
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = scmodes.dataset.read_10x(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/fresh_68k_pbmc_donor_a/filtered_matrices_mex/hg19/'</span>, min_detect=0, return_adata=<span class="org-constant">True</span>)
+sc.pp.filter_genes(x, min_cells=1)
+<span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1)
 </pre>
 </div>
 
 <p>
-0 - f38355c7-4293-4104-babc-10a2759ce749
+Report the dimensions.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">x.shape
+</pre>
+</div>
+
+<pre class="example">
+(68579, 20387)
+
+</pre>
+
+<p>
+Fit rank 10 ANMF.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
+<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=128, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=10)
+       .fit(data, max_epochs=15, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=1e-2))
+<span class="org-variable-name">elapsed</span> = time.time() - start
+</pre>
+</div>
+
+<p>
+Report how long the optimization took (minutes).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">elapsed / 60
+</pre>
+</div>
+
+<pre class="example">
+5.1033944328626
+
+</pre>
+
+<p>
+Plot the optimization trace, focusing on the tail.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(np.array(fit.trace).ravel()[-2000:] / (128 * x.shape[1]), lw=1, c=<span class="org-string">'k'</span>)
+plt.xticks(np.arange(0, 2500, 500), np.arange(-2000, 500, 500))
+plt.xlabel(<span class="org-string">'Minibatches before maximum'</span>)
+plt.ylabel(<span class="org-string">'Neg log lik per obs'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/pbmc-trace.png" alt="pbmc-trace.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org8ec4008" class="outline-3">
+<h3 id="org8ec4008">ANMF on 10-way mixture</h3>
+<div class="outline-text-3" id="text-org8ec4008">
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
+<span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1)
+<span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
+<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=128, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
+</pre>
+</div>
+
+<p>
+Fit ANMF.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
+<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=128, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1]).fit(data, max_epochs=10, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=1e-2)
+<span class="org-variable-name">elapsed</span> = time.time() - start
+</pre>
+</div>
+
+<p>
+Report how long the optimization took (seconds).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">elapsed
+</pre>
+</div>
+
+<p>
+Plot the optimization trace, focusing on the tail.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(np.array(fit.trace).ravel()[-2000:] / (128 * x.shape[1]), lw=1, c=<span class="org-string">'k'</span>)
+plt.xticks(np.arange(0, 2500, 500), np.arange(-2000, 500, 500))
+plt.xlabel(<span class="org-string">'Minibatches before maximum'</span>)
+plt.ylabel(<span class="org-string">'Neg log lik per obs'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/pbmc-trace.png" alt="pbmc-trace.png">
+</p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-02-23 Sun 12:29</p>
+<p class="date">Created: 2020-03-11 Wed 21:50</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

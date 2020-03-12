@@ -65,26 +65,29 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 65996462
+  : Submitted batch job 66342011
 
   #+BEGIN_SRC ipython
     import anmf
     import anndata
     import numpy as np
     import pandas as pd
+    import scanpy as sc
+    import scmodes
     import scipy.sparse as ss
     import scipy.stats as st
     import sklearn.decomposition as skd
+    import time
     import torch
     import torch.utils.data as td
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[33]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -109,7 +112,7 @@
   :END:
 
 * Methods
-** Amortized NMF/LDA
+** Amortized NMF
 
    Amortized inference
    ([[http://ruishu.io/2017/11/07/amortized-optimization/][Shu 2017]],
@@ -193,6 +196,79 @@
    # Out[33]:
    :END:
 
+** 10-way mixture
+
+   Read the FACS sorted data sets from
+   [[https://dx.doi.org/10.1038/ncomms14049][Zheng et al 2017]].
+
+   #+BEGIN_SRC ipython
+     keys = (
+       'b_cells',
+       'cd34',
+       'cd4_t_helper',
+       'cd56_nk',
+       'cytotoxic_t',
+       'memory_t',
+       'naive_cytotoxic',
+       'naive_t',
+       'regulatory_t',
+       'cd14_monocytes',
+     )
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[37]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     data = {k: scmodes.dataset.read_10x(f'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/{k}/filtered_matrices_mex/hg19/', return_adata=True, min_detect=0)
+             for k in keys}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[36]:
+   :END:
+
+   Concatenate the data, then take genes with observations in at least 0.1% of
+   cells.
+
+   #+BEGIN_SRC ipython :async t
+     x = data[keys[0]].concatenate(*[data[k] for k in keys[1:]], join='inner', batch_key='cell_type', batch_categories=keys)
+     sc.pp.filter_genes(x, min_cells=.001 * x.shape[0])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[50]:
+   :END:
+
+   Write out the data.
+
+   #+BEGIN_SRC ipython
+     x.obs = x.obs.rename({0: 'barcode'}, axis=1)
+     x.var = x.var.rename({0: 'ensg', 1: 'name'}, axis=1)
+     x.write('/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[55]:
+   :END:
+
+   Report the dimensions.
+
+   #+BEGIN_SRC ipython
+     x.shape
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   : (94655, 12906)
+   :END:
+
 ** Census of Immune Cells data
 
    We previously processed the Census of Immune Cells.
@@ -238,40 +314,98 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[4]:
    :END:
 
-   #+BEGIN_SRC ipython
-     sparse_data = anmf.dataset.ExprDataset(x, s)
-     data = td.DataLoader(sparse_data, batch_size=512, shuffle=False, collate_fn=sparse_data.collate_fn)
+   Fit NMF via EM.
+
+   #+BEGIN_SRC ipython :async t
+     start = time.time()
+     lhat, fhat, loss = scmodes.lra.nmf(x, rank=10, tol=1e-2, max_iters=10000, verbose=True)
+     elapsed = time.time() - start
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[91]:
+   # Out[6]:
+   :END:
+
+   Report the time elapsed (seconds).
+
+   #+BEGIN_SRC ipython
+     elapsed
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   : 200.11741995811462
+   :END:
+
+   Report the oracle loss, and the EM loss.
+
+   #+BEGIN_SRC ipython
+     -st.poisson(mu=x).logpmf(x).sum(), loss
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   : (1104395.014892481, 1356432.0729535678)
+   :END:
+
+   Fit ANMF.
+
+   #+BEGIN_SRC ipython
+     assert torch.cuda.is_available()
+     dense_data = td.TensorDataset(torch.tensor(x, dtype=torch.float).cuda(),
+                                   torch.tensor(s, dtype=torch.float).cuda())
+     data = td.DataLoader(dense_data, batch_size=64, shuffle=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[57]:
    :END:
 
    #+BEGIN_SRC ipython :async t
-     fit = anmf.modules.ANMF(input_dim=x.shape[1]).fit(data, max_epochs=1, trace=True, verbose=True, lr=5e-3)
+     start = time.time()
+     fit = (anmf.modules.ANMF(input_dim=x.shape[1])
+            .fit(data, max_epochs=400, trace=True, lr=5e-3))
+     elapsed = time.time() - start
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[95]:
+   # Out[58]:
    :END:
+
+   Report the time elapsed (seconds).
+
+   #+BEGIN_SRC ipython
+     elapsed
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[59]:
+   : 7.6526994705200195
+   :END:
+
+   Plot the optimization trace, focusing on the last 100 iterations.
 
    #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-trace.png
      plt.clf()
      plt.gcf().set_size_inches(4, 2)
-     plt.plot(fit.trace, lw=1, c='k')
+     plt.plot(np.array(fit.trace).ravel()[-400:] / (64 * p), lw=1, c='k')
      plt.xlabel('Minibatch')
-     plt.ylabel('Neg log lik')
+     plt.ylabel('Per obs neg log lik')
      plt.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[39]:
+   # Out[61]:
    [[file:figure/time-course.org/sim-trace.png]]
    :END:
 
@@ -279,38 +413,151 @@
    objective.
 
    #+BEGIN_SRC ipython :async t
-     lhat = np.vstack([fit.encoder.forward(b).detach().numpy() for (b, s) in data])
-     fhat = torch.nn.functional.softmax(fit.decoder.logit_f, dim=1).detach().numpy()
+     lhat = np.vstack([fit.loadings(b) for (b, s) in data])
+     fhat = fit.factors()
      A = x / (s.reshape(-1, 1) * lhat.dot(fhat))
-     l_resid = (fhat.T * ((1 - A).T @ lhat)).max()
-     f_resid = (lhat * ((1 - A) @ fhat.T)).max()
+     l_resid = abs(fhat.T * ((1 - A).T @ lhat)).max()
+     f_resid = abs(lhat * ((1 - A) @ fhat.T)).max()
      l_resid, f_resid
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[90]:
-   : (0.010334900542034623, -0.0)
+   # Out[60]:
+   : (0.023548399419082357, 0.029147694241919264)
    :END:
 
-** ANMF on Census of Immune Cells
+** ANMF on 68K PBMCs
 
-   #+BEGIN_SRC ipython
-     x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+   Read the data, restricting to genes with non-zero observations in at least 1
+   cell.
+
+   #+BEGIN_SRC ipython :async t
+     x = scmodes.dataset.read_10x('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/fresh_68k_pbmc_donor_a/filtered_matrices_mex/hg19/', min_detect=0, return_adata=True)
+     sc.pp.filter_genes(x, min_cells=1)
+     s = x.X.sum(axis=1)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[64]:
+   :END:
+
+   Report the dimensions.
+
+   #+BEGIN_SRC ipython
+     x.shape
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[65]:
+   : (68579, 20387)
+   :END:
+
+   Fit rank 10 ANMF.
+
+   #+BEGIN_SRC ipython
+     sparse_data = anmf.dataset.ExprDataset(x.X, s.A)
+     data = td.DataLoader(sparse_data, batch_size=128, shuffle=False, collate_fn=sparse_data.collate_fn)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[66]:
    :END:
 
    #+BEGIN_SRC ipython :async t
-     m = skd.NMF(n_components=53, beta_loss=1, solver='mu', verbose=True).fit(x.X)
-     f = m.components_.T
-     l = m.transform(x.X)
+     start = time.time()
+     fit = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=10)
+            .fit(data, max_epochs=15, trace=True, verbose=True, lr=1e-2))
+     elapsed = time.time() - start
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   0 - f38355c7-4293-4104-babc-10a2759ce749
+   # Out[67]:
+   :END:
+
+   Report how long the optimization took (minutes).
+
+   #+BEGIN_SRC ipython
+     elapsed / 60
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[69]:
+   : 5.1033944328626
+   :END:
+
+   Plot the optimization trace, focusing on the tail.
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/pbmc-trace.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(np.array(fit.trace).ravel()[-2000:] / (128 * x.shape[1]), lw=1, c='k')
+     plt.xticks(np.arange(0, 2500, 500), np.arange(-2000, 500, 500))
+     plt.xlabel('Minibatches before maximum')
+     plt.ylabel('Neg log lik per obs')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[70]:
+   [[file:figure/time-course.org/pbmc-trace.png]]
+   :END:
+
+** ANMF on 10-way mixture
+
+   Read the data.
+
+   #+BEGIN_SRC ipython
+     x = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad')
+     s = x.X.sum(axis=1)
+     sparse_data = anmf.dataset.ExprDataset(x.X, s.A)
+     data = td.DataLoader(sparse_data, batch_size=128, shuffle=False, collate_fn=sparse_data.collate_fn)
+   #+END_SRC
+
+   Fit ANMF.
+
+   #+BEGIN_SRC ipython
+     sparse_data = anmf.dataset.ExprDataset(x.X, s.A)
+     data = td.DataLoader(sparse_data, batch_size=128, shuffle=False, collate_fn=sparse_data.collate_fn)
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :async t
+     start = time.time()
+     fit = anmf.modules.ANMF(input_dim=x.shape[1]).fit(data, max_epochs=10, trace=True, verbose=True, lr=1e-2)
+     elapsed = time.time() - start
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[31]:
+   :END:
+
+   Report how long the optimization took (seconds).
+
+   #+BEGIN_SRC ipython
+     elapsed
+   #+END_SRC
+
+   Plot the optimization trace, focusing on the tail.
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/pbmc-trace.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(np.array(fit.trace).ravel()[-2000:] / (128 * x.shape[1]), lw=1, c='k')
+     plt.xticks(np.arange(0, 2500, 500), np.arange(-2000, 500, 500))
+     plt.xlabel('Minibatches before maximum')
+     plt.ylabel('Neg log lik per obs')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[33]:
+   [[file:figure/time-course.org/pbmc-trace.png]]
    :END:

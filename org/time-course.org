@@ -117,19 +117,23 @@
    Amortized inference
    ([[http://ruishu.io/2017/11/07/amortized-optimization/][Shu 2017]],
    [[https://papers.nips.cc/paper/7692-amortized-inference-regularization.pdf][Shu
-   et al. 2018]]) refers to a general solution to coupled optimization
-   problems:
+   et al. 2018]]) refers to a strategy to efficiently solve a large (possibly
+   infinite) collection of optimization problems:
 
-   \[ \theta_i^* = \argmin_{\theta_i} f(\theta_i, \phi_i) \]
+   \[ \theta^* = \argmin_{\theta} f(\theta, \phi), \]
 
-   where \(\phi_i \in \Phi\) is some context variable. Rather than solving one
-   problem for each \(\phi_i\), we learn a function \(h_\alpha\) parameterized
-   by \(\alpha\) mapping \(\phi_i \rightarrow \theta_i^*\)
+   where \(\phi \in \Phi\) is some context variable. Rather than solving one
+   problem for each \(\phi \in \Phi\), we learn a function \(h_\alpha\)
+   parameterized by \(\alpha\) which predicts \(\theta^*\) from \(\phi\)
 
-   \[ \alpha^* = \argmin_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi) \]
+   \[ \alpha^* = \argmin_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi), \]
 
    where \(\hat{p}(\phi)\) denotes the empirical distribution of \(\phi\) in
-   the training data. As a concrete example, NMF
+   the training data. The function \(h_\alpha\) amortizes inference over the
+   training data examples by coupling the optimization problems together, and
+   indeed amortizes inference over unseen examples also.
+
+   As a concrete example, NMF
    ([[http://papers.nips.cc/paper/1861-algorithms-for-non-negative-matrix-factorization][Lee
    and Seung 2001]], [[https://dx.doi.org/10.1155/2009/785152][Cemgil 2009]])
    can be written
@@ -140,16 +144,22 @@
    \(h_\alpha\) which maps observations \(\vx_i\) to loadings \(\vl_i\). (Here,
    we are simplifying by holding \(\mf\) fixed. In this setup, we treat the
    \(\vl_i\) as local latent variables, and \(\mf\) as a global latent
-   variable. These can be optimized in alternating phases.) The optimization
-   can be achieved by introducing an /encoder network/ \(h_\alpha\), which has
-   been previously proposed ([[doi:10.1038/s41592-018-0229-2][Lopez et
-   al. 2018]], [[doi:10.1038/s41467-018-07931-2][Eraslan et
-   al. 2018]]). 
+   variable. These can be optimized in alternating phases.) The resulting
+   optimization problem can be solved by introducing an /encoder network/
+   \(h_\alpha\), which has been previously proposed
+   ([[doi:10.1038/s41592-018-0229-2][Lopez et al. 2018]],
+   [[doi:10.1038/s41467-018-07931-2][Eraslan et al. 2018]]).
 
-   However, existing methods have a major limitation: they do not support
-   sparse matrices on the GPU, making it either impossible to analyze complete
-   data sets, or introducing a major bottleneck in moving minibatches to the
-   GPU. We implement this functionality in the Python package ~anmf~.
+   Existing methods have been introduced with the motivation that auto-encoding
+   networks can represent non-linear mappings into latent spaces; however, the
+   gain in explanatory power of such methods is unclear. Amortized inference
+   suggests a simpler, more compelling motivation to explore these methods:
+   they enable the use of stochastic optimization methods to analyze large data
+   sets (for example, those which do not fit in memory). However, existing
+   software implementations have a major limitation: they do not support sparse
+   matrices on the GPU, making it either impossible to analyze complete data
+   sets, or introducing a major bottleneck in moving minibatches to the GPU. We
+   implement this functionality in the Python package ~anmf~.
 
 ** Amortized LDA
 
@@ -349,6 +359,16 @@
    : 200.11741995811462
    :END:
 
+   Peter Carbonetto previously derived the KKT conditions for the NMF
+   objective. Report the maximum absolute KKT residual.
+
+   #+BEGIN_SRC ipython :async t
+     A = x / (s.reshape(-1, 1) * lhat.dot(fhat))
+     l_resid = abs(fhat.T * ((1 - A).T @ lhat)).max()
+     f_resid = abs(lhat * ((1 - A) @ fhat.T)).max()
+     l_resid, f_resid
+   #+END_SRC
+
    Report the oracle loss, and the EM loss.
 
    #+BEGIN_SRC ipython
@@ -416,8 +436,7 @@
    [[file:figure/time-course.org/sim-trace.png]]
    :END:
 
-   Peter Carbonetto previously derived the KKT conditions for the NMF
-   objective.
+   Report the maximum absolute KKT residual.
 
    #+BEGIN_SRC ipython :async t
      lhat = np.vstack([fit.loadings(b) for (b, s) in data])
@@ -492,6 +511,7 @@
      plt.clf()
      plt.gcf().set_size_inches(4, 2)
      plt.plot(np.array(fit.trace).ravel()[-100:] / (128 * x.shape[1]), lw=1, c='k')
+     plt.xticks(np.arange(0, 125, 25), np.arange(-100, 25, 25))
      plt.xlabel('Minibatches before maximum')
      plt.ylabel('Neg log lik per obs')
      plt.tight_layout()
@@ -499,7 +519,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[26]:
+   # Out[29]:
    [[file:figure/time-course.org/ipsc-trace.png]]
    :END:
 

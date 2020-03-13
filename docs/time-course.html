@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-12 Thu 22:11 -->
+<!-- 2020-03-13 Fri 12:23 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -670,7 +670,6 @@ l_resid, f_resid
 Fit ANMF. Report the time elapsed (seconds).
 </p>
 
-
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">assert</span> torch.cuda.is_available()
 <span class="org-variable-name">xt</span> = torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>).cuda()
@@ -725,6 +724,23 @@ Recover the loadings and factors.
 </div>
 
 <p>
+Report the maximum absolute KKT residual.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">A</span> = x / (s.reshape(-1, 1) * lhat.dot(fhat))
+<span class="org-variable-name">l_resid</span> = <span class="org-builtin">abs</span>(fhat.T * ((1 - A).T @ lhat)).<span class="org-builtin">max</span>()
+<span class="org-variable-name">f_resid</span> = <span class="org-builtin">abs</span>(lhat * ((1 - A) @ fhat.T)).<span class="org-builtin">max</span>()
+l_resid, f_resid
+</pre>
+</div>
+
+<pre class="example">
+(0.000967120470937001, 0.07753114624327002)
+
+</pre>
+
+<p>
 Report the loss achieved by each algorithm.
 </p>
 
@@ -749,26 +765,103 @@ The log likelihood achieved by ANMF is lower than the oracle. Recent results
 (<a href="https://arxiv.org/abs/1801.03558">Cremer et al 2020</a>) suggest this is to
 be expected: there is an <i>amortization gap</i> due to the fact that we are not
 directly optimizing the likelihood with respect to the local latent variable
-\(\vl_i\) for each observation \(\vx_i\). The more important (and more
-difficult!) question to assess is whether this difference matters for
-downstream analysis.
-</p>
-
-<p>
-Report the maximum absolute KKT residual.
+\(\vl_i\) for each observation \(\vx_i\). To investigate this gap, fix the
+factors to the ground truth, and see whether ANMF recovers the loadings.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">A</span> = x / (s.reshape(-1, 1) * lhat.dot(fhat))
-<span class="org-variable-name">l_resid</span> = <span class="org-builtin">abs</span>(fhat.T * ((1 - A).T @ lhat)).<span class="org-builtin">max</span>()
-<span class="org-variable-name">f_resid</span> = <span class="org-builtin">abs</span>(lhat * ((1 - A) @ fhat.T)).<span class="org-builtin">max</span>()
-l_resid, f_resid
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=10)
+<span class="org-comment-delimiter"># </span><span class="org-comment">y = ln(1 + exp(x))</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">exp(y) - 1 = exp(x)</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">ln(exp(y) - 1) = x</span>
+<span class="org-variable-name">fit.decoder._f.data</span> = torch.tensor(np.log(np.exp(f.T) - 1), dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">fit.decoder._f.requires_grad</span> = <span class="org-constant">False</span>
+fit.fit(data, max_epochs=1600, trace=<span class="org-constant">True</span>, lr=1e-3)
+<span class="org-variable-name">elapsed</span> = time.time() - start
+elapsed
 </pre>
 </div>
 
 <pre class="example">
-(0.000967120470937001, 0.07753114624327002)
+30.25163698196411
 
+</pre>
+
+<p>
+Compare the fit fixing the ground truth \(\mf\) to the oracle.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span> = fit.loadings(xt)
+<span class="org-variable-name">fhat</span> = fit.factors()
+pd.Series({
+  <span class="org-string">'oracle'</span>: -st.poisson(mu=l @ f.T).logpmf(x).mean(),
+  <span class="org-string">'anmf'</span>: -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).mean(),
+})
+</pre>
+</div>
+
+<pre class="example">
+oracle    2.664753
+anmf      2.676659
+dtype: float64
+</pre>
+
+<p>
+Plot the estimated loadings against the true loadings.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 5, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(8, 4)
+<span class="org-variable-name">lim</span> = [0, 3]
+<span class="org-keyword">for</span> i, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax.ravel()):
+  a.scatter(np.sqrt(l[:,i]), np.sqrt(s * lhat[:,i]), s=1, c=<span class="org-string">'k'</span>)
+  a.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+  a.set_title(f<span class="org-string">'Factor {i}'</span>)
+  a.set_xlim(lim)
+  a.set_ylim(lim)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a[0].set_ylabel(<span class="org-string">'Sqrt est loading'</span>)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.T:
+  a[-1].set_xlabel(<span class="org-string">'Sqrt true loading'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/sim-lhat.png" alt="sim-lhat.png">
+</p>
+</div>
+
+<p>
+Check whether this is an algorithmic problem by trying batch gradient
+descent instead.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">data</span> = td.DataLoader(dense_data, batch_size=x.shape[0], shuffle=<span class="org-constant">False</span>)
+<span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=10)
+<span class="org-variable-name">fit.decoder._f.data</span> = torch.tensor(np.log(np.exp(f.T) - 1), dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">fit.decoder._f.requires_grad</span> = <span class="org-constant">False</span>
+fit.fit(data, max_epochs=6400, trace=<span class="org-constant">True</span>, lr=1e-3)
+
+<span class="org-variable-name">lhat</span> = fit.loadings(xt)
+<span class="org-variable-name">fhat</span> = fit.factors()
+pd.Series({
+  <span class="org-string">'oracle'</span>: -st.poisson(mu=l @ f.T).logpmf(x).mean(),
+  <span class="org-string">'anmf'</span>: -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).mean(),
+})
+</pre>
+</div>
+
+<pre class="example">
+oracle    2.664753
+anmf      2.675015
+dtype: float64
 </pre>
 </div>
 </div>
@@ -1131,7 +1224,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-12 Thu 22:11</p>
+<p class="date">Created: 2020-03-13 Fri 12:23</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

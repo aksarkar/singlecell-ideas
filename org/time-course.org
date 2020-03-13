@@ -65,10 +65,10 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 66358125
+  : Submitted batch job 66367606
 
   #+BEGIN_SRC ipython
     import anmf
@@ -368,7 +368,6 @@
 
    Fit ANMF. Report the time elapsed (seconds).
 
-
    #+BEGIN_SRC ipython
      assert torch.cuda.is_available()
      xt = torch.tensor(x, dtype=torch.float).cuda()
@@ -378,7 +377,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[54]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython :async t
@@ -425,6 +424,21 @@
    # Out[63]:
    :END:
 
+   Report the maximum absolute KKT residual.
+
+   #+BEGIN_SRC ipython :async t
+     A = x / (s.reshape(-1, 1) * lhat.dot(fhat))
+     l_resid = abs(fhat.T * ((1 - A).T @ lhat)).max()
+     f_resid = abs(lhat * ((1 - A) @ fhat.T)).max()
+     l_resid, f_resid
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[65]:
+   : (0.000967120470937001, 0.07753114624327002)
+   :END:
+
    Report the loss achieved by each algorithm.
 
    #+BEGIN_SRC ipython
@@ -450,23 +464,101 @@
    ([[https://arxiv.org/abs/1801.03558][Cremer et al 2020]]) suggest this is to
    be expected: there is an /amortization gap/ due to the fact that we are not
    directly optimizing the likelihood with respect to the local latent variable
-   \(\vl_i\) for each observation \(\vx_i\). The more important (and more
-   difficult!) question to assess is whether this difference matters for
-   downstream analysis.
-
-   Report the maximum absolute KKT residual.
+   \(\vl_i\) for each observation \(\vx_i\). To investigate this gap, fix the
+   factors to the ground truth, and see whether ANMF recovers the loadings.
 
    #+BEGIN_SRC ipython :async t
-     A = x / (s.reshape(-1, 1) * lhat.dot(fhat))
-     l_resid = abs(fhat.T * ((1 - A).T @ lhat)).max()
-     f_resid = abs(lhat * ((1 - A) @ fhat.T)).max()
-     l_resid, f_resid
+     start = time.time()
+     fit = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=10)
+     # y = ln(1 + exp(x))
+     # exp(y) - 1 = exp(x)
+     # ln(exp(y) - 1) = x
+     fit.decoder._f.data = torch.tensor(np.log(np.exp(f.T) - 1), dtype=torch.float)
+     fit.decoder._f.requires_grad = False
+     fit.fit(data, max_epochs=1600, trace=True, lr=1e-3)
+     elapsed = time.time() - start
+     elapsed
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[63]:
+   : 30.25163698196411
+   :END:
+
+   Compare the fit fixing the ground truth \(\mf\) to the oracle.
+
+   #+BEGIN_SRC ipython
+     lhat = fit.loadings(xt)
+     fhat = fit.factors()
+     pd.Series({
+       'oracle': -st.poisson(mu=l @ f.T).logpmf(x).mean(),
+       'anmf': -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).mean(),
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[64]:
+   #+BEGIN_EXAMPLE
+     oracle    2.664753
+     anmf      2.676659
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+   Plot the estimated loadings against the true loadings.
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-lhat.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 5, sharex=True, sharey=True)
+     fig.set_size_inches(8, 4)
+     lim = [0, 3]
+     for i, a in enumerate(ax.ravel()):
+       a.scatter(np.sqrt(l[:,i]), np.sqrt(s * lhat[:,i]), s=1, c='k')
+       a.plot(lim, lim, lw=1, ls=':', c='r')
+       a.set_title(f'Factor {i}')
+       a.set_xlim(lim)
+       a.set_ylim(lim)
+     for a in ax:
+       a[0].set_ylabel('Sqrt est loading')
+     for a in ax.T:
+       a[-1].set_xlabel('Sqrt true loading')
+     fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
    # Out[65]:
-   : (0.000967120470937001, 0.07753114624327002)
+   [[file:figure/time-course.org/sim-lhat.png]]
+   :END:
+
+   Check whether this is an algorithmic problem by trying batch gradient
+   descent instead.
+
+   #+BEGIN_SRC ipython :async t
+     data = td.DataLoader(dense_data, batch_size=x.shape[0], shuffle=False)
+     fit = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=10)
+     fit.decoder._f.data = torch.tensor(np.log(np.exp(f.T) - 1), dtype=torch.float)
+     fit.decoder._f.requires_grad = False
+     fit.fit(data, max_epochs=6400, trace=True, lr=1e-3)
+
+     lhat = fit.loadings(xt)
+     fhat = fit.factors()
+     pd.Series({
+       'oracle': -st.poisson(mu=l @ f.T).logpmf(x).mean(),
+       'anmf': -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).mean(),
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[68]:
+   #+BEGIN_EXAMPLE
+     oracle    2.664753
+     anmf      2.675015
+     dtype: float64
+   #+END_EXAMPLE
    :END:
 
 ** ANMF on 68K PBMCs

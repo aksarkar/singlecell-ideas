@@ -346,15 +346,16 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[52]:
-   : 14.871012659867604
+   # Out[69]:
+   : 13.413497316837312
    :END:
 
    Peter Carbonetto previously derived the KKT conditions for the NMF
    objective. Report the maximum absolute KKT residual.
 
    #+BEGIN_SRC ipython :async t
-     A = x / (s.reshape(-1, 1) * lhat0 @ fhat0.T)
+     # Important: our NMF implementation does not remove the size factor
+     A = x / (lhat0 @ fhat0.T)
      l_resid = abs(fhat0 * ((1 - A).T @ lhat0)).max()
      f_resid = abs(lhat0 * ((1 - A) @ fhat0)).max()
      l_resid, f_resid
@@ -362,8 +363,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[53]:
-   : (2567.8499292412193, 7533.948618377116)
+   # Out[70]:
+   : (0.05866832853326247, 0.09743250873968519)
    :END:
 
    Fit ANMF. Report the time elapsed (seconds).

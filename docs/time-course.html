@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-12 Thu 13:06 -->
+<!-- 2020-03-12 Thu 19:55 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -625,33 +625,25 @@ Simulate a simple example.
 <span class="org-variable-name">k</span> = 10
 <span class="org-variable-name">l</span> = np.random.lognormal(sigma=0.5, size=(n, k))
 <span class="org-variable-name">f</span> = np.random.lognormal(sigma=0.5, size=(p, k))
-<span class="org-variable-name">x</span> = np.random.poisson(l.dot(f.T))
+<span class="org-variable-name">x</span> = np.random.poisson(l @ f.T)
 <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
 </pre>
 </div>
 
 <p>
-Fit NMF via EM.
+Fit NMF via EM. Report the time elapsed (minutes).
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">lhat</span>, <span class="org-variable-name">fhat</span>, <span class="org-variable-name">loss</span> = scmodes.lra.nmf(x, rank=10, tol=1e-2, max_iters=10000, verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">lhat0</span>, <span class="org-variable-name">fhat0</span>, <span class="org-variable-name">loss0</span> = scmodes.lra.nmf(x, rank=10, tol=1e-3, max_iters=50000, verbose=<span class="org-constant">True</span>)
 <span class="org-variable-name">elapsed</span> = time.time() - start
-</pre>
-</div>
-
-<p>
-Report the time elapsed (seconds).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">elapsed
+elapsed / 60
 </pre>
 </div>
 
 <pre class="example">
-200.11741995811462
+14.871012659867604
 
 </pre>
 
@@ -661,70 +653,55 @@ objective. Report the maximum absolute KKT residual.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">A</span> = x / (s.reshape(-1, 1) * lhat.dot(fhat))
-<span class="org-variable-name">l_resid</span> = <span class="org-builtin">abs</span>(fhat.T * ((1 - A).T @ lhat)).<span class="org-builtin">max</span>()
-<span class="org-variable-name">f_resid</span> = <span class="org-builtin">abs</span>(lhat * ((1 - A) @ fhat.T)).<span class="org-builtin">max</span>()
+<pre class="src src-ipython"><span class="org-variable-name">A</span> = x / (s.reshape(-1, 1) * lhat0 @ fhat0.T)
+<span class="org-variable-name">l_resid</span> = <span class="org-builtin">abs</span>(fhat0 * ((1 - A).T @ lhat0)).<span class="org-builtin">max</span>()
+<span class="org-variable-name">f_resid</span> = <span class="org-builtin">abs</span>(lhat0 * ((1 - A) @ fhat0)).<span class="org-builtin">max</span>()
 l_resid, f_resid
 </pre>
 </div>
 
-<p>
-Report the oracle loss, and the EM loss.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">-st.poisson(mu=x).logpmf(x).<span class="org-builtin">sum</span>(), loss
-</pre>
-</div>
-
 <pre class="example">
-(1104395.014892481, 1356432.0729535678)
+(2567.8499292412193, 7533.948618377116)
 
 </pre>
 
 <p>
-Fit ANMF.
+Fit ANMF. Report the time elapsed (seconds).
 </p>
+
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">assert</span> torch.cuda.is_available()
-<span class="org-variable-name">dense_data</span> = td.TensorDataset(torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>).cuda(),
-                              torch.tensor(s, dtype=torch.<span class="org-builtin">float</span>).cuda())
-<span class="org-variable-name">data</span> = td.DataLoader(dense_data, batch_size=64, shuffle=<span class="org-constant">True</span>)
+<span class="org-variable-name">xt</span> = torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>).cuda()
+<span class="org-variable-name">dense_data</span> = td.TensorDataset(xt, torch.tensor(s, dtype=torch.<span class="org-builtin">float</span>).cuda())
+<span class="org-variable-name">data</span> = td.DataLoader(dense_data, batch_size=64, shuffle=<span class="org-constant">False</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
 <span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1])
-       .fit(data, max_epochs=400, trace=<span class="org-constant">True</span>, lr=5e-3))
+       .fit(data, max_epochs=800, trace=<span class="org-constant">True</span>, lr=5e-4))
 <span class="org-variable-name">elapsed</span> = time.time() - start
-</pre>
-</div>
-
-<p>
-Report the time elapsed (seconds).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">elapsed
+elapsed
 </pre>
 </div>
 
 <pre class="example">
-7.6526994705200195
+15.24153757095337
 
 </pre>
 
 <p>
-Plot the optimization trace, focusing on the last 100 iterations.
+Plot the optimization trace, focusing on the last 100 minibatches.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
 plt.gcf().set_size_inches(4, 2)
 plt.plot(np.array(fit.trace).ravel()[-400:] / (64 * p), lw=1, c=<span class="org-string">'k'</span>)
-plt.xlabel(<span class="org-string">'Minibatch'</span>)
+plt.xticks(np.arange(0, 500, 100), np.arange(-400, 100, 100))
+plt.xlabel(<span class="org-string">'Minibatch before end'</span>)
 plt.ylabel(<span class="org-string">'Per obs neg log lik'</span>)
 plt.tight_layout()
 </pre>
@@ -737,13 +714,51 @@ plt.tight_layout()
 </div>
 
 <p>
+Recover the loadings and factors.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span> = fit.loadings(xt)
+<span class="org-variable-name">fhat</span> = fit.factors()
+</pre>
+</div>
+
+<p>
+Report the loss achieved by each algorithm.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series({
+  <span class="org-string">'oracle'</span>: -st.poisson(mu=l @ f.T).logpmf(x).<span class="org-builtin">sum</span>(),
+  <span class="org-string">'em'</span>: loss0,
+  <span class="org-string">'anmf'</span>: -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).<span class="org-builtin">sum</span>(),
+})
+</pre>
+</div>
+
+<pre class="example">
+oracle    1.364353e+06
+em        1.356402e+06
+anmf      1.385015e+06
+dtype: float64
+</pre>
+
+<p>
+The log likelihood achieved by ANMF is lower than the oracle. Recent results
+(<a href="https://arxiv.org/abs/1801.03558">Cremer et al 2020</a>) suggest this is to
+be expected: there is an <i>amortization gap</i> due to the fact that we are not
+directly optimizing the likelihood with respect to the local latent variable
+\(\vl_i\) for each observation \(\vx_i\). The more important (and more
+difficult!) question to assess is whether this difference matters for
+downstream analysis.
+</p>
+
+<p>
 Report the maximum absolute KKT residual.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">lhat</span> = np.vstack([fit.loadings(b) <span class="org-keyword">for</span> (b, s) <span class="org-keyword">in</span> data])
-<span class="org-variable-name">fhat</span> = fit.factors()
-<span class="org-variable-name">A</span> = x / (s.reshape(-1, 1) * lhat.dot(fhat))
+<pre class="src src-ipython"><span class="org-variable-name">A</span> = x / (s.reshape(-1, 1) * lhat.dot(fhat))
 <span class="org-variable-name">l_resid</span> = <span class="org-builtin">abs</span>(fhat.T * ((1 - A).T @ lhat)).<span class="org-builtin">max</span>()
 <span class="org-variable-name">f_resid</span> = <span class="org-builtin">abs</span>(lhat * ((1 - A) @ fhat.T)).<span class="org-builtin">max</span>()
 l_resid, f_resid
@@ -751,7 +766,7 @@ l_resid, f_resid
 </div>
 
 <pre class="example">
-(0.023548399419082357, 0.029147694241919264)
+(0.000967120470937001, 0.07753114624327002)
 
 </pre>
 </div>
@@ -991,7 +1006,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-12 Thu 13:06</p>
+<p class="date">Created: 2020-03-12 Thu 19:55</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

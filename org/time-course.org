@@ -68,7 +68,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 66342555
+  : Submitted batch job 66356319
 
   #+BEGIN_SRC ipython
     import anmf
@@ -325,7 +325,7 @@
      k = 10
      l = np.random.lognormal(sigma=0.5, size=(n, k))
      f = np.random.lognormal(sigma=0.5, size=(p, k))
-     x = np.random.poisson(l.dot(f.T))
+     x = np.random.poisson(l @ f.T)
      s = x.sum(axis=1)
    #+END_SRC
 
@@ -334,113 +334,128 @@
    # Out[4]:
    :END:
 
-   Fit NMF via EM.
+   Fit NMF via EM. Report the time elapsed (minutes).
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
-     lhat, fhat, loss = scmodes.lra.nmf(x, rank=10, tol=1e-2, max_iters=10000, verbose=True)
+     lhat0, fhat0, loss0 = scmodes.lra.nmf(x, rank=10, tol=1e-3, max_iters=50000, verbose=True)
      elapsed = time.time() - start
+     elapsed / 60
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
-   :END:
-
-   Report the time elapsed (seconds).
-
-   #+BEGIN_SRC ipython
-     elapsed
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[7]:
-   : 200.11741995811462
+   # Out[52]:
+   : 14.871012659867604
    :END:
 
    Peter Carbonetto previously derived the KKT conditions for the NMF
    objective. Report the maximum absolute KKT residual.
 
    #+BEGIN_SRC ipython :async t
-     A = x / (s.reshape(-1, 1) * lhat.dot(fhat))
-     l_resid = abs(fhat.T * ((1 - A).T @ lhat)).max()
-     f_resid = abs(lhat * ((1 - A) @ fhat.T)).max()
+     A = x / (s.reshape(-1, 1) * lhat0 @ fhat0.T)
+     l_resid = abs(fhat0 * ((1 - A).T @ lhat0)).max()
+     f_resid = abs(lhat0 * ((1 - A) @ fhat0)).max()
      l_resid, f_resid
    #+END_SRC
 
-   Report the oracle loss, and the EM loss.
-
-   #+BEGIN_SRC ipython
-     -st.poisson(mu=x).logpmf(x).sum(), loss
-   #+END_SRC
-
    #+RESULTS:
    :RESULTS:
-   # Out[19]:
-   : (1104395.014892481, 1356432.0729535678)
+   # Out[53]:
+   : (2567.8499292412193, 7533.948618377116)
    :END:
 
-   Fit ANMF.
+   Fit ANMF. Report the time elapsed (seconds).
+
 
    #+BEGIN_SRC ipython
      assert torch.cuda.is_available()
-     dense_data = td.TensorDataset(torch.tensor(x, dtype=torch.float).cuda(),
-                                   torch.tensor(s, dtype=torch.float).cuda())
-     data = td.DataLoader(dense_data, batch_size=64, shuffle=True)
+     xt = torch.tensor(x, dtype=torch.float).cuda()
+     dense_data = td.TensorDataset(xt, torch.tensor(s, dtype=torch.float).cuda())
+     data = td.DataLoader(dense_data, batch_size=64, shuffle=False)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[57]:
+   # Out[54]:
    :END:
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
      fit = (anmf.modules.ANMF(input_dim=x.shape[1])
-            .fit(data, max_epochs=400, trace=True, lr=5e-3))
+            .fit(data, max_epochs=800, trace=True, lr=5e-4))
      elapsed = time.time() - start
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[58]:
-   :END:
-
-   Report the time elapsed (seconds).
-
-   #+BEGIN_SRC ipython
      elapsed
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[59]:
-   : 7.6526994705200195
+   # Out[61]:
+   : 15.24153757095337
    :END:
 
-   Plot the optimization trace, focusing on the last 100 iterations.
+   Plot the optimization trace, focusing on the last 100 minibatches.
 
    #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-trace.png
      plt.clf()
      plt.gcf().set_size_inches(4, 2)
      plt.plot(np.array(fit.trace).ravel()[-400:] / (64 * p), lw=1, c='k')
-     plt.xlabel('Minibatch')
+     plt.xticks(np.arange(0, 500, 100), np.arange(-400, 100, 100))
+     plt.xlabel('Minibatch before end')
      plt.ylabel('Per obs neg log lik')
      plt.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[61]:
+   # Out[62]:
    [[file:figure/time-course.org/sim-trace.png]]
    :END:
+
+   Recover the loadings and factors.
+
+   #+BEGIN_SRC ipython
+     lhat = fit.loadings(xt)
+     fhat = fit.factors()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[63]:
+   :END:
+
+   Report the loss achieved by each algorithm.
+
+   #+BEGIN_SRC ipython
+     pd.Series({
+       'oracle': -st.poisson(mu=l @ f.T).logpmf(x).sum(),
+       'em': loss0,
+       'anmf': -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).sum(),
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[64]:
+   #+BEGIN_EXAMPLE
+     oracle    1.364353e+06
+     em        1.356402e+06
+     anmf      1.385015e+06
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+   The log likelihood achieved by ANMF is lower than the oracle. Recent results
+   ([[https://arxiv.org/abs/1801.03558][Cremer et al 2020]]) suggest this is to
+   be expected: there is an /amortization gap/ due to the fact that we are not
+   directly optimizing the likelihood with respect to the local latent variable
+   \(\vl_i\) for each observation \(\vx_i\). The more important (and more
+   difficult!) question to assess is whether this difference matters for
+   downstream analysis.
 
    Report the maximum absolute KKT residual.
 
    #+BEGIN_SRC ipython :async t
-     lhat = np.vstack([fit.loadings(b) for (b, s) in data])
-     fhat = fit.factors()
      A = x / (s.reshape(-1, 1) * lhat.dot(fhat))
      l_resid = abs(fhat.T * ((1 - A).T @ lhat)).max()
      f_resid = abs(lhat * ((1 - A) @ fhat.T)).max()
@@ -449,8 +464,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[60]:
-   : (0.023548399419082357, 0.029147694241919264)
+   # Out[65]:
+   : (0.000967120470937001, 0.07753114624327002)
    :END:
 
 ** ANMF on iPSC data

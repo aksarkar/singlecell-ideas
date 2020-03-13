@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-12 Thu 19:55 -->
+<!-- 2020-03-12 Thu 21:22 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Hierarchical NMF</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,39 +227,175 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">Hierarchical NMF</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgd72a8e0">Introduction</a></li>
+<li><a href="#orga88ab12">Variational EM</a></li>
+<li><a href="#orge773ba4">Alternative scheme</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgd72a8e0" class="outline-2">
+<h2 id="orgd72a8e0">Introduction</h2>
+<div class="outline-text-2" id="text-orgd72a8e0">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+Matthew Stephens suggested that rather than aiming for sparse NMF/topic
+models (for interpretability), we might aim for topic models in which topics
+do not deviate from the mean at most genes. This idea suggests a hierarchical
+model\(
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Mult{Multinomial}
+  \newcommand\E[1]{\left\langle #1 \right\rangle}
+  \newcommand\const{\mathrm{const}}
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\vmu{\boldsymbol{\mu}}
+  \newcommand\mphi{\boldsymbol{\Phi}}
+  \)
 </p>
 
-<ul class="org-ul">
-<li><a href="hnmf.html">Hierarchical NMF</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
-<li><a href="zinb-vae-gmm.html"><del>ZINB-VAE-GMM</del></a></li>
-</ul>
+\begin{align*}
+  x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+  \lambda_{ij} &= \sum_k l_{ik} f_{jk}\\
+  f_{jk} &\sim \Gam(\phi_{jk}^{-1}, \phi_{jk}^{-1}\mu_j^{-1}),
+\end{align*}
+
+<p>
+where the Gamma distribution is parameterized by shape and rate. In this
+parameterization, \(\E{f_{jk}} = \mu_j\) and \(V[f_{jk}] = \mu_j^2
+  \phi_{jk}\).
+</p>
+
+<p>
+The inference goal is to estimate \(\ml = [l_{ik}]\),
+\(\vmu = [\mu_j]\), \(\mphi = [\phi_{jk}]\) via
+variational EM. Here, we explore whether a re-parameterization makes this
+model easier to fit.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orga88ab12" class="outline-2">
+<h2 id="orga88ab12">Variational EM</h2>
+<div class="outline-text-2" id="text-orga88ab12">
+<p>
+<a href="https://dx.doi.org/10.1155/2009/785152">Cemgil 2009</a> describes how to
+perform VI in this family of models. First, augment the model
+</p>
+
+\begin{align*}
+  x_{ij} &= \sum_{k=1}^{K} z_{ijk}\\
+  z_{ijk} \mid \lambda_{ijk} &\sim \Pois(s_i \lambda_{ijk})\\
+  \lambda_{ijk} &= l_{ik} f_{jk}\\
+  f_{jk} &\sim \Gam(\phi_{jk}^{-1}, \phi_{jk}^{-1}\mu_j^{-1}).
+\end{align*}
+
+<p>
+Then, the log joint is
+</p>
+
+\begin{multline}
+  \ln p(\cdot) = \sum_{i,j,k} \left[z_{ijk} \ln(s_i l_{ik} f_{jk}) - s_i l_{ik} f_{jk} - \ln\Gamma(z_{ijk} + 1)\right]\\
+  + \sum_{j, k} \left[\phi_{jk}^{-1} \ln(\phi_{jk}^{-1}\mu_j^{-1}) + (\phi_{jk}^{-1} - 1) \ln f_{jk} - \phi_{jk}^{-1}\mu_j^{-1} f_{jk} - \ln\Gamma(\phi_{jk}^{-1}) \right],
+\end{multline}
+
+<p>
+and by a variational argument, we have
+</p>
+
+\begin{align*}
+  q^*(z_{ij1}, \ldots, z_{ijK}) &\propto \exp(\sum_k z_{ijk} (\ln(s_i l_{ik}) + \E{\ln f_{jk}}))\\
+  &= \Mult(\cdot; x_{ij}, \frac{l_{i1} \exp(\E{\ln f_{j1}})}{\sum_t l_{it} \exp(\E{\ln f_{jt}})}, \ldots, \frac{l_{iK} \exp(\E{\ln f_{jK}})}{\sum_t l_{it} \exp(\E{\ln f_{jt}})})\\
+  q^*(f_{jk}) &\propto \exp(\E{z_{ijk}} \ln f_{jk} - s_i l_{ik} f_{jk} + (\phi_{jk}^{-1} - 1) \ln f_{jk} - \phi_{jk}^{-1}\mu_j^{-1} f_{jk})\\
+  &= \Gam(\E{z_{ijk}} + \phi_{jk}^{-1}, s_i l_{ik} + \phi_{jk}^{-1}\mu_j^{-1}).
+\end{align*}
+</div>
+</div>
+
+<div id="outline-container-orge773ba4" class="outline-2">
+<h2 id="orge773ba4">Alternative scheme</h2>
+<div class="outline-text-2" id="text-orge773ba4">
+<p>
+Using the fact that Gamma distributions are closed under multiplication,
+write
+</p>
+
+\begin{align*}
+  x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+  \lambda_{ij} &= \sum_{k=1}^K l_{ik} \mu_j u_{jk}\\
+  u_{jk} &\sim \Gam(\phi_{jk}^{-1}, \phi_{jk}^{-1}),
+\end{align*}
+
+<p>
+implying \(\lambda_{ij} \sim g_{ij}(\cdot)\). Then, the marginal log
+likelihood is
+</p>
+
+\begin{equation*}
+  \ln p(x_{ij} \mid \cdot) = x_{ij} \ln\left(\frac{s_i \sum_k l_{ik} \mu_j \phi_{jk}}{1 + s_i \sum_k l_{ik} \mu_j \phi_{jk}}\right) - \phi_{jk}^{-1} \ln(1 + s_i \mu_j\phi_{jk}) + \ln\Gamma(x_{ij} + \phi_{jk}^{-1}) - \ln\Gamma(x_{ij} + 1) - \ln \Gamma(\phi^{-1}),
+\end{equation*}
+
+<p>
+suggesting estimating \(g_{ij}\) by maximizing the marginal log likelihood
+with respect to \(\ml, \vmu, \mphi\). Now <a href="#orga88ab12">augment the
+model as above</a>; then, the log joint is
+</p>
+
+\begin{multline}
+  \ln p(\cdot) = \sum_{i,j,k} \left[z_{ijk} \ln(s_i l_{ik} \mu_j u_{jk}) - s_i l_{ik} \mu_j u_{jk} - \ln\Gamma(z_{ijk} + 1)\right]\\
+  + \sum_{j, k} \left[\phi_{jk}^{-1} \ln \phi_{jk}^{-1} + (\phi_{jk}^{-1} - 1) \ln u_{jk} - \phi_{jk}^{-1} u_{jk} - \ln\Gamma(\phi_{jk}^{-1}) \right].
+\end{multline}
+
+<p>
+As argued previously (Gouvert et al. 2018),
+</p>
+
+<p>
+\[ p(z_{ij1}, \ldots, z_{ijK} \mid \cdot) = \Mult(x_{ij}, \frac{l_{i1} \mu_j}{\sum_t l_{it} \mu_j}, \ldots, \frac{l_{iK} \mu_j}{\sum_t l_{it} \mu_j}) \]
+</p>
+
+<p>
+and by a similar argument <a href="#orga88ab12">as above</a>,
+</p>
+
+<p>
+\[ q^*(u_{jk}) = \Gam(\E{z_{ijk}} + \phi_{jk}^{-1}, s_i l_{ik} \mu_j + \phi_{jk}^{-1}). \]
+</p>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-12 Thu 19:55</p>
+<p class="date">Created: 2020-03-12 Thu 21:22</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

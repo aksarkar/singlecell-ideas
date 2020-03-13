@@ -68,7 +68,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 66356319
+  : Submitted batch job 66358125
 
   #+BEGIN_SRC ipython
     import anmf
@@ -101,6 +101,7 @@
   :END:
 
   #+BEGIN_SRC ipython
+    import colorcet
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
     plt.rcParams['font.family'] = 'Nimbus Sans'
@@ -468,87 +469,6 @@
    : (0.000967120470937001, 0.07753114624327002)
    :END:
 
-** ANMF on iPSC data
-
-   Read the data.
-
-   #+BEGIN_SRC ipython
-     x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
-     s = x.X.sum(axis=1)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[10]:
-   :END:
-
-   #+BEGIN_SRC ipython
-     sparse_data = anmf.dataset.ExprDataset(x.X, s.A)
-     data = td.DataLoader(sparse_data, batch_size=64, shuffle=False, collate_fn=sparse_data.collate_fn)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[23]:
-   :END:
-
-   Run ANMF on the data. A priori, we might expect the data to be rank 53
-   (equal to the number of donor individuals). Indeed, this is the rank of the
-   implicit factor model we originally fit to the data.
-
-   #+BEGIN_SRC ipython :async t
-     start = time.time()
-     fit = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)
-            .fit(data, max_epochs=40, trace=True, verbose=True, lr=1e-2))
-     elapsed = time.time() - start
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[24]:
-   :END:
-
-   Report how long the optimization took (minutes).
-
-   #+BEGIN_SRC ipython
-     elapsed / 60
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[28]:
-   : 2.7217764496803283
-   :END:
-
-   Plot the end of the optimization trace.
-
-   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/ipsc-trace.png
-     plt.clf()
-     plt.gcf().set_size_inches(4, 2)
-     plt.plot(np.array(fit.trace).ravel()[-100:] / (128 * x.shape[1]), lw=1, c='k')
-     plt.xticks(np.arange(0, 125, 25), np.arange(-100, 25, 25))
-     plt.xlabel('Minibatches before maximum')
-     plt.ylabel('Neg log lik per obs')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[29]:
-   [[file:figure/time-course.org/ipsc-trace.png]]
-   :END:
-
-   Save the fitted model.
-
-   #+BEGIN_SRC ipython
-     torch.save(fit.state_dict(), '/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[27]:
-   :END:
-
 ** ANMF on 68K PBMCs
 
    Read the data, restricting to genes with non-zero observations in at least 1
@@ -645,11 +565,11 @@
    # Out[4]:
    :END:
 
-   Fit ANMF.
+   Fit ANMF. Report how long the optimization took (minutes).
 
    #+BEGIN_SRC ipython
      sparse_data = anmf.dataset.ExprDataset(x.X, s.A)
-     data = td.DataLoader(sparse_data, batch_size=128, shuffle=False, collate_fn=sparse_data.collate_fn)
+     data = td.DataLoader(sparse_data, batch_size=64, shuffle=False, collate_fn=sparse_data.collate_fn)
    #+END_SRC
 
    #+RESULTS:
@@ -662,24 +582,33 @@
      fit = (anmf.modules.ANMF(input_dim=x.shape[1])
             .fit(data, max_epochs=10, trace=True, verbose=True, lr=5e-3))
      elapsed = time.time() - start
+     elapsed / 60
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[9]:
+   : 5.154516808191935
    :END:
 
-   Report how long the optimization took (seconds).
+   Save the fitted model.
 
    #+BEGIN_SRC ipython
-     elapsed
+     torch.save(fit.state_dict(), '/scratch/midway2/aksarkar/ideas/zheng-10-way-anmf.pkl')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
-   : 285.05831122398376
+   # Out[10]:
    :END:
+
+   Load the fitted model.
+
+   #+BEGIN_SRC ipython
+     fit = anmf.modules.ANMF(input_dim=x.shape[1])
+     fit.load_state_dict(torch.load('/scratch/midway2/aksarkar/ideas/zheng-10-way-anmf.pkl'))
+     fit.cuda()
+   #+END_SRC
 
    Plot the optimization trace, focusing on the tail.
 
@@ -695,6 +624,213 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[11]:
    [[file:figure/time-course.org/zheng-10-way-trace.png]]
    :END:
+
+   Get the loadings/factors.
+
+   #+BEGIN_SRC ipython :async t
+     l = np.vstack([fit.loadings(b) for b, s in data])
+     f = fit.factors()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[20]:
+   :END:
+
+   Normalize into a topic model.
+
+   #+BEGIN_SRC ipython
+     w = l * f.sum(axis=1)
+     w /= w.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[31]:
+   :END:
+
+   Get the cell type identities.
+
+   #+BEGIN_SRC ipython
+     onehot = pd.get_dummies(x.obs['cell_type'])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[33]:
+   :END:
+
+   Estimate the correlation between the topic weights and the cell types.
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/zheng-10-way-loadings.png
+     r = np.corrcoef(w.T, onehot.T)
+     plt.clf()
+     plt.gcf().set_size_inches(4, 4)
+     plt.imshow(r[:10,10:], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[36]:
+   [[file:figure/time-course.org/zheng-10-way-loadings.png]]
+   :END:
+
+** ANMF on iPSC data
+
+   Read the data.
+
+   #+BEGIN_SRC ipython
+     x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+     s = x.X.sum(axis=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[67]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     sparse_data = anmf.dataset.ExprDataset(x.X, s.A)
+     data = td.DataLoader(sparse_data, batch_size=64, shuffle=False, collate_fn=sparse_data.collate_fn)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[69]:
+   :END:
+
+   Run ANMF on the data. A priori, we might expect the data to be rank 53
+   (equal to the number of donor individuals). Indeed, this is the rank of the
+   implicit factor model we originally fit to the data.
+
+   #+BEGIN_SRC ipython :async t
+     start = time.time()
+     fit = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)
+            .fit(data, max_epochs=40, trace=True, verbose=True, lr=1e-2))
+     elapsed = time.time() - start
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   :END:
+
+   Report how long the optimization took (minutes).
+
+   #+BEGIN_SRC ipython
+     elapsed / 60
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[28]:
+   : 2.7217764496803283
+   :END:
+
+   Plot the end of the optimization trace.
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/ipsc-trace.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(np.array(fit.trace).ravel()[-100:] / (128 * x.shape[1]), lw=1, c='k')
+     plt.xticks(np.arange(0, 125, 25), np.arange(-100, 25, 25))
+     plt.xlabel('Minibatches before maximum')
+     plt.ylabel('Neg log lik per obs')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[29]:
+   [[file:figure/time-course.org/ipsc-trace.png]]
+   :END:
+
+   Save the fitted model.
+
+   #+BEGIN_SRC ipython
+     torch.save(fit.state_dict(), '/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[27]:
+   :END:
+
+   Load the fitted model.
+
+   #+BEGIN_SRC ipython
+     fit = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)     
+     fit.load_state_dict(torch.load('/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl'))
+     fit.cuda()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[74]:
+   #+BEGIN_EXAMPLE
+     ANMF(
+     (encoder): Encoder(
+     (net): Sequential(
+     (0): Linear(in_features=9957, out_features=128, bias=True)
+     (1): ReLU()
+     (2): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+     (3): Linear(in_features=128, out_features=53, bias=True)
+     (4): Softplus(beta=1, threshold=20)
+     )
+     )
+     (decoder): Pois()
+     )
+   #+END_EXAMPLE
+   :END:
+
+   Look at the correlation between the loadings and the donor individuals.
+
+   #+BEGIN_SRC ipython :async t
+     l = np.vstack([fit.loadings(b) for b, s in data])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[75]:
+   :END:
+
+   #+BEGIN_SRC ipython 
+     keep_samples = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt', index_col=0, header=None)
+     annotations = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-annotation.txt')
+     annotations = annotations.loc[keep_samples.values.ravel()]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[76]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     onehot = pd.get_dummies(annotations['chip_id'])
+     r = np.corrcoef(l.T, onehot.T)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[84]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/ipsc-loadings.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 4)
+     plt.imshow(r, vmin=-1, vmax=1, cmap=colorcet.cm['coolwarm'])
+     plt.xlabel('Estimated loadings')
+     plt.ylabel('Donor individual')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[89]:
+   [[file:figure/time-course.org/ipsc-loadings.png]]
+   :END:
+

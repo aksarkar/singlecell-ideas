@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-12 Thu 19:55 -->
+<!-- 2020-03-12 Thu 22:11 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -271,9 +271,9 @@ for the JavaScript code in this tag.
 <li><a href="#org1cce9ff">Results</a>
 <ul>
 <li><a href="#org13ff0f7">Simulation</a></li>
-<li><a href="#org687e657">ANMF on iPSC data</a></li>
 <li><a href="#orgb7e7231">ANMF on 68K PBMCs</a></li>
 <li><a href="#org8ec4008">ANMF on 10-way mixture</a></li>
+<li><a href="#org687e657">ANMF on iPSC data</a></li>
 </ul>
 </li>
 </ul>
@@ -370,7 +370,8 @@ e.g. Human Cell Atlas? As references, compare against
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
 </pre>
@@ -772,85 +773,6 @@ l_resid, f_resid
 </div>
 </div>
 
-<div id="outline-container-org687e657" class="outline-3">
-<h3 id="org687e657">ANMF on iPSC data</h3>
-<div class="outline-text-3" id="text-org687e657">
-<p>
-Read the data.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
-<span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
-<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=64, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
-</pre>
-</div>
-
-<p>
-Run ANMF on the data. A priori, we might expect the data to be rank 53
-(equal to the number of donor individuals). Indeed, this is the rank of the
-implicit factor model we originally fit to the data.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)
-       .fit(data, max_epochs=40, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=1e-2))
-<span class="org-variable-name">elapsed</span> = time.time() - start
-</pre>
-</div>
-
-<p>
-Report how long the optimization took (minutes).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">elapsed / 60
-</pre>
-</div>
-
-<pre class="example">
-2.7217764496803283
-
-</pre>
-
-<p>
-Plot the end of the optimization trace.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-plt.gcf().set_size_inches(4, 2)
-plt.plot(np.array(fit.trace).ravel()[-100:] / (128 * x.shape[1]), lw=1, c=<span class="org-string">'k'</span>)
-plt.xticks(np.arange(0, 125, 25), np.arange(-100, 25, 25))
-plt.xlabel(<span class="org-string">'Minibatches before maximum'</span>)
-plt.ylabel(<span class="org-string">'Neg log lik per obs'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/time-course.org/ipsc-trace.png" alt="ipsc-trace.png">
-</p>
-</div>
-
-<p>
-Save the fitted model.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">torch.save(fit.state_dict(), <span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl'</span>)
-</pre>
-</div>
-</div>
-</div>
-
 <div id="outline-container-orgb7e7231" class="outline-3">
 <h3 id="orgb7e7231">ANMF on 68K PBMCs</h3>
 <div class="outline-text-3" id="text-orgb7e7231">
@@ -949,12 +871,12 @@ Read the data.
 </div>
 
 <p>
-Fit ANMF.
+Fit ANMF. Report how long the optimization took (minutes).
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
-<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=128, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
+<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=64, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
 </pre>
 </div>
 
@@ -963,22 +885,34 @@ Fit ANMF.
 <span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1])
        .fit(data, max_epochs=10, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=5e-3))
 <span class="org-variable-name">elapsed</span> = time.time() - start
-</pre>
-</div>
-
-<p>
-Report how long the optimization took (seconds).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">elapsed
+elapsed / 60
 </pre>
 </div>
 
 <pre class="example">
-285.05831122398376
+5.154516808191935
 
 </pre>
+
+<p>
+Save the fitted model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">torch.save(fit.state_dict(), <span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way-anmf.pkl'</span>)
+</pre>
+</div>
+
+<p>
+Load the fitted model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1])
+fit.load_state_dict(torch.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way-anmf.pkl'</span>))
+fit.cuda()
+</pre>
+</div>
 
 <p>
 Plot the optimization trace, focusing on the tail.
@@ -1000,13 +934,204 @@ plt.tight_layout()
 <p><img src="figure/time-course.org/zheng-10-way-trace.png" alt="zheng-10-way-trace.png">
 </p>
 </div>
+
+<p>
+Get the loadings/factors.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">l</span> = np.vstack([fit.loadings(b) <span class="org-keyword">for</span> b, s <span class="org-keyword">in</span> data])
+<span class="org-variable-name">f</span> = fit.factors()
+</pre>
+</div>
+
+<p>
+Normalize into a topic model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">w</span> = l * f.<span class="org-builtin">sum</span>(axis=1)
+<span class="org-variable-name">w</span> /= w.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Get the cell type identities.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">onehot</span> = pd.get_dummies(x.obs[<span class="org-string">'cell_type'</span>])
+</pre>
+</div>
+
+<p>
+Estimate the correlation between the topic weights and the cell types.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(w.T, onehot.T)
+plt.clf()
+plt.gcf().set_size_inches(4, 4)
+plt.imshow(r[:10,10:], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/zheng-10-way-loadings.png" alt="zheng-10-way-loadings.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org687e657" class="outline-3">
+<h3 id="org687e657">ANMF on iPSC data</h3>
+<div class="outline-text-3" id="text-org687e657">
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
+<span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
+<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=64, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
+</pre>
+</div>
+
+<p>
+Run ANMF on the data. A priori, we might expect the data to be rank 53
+(equal to the number of donor individuals). Indeed, this is the rank of the
+implicit factor model we originally fit to the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)
+       .fit(data, max_epochs=40, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=1e-2))
+<span class="org-variable-name">elapsed</span> = time.time() - start
+</pre>
+</div>
+
+<p>
+Report how long the optimization took (minutes).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">elapsed / 60
+</pre>
+</div>
+
+<pre class="example">
+2.7217764496803283
+
+</pre>
+
+<p>
+Plot the end of the optimization trace.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(np.array(fit.trace).ravel()[-100:] / (128 * x.shape[1]), lw=1, c=<span class="org-string">'k'</span>)
+plt.xticks(np.arange(0, 125, 25), np.arange(-100, 25, 25))
+plt.xlabel(<span class="org-string">'Minibatches before maximum'</span>)
+plt.ylabel(<span class="org-string">'Neg log lik per obs'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-trace.png" alt="ipsc-trace.png">
+</p>
+</div>
+
+<p>
+Save the fitted model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">torch.save(fit.state_dict(), <span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl'</span>)
+</pre>
+</div>
+
+<p>
+Load the fitted model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)     
+fit.load_state_dict(torch.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl'</span>))
+fit.cuda()
+</pre>
+</div>
+
+<pre class="example">
+ANMF(
+(encoder): Encoder(
+(net): Sequential(
+(0): Linear(in_features=9957, out_features=128, bias=True)
+(1): ReLU()
+(2): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+(3): Linear(in_features=128, out_features=53, bias=True)
+(4): Softplus(beta=1, threshold=20)
+)
+)
+(decoder): Pois()
+)
+</pre>
+
+<p>
+Look at the correlation between the loadings and the donor individuals.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">l</span> = np.vstack([fit.loadings(b) <span class="org-keyword">for</span> b, s <span class="org-keyword">in</span> data])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">keep_samples</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt'</span>, index_col=0, header=<span class="org-constant">None</span>)
+<span class="org-variable-name">annotations</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-annotation.txt'</span>)
+<span class="org-variable-name">annotations</span> = annotations.loc[keep_samples.values.ravel()]
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">onehot</span> = pd.get_dummies(annotations[<span class="org-string">'chip_id'</span>])
+<span class="org-variable-name">r</span> = np.corrcoef(l.T, onehot.T)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 4)
+plt.imshow(r, vmin=-1, vmax=1, cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>])
+plt.xlabel(<span class="org-string">'Estimated loadings'</span>)
+plt.ylabel(<span class="org-string">'Donor individual'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-loadings.png" alt="ipsc-loadings.png">
+</p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-12 Thu 19:55</p>
+<p class="date">Created: 2020-03-12 Thu 22:11</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

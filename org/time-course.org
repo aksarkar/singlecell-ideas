@@ -65,10 +65,12 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/ideas/
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="32G") :exports none :dir /scratch/midway2/aksarkar/ideas/
 
   #+RESULTS:
-  : Submitted batch job 66367606
+  : Submitted batch job 66391170
 
   #+BEGIN_SRC ipython
     import anmf
@@ -77,6 +79,7 @@
     import pandas as pd
     import scanpy as sc
     import scmodes
+    import scipy.io as si
     import scipy.sparse as ss
     import scipy.stats as st
     import sklearn.decomposition as skd
@@ -127,7 +130,7 @@
    problem for each \(\phi \in \Phi\), we learn a function \(h_\alpha\)
    parameterized by \(\alpha\) which predicts \(\theta^*\) from \(\phi\)
 
-   \[ \alpha^* = \argmin_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi), \]
+   \[ \alpha^* = \argmin_\alpha E_{\phi \sim \hat{p}(\phi)}[f(h_\alpha(\phi), \phi)], \]
 
    where \(\hat{p}(\phi)\) denotes the empirical distribution of \(\phi\) in
    the training data. The function \(h_\alpha\) amortizes inference over the
@@ -139,7 +142,10 @@
    and Seung 2001]], [[https://dx.doi.org/10.1155/2009/785152][Cemgil 2009]])
    can be written
 
-   \[ \vl_i^* = \argmin_{\vl_i} \sum_j \operatorname{Poisson}(x_{ij}; \sum_k l_{ik} f_{jk})\]
+   \begin{align*}
+     \vl_i^* &= \argmin_{\vl_i} f(\vl_i, \vx_i, \mf)\\
+     f(\vl_i, \vx_i, \mf) &\triangleq \sum_j \operatorname{Poisson}(x_{ij}; \sum_k l_{ik} f_{jk}),
+   \end{align*}
 
    where \(\vx_i\) is the context variable, and the goal is to learn
    \(h_\alpha\) which maps observations \(\vx_i\) to loadings \(\vl_i\). (Here,
@@ -287,7 +293,7 @@
    # Out[75]:
    :END:
 
-** Census of Immune Cells data
+** Census of Immune Cells
 
    We previously processed the Census of Immune Cells.
 
@@ -313,6 +319,59 @@
    :RESULTS:
    # Out[47]:
    :END:
+
+** Mouse Organogenesis Cell Atlas
+
+   [[https://www.nature.com/articles/s41586-019-0969-x][Cao et al. 2019]]
+   generated an atlas of 2M mouse cells, analyzed by
+   [[https://www.biorxiv.org/content/10.1101/737601v1.full.pdf][Svensson and
+   Pacther 2019]]. Download the data.
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
+     sbatch --partition=build
+     #!/bin/bash
+     set -e
+     CURL="curl -sfOL"
+     $CURL "https://shendure-web.gs.washington.edu/content/members/cao1025/public/mouse_embryo_atlas/gene_count.txt"
+     $CURL "https://shendure-web.gs.washington.edu/content/members/cao1025/public/mouse_embryo_atlas/gene_annotate.csv"
+     $CURL "https://shendure-web.gs.washington.edu/content/members/cao1025/public/mouse_embryo_atlas/cell_annotate.csv"
+   #+END_SRC
+
+   #+RESULTS:
+   : Submitted batch job 66386315
+
+   Read the data. (31 mins)
+
+   #+BEGIN_SRC ipython :async t
+     x = si.mmread('/scratch/midway2/aksarkar/ideas/gene_count.txt')
+     var = pd.read_csv('/scratch/midway2/aksarkar/ideas/gene_annotate.csv')
+     obs = pd.read_csv('/scratch/midway2/aksarkar/ideas/cell_annotate.csv')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[2]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     keep_genes = (x != 0).sum(axis=1).A > 0
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :async t
+     y = anndata.AnnData(x.T.tocsr(), var=var, obs=obs)
+     y.write_h5ad('/scratch/midway2/aksarkar/ideas/moca.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - 1e2ea9ee-c7ed-4efe-9eac-5a61f80ef91e
+   :END:
+
+   Report the dimensions of the data.
+
+   #+BEGIN_SRC ipython
+     y.shape
+   #+END_SRC
 
 * Results
 ** Simulation
@@ -367,32 +426,52 @@
    : (0.05866832853326247, 0.09743250873968519)
    :END:
 
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-em-fhat.png
+     r = np.corrcoef(f.T, fhat0.T)[:10,10:]
+     order = np.argmax(r, axis=1)
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.imshow(r[:,order], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
+     plt.xticks(np.arange(10))
+     plt.yticks(np.arange(10))
+     plt.xlabel('True factor')
+     plt.ylabel('Estimated factor')
+     plt.title('EM')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[138]:
+   [[file:figure/time-course.org/sim-em-fhat.png]]
+   :END:
+
    Fit ANMF. Report the time elapsed (seconds).
 
    #+BEGIN_SRC ipython
      assert torch.cuda.is_available()
      xt = torch.tensor(x, dtype=torch.float).cuda()
      dense_data = td.TensorDataset(xt, torch.tensor(s, dtype=torch.float).cuda())
-     data = td.DataLoader(dense_data, batch_size=64, shuffle=False)
+     data = td.DataLoader(dense_data, batch_size=x.shape[0], shuffle=False)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[153]:
    :END:
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
      fit = (anmf.modules.ANMF(input_dim=x.shape[1])
-            .fit(data, max_epochs=800, trace=True, lr=5e-4))
+            .fit(data, max_epochs=6400, trace=True, lr=5e-4))
      elapsed = time.time() - start
      elapsed
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[61]:
-   : 15.24153757095337
+   # Out[154]:
+   : 49.469866037368774
    :END:
 
    Plot the optimization trace, focusing on the last 100 minibatches.
@@ -400,7 +479,7 @@
    #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-trace.png
      plt.clf()
      plt.gcf().set_size_inches(4, 2)
-     plt.plot(np.array(fit.trace).ravel()[-400:] / (64 * p), lw=1, c='k')
+     plt.plot(np.array(fit.trace).ravel()[-400:] / (n * p), lw=1, c='k')
      plt.xticks(np.arange(0, 500, 100), np.arange(-400, 100, 100))
      plt.xlabel('Minibatch before end')
      plt.ylabel('Per obs neg log lik')
@@ -409,20 +488,48 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[62]:
+   # Out[190]:
    [[file:figure/time-course.org/sim-trace.png]]
    :END:
 
-   Recover the loadings and factors.
+   Recover the loadings and factors. Convert the factors to topics and
+   correlate them to each other.
 
    #+BEGIN_SRC ipython
+     d = f / f.sum(axis=0, keepdims=True)
+     t = l * f.sum(axis=0, keepdims=True)
+     t /= t.sum(axis=1, keepdims=True)
+
      lhat = fit.loadings(xt)
      fhat = fit.factors()
+     dhat = (fhat / fhat.sum(axis=1, keepdims=True)).T
+     that = lhat * fhat.sum(axis=1)
+     that /= that.sum(axis=1, keepdims=True)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[63]:
+   # Out[177]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-topics.png
+     r = np.corrcoef(t.T, that.T)[:10,10:]
+     order = np.argmax(r, axis=1)
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.imshow(r[order], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
+     plt.xticks(np.arange(10))
+     plt.yticks(np.arange(10))
+     plt.xlabel('True factor')
+     plt.ylabel('Estimated factor')
+     plt.title('ANMF')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[187]:
+   [[file:figure/time-course.org/sim-fhat.png]]
    :END:
 
    Report the maximum absolute KKT residual.
@@ -436,27 +543,27 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[65]:
-   : (0.000967120470937001, 0.07753114624327002)
+   # Out[108]:
+   : (0.001169713130727257, 0.020623888958659735)
    :END:
 
    Report the loss achieved by each algorithm.
 
    #+BEGIN_SRC ipython
      pd.Series({
-       'oracle': -st.poisson(mu=l @ f.T).logpmf(x).sum(),
-       'em': loss0,
-       'anmf': -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).sum(),
+       'oracle': -st.poisson(mu=l @ f.T).logpmf(x).mean(),
+       'em': loss0 / np.prod(x.shape),
+       'anmf': -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).mean(),
      })
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[64]:
+   # Out[189]:
    #+BEGIN_EXAMPLE
-     oracle    1.364353e+06
-     em        1.356402e+06
-     anmf      1.385015e+06
+     oracle    2.664753
+     em        2.649209
+     anmf      2.704351
      dtype: float64
    #+END_EXAMPLE
    :END:
@@ -560,6 +667,20 @@
      anmf      2.675015
      dtype: float64
    #+END_EXAMPLE
+   :END:
+
+   Try batch gradient descent without amortization.
+
+   #+BEGIN_SRC ipython :async t
+     m = (anmf.modules.GNMF(n=x.shape[0], p=x.shape[1], k=10)
+          .cuda()
+          .fit(xt, max_epochs=1000, lr=1e-2, verbose=True, trace=True))
+     m.loss(xt).detach().cpu().numpy() / (n * p)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - 8cdb718e-f62b-4d43-960f-7301e2568059
    :END:
 
 ** ANMF on 68K PBMCs

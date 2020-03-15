@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-13 Fri 12:40 -->
+<!-- 2020-03-15 Sun 11:30 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -265,7 +265,8 @@ for the JavaScript code in this tag.
 <li><a href="#org7c79f06">Amortized LDA</a></li>
 <li><a href="#orga68114a">iPSC data</a></li>
 <li><a href="#org042cb98">10-way mixture</a></li>
-<li><a href="#org6dd7c96">Census of Immune Cells data</a></li>
+<li><a href="#org0316d7a">Census of Immune Cells</a></li>
+<li><a href="#orge169581">Mouse Organogenesis Cell Atlas</a></li>
 </ul>
 </li>
 <li><a href="#org1cce9ff">Results</a>
@@ -347,6 +348,11 @@ e.g. Human Cell Atlas? As references, compare against
 <div id="outline-container-orgaef0b05" class="outline-2">
 <h2 id="setup"><a id="orgaef0b05"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
+<pre class="example">
+Submitted batch job 66391170
+
+</pre>
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> anmf
 <span class="org-keyword">import</span> anndata
@@ -354,6 +360,7 @@ e.g. Human Cell Atlas? As references, compare against
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
 <span class="org-keyword">import</span> scmodes
+<span class="org-keyword">import</span> scipy.io <span class="org-keyword">as</span> si
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> sklearn.decomposition <span class="org-keyword">as</span> skd
@@ -405,7 +412,7 @@ parameterized by \(\alpha\) which predicts \(\theta^*\) from \(\phi\)
 </p>
 
 <p>
-\[ \alpha^* = \argmin_\alpha E_{\phi \sim \hat{p}(\phi)} f(h_\alpha(\phi), \phi), \]
+\[ \alpha^* = \argmin_\alpha E_{\phi \sim \hat{p}(\phi)}[f(h_\alpha(\phi), \phi)], \]
 </p>
 
 <p>
@@ -422,9 +429,10 @@ and Seung 2001</a>, <a href="https://dx.doi.org/10.1155/2009/785152">Cemgil 2009
 can be written
 </p>
 
-<p>
-\[ \vl_i^* = \argmin_{\vl_i} \sum_j \operatorname{Poisson}(x_{ij}; \sum_k l_{ik} f_{jk})\]
-</p>
+\begin{align*}
+  \vl_i^* &= \argmin_{\vl_i} f(\vl_i, \vx_i, \mf)\\
+  f(\vl_i, \vx_i, \mf) &\triangleq \sum_j \operatorname{Poisson}(x_{ij}; \sum_k l_{ik} f_{jk}),
+\end{align*}
 
 <p>
 where \(\vx_i\) is the context variable, and the goal is to learn
@@ -579,9 +587,9 @@ x.write(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h
 </div>
 </div>
 
-<div id="outline-container-org6dd7c96" class="outline-3">
-<h3 id="org6dd7c96">Census of Immune Cells data</h3>
-<div class="outline-text-3" id="text-org6dd7c96">
+<div id="outline-container-org0316d7a" class="outline-3">
+<h3 id="org0316d7a">Census of Immune Cells</h3>
+<div class="outline-text-3" id="text-org0316d7a">
 <p>
 We previously processed the Census of Immune Cells.
 </p>
@@ -602,6 +610,69 @@ Read the metadata.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">genes</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
 <span class="org-variable-name">donor</span> = pd.Categorical(pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)[<span class="org-string">'0'</span>])
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge169581" class="outline-3">
+<h3 id="orge169581">Mouse Organogenesis Cell Atlas</h3>
+<div class="outline-text-3" id="text-orge169581">
+<p>
+<a href="https://www.nature.com/articles/s41586-019-0969-x">Cao et al. 2019</a>
+generated an atlas of 2M mouse cells, analyzed by
+<a href="https://www.biorxiv.org/content/10.1101/737601v1.full.pdf">Svensson and
+Pacther 2019</a>. Download the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">sbatch --partition=build
+<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
+<span class="org-builtin">set</span> -e
+<span class="org-variable-name">CURL</span>=<span class="org-string">"curl -sfOL"</span>
+$<span class="org-variable-name">CURL</span> <span class="org-string">"https://shendure-web.gs.washington.edu/content/members/cao1025/public/mouse_embryo_atlas/gene_count.txt"</span>
+$<span class="org-variable-name">CURL</span> <span class="org-string">"https://shendure-web.gs.washington.edu/content/members/cao1025/public/mouse_embryo_atlas/gene_annotate.csv"</span>
+$<span class="org-variable-name">CURL</span> <span class="org-string">"https://shendure-web.gs.washington.edu/content/members/cao1025/public/mouse_embryo_atlas/cell_annotate.csv"</span>
+</pre>
+</div>
+
+<pre class="example">
+Submitted batch job 66386315
+
+</pre>
+
+<p>
+Read the data. (31 mins)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = si.mmread(<span class="org-string">'/scratch/midway2/aksarkar/ideas/gene_count.txt'</span>)
+<span class="org-variable-name">var</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/gene_annotate.csv'</span>)
+<span class="org-variable-name">obs</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/cell_annotate.csv'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">keep_genes</span> = (x != 0).<span class="org-builtin">sum</span>(axis=1).A &gt; 0
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = anndata.AnnData(x.T.tocsr(), var=var, obs=obs)
+y.write_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/moca.h5ad'</span>)
+</pre>
+</div>
+
+<p>
+0 - 1e2ea9ee-c7ed-4efe-9eac-5a61f80ef91e
+</p>
+
+<p>
+Report the dimensions of the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">y.shape
 </pre>
 </div>
 </div>
@@ -667,6 +738,27 @@ l_resid, f_resid
 
 </pre>
 
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(f.T, fhat0.T)[:10,10:]
+<span class="org-variable-name">order</span> = np.argmax(r, axis=1)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.imshow(r[:,order], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
+plt.xticks(np.arange(10))
+plt.yticks(np.arange(10))
+plt.xlabel(<span class="org-string">'True factor'</span>)
+plt.ylabel(<span class="org-string">'Estimated factor'</span>)
+plt.title(<span class="org-string">'EM'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/sim-em-fhat.png" alt="sim-em-fhat.png">
+</p>
+</div>
+
 <p>
 Fit ANMF. Report the time elapsed (seconds).
 </p>
@@ -675,21 +767,21 @@ Fit ANMF. Report the time elapsed (seconds).
 <pre class="src src-ipython"><span class="org-keyword">assert</span> torch.cuda.is_available()
 <span class="org-variable-name">xt</span> = torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>).cuda()
 <span class="org-variable-name">dense_data</span> = td.TensorDataset(xt, torch.tensor(s, dtype=torch.<span class="org-builtin">float</span>).cuda())
-<span class="org-variable-name">data</span> = td.DataLoader(dense_data, batch_size=64, shuffle=<span class="org-constant">False</span>)
+<span class="org-variable-name">data</span> = td.DataLoader(dense_data, batch_size=x.shape[0], shuffle=<span class="org-constant">False</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
 <span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1])
-       .fit(data, max_epochs=800, trace=<span class="org-constant">True</span>, lr=5e-4))
+       .fit(data, max_epochs=6400, trace=<span class="org-constant">True</span>, lr=5e-4))
 <span class="org-variable-name">elapsed</span> = time.time() - start
 elapsed
 </pre>
 </div>
 
 <pre class="example">
-15.24153757095337
+49.469866037368774
 
 </pre>
 
@@ -700,7 +792,7 @@ Plot the optimization trace, focusing on the last 100 minibatches.
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
 plt.gcf().set_size_inches(4, 2)
-plt.plot(np.array(fit.trace).ravel()[-400:] / (64 * p), lw=1, c=<span class="org-string">'k'</span>)
+plt.plot(np.array(fit.trace).ravel()[-400:] / (n * p), lw=1, c=<span class="org-string">'k'</span>)
 plt.xticks(np.arange(0, 500, 100), np.arange(-400, 100, 100))
 plt.xlabel(<span class="org-string">'Minibatch before end'</span>)
 plt.ylabel(<span class="org-string">'Per obs neg log lik'</span>)
@@ -715,13 +807,42 @@ plt.tight_layout()
 </div>
 
 <p>
-Recover the loadings and factors.
+Recover the loadings and factors. Convert the factors to topics and
+correlate them to each other.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">lhat</span> = fit.loadings(xt)
+<pre class="src src-ipython"><span class="org-variable-name">d</span> = f / f.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">t</span> = l * f.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">t</span> /= t.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+
+<span class="org-variable-name">lhat</span> = fit.loadings(xt)
 <span class="org-variable-name">fhat</span> = fit.factors()
+<span class="org-variable-name">dhat</span> = (fhat / fhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)).T
+<span class="org-variable-name">that</span> = lhat * fhat.<span class="org-builtin">sum</span>(axis=1)
+<span class="org-variable-name">that</span> /= that.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
 </pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(t.T, that.T)[:10,10:]
+<span class="org-variable-name">order</span> = np.argmax(r, axis=1)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.imshow(r[order], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
+plt.xticks(np.arange(10))
+plt.yticks(np.arange(10))
+plt.xlabel(<span class="org-string">'True factor'</span>)
+plt.ylabel(<span class="org-string">'Estimated factor'</span>)
+plt.title(<span class="org-string">'ANMF'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/sim-fhat.png" alt="sim-fhat.png">
+</p>
 </div>
 
 <p>
@@ -737,7 +858,7 @@ l_resid, f_resid
 </div>
 
 <pre class="example">
-(0.000967120470937001, 0.07753114624327002)
+(0.001169713130727257, 0.020623888958659735)
 
 </pre>
 
@@ -747,17 +868,17 @@ Report the loss achieved by each algorithm.
 
 <div class="org-src-container">
 <pre class="src src-ipython">pd.Series({
-  <span class="org-string">'oracle'</span>: -st.poisson(mu=l @ f.T).logpmf(x).<span class="org-builtin">sum</span>(),
-  <span class="org-string">'em'</span>: loss0,
-  <span class="org-string">'anmf'</span>: -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).<span class="org-builtin">sum</span>(),
+  <span class="org-string">'oracle'</span>: -st.poisson(mu=l @ f.T).logpmf(x).mean(),
+  <span class="org-string">'em'</span>: loss0 / np.prod(x.shape),
+  <span class="org-string">'anmf'</span>: -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).mean(),
 })
 </pre>
 </div>
 
 <pre class="example">
-oracle    1.364353e+06
-em        1.356402e+06
-anmf      1.385015e+06
+oracle    2.664753
+em        2.649209
+anmf      2.704351
 dtype: float64
 </pre>
 
@@ -864,6 +985,22 @@ oracle    2.664753
 anmf      2.675015
 dtype: float64
 </pre>
+
+<p>
+Try batch gradient descent without amortization.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">m</span> = (anmf.modules.GNMF(n=x.shape[0], p=x.shape[1], k=10)
+     .cuda()
+     .fit(xt, max_epochs=1000, lr=1e-2, verbose=<span class="org-constant">True</span>, trace=<span class="org-constant">True</span>))
+m.loss(xt).detach().cpu().numpy() / (n * p)
+</pre>
+</div>
+
+<p>
+0 - 8cdb718e-f62b-4d43-960f-7301e2568059
+</p>
 </div>
 </div>
 
@@ -1225,7 +1362,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-13 Fri 12:40</p>
+<p class="date">Created: 2020-03-15 Sun 11:30</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

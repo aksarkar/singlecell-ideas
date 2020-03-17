@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-15 Sun 11:30 -->
+<!-- 2020-03-17 Tue 15:02 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -349,15 +349,17 @@ e.g. Human Cell Atlas? As references, compare against
 <h2 id="setup"><a id="orgaef0b05"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <pre class="example">
-Submitted batch job 66391170
+Submitted batch job 66400038
 
 </pre>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> anmf
 <span class="org-keyword">import</span> anndata
+<span class="org-keyword">import</span> dca.api
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> pickle
 <span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
 <span class="org-keyword">import</span> scmodes
 <span class="org-keyword">import</span> scipy.io <span class="org-keyword">as</span> si
@@ -647,25 +649,71 @@ Read the data. (31 mins)
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">x</span> = si.mmread(<span class="org-string">'/scratch/midway2/aksarkar/ideas/gene_count.txt'</span>)
-<span class="org-variable-name">var</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/gene_annotate.csv'</span>)
-<span class="org-variable-name">obs</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/cell_annotate.csv'</span>)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">keep_genes</span> = (x != 0).<span class="org-builtin">sum</span>(axis=1).A &gt; 0
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">y</span> = anndata.AnnData(x.T.tocsr(), var=var, obs=obs)
-y.write_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/moca.h5ad'</span>)
 </pre>
 </div>
 
 <p>
-0 - 1e2ea9ee-c7ed-4efe-9eac-5a61f80ef91e
+The current implementation converting COO to CSR is
+<a href="https://github.com/scipy/scipy/issues/9819">broken</a>. One possible
+explanation is that the implementation of coalescing COO entries is the
+culprit, which isn't needed for this data (there should be no duplicate
+row/column entries).
 </p>
+
+<p>
+Figure out whether the COO data is row-major or column-major.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">(x.row[:5], x.col[:5])
+</pre>
+</div>
+
+<pre class="example">
+(array([ 57,  94, 141, 161, 279], dtype=int32),
+array([0, 0, 0, 0, 0], dtype=int32))
+</pre>
+
+<p>
+Columns are samples, which means we can compress the indices and transpose in
+one shot.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">indices</span> = x.row
+<span class="org-variable-name">indptr</span> = np.hstack((0, 1 + np.where(np.diff(x.col))[0], x.nnz))
+</pre>
+</div>
+
+<p>
+Make sure the compression was correct.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(10):
+  <span class="org-keyword">assert</span> (x.data[x.col == j] == x.data[indptr[j]:indptr[j+1]]).<span class="org-builtin">all</span>()
+</pre>
+</div>
+
+<p>
+We could actually get away with using <code>np.int16</code>, but we need <code>torch.int32</code>
+on the GPU.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">x.data.<span class="org-builtin">max</span>()
+</pre>
+</div>
+
+<pre class="example">
+1554
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = ss.csr_matrix((x.data.astype(np.int32), indices, indptr), shape=<span class="org-builtin">tuple</span>(<span class="org-builtin">reversed</span>(x.shape)))
+</pre>
+</div>
 
 <p>
 Report the dimensions of the data.
@@ -673,6 +721,45 @@ Report the dimensions of the data.
 
 <div class="org-src-container">
 <pre class="src src-ipython">y.shape
+</pre>
+</div>
+
+<pre class="example">
+(2058652, 26183)
+
+</pre>
+
+<p>
+Write out the sparse data as <code>npz</code>. (10 minutes)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">ss.save_npz(<span class="org-string">'/scratch/midway2/aksarkar/ideas/moca.npz'</span>, y)
+</pre>
+</div>
+
+<p>
+Get its size on disk.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">ls -lh /scratch/midway2/aksarkar/ideas/moca.npz
+</pre>
+</div>
+
+<pre class="example">
+-rw-rw-r-- 1 aksarkar aksarkar 2.5G Mar 15 21:20 /scratch/midway2/aksarkar/ideas/moca.npz
+
+</pre>
+
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = ss.load_npz(<span class="org-string">'/scratch/midway2/aksarkar/ideas/moca.npz'</span>)
+<span class="org-variable-name">obs</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/cell_annotate.csv'</span>)
+<span class="org-variable-name">var</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/gene_annotate.csv'</span>)
 </pre>
 </div>
 </div>
@@ -694,7 +781,7 @@ Simulate a simple example.
 <pre class="src src-ipython">np.random.seed(0)
 <span class="org-variable-name">n</span> = 512
 <span class="org-variable-name">p</span> = 1000
-<span class="org-variable-name">k</span> = 10
+<span class="org-variable-name">k</span> = 4
 <span class="org-variable-name">l</span> = np.random.lognormal(sigma=0.5, size=(n, k))
 <span class="org-variable-name">f</span> = np.random.lognormal(sigma=0.5, size=(p, k))
 <span class="org-variable-name">x</span> = np.random.poisson(l @ f.T)
@@ -708,16 +795,36 @@ Fit NMF via EM. Report the time elapsed (minutes).
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">lhat0</span>, <span class="org-variable-name">fhat0</span>, <span class="org-variable-name">loss0</span> = scmodes.lra.nmf(x, rank=10, tol=1e-3, max_iters=50000, verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">lhat0</span>, <span class="org-variable-name">fhat0</span>, <span class="org-variable-name">loss0</span> = scmodes.lra.nmf(x, rank=k, tol=1e-4, max_iters=50000, verbose=<span class="org-constant">True</span>)
 <span class="org-variable-name">elapsed</span> = time.time() - start
 elapsed / 60
 </pre>
 </div>
 
 <pre class="example">
-13.413497316837312
+5.910964751243592
 
 </pre>
+
+<p>
+Save the fit.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> <span class="org-builtin">open</span>(<span class="org-string">'/scratch/midway2/aksarkar/ideas/anmf-sim.pkl'</span>, <span class="org-string">'wb'</span>) <span class="org-keyword">as</span> _f:
+  pickle.dump((lhat0, fhat0, loss0), _f)
+</pre>
+</div>
+
+<p>
+Read the fit.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> pickle.<span class="org-builtin">open</span>(<span class="org-string">'/scratch/midway2/aksarkar/ideas/anmf-sim.pkl'</span>, <span class="org-string">'rb'</span>) <span class="org-keyword">as</span> _ff:
+  <span class="org-variable-name">lhat0</span>, <span class="org-variable-name">fhat0</span>, <span class="org-variable-name">loss0</span> = pickle.load(_f)
+</pre>
+</div>
 
 <p>
 Peter Carbonetto previously derived the KKT conditions for the NMF
@@ -734,18 +841,18 @@ l_resid, f_resid
 </div>
 
 <pre class="example">
-(0.05866832853326247, 0.09743250873968519)
+(0.02684265002465202, 0.02111822607549802)
 
 </pre>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(f.T, fhat0.T)[:10,10:]
+<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(f.T, fhat0.T)[:k,k:]
 <span class="org-variable-name">order</span> = np.argmax(r, axis=1)
 plt.clf()
 plt.gcf().set_size_inches(3, 3)
 plt.imshow(r[:,order], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
-plt.xticks(np.arange(10))
-plt.yticks(np.arange(10))
+plt.xticks(np.arange(k))
+plt.yticks(np.arange(k))
 plt.xlabel(<span class="org-string">'True factor'</span>)
 plt.ylabel(<span class="org-string">'Estimated factor'</span>)
 plt.title(<span class="org-string">'EM'</span>)
@@ -767,21 +874,21 @@ Fit ANMF. Report the time elapsed (seconds).
 <pre class="src src-ipython"><span class="org-keyword">assert</span> torch.cuda.is_available()
 <span class="org-variable-name">xt</span> = torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>).cuda()
 <span class="org-variable-name">dense_data</span> = td.TensorDataset(xt, torch.tensor(s, dtype=torch.<span class="org-builtin">float</span>).cuda())
-<span class="org-variable-name">data</span> = td.DataLoader(dense_data, batch_size=x.shape[0], shuffle=<span class="org-constant">False</span>)
+<span class="org-variable-name">data</span> = td.DataLoader(dense_data, batch_size=64, shuffle=<span class="org-constant">False</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1])
-       .fit(data, max_epochs=6400, trace=<span class="org-constant">True</span>, lr=5e-4))
+<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=k)
+       .fit(data, max_epochs=1000, trace=<span class="org-constant">True</span>, lr=1e-2))
 <span class="org-variable-name">elapsed</span> = time.time() - start
 elapsed
 </pre>
 </div>
 
 <pre class="example">
-49.469866037368774
+24.5138521194458
 
 </pre>
 
@@ -825,13 +932,13 @@ correlate them to each other.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(t.T, that.T)[:10,10:]
+<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(d.T, dhat.T)[:k,k:]
 <span class="org-variable-name">order</span> = np.argmax(r, axis=1)
 plt.clf()
 plt.gcf().set_size_inches(3, 3)
 plt.imshow(r[order], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
-plt.xticks(np.arange(10))
-plt.yticks(np.arange(10))
+plt.xticks(np.arange(k))
+plt.yticks(np.arange(k))
 plt.xlabel(<span class="org-string">'True factor'</span>)
 plt.ylabel(<span class="org-string">'Estimated factor'</span>)
 plt.title(<span class="org-string">'ANMF'</span>)
@@ -841,7 +948,7 @@ plt.tight_layout()
 
 
 <div class="figure">
-<p><img src="figure/time-course.org/sim-fhat.png" alt="sim-fhat.png">
+<p><img src="figure/time-course.org/sim-topics.png" alt="sim-topics.png">
 </p>
 </div>
 
@@ -858,9 +965,20 @@ l_resid, f_resid
 </div>
 
 <pre class="example">
-(0.001169713130727257, 0.020623888958659735)
+(0.08683096761321933, 0.08068438603560046)
 
 </pre>
+
+<p>
+Fit DCA optimizing Poisson loss.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = anndata.AnnData(x)
+<span class="org-comment-delimiter"># </span><span class="org-comment">This replaces the counts with fitted lambda</span>
+dca.api.dca(y, mode=<span class="org-string">'denoise'</span>, ae_type=<span class="org-string">'poisson'</span>, verbose=<span class="org-constant">True</span>)
+</pre>
+</div>
 
 <p>
 Report the loss achieved by each algorithm.
@@ -870,17 +988,57 @@ Report the loss achieved by each algorithm.
 <pre class="src src-ipython">pd.Series({
   <span class="org-string">'oracle'</span>: -st.poisson(mu=l @ f.T).logpmf(x).mean(),
   <span class="org-string">'em'</span>: loss0 / np.prod(x.shape),
+  <span class="org-string">'dca'</span>: -st.poisson(mu=y.X).logpmf(x).mean(),
   <span class="org-string">'anmf'</span>: -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).mean(),
 })
 </pre>
 </div>
 
 <pre class="example">
-oracle    2.664753
-em        2.649209
-anmf      2.704351
+oracle    2.165755
+em        2.159763
+dca       2.101692
+anmf      2.197470
 dtype: float64
 </pre>
+
+<p>
+Compare fitted values against each other.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(6, 2.5)
+
+<span class="org-variable-name">anmf_lam</span> = np.sqrt(s.reshape(-1, 1) * lhat @ fhat)
+ax[0].scatter(np.sqrt(l @ f.T).ravel(), anmf_lam.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+ax[0].set_xlabel(<span class="org-string">'Oracle sqrt val'</span>)
+ax[0].set_ylabel(<span class="org-string">'ANMF sqrt fitted val'</span>)
+
+ax[1].scatter(np.sqrt(lhat0 @ fhat0.T).ravel(), anmf_lam.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+ax[1].set_xlabel(<span class="org-string">'EM sqrt fitted val'</span>)
+
+ax[2].scatter(np.sqrt(y.X).ravel(), anmf_lam.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+ax[2].set_xlabel(<span class="org-string">'DCA sqrt fitted val'</span>)
+
+<span class="org-variable-name">lim</span> = [0, 8]
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+  a.set_xlim(lim)
+  a.set_xticks(np.arange(0, 10, 2))
+  a.set_ylim(lim)
+  a.set_yticks(np.arange(0, 10, 2))
+
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/sim-fit.png" alt="sim-fit.png">
+</p>
+</div>
 
 <p>
 The log likelihood achieved by ANMF is lower than the oracle. Recent results
@@ -892,21 +1050,21 @@ factors to the ground truth, and see whether ANMF recovers the loadings.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=10)
+<pre class="src src-ipython"><span class="org-variable-name">data</span> = td.DataLoader(dense_data, batch_size=64, shuffle=<span class="org-constant">False</span>)
+<span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=k)
 <span class="org-comment-delimiter"># </span><span class="org-comment">y = ln(1 + exp(x))</span>
-<span class="org-comment-delimiter"># </span><span class="org-comment">exp(y) - 1 = exp(x)</span>
 <span class="org-comment-delimiter"># </span><span class="org-comment">ln(exp(y) - 1) = x</span>
 <span class="org-variable-name">fit.decoder._f.data</span> = torch.tensor(np.log(np.exp(f.T) - 1), dtype=torch.<span class="org-builtin">float</span>)
 <span class="org-variable-name">fit.decoder._f.requires_grad</span> = <span class="org-constant">False</span>
-fit.fit(data, max_epochs=1600, trace=<span class="org-constant">True</span>, lr=1e-3)
+fit.fit(data, max_epochs=1000, trace=<span class="org-constant">True</span>, lr=1e-3)
 <span class="org-variable-name">elapsed</span> = time.time() - start
 elapsed
 </pre>
 </div>
 
 <pre class="example">
-30.25163698196411
+22.80696201324463
 
 </pre>
 
@@ -925,8 +1083,8 @@ pd.Series({
 </div>
 
 <pre class="example">
-oracle    2.664753
-anmf      2.676659
+oracle    2.165755
+anmf      2.177593
 dtype: float64
 </pre>
 
@@ -1362,7 +1520,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-15 Sun 11:30</p>
+<p class="date">Created: 2020-03-17 Tue 15:02</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

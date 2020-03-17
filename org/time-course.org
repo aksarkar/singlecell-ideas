@@ -67,16 +67,21 @@
 
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/ideas/
 
+  #+RESULTS:
+  : Submitted batch job 66401642
+
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="32G") :exports none :dir /scratch/midway2/aksarkar/ideas/
 
   #+RESULTS:
-  : Submitted batch job 66391170
+  : Submitted batch job 66400038
 
   #+BEGIN_SRC ipython
     import anmf
     import anndata
+    import dca.api
     import numpy as np
     import pandas as pd
+    import pickle
     import scanpy as sc
     import scmodes
     import scipy.io as si
@@ -90,7 +95,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[11]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -100,7 +105,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[18]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -112,7 +117,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[19]:
   :END:
 
 * Methods
@@ -344,8 +349,6 @@
 
    #+BEGIN_SRC ipython :async t
      x = si.mmread('/scratch/midway2/aksarkar/ideas/gene_count.txt')
-     var = pd.read_csv('/scratch/midway2/aksarkar/ideas/gene_annotate.csv')
-     obs = pd.read_csv('/scratch/midway2/aksarkar/ideas/cell_annotate.csv')
    #+END_SRC
 
    #+RESULTS:
@@ -353,18 +356,72 @@
    # Out[2]:
    :END:
 
-   #+BEGIN_SRC ipython
-     keep_genes = (x != 0).sum(axis=1).A > 0
-   #+END_SRC
+   The current implementation converting COO to CSR is
+   [[https://github.com/scipy/scipy/issues/9819][broken]]. One possible
+   explanation is that the implementation of coalescing COO entries is the
+   culprit, which isn't needed for this data (there should be no duplicate
+   row/column entries).
 
-   #+BEGIN_SRC ipython :async t
-     y = anndata.AnnData(x.T.tocsr(), var=var, obs=obs)
-     y.write_h5ad('/scratch/midway2/aksarkar/ideas/moca.h5ad')
+   Figure out whether the COO data is row-major or column-major.
+
+   #+BEGIN_SRC ipython
+     (x.row[:5], x.col[:5])
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   0 - 1e2ea9ee-c7ed-4efe-9eac-5a61f80ef91e
+   # Out[3]:
+   #+BEGIN_EXAMPLE
+     (array([ 57,  94, 141, 161, 279], dtype=int32),
+     array([0, 0, 0, 0, 0], dtype=int32))
+   #+END_EXAMPLE
+   :END:
+
+   Columns are samples, which means we can compress the indices and transpose in
+   one shot.
+
+   #+BEGIN_SRC ipython :async t
+     indices = x.row
+     indptr = np.hstack((0, 1 + np.where(np.diff(x.col))[0], x.nnz))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[3]:
+   :END:
+
+   Make sure the compression was correct.
+
+   #+BEGIN_SRC ipython :async t
+     for j in range(10):
+       assert (x.data[x.col == j] == x.data[indptr[j]:indptr[j+1]]).all()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   We could actually get away with using ~np.int16~, but we need ~torch.int32~
+   on the GPU.
+
+   #+BEGIN_SRC ipython
+     x.data.max()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   : 1554
+   :END:
+
+   #+BEGIN_SRC ipython
+     y = ss.csr_matrix((x.data.astype(np.int32), indices, indptr), shape=tuple(reversed(x.shape)))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
    :END:
 
    Report the dimensions of the data.
@@ -372,6 +429,45 @@
    #+BEGIN_SRC ipython
      y.shape
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   : (2058652, 26183)
+   :END:
+
+   Write out the sparse data as ~npz~. (10 minutes)
+
+   #+BEGIN_SRC ipython :async t
+     ss.save_npz('/scratch/midway2/aksarkar/ideas/moca.npz', y)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
+
+   Get its size on disk.
+
+   #+BEGIN_SRC sh :exports both
+     ls -lh /scratch/midway2/aksarkar/ideas/moca.npz
+   #+END_SRC
+
+   #+RESULTS:
+   : -rw-rw-r-- 1 aksarkar aksarkar 2.5G Mar 15 21:20 /scratch/midway2/aksarkar/ideas/moca.npz
+
+   Read the data.
+
+   #+BEGIN_SRC ipython :async t
+     x = ss.load_npz('/scratch/midway2/aksarkar/ideas/moca.npz')
+     obs = pd.read_csv('/scratch/midway2/aksarkar/ideas/cell_annotate.csv')
+     var = pd.read_csv('/scratch/midway2/aksarkar/ideas/gene_annotate.csv')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   :END:
 
 * Results
 ** Simulation
@@ -382,7 +478,7 @@
      np.random.seed(0)
      n = 512
      p = 1000
-     k = 10
+     k = 4
      l = np.random.lognormal(sigma=0.5, size=(n, k))
      f = np.random.lognormal(sigma=0.5, size=(p, k))
      x = np.random.poisson(l @ f.T)
@@ -391,23 +487,42 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[16]:
    :END:
 
    Fit NMF via EM. Report the time elapsed (minutes).
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
-     lhat0, fhat0, loss0 = scmodes.lra.nmf(x, rank=10, tol=1e-3, max_iters=50000, verbose=True)
+     lhat0, fhat0, loss0 = scmodes.lra.nmf(x, rank=k, tol=1e-4, max_iters=50000, verbose=True)
      elapsed = time.time() - start
      elapsed / 60
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[69]:
-   : 13.413497316837312
+   # Out[9]:
+   : 5.910964751243592
    :END:
+
+   Save the fit.
+
+   #+BEGIN_SRC ipython
+     with open('/scratch/midway2/aksarkar/ideas/anmf-sim.pkl', 'wb') as _f:
+       pickle.dump((lhat0, fhat0, loss0), _f)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   :END:
+
+   Read the fit.
+
+   #+BEGIN_SRC ipython
+     with pickle.open('/scratch/midway2/aksarkar/ideas/anmf-sim.pkl', 'rb') as _ff:
+       lhat0, fhat0, loss0 = pickle.load(_f)
+   #+END_SRC
 
    Peter Carbonetto previously derived the KKT conditions for the NMF
    objective. Report the maximum absolute KKT residual.
@@ -422,18 +537,18 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[70]:
-   : (0.05866832853326247, 0.09743250873968519)
+   # Out[14]:
+   : (0.02684265002465202, 0.02111822607549802)
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-em-fhat.png
-     r = np.corrcoef(f.T, fhat0.T)[:10,10:]
+     r = np.corrcoef(f.T, fhat0.T)[:k,k:]
      order = np.argmax(r, axis=1)
      plt.clf()
      plt.gcf().set_size_inches(3, 3)
      plt.imshow(r[:,order], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
-     plt.xticks(np.arange(10))
-     plt.yticks(np.arange(10))
+     plt.xticks(np.arange(k))
+     plt.yticks(np.arange(k))
      plt.xlabel('True factor')
      plt.ylabel('Estimated factor')
      plt.title('EM')
@@ -442,7 +557,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[138]:
+   # Out[20]:
    [[file:figure/time-course.org/sim-em-fhat.png]]
    :END:
 
@@ -452,26 +567,26 @@
      assert torch.cuda.is_available()
      xt = torch.tensor(x, dtype=torch.float).cuda()
      dense_data = td.TensorDataset(xt, torch.tensor(s, dtype=torch.float).cuda())
-     data = td.DataLoader(dense_data, batch_size=x.shape[0], shuffle=False)
+     data = td.DataLoader(dense_data, batch_size=64, shuffle=False)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[153]:
+   # Out[21]:
    :END:
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
-     fit = (anmf.modules.ANMF(input_dim=x.shape[1])
-            .fit(data, max_epochs=6400, trace=True, lr=5e-4))
+     fit = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=k)
+            .fit(data, max_epochs=1000, trace=True, lr=1e-2))
      elapsed = time.time() - start
      elapsed
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[154]:
-   : 49.469866037368774
+   # Out[73]:
+   : 24.5138521194458
    :END:
 
    Plot the optimization trace, focusing on the last 100 minibatches.
@@ -488,7 +603,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[190]:
+   # Out[66]:
    [[file:figure/time-course.org/sim-trace.png]]
    :END:
 
@@ -509,17 +624,17 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[177]:
+   # Out[74]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-topics.png
-     r = np.corrcoef(t.T, that.T)[:10,10:]
+     r = np.corrcoef(d.T, dhat.T)[:k,k:]
      order = np.argmax(r, axis=1)
      plt.clf()
      plt.gcf().set_size_inches(3, 3)
      plt.imshow(r[order], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
-     plt.xticks(np.arange(10))
-     plt.yticks(np.arange(10))
+     plt.xticks(np.arange(k))
+     plt.yticks(np.arange(k))
      plt.xlabel('True factor')
      plt.ylabel('Estimated factor')
      plt.title('ANMF')
@@ -528,8 +643,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[187]:
-   [[file:figure/time-course.org/sim-fhat.png]]
+   # Out[68]:
+   [[file:figure/time-course.org/sim-topics.png]]
    :END:
 
    Report the maximum absolute KKT residual.
@@ -543,8 +658,21 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[108]:
-   : (0.001169713130727257, 0.020623888958659735)
+   # Out[75]:
+   : (0.08683096761321933, 0.08068438603560046)
+   :END:
+
+   Fit DCA optimizing Poisson loss.
+
+   #+BEGIN_SRC ipython :async t
+     y = anndata.AnnData(x)
+     # This replaces the counts with fitted lambda
+     dca.api.dca(y, mode='denoise', ae_type='poisson', verbose=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[27]:
    :END:
 
    Report the loss achieved by each algorithm.
@@ -553,19 +681,56 @@
      pd.Series({
        'oracle': -st.poisson(mu=l @ f.T).logpmf(x).mean(),
        'em': loss0 / np.prod(x.shape),
+       'dca': -st.poisson(mu=y.X).logpmf(x).mean(),
        'anmf': -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).mean(),
      })
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[189]:
+   # Out[76]:
    #+BEGIN_EXAMPLE
-     oracle    2.664753
-     em        2.649209
-     anmf      2.704351
+     oracle    2.165755
+     em        2.159763
+     dca       2.101692
+     anmf      2.197470
      dtype: float64
    #+END_EXAMPLE
+   :END:
+
+   Compare fitted values against each other.
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-fit.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3, sharey=True)
+     fig.set_size_inches(6, 2.5)
+
+     anmf_lam = np.sqrt(s.reshape(-1, 1) * lhat @ fhat)
+     ax[0].scatter(np.sqrt(l @ f.T).ravel(), anmf_lam.ravel(), s=1, c='k', alpha=0.1)
+     ax[0].set_xlabel('Oracle sqrt val')
+     ax[0].set_ylabel('ANMF sqrt fitted val')
+
+     ax[1].scatter(np.sqrt(lhat0 @ fhat0.T).ravel(), anmf_lam.ravel(), s=1, c='k', alpha=0.1)
+     ax[1].set_xlabel('EM sqrt fitted val')
+
+     ax[2].scatter(np.sqrt(y.X).ravel(), anmf_lam.ravel(), s=1, c='k', alpha=0.1)
+     ax[2].set_xlabel('DCA sqrt fitted val')
+
+     lim = [0, 8]
+     for a in ax:
+       a.plot(lim, lim, lw=1, ls=':', c='r')
+       a.set_xlim(lim)
+       a.set_xticks(np.arange(0, 10, 2))
+       a.set_ylim(lim)
+       a.set_yticks(np.arange(0, 10, 2))
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[92]:
+   [[file:figure/time-course.org/sim-fit.png]]
    :END:
 
    The log likelihood achieved by ANMF is lower than the oracle. Recent results
@@ -576,22 +741,22 @@
    factors to the ground truth, and see whether ANMF recovers the loadings.
 
    #+BEGIN_SRC ipython :async t
+     data = td.DataLoader(dense_data, batch_size=64, shuffle=False)
      start = time.time()
-     fit = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=10)
+     fit = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=k)
      # y = ln(1 + exp(x))
-     # exp(y) - 1 = exp(x)
      # ln(exp(y) - 1) = x
      fit.decoder._f.data = torch.tensor(np.log(np.exp(f.T) - 1), dtype=torch.float)
      fit.decoder._f.requires_grad = False
-     fit.fit(data, max_epochs=1600, trace=True, lr=1e-3)
+     fit.fit(data, max_epochs=1000, trace=True, lr=1e-3)
      elapsed = time.time() - start
      elapsed
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[63]:
-   : 30.25163698196411
+   # Out[33]:
+   : 22.80696201324463
    :END:
 
    Compare the fit fixing the ground truth \(\mf\) to the oracle.
@@ -607,10 +772,10 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[64]:
+   # Out[34]:
    #+BEGIN_EXAMPLE
-     oracle    2.664753
-     anmf      2.676659
+     oracle    2.165755
+     anmf      2.177593
      dtype: float64
    #+END_EXAMPLE
    :END:

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-17 Tue 15:02 -->
+<!-- 2020-03-17 Tue 15:10 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Massively Parallel Empirical Bayes Poisson Means</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,40 +227,181 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">Massively Parallel Empirical Bayes Poisson Means</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org62be355">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#orge80a058">Results</a>
+<ul>
+<li><a href="#orgd051fd5">Accuracy of parameter estimation</a></li>
+<li><a href="#org2633da6">Running time</a></li>
+<li><a href="#org450128b">Application to Census of Immune Cells</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org62be355" class="outline-2">
+<h2 id="org62be355">Introduction</h2>
+<div class="outline-text-2" id="text-org62be355">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+In our prior work (<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar
+et al. 2019</a>), we introduced a factor model to capture between donor
+individual variation in the mean and variance of gene expression in a single
+cell type \( 
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\argmin{arg min}
+  \newcommand\mf{\mathbf{F}} 
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vx{\mathbf{x}}
+  \)
+</p>
+
+\begin{align*}
+  x_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
+  \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
+  \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
+  \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
+  \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij}\\
+\end{align*}
+
+<p>
+where 
 </p>
 
 <ul class="org-ul">
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-<li><a href="hnmf.html">Hierarchical NMF</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
-<li><a href="zinb-vae-gmm.html"><del>ZINB-VAE-GMM</del></a></li>
+<li>\(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\) observed
+in cell \(i = 1, \ldots, n\)</li>
+<li>cells are taken from \(m\) donor individuals, \(\ml\) is \(n \times m\),
+each \(\mf_{\cdot}\) is \(p \times m\)</li>
+<li>assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}\) are
+known and fixed.</li>
 </ul>
+
+<p>
+We previously implemented maximum likelihood inference of this model via
+batch gradient descent in the Python package
+<a href="https://www.github.com/aksarkar/scqtl.git">scqtl</a>. We have now developed a
+new Python package <a href="https://www.github.com/aksarkar/mpebpm.git">mpebpm</a>,
+which should scale inference to much larger data sets. The key improvements
+are optimization using minibatch gradient descent and support for sparse
+matrices. Here, we evaluate the method on simulations.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9626900" class="outline-2">
+<h2 id="setup"><a id="org9626900"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge80a058" class="outline-2">
+<h2 id="orge80a058">Results</h2>
+<div class="outline-text-2" id="text-orge80a058">
+</div>
+<div id="outline-container-orgd051fd5" class="outline-3">
+<h3 id="orgd051fd5">Accuracy of parameter estimation</h3>
+<div class="outline-text-3" id="text-orgd051fd5">
+<p>
+We previously evaluated <code>scqtl</code>
+<a href="https://jdblischak.github.io/singlecell-qtl/zinb.html#orgca44e7f">by
+simulating data from the model</a>.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2633da6" class="outline-3">
+<h3 id="org2633da6">Running time</h3>
+<div class="outline-text-3" id="text-org2633da6">
+<p>
+Compare the wallclock time of <code>scqtl</code> against <code>mpebpm</code> fixing \(p\) and
+increasing \(n\).
+</p>
+</div>
+</div>
+
+<div id="outline-container-org450128b" class="outline-3">
+<h3 id="org450128b">Application to Census of Immune Cells</h3>
+<div class="outline-text-3" id="text-org450128b">
+<p>
+The
+<a href="https://data.humancellatlas.org/explore/projects/cc95ff89-2e68-4a08-a234-480eca21ce79">Census
+of Immune Cells</a> is part of the Human Cell Atlas. Currently, it comprises
+scRNA-seq data of 593,844 cells from 16 donors. To demonstrate the scalability of
+<code>mpebpm</code>, fit a Gamma distribution to each gene in each donor.
+</p>
+
+<p>
+Read the sparse data and report its dimensions. (20 seconds)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y_csr</span> = ss.load_npz(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census.npz'</span>)
+y_csr.shape
+</pre>
+</div>
+
+<p>
+Read the metadata.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">genes</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
+<span class="org-variable-name">donor</span> = pd.Categorical(pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)[<span class="org-string">'0'</span>])
+</pre>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-17 Tue 15:02</p>
+<p class="date">Created: 2020-03-17 Tue 15:10</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

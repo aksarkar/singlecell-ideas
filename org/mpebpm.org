@@ -1,0 +1,113 @@
+#+TITLE: Massively Parallel Empirical Bayes Poisson Means
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  In our prior work ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar
+  et al. 2019]]), we introduced a factor model to capture between donor
+  individual variation in the mean and variance of gene expression in a single
+  cell type \( 
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\argmin{arg min}
+  \newcommand\mf{\mathbf{F}} 
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vx{\mathbf{x}}
+  \)
+
+  \begin{align*}
+    x_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
+    \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
+    \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
+    \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
+    \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij}\\
+  \end{align*}
+
+  where 
+
+  - \(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\) observed
+    in cell \(i = 1, \ldots, n\)
+  - cells are taken from \(m\) donor individuals, \(\ml\) is \(n \times m\),
+    each \(\mf_{\cdot}\) is \(p \times m\)
+  - assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}\) are
+    known and fixed.
+
+  We previously implemented maximum likelihood inference of this model via
+  batch gradient descent in the Python package
+  [[https://www.github.com/aksarkar/scqtl.git][scqtl]]. We have now developed a
+  new Python package [[https://www.github.com/aksarkar/mpebpm.git][mpebpm]],
+  which should scale inference to much larger data sets. The key improvements
+  are optimization using minibatch gradient descent and support for sparse
+  matrices. Here, we evaluate the method on simulations.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3() :exports none :dir /scratch/midway2/aksarkar
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+* Results
+** Accuracy of parameter estimation
+
+   We previously evaluated ~scqtl~
+   [[https://jdblischak.github.io/singlecell-qtl/zinb.html#orgca44e7f][by
+   simulating data from the model]].
+
+** Running time
+
+   Compare the wallclock time of ~scqtl~ against ~mpebpm~ fixing \(p\) and
+   increasing \(n\).
+
+** Application to Census of Immune Cells
+
+   The
+   [[https://data.humancellatlas.org/explore/projects/cc95ff89-2e68-4a08-a234-480eca21ce79][Census
+   of Immune Cells]] is part of the Human Cell Atlas. Currently, it comprises
+   scRNA-seq data of 593,844 cells from 16 donors. To demonstrate the scalability of
+   ~mpebpm~, fit a Gamma distribution to each gene in each donor.
+
+   Read the sparse data and report its dimensions. (20 seconds)
+
+   #+BEGIN_SRC ipython :async t
+     y_csr = ss.load_npz('/scratch/midway2/aksarkar/modes/immune-cell-census.npz')
+     y_csr.shape
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[46]:
+   :END:
+
+   Read the metadata.
+
+   #+BEGIN_SRC ipython
+     genes = pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz', sep='\t', index_col=0)
+     donor = pd.Categorical(pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz', sep='\t', index_col=0)['0'])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   :END:

@@ -70,7 +70,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 66465436
+  : Submitted batch job 66467062
 
   #+BEGIN_SRC ipython
     import anndata
@@ -311,13 +311,18 @@
    #+END_EXAMPLE
    :END:
 
+   Prepare the data.
+
    #+BEGIN_SRC ipython
+     # Important: the dense data will fit on the GPU
+     y = x.X.A
+     s = x.obs['mol_hs'].values.reshape(-1, 1)
      onehot = ss.coo_matrix((np.ones(x.shape[0]), (np.arange(x.shape[0]), pd.Categorical(x.obs['chip_id']).codes))).tocsr()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[7]:
    :END:
 
    Fit ~mpebpm~, and report the time elapsed in minutes.
@@ -325,9 +330,8 @@
    #+BEGIN_SRC ipython :async t
      start = time.time()
      log_mu, neg_log_phi, logodds, _ = mpebpm.ebpm_point_gamma(
-       # Important: the dense data will fit on the GPU
-       x.X.A,
-       s=x.obs['mol_hs'].values.reshape(-1, 1),
+       y,
+       s=s,
        onehot=onehot,
        batch_size=64,
        lr=1e-2,
@@ -339,12 +343,32 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[18]:
-   : 4.713608503341675
+   # Out[8]:
+   : 4.631162142753601
    :END:
 
    For comparison, this analysis previously required 395 minutes using
-   ~scqtl~. Read the previously estimated parameters.
+   ~scqtl~. Estimate the full data log likelihood.
+
+   #+BEGIN_SRC ipython :async t
+     mean = s.ravel() * onehot @ np.exp(log_mu)
+     inv_disp = onehot @ np.exp(neg_log_phi)
+     (y * np.log(mean / inv_disp)
+      - y * np.log(1 + mean / inv_disp)
+      - inv_disp * np.log(1 + mean / inv_disp)
+      # Important: these terms are why we use inverse dispersion
+      + sp.gammaln(y + inv_disp)
+      - sp.gammaln(inv_disp)
+      - sp.gammaln(y + 1)).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[23]:
+   : -163.68023324162735
+   :END:
+
+   Read the previously estimated parameters, and the full data log likelihood.
 
    #+BEGIN_SRC ipython
      log_mu0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-mu.txt.gz", index_col=0, sep=' ')
@@ -352,9 +376,21 @@
      logodds0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-logodds.txt.gz", index_col=0, sep=' ')
    #+END_SRC
 
+   #+BEGIN_SRC ipython
+     mean0 = s.ravel() * onehot @ np.exp(log_mu0.values.T)
+     inv_disp0 = onehot @ np.exp(-log_phi0.values.T)
+     (y * np.log(mean0 / inv_disp0)
+      - y * np.log(1 + mean0 / inv_disp0)
+      - inv_disp0 * np.log(1 + mean0 / inv_disp0)
+      + sp.gammaln(y + inv_disp0)
+      - sp.gammaln(inv_disp0)
+      - sp.gammaln(y + 1)).mean()
+   #+END_SRC
+
    #+RESULTS:
    :RESULTS:
-   # Out[14]:
+   # Out[24]:
+   : -394.82726690970867
    :END:
 
    Plot the fitted values of the two methods against each other.

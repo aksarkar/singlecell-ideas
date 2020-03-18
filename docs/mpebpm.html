@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-18 Wed 15:26 -->
+<!-- 2020-03-18 Wed 16:02 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -580,8 +580,15 @@ x.X
 with 39654337 stored elements in Compressed Sparse Row format&gt;
 </pre>
 
+<p>
+Prepare the data.
+</p>
+
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(x.shape[0]), (np.arange(x.shape[0]), pd.Categorical(x.obs[<span class="org-string">'chip_id'</span>]).codes))).tocsr()
+<pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: the dense data will fit on the GPU</span>
+<span class="org-variable-name">y</span> = x.X.A
+<span class="org-variable-name">s</span> = x.obs[<span class="org-string">'mol_hs'</span>].values.reshape(-1, 1)
+<span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(x.shape[0]), (np.arange(x.shape[0]), pd.Categorical(x.obs[<span class="org-string">'chip_id'</span>]).codes))).tocsr()
 </pre>
 </div>
 
@@ -592,9 +599,8 @@ Fit <code>mpebpm</code>, and report the time elapsed in minutes.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
 <span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">logodds</span>, <span class="org-variable-name">_</span> = mpebpm.ebpm_point_gamma(
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: the dense data will fit on the GPU</span>
-  x.X.A,
-  s=x.obs[<span class="org-string">'mol_hs'</span>].values.reshape(-1, 1),
+  y,
+  s=s,
   onehot=onehot,
   batch_size=64,
   lr=1e-2,
@@ -606,13 +612,35 @@ elapsed / 60
 </div>
 
 <pre class="example">
-4.713608503341675
+4.631162142753601
 
 </pre>
 
 <p>
 For comparison, this analysis previously required 395 minutes using
-<code>scqtl</code>. Read the previously estimated parameters.
+<code>scqtl</code>. Estimate the full data log likelihood.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mean</span> = s.ravel() * onehot @ np.exp(log_mu)
+<span class="org-variable-name">inv_disp</span> = onehot @ np.exp(neg_log_phi)
+(y * np.log(mean / inv_disp)
+ - y * np.log(1 + mean / inv_disp)
+ - inv_disp * np.log(1 + mean / inv_disp)
+ <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these terms are why we use inverse dispersion</span>
+ + sp.gammaln(y + inv_disp)
+ - sp.gammaln(inv_disp)
+ - sp.gammaln(y + 1)).mean()
+</pre>
+</div>
+
+<pre class="example">
+-163.68023324162735
+
+</pre>
+
+<p>
+Read the previously estimated parameters, and the full data log likelihood.
 </p>
 
 <div class="org-src-container">
@@ -621,6 +649,23 @@ For comparison, this analysis previously required 395 minutes using
 <span class="org-variable-name">logodds0</span> = pd.read_table(<span class="org-string">"/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-logodds.txt.gz"</span>, index_col=0, sep=<span class="org-string">' '</span>)
 </pre>
 </div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mean0</span> = s.ravel() * onehot @ np.exp(log_mu0.values.T)
+<span class="org-variable-name">inv_disp0</span> = onehot @ np.exp(-log_phi0.values.T)
+(y * np.log(mean0 / inv_disp0)
+ - y * np.log(1 + mean0 / inv_disp0)
+ - inv_disp0 * np.log(1 + mean0 / inv_disp0)
+ + sp.gammaln(y + inv_disp0)
+ - sp.gammaln(inv_disp0)
+ - sp.gammaln(y + 1)).mean()
+</pre>
+</div>
+
+<pre class="example">
+-394.82726690970867
+
+</pre>
 
 <p>
 Plot the fitted values of the two methods against each other.
@@ -719,7 +764,7 @@ elapsed
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-18 Wed 15:26</p>
+<p class="date">Created: 2020-03-18 Wed 16:02</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

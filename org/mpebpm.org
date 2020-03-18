@@ -60,7 +60,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 66454030
+  : Submitted batch job 66462280
 
   #+BEGIN_SRC ipython
     import mpebpm
@@ -68,12 +68,13 @@
     import pandas as pd
     import scipy.sparse as ss
     import scipy.special as sp
+    import scipy.stats as st
     import scqtl
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[51]:
+  # Out[24]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -128,9 +129,9 @@
        result['mean'] = np.exp(result['log_mu'])
        result['var'] = (1 - sp.expit(result['logodds'])) * np.exp(2 * result['log_mu'] + result['log_phi']) + sp.expit(-result['logodds']) * (1 - sp.expit(result['logodds'])) * np.exp(2 * result['log_mu'])
 
-       result['log_mu_hat'] = log_mu.ravel()
-       result['log_phi_hat'] = -neg_log_phi.ravel()
-       result['logodds_hat'] = logodds.ravel()
+       result['log_mu_hat'] = log_mu.ravel(order='F')
+       result['log_phi_hat'] = -neg_log_phi.ravel(order='F')
+       result['logodds_hat'] = logodds.ravel(order='F')
        result['mean_hat'] = np.exp(result['log_mu_hat'])
        result['var_hat'] = (1 - sp.expit(result['logodds_hat'])) * np.exp(2 * result['log_mu_hat'] + result['log_phi_hat']) + sp.expit(-result['logodds_hat']) * (1 - sp.expit(result['logodds_hat'])) * np.exp(2 * result['log_mu_hat'])
 
@@ -160,6 +161,7 @@
 
    #+BEGIN_SRC ipython :async t
      result = evaluate(num_samples=100, num_mols=int(1e5), batch_size=32, max_epochs=100, verbose=True)
+     result.to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-sim.txt.gz', sep='\t')
    #+END_SRC
 
    #+RESULTS:
@@ -167,15 +169,75 @@
    # Out[54]:
    :END:
 
-   Write out the results.
+   Read the results.
 
    #+BEGIN_SRC ipython
-     result.to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-sim.txt.gz', sep='\t')
+     result = pd.read_csv('/scratch/midway2/aksarkar/ideas/mpebpm-sim.txt.gz', sep='\t', index_col=0)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[58]:
+   # Out[7]:
+   :END:
+
+   Plot the estimated values against the ground truth values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/sim-params.png
+     mu_pass = result['log_mu'] > -10
+     pi_pass = result['logodds'] < 0
+
+     plt.clf()
+     fig, ax = plt.subplots(2, 3)
+     fig.set_size_inches(8, 5)
+
+     subset = result.loc[pi_pass]
+     ax[0, 0].scatter(subset['log_mu'], subset['log_mu_hat'], s=2, c='k')
+     ax[0, 0].set_xlim(-14, -5)
+     ax[0, 0].set_ylim(ax[0, 0].get_xlim())
+     ax[0, 0].plot(ax[0, 0].get_xlim(), ax[0, 0].get_xlim(), c='r', ls=':', lw=1)
+     ax[0, 0].set_xlabel('True $\ln(\mu)$')
+     ax[0, 0].set_ylabel('Estimated $\ln(\mu)$')
+
+     ax[1, 0].set_xscale('log')
+     ax[1, 0].set_yscale('log')
+     ax[1, 0].scatter(subset['mean'], subset['mean_hat'], s=2, c='k')
+     ax[1, 0].set_xlim(1e-6, 1e-2)
+     ax[1, 0].set_ylim(ax[1, 0].get_xlim())
+     ax[1, 0].plot(ax[1, 0].get_xlim(), ax[1, 0].get_xlim(), c='r', ls=':', lw=1)
+     ax[1, 0].set_xlabel('True latent mean')
+     ax[1, 0].set_ylabel('Estimated latent mean')
+
+     subset = result.loc[np.logical_and.reduce(np.vstack([mu_pass, pi_pass]))]
+     ax[0, 1].scatter(subset['log_phi'], subset['log_phi_hat'], s=2, c='k')
+     ax[0, 1].set_xlim(-5, 2)
+     ax[0, 1].set_ylim(ax[0, 1].get_xlim())
+     ax[0, 1].plot(ax[0, 1].get_xlim(), ax[0, 1].get_xlim(), c='r', ls=':', lw=1)
+     ax[0, 1].set_xlabel('True $\ln(\phi)$')
+     ax[0, 1].set_ylabel('Estimated $\ln(\phi)$')
+
+     ax[1, 1].set_xscale('log')
+     ax[1, 1].set_yscale('log')
+     ax[1, 1].scatter(subset['var'], subset['var_hat'], s=2, c='k')
+     ax[1, 1].set_xlim(1e-9, 5e-5)
+     ax[1, 1].set_ylim(ax[1, 1].get_xlim())
+     ax[1, 1].plot(ax[1, 1].get_xlim(), ax[1, 1].get_xlim(), c='r', ls=':', lw=1)
+     ax[1, 1].set_xlabel('True latent variance')
+     ax[1, 1].set_ylabel('Estimated latent variance')
+
+     subset = result.loc[pi_pass]
+     ax[0, 2].scatter(subset['logodds'], subset['logodds_hat'], s=2, c='k')
+     ax[0, 2].plot(ax[0, 2].get_xlim(), ax[0, 2].get_xlim(), c='r', ls=':', lw=1)
+     ax[0, 2].set_xlabel('True $\mathrm{logit}(\pi)$')
+     ax[0, 2].set_ylabel('Estimated $\mathrm{logit}(\pi)$')
+
+     ax[1, 2].set_axis_off()
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[73]:
+   [[file:figure/mpebpm.org/sim-params.png]]
    :END:
 
 ** Goodness of fit
@@ -183,7 +245,115 @@
    We previously developed a test for goodness of fit, based on the fact that
    if \(x_{ij} \sim F_{ij}\), then \(F_{ij}(x_{ij}) \sim
    \operatorname{Uniform}(0, 1)\). We applied this test to the distributions
-   estimated from the simulated data sets.
+   estimated from the simulated data sets. Plot the histogram of
+   goodness-of-fit \(p\)-values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-sim-gof.png
+     plt.clf()
+     plt.gcf().set_size_inches(2, 2)
+     plt.hist(result['ks_p'], bins=np.linspace(0, 1, 11), density=True, color='0.7')
+     plt.axhline(y=1, lw=1, ls=':', c='k')
+     plt.xlim(0, 1)
+     plt.xlabel('$p$-value')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[74]:
+   [[file:figure/mpebpm.org/mpebpm-sim-gof.png]]
+   :END:
+
+   Report the number (proportion) of simulation trials where the observed data
+   significantly depart from the estimated distribution (\(p < 0.05\) after
+   Bonferroni correction).
+
+   #+BEGIN_SRC ipython
+     sig = result.loc[result['ks_p'] < 0.05 / result.shape[0]]
+     sig.shape[0], sig.shape[0] / result.shape[0]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[75]:
+   : (29, 0.01183673469387755)
+   :END:
+
+   Plot the simulated data, ground truth \(g\), and estimated \(\hat{g}\) for
+   one of the simulation trials where the data significantly departed from the
+   estimated distribution.
+
+   #+BEGIN_SRC ipython
+     kwargs = dict(sig.iloc[0][['num_samples', 'num_mols', 'log_mu', 'log_phi', 'logodds', 'trial']])
+     kwargs['num_samples'] = int(kwargs['num_samples'])
+     kwargs['size'] = kwargs.pop('num_mols')
+     kwargs['seed'] = int(kwargs.pop('trial'))
+     x = scqtl.simulation.simulate(**kwargs)[0][:,:1]     
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[76]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/sim-ex.png
+     cm = plt.get_cmap('Dark2')
+     plt.gcf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(6, 4)
+
+     query = sig.iloc[0]
+     grid = np.arange(x.max() + 1)
+     F = sp.expit(-query['logodds']) * st.nbinom(n=np.exp(-query['log_phi']), p=1 / (1 + 1e5 * np.exp(query['log_mu'] + query['log_phi']))).pmf(grid)
+     F[0] += sp.expit(query['logodds'])
+     Fhat = sp.expit(-query['logodds_hat']) * st.nbinom(n=np.exp(-query['log_phi_hat']), p=1 / (1 + 1e5 * np.exp(query['log_mu_hat'] + query['log_phi_hat']))).pmf(grid)
+     Fhat[0] += sp.expit(query['logodds_hat'])
+     ax[0].hist(x, bins=grid, color='k')
+     ax[0].plot(grid + 0.5, 100 * F, c=cm(0))
+     ax[0].plot(grid + 0.5, 100 * Fhat, c=cm(1))
+     ax[0].set_xlabel('Number of molecules')
+     ax[0].set_ylabel('Number of cells')
+
+     grid = np.linspace(0, 1e-3, 1000)
+     G = sp.expit(query['logodds']) + sp.expit(-query['logodds']) * st.gamma(a=np.exp(-query['log_phi']), scale=np.exp(query['log_mu'] + query['log_phi'])).cdf(grid)
+     Ghat = sp.expit(query['logodds_hat']) + sp.expit(-query['logodds_hat']) * st.gamma(a=np.exp(-query['log_phi_hat']), scale=np.exp(query['log_mu_hat'] + query['log_phi_hat'])).cdf(grid)
+
+     ax[1].plot(grid, G, c=cm(0), label='True g')
+     ax[1].plot(grid, Ghat, c=cm(1), label='Estimated $\hat{g}$')
+     ax[1].set_xlabel('Latent gene expression')
+     ax[1].set_ylabel('CDF')
+     ax[1].legend(frameon=False)
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[77]:
+   [[file:figure/mpebpm.org/sim-ex.png]]
+   :END:
+
+   This case appears to be explained by the fact that we initialize at the
+   fitted Gamma distribution. It is also outside the range of parameters which
+   we previously found ~scqtl~ was able to accurately estimate. Compare the log
+   likelihood of the observed data under the two distributions.
+
+   #+BEGIN_SRC ipython
+     F = sp.expit(-query['logodds']) * st.nbinom(n=np.exp(-query['log_phi']), p=1 / (1 + 1e5 * np.exp(query['log_mu'] + query['log_phi']))).pmf(x)
+     # log(sigmoid(x)) = -softplus(-x)
+     l0 = np.where(x == 0, -np.log(1 + np.exp(-query['logodds'])) + np.log(F), np.log(F)).sum()
+
+     Fhat = sp.expit(-query['logodds_hat']) * st.nbinom(n=np.exp(-query['log_phi_hat']), p=1 / (1 + 1e5 * np.exp(query['log_mu_hat'] + query['log_phi_hat']))).pmf(x)
+     l1 = np.where(x == 0, -np.log(1 + np.exp(-query['logodds_hat'])) + np.log(Fhat), np.log(Fhat)).sum()
+     l0, l1
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[84]:
+   : (-1484.0973317567657, -491.4170443633362)
+   :END:
 
 ** Running time
 

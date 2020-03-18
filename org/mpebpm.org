@@ -54,7 +54,6 @@
   which should scale inference to much larger data sets. The key improvements
   are optimization using minibatch gradient descent and support for sparse
   matrices. Here, we evaluate the method on simulations.
-
 * Setup
   :PROPERTIES:
   :CUSTOM_ID: setup
@@ -71,7 +70,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 66463590
+  : Submitted batch job 66465436
 
   #+BEGIN_SRC ipython
     import anndata
@@ -87,7 +86,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[20]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -97,7 +96,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[3]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -108,7 +107,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[4]:
   :END:
 
 * Results
@@ -300,11 +299,16 @@
 
    #+BEGIN_SRC ipython
      x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+     x.X
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[21]:
+   # Out[5]:
+   #+BEGIN_EXAMPLE
+     <5597x9957 sparse matrix of type '<class 'numpy.float32'>'
+     with 39654337 stored elements in Compressed Sparse Row format>
+   #+END_EXAMPLE
    :END:
 
    #+BEGIN_SRC ipython
@@ -313,32 +317,79 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[23]:
+   # Out[6]:
    :END:
 
-   Fit ~mpebpm~, and report the time elapsed in seconds.
+   Fit ~mpebpm~, and report the time elapsed in minutes.
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
      log_mu, neg_log_phi, logodds, _ = mpebpm.ebpm_point_gamma(
-       x.X,
+       # Important: the dense data will fit on the GPU
+       x.X.A,
        s=x.obs['mol_hs'].values.reshape(-1, 1),
        onehot=onehot,
-       batch_size=32,
+       batch_size=64,
        lr=1e-2,
-       max_epochs=20,
+       max_epochs=80,
        verbose=True)
      elapsed = time.time() - start
-     elapsed
+     elapsed / 60
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   0 - e979dff5-cd72-4b82-b83c-2cd05dcfdac7
+   # Out[18]:
+   : 4.713608503341675
    :END:
 
-   For comparison, this analysis previously required approximately 7 hours
-   using ~scqtl~.
+   For comparison, this analysis previously required 395 minutes using
+   ~scqtl~. Read the previously estimated parameters.
+
+   #+BEGIN_SRC ipython
+     log_mu0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-mu.txt.gz", index_col=0, sep=' ')
+     log_phi0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-phi.txt.gz", index_col=0, sep=' ')
+     logodds0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-logodds.txt.gz", index_col=0, sep=' ')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[14]:
+   :END:
+
+   Plot the fitted values of the two methods against each other.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-ipsc.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7, 2.5)
+
+     ax[0].scatter(log_mu.ravel(order='F'), log_mu0.values.ravel(), s=1, c='k', alpha=0.1)
+     ax[0].set_xlim(ax[0].get_ylim())
+     ax[0].plot(ax[0].get_xlim(), ax[0].get_ylim(), lw=1, ls=':', c='r')
+     ax[0].set_xlabel('MPEBPM est $\log(\mu)$')
+     ax[0].set_ylabel('scqtl est $\log(\mu)$')
+
+     ax[1].scatter(-neg_log_phi.ravel(order='F'), log_phi0.values.ravel(), s=1, c='k', alpha=0.1)
+     ax[1].set_xlim(ax[1].get_ylim())
+     ax[1].plot(ax[1].get_xlim(), ax[1].get_ylim(), lw=1, ls=':', c='r')
+     ax[1].set_xlabel('MPEBPM est $\log(\phi)$')
+     ax[1].set_ylabel('scqtl est $\log(\phi)$')
+
+     ax[2].scatter(logodds.ravel(order='F'), logodds0.values.ravel(), s=1, c='k', alpha=0.1)
+     ax[2].set_xlim(ax[2].get_ylim())
+     ax[2].plot(ax[2].get_xlim(), ax[2].get_ylim(), lw=1, ls=':', c='r')
+     ax[2].set_xlabel('MPEBPM est $\mathrm{logit}(\pi)$')
+     ax[2].set_ylabel('scqtl est $\mathrm{logit}(\pi)$')
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   [[file:figure/mpebpm.org/mpebpm-ipsc.png]]
+   :END:
 
 ** Application to Census of Immune Cells
 
@@ -352,13 +403,16 @@
 
    #+BEGIN_SRC ipython :async t
      y_csr = ss.load_npz('/scratch/midway2/aksarkar/modes/immune-cell-census.npz')
-     y_csr.shape
+     y_csr
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
-   : (593844, 16002)
+   # Out[56]:
+   #+BEGIN_EXAMPLE
+     <593844x16002 sparse matrix of type '<class 'numpy.int32'>'
+     with 551836788 stored elements in Compressed Sparse Row format>
+   #+END_EXAMPLE
    :END:
 
    Read the metadata. Construct the sparse onehot matrix.

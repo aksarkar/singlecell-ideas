@@ -2,6 +2,9 @@
 #+SETUPFILE: setup.org
 
 * Introduction
+  :PROPERTIES:
+  :CUSTOM_ID: introduction
+  :END:
 
   The /Empirical Bayes Poisson Means/ (EBPM) problem is \( 
   \DeclareMathOperator\Gam{Gamma}
@@ -22,11 +25,11 @@
   where the (primary) inference goal is to estimate \(g\) by maximizing the
   likelihood. In our prior work
   ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et al. 2019]]), we
-  used this approach to estimate the mean and variance of gene expression
-  across a homogeneous sample of cells within each of a number of donor
-  individuals, where we assumed \(\mathcal{G}\) was the family of point-Gamma
-  distributions. In total, we solved 537,678 EBPM problems in parallel by
-  formulating them as a single factor model
+  used this approach to estimate the mean and variance of gene expression from
+  scRNA-seq data collected on a homogeneous sample of cells from each of a
+  number of donor individuals, where we assumed \(\mathcal{G}\) was the family
+  of point-Gamma distributions. In total, we solved 537,678 EBPM problems in
+  parallel by formulating them as a single factor model
 
   \begin{align*}
     x_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
@@ -43,7 +46,7 @@
   - \(x_{i+} \triangleq \sum_j x_{ij}\) is the total number of molecules
     observed in sample \(i\)
   - cells are taken from \(m\) donor individuals, \(\ml\) is \(n \times m\),
-    each \(\mf_{(\cdot)}\) is \(p \times m\)
+    and each \(\mf_{(\cdot)}\) is \(p \times m\)
   - assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}, k = 1,
     \ldots, m\) are known and fixed.
 
@@ -51,9 +54,10 @@
   batch gradient descent in the Python package
   [[https://www.github.com/aksarkar/scqtl.git][scqtl]]. We have now developed a
   new Python package [[https://www.github.com/aksarkar/mpebpm.git][mpebpm]],
-  which should scale inference to much larger data sets. The key improvements
-  are optimization using minibatch gradient descent and support for sparse
-  matrices. Here, we evaluate the method on simulations.
+  which scales to much larger data sets. The key improvements are optimization
+  using minibatch gradient descent and support for sparse matrices. Here, we
+  evaluate the method on simulations and large biological data sets.
+
 * Setup
   :PROPERTIES:
   :CUSTOM_ID: setup
@@ -70,7 +74,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 66467062
+  : Submitted batch job 66467247
 
   #+BEGIN_SRC ipython
     import anndata
@@ -86,7 +90,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -96,7 +100,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -107,11 +111,17 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[4]:
+  # Out[3]:
   :END:
 
 * Results
+  :PROPERTIES:
+  :CUSTOM_ID: results
+  :END:
 ** Accuracy of parameter estimation
+   :PROPERTIES:
+   :CUSTOM_ID: accuracy
+   :END:
 
    We previously evaluated ~scqtl~
    [[https://jdblischak.github.io/singlecell-qtl/zinb.html#orgca44e7f][by
@@ -253,6 +263,9 @@
    :END:
 
 ** Goodness of fit
+   :PROPERTIES:
+   :CUSTOM_ID: gof
+   :END:
 
    We previously developed a test for goodness of fit, based on the fact that
    if \(x_{ij} \sim F_{ij}\), then \(F_{ij}(x_{ij}) \sim
@@ -293,9 +306,13 @@
    :END:
 
 ** Application to iPSCs
+   :PROPERTIES:
+   :CUSTOM_ID: ipsc
+   :END:
 
-   We previously generated scRNA-seq of 5,597 cells from 54 donors (Sarkar et
-   al. 2019). Read the data.
+   We previously generated scRNA-seq of 5,597 cells from 54 donors
+   ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
+   al. 2019]]). Read the data.
 
    #+BEGIN_SRC ipython
      x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
@@ -428,6 +445,9 @@
    :END:
 
 ** Application to Census of Immune Cells
+   :PROPERTIES:
+   :CUSTOM_ID: immune-census
+   :END:
 
    The
    [[https://data.humancellatlas.org/explore/projects/cc95ff89-2e68-4a08-a234-480eca21ce79][Census
@@ -444,19 +464,18 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[56]:
+   # Out[4]:
    #+BEGIN_EXAMPLE
      <593844x16002 sparse matrix of type '<class 'numpy.int32'>'
      with 551836788 stored elements in Compressed Sparse Row format>
    #+END_EXAMPLE
    :END:
 
-   Read the metadata. Construct the sparse onehot matrix.
+   Read the metadata.
 
    #+BEGIN_SRC ipython
      genes = pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz', sep='\t', index_col=0)
      donor = pd.Categorical(pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz', sep='\t', index_col=0)['0'])
-     onehot = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
    #+END_SRC
 
    #+RESULTS:
@@ -464,16 +483,40 @@
    # Out[5]:
    :END:
 
-   Fit ~mpebpm~, and report the time elapsed.
+   Prepare the data.
 
-   #+BEGIN_SRC ipython :async t
-     start = time.time()
-     log_mu, neg_log_phi, _ = mpebpm.ebpm_point_gamma(y_csr, onehot=onehot, batch_size=32, lr=1e-3, max_epochs=10)
-     elapsed = time.time() - start
-     elapsed
+   #+BEGIN_SRC ipython
+     onehot = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   0 - 46db089c-cf33-486a-b52c-67b9de1b42fa
+   # Out[6]:
+   :END:
+
+   Fit ~mpebpm~, and report the time elapsed in minutes.
+
+   #+BEGIN_SRC ipython :async t
+     start = time.time()
+     log_mu, neg_log_phi, _ = mpebpm.ebpm_gamma(y_csr, onehot=onehot, batch_size=32, lr=1e-3, max_epochs=10, verbose=True)
+     elapsed = time.time() - start
+     elapsed / 60
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   : 61.57025446097056
+   :END:
+
+   Write out the estimated parameters.
+
+   #+BEGIN_SRC ipython
+     pd.DataFrame(log_mu, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz', sep='\t')
+     pd.DataFrame(-neg_log_phi, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-log-phi.txt.gz', sep='\t')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
    :END:

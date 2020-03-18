@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-18 Wed 16:02 -->
+<!-- 2020-03-18 Wed 17:30 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -257,14 +257,14 @@ for the JavaScript code in this tag.
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org62be355">Introduction</a></li>
+<li><a href="#introduction">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#orge80a058">Results</a>
+<li><a href="#results">Results</a>
 <ul>
-<li><a href="#orgd051fd5">Accuracy of parameter estimation</a></li>
-<li><a href="#org753cc61">Goodness of fit</a></li>
-<li><a href="#org09c6f5e">Application to iPSCs</a></li>
-<li><a href="#org450128b">Application to Census of Immune Cells</a></li>
+<li><a href="#accuracy">Accuracy of parameter estimation</a></li>
+<li><a href="#gof">Goodness of fit</a></li>
+<li><a href="#ipsc">Application to iPSCs</a></li>
+<li><a href="#immune-census">Application to Census of Immune Cells</a></li>
 </ul>
 </li>
 </ul>
@@ -272,8 +272,8 @@ for the JavaScript code in this tag.
 </div>
 
 <div id="outline-container-org62be355" class="outline-2">
-<h2 id="org62be355">Introduction</h2>
-<div class="outline-text-2" id="text-org62be355">
+<h2 id="introduction"><a id="org62be355"></a>Introduction</h2>
+<div class="outline-text-2" id="text-introduction">
 <p>
 The <i>Empirical Bayes Poisson Means</i> (EBPM) problem is \( 
   \DeclareMathOperator\Gam{Gamma}
@@ -296,11 +296,11 @@ The <i>Empirical Bayes Poisson Means</i> (EBPM) problem is \(
 where the (primary) inference goal is to estimate \(g\) by maximizing the
 likelihood. In our prior work
 (<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et al. 2019</a>), we
-used this approach to estimate the mean and variance of gene expression
-across a homogeneous sample of cells within each of a number of donor
-individuals, where we assumed \(\mathcal{G}\) was the family of point-Gamma
-distributions. In total, we solved 537,678 EBPM problems in parallel by
-formulating them as a single factor model
+used this approach to estimate the mean and variance of gene expression from
+scRNA-seq data collected on a homogeneous sample of cells from each of a
+number of donor individuals, where we assumed \(\mathcal{G}\) was the family
+of point-Gamma distributions. In total, we solved 537,678 EBPM problems in
+parallel by formulating them as a single factor model
 </p>
 
 \begin{align*}
@@ -321,7 +321,7 @@ in cell \(i = 1, \ldots, n\)</li>
 <li>\(x_{i+} \triangleq \sum_j x_{ij}\) is the total number of molecules
 observed in sample \(i\)</li>
 <li>cells are taken from \(m\) donor individuals, \(\ml\) is \(n \times m\),
-each \(\mf_{(\cdot)}\) is \(p \times m\)</li>
+and each \(\mf_{(\cdot)}\) is \(p \times m\)</li>
 <li>assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}, k = 1,
     \ldots, m\) are known and fixed.</li>
 </ul>
@@ -331,12 +331,13 @@ We previously implemented maximum likelihood inference of this model via
 batch gradient descent in the Python package
 <a href="https://www.github.com/aksarkar/scqtl.git">scqtl</a>. We have now developed a
 new Python package <a href="https://www.github.com/aksarkar/mpebpm.git">mpebpm</a>,
-which should scale inference to much larger data sets. The key improvements
-are optimization using minibatch gradient descent and support for sparse
-matrices. Here, we evaluate the method on simulations.
+which scales to much larger data sets. The key improvements are optimization
+using minibatch gradient descent and support for sparse matrices. Here, we
+evaluate the method on simulations and large biological data sets.
 </p>
 </div>
 </div>
+
 <div id="outline-container-org9626900" class="outline-2">
 <h2 id="setup"><a id="org9626900"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
@@ -369,12 +370,12 @@ matrices. Here, we evaluate the method on simulations.
 </div>
 
 <div id="outline-container-orge80a058" class="outline-2">
-<h2 id="orge80a058">Results</h2>
-<div class="outline-text-2" id="text-orge80a058">
+<h2 id="results"><a id="orge80a058"></a>Results</h2>
+<div class="outline-text-2" id="text-results">
 </div>
 <div id="outline-container-orgd051fd5" class="outline-3">
-<h3 id="orgd051fd5">Accuracy of parameter estimation</h3>
-<div class="outline-text-3" id="text-orgd051fd5">
+<h3 id="accuracy"><a id="orgd051fd5"></a>Accuracy of parameter estimation</h3>
+<div class="outline-text-3" id="text-accuracy">
 <p>
 We previously evaluated <code>scqtl</code>
 <a href="https://jdblischak.github.io/singlecell-qtl/zinb.html#orgca44e7f">by
@@ -514,8 +515,8 @@ fig.tight_layout()
 </div>
 
 <div id="outline-container-org753cc61" class="outline-3">
-<h3 id="org753cc61">Goodness of fit</h3>
-<div class="outline-text-3" id="text-org753cc61">
+<h3 id="gof"><a id="org753cc61"></a>Goodness of fit</h3>
+<div class="outline-text-3" id="text-gof">
 <p>
 We previously developed a test for goodness of fit, based on the fact that
 if \(x_{ij} \sim F_{ij}\), then \(F_{ij}(x_{ij}) \sim
@@ -562,11 +563,12 @@ sig.shape[0], sig.shape[0] / result.shape[0]
 </div>
 
 <div id="outline-container-org09c6f5e" class="outline-3">
-<h3 id="org09c6f5e">Application to iPSCs</h3>
-<div class="outline-text-3" id="text-org09c6f5e">
+<h3 id="ipsc"><a id="org09c6f5e"></a>Application to iPSCs</h3>
+<div class="outline-text-3" id="text-ipsc">
 <p>
-We previously generated scRNA-seq of 5,597 cells from 54 donors (Sarkar et
-al. 2019). Read the data.
+We previously generated scRNA-seq of 5,597 cells from 54 donors
+(<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et
+al. 2019</a>). Read the data.
 </p>
 
 <div class="org-src-container">
@@ -707,8 +709,8 @@ fig.tight_layout()
 </div>
 
 <div id="outline-container-org450128b" class="outline-3">
-<h3 id="org450128b">Application to Census of Immune Cells</h3>
-<div class="outline-text-3" id="text-org450128b">
+<h3 id="immune-census"><a id="org450128b"></a>Application to Census of Immune Cells</h3>
+<div class="outline-text-3" id="text-immune-census">
 <p>
 The
 <a href="https://data.humancellatlas.org/explore/projects/cc95ff89-2e68-4a08-a234-480eca21ce79">Census
@@ -733,38 +735,57 @@ with 551836788 stored elements in Compressed Sparse Row format&gt;
 </pre>
 
 <p>
-Read the metadata. Construct the sparse onehot matrix.
+Read the metadata.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">genes</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
 <span class="org-variable-name">donor</span> = pd.Categorical(pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)[<span class="org-string">'0'</span>])
-<span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
 </pre>
 </div>
 
 <p>
-Fit <code>mpebpm</code>, and report the time elapsed.
+Prepare the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
+</pre>
+</div>
+
+<p>
+Fit <code>mpebpm</code>, and report the time elapsed in minutes.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">_</span> = mpebpm.ebpm_point_gamma(y_csr, onehot=onehot, batch_size=32, lr=1e-3, max_epochs=10)
+<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">_</span> = mpebpm.ebpm_gamma(y_csr, onehot=onehot, batch_size=32, lr=1e-3, max_epochs=10, verbose=<span class="org-constant">True</span>)
 <span class="org-variable-name">elapsed</span> = time.time() - start
-elapsed
+elapsed / 60
 </pre>
 </div>
 
+<pre class="example">
+61.57025446097056
+
+</pre>
+
 <p>
-0 - 46db089c-cf33-486a-b52c-67b9de1b42fa
+Write out the estimated parameters.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.DataFrame(log_mu, index=donor.categories, columns=genes[<span class="org-string">'featurekey'</span>]).to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+pd.DataFrame(-neg_log_phi, index=donor.categories, columns=genes[<span class="org-string">'featurekey'</span>]).to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-log-phi.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+</pre>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-18 Wed 16:02</p>
+<p class="date">Created: 2020-03-18 Wed 17:30</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

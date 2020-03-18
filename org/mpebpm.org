@@ -160,13 +160,13 @@
    Run the simulation.
 
    #+BEGIN_SRC ipython :async t
-     result = evaluate(num_samples=100, num_mols=int(1e5), batch_size=32, max_epochs=100, verbose=True)
+     result = evaluate(num_samples=100, num_mols=int(1e5), batch_size=32, max_epochs=200, verbose=True)
      result.to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-sim.txt.gz', sep='\t')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[54]:
+   # Out[94]:
    :END:
 
    Read the results.
@@ -236,7 +236,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[73]:
+   # Out[95]:
    [[file:figure/mpebpm.org/sim-params.png]]
    :END:
 
@@ -261,7 +261,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[74]:
+   # Out[96]:
    [[file:figure/mpebpm.org/mpebpm-sim-gof.png]]
    :END:
 
@@ -276,83 +276,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[75]:
-   : (29, 0.01183673469387755)
-   :END:
-
-   Plot the simulated data, ground truth \(g\), and estimated \(\hat{g}\) for
-   one of the simulation trials where the data significantly departed from the
-   estimated distribution.
-
-   #+BEGIN_SRC ipython
-     kwargs = dict(sig.iloc[0][['num_samples', 'num_mols', 'log_mu', 'log_phi', 'logodds', 'trial']])
-     kwargs['num_samples'] = int(kwargs['num_samples'])
-     kwargs['size'] = kwargs.pop('num_mols')
-     kwargs['seed'] = int(kwargs.pop('trial'))
-     x = scqtl.simulation.simulate(**kwargs)[0][:,:1]     
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[76]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/sim-ex.png
-     cm = plt.get_cmap('Dark2')
-     plt.gcf()
-     fig, ax = plt.subplots(2, 1)
-     fig.set_size_inches(6, 4)
-
-     query = sig.iloc[0]
-     grid = np.arange(x.max() + 1)
-     F = sp.expit(-query['logodds']) * st.nbinom(n=np.exp(-query['log_phi']), p=1 / (1 + 1e5 * np.exp(query['log_mu'] + query['log_phi']))).pmf(grid)
-     F[0] += sp.expit(query['logodds'])
-     Fhat = sp.expit(-query['logodds_hat']) * st.nbinom(n=np.exp(-query['log_phi_hat']), p=1 / (1 + 1e5 * np.exp(query['log_mu_hat'] + query['log_phi_hat']))).pmf(grid)
-     Fhat[0] += sp.expit(query['logodds_hat'])
-     ax[0].hist(x, bins=grid, color='k')
-     ax[0].plot(grid + 0.5, 100 * F, c=cm(0))
-     ax[0].plot(grid + 0.5, 100 * Fhat, c=cm(1))
-     ax[0].set_xlabel('Number of molecules')
-     ax[0].set_ylabel('Number of cells')
-
-     grid = np.linspace(0, 1e-3, 1000)
-     G = sp.expit(query['logodds']) + sp.expit(-query['logodds']) * st.gamma(a=np.exp(-query['log_phi']), scale=np.exp(query['log_mu'] + query['log_phi'])).cdf(grid)
-     Ghat = sp.expit(query['logodds_hat']) + sp.expit(-query['logodds_hat']) * st.gamma(a=np.exp(-query['log_phi_hat']), scale=np.exp(query['log_mu_hat'] + query['log_phi_hat'])).cdf(grid)
-
-     ax[1].plot(grid, G, c=cm(0), label='True g')
-     ax[1].plot(grid, Ghat, c=cm(1), label='Estimated $\hat{g}$')
-     ax[1].set_xlabel('Latent gene expression')
-     ax[1].set_ylabel('CDF')
-     ax[1].legend(frameon=False)
-
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[77]:
-   [[file:figure/mpebpm.org/sim-ex.png]]
-   :END:
-
-   This case appears to be explained by the fact that we initialize at the
-   fitted Gamma distribution. It is also outside the range of parameters which
-   we previously found ~scqtl~ was able to accurately estimate. Compare the log
-   likelihood of the observed data under the two distributions.
-
-   #+BEGIN_SRC ipython
-     F = sp.expit(-query['logodds']) * st.nbinom(n=np.exp(-query['log_phi']), p=1 / (1 + 1e5 * np.exp(query['log_mu'] + query['log_phi']))).pmf(x)
-     # log(sigmoid(x)) = -softplus(-x)
-     l0 = np.where(x == 0, -np.log(1 + np.exp(-query['logodds'])) + np.log(F), np.log(F)).sum()
-
-     Fhat = sp.expit(-query['logodds_hat']) * st.nbinom(n=np.exp(-query['log_phi_hat']), p=1 / (1 + 1e5 * np.exp(query['log_mu_hat'] + query['log_phi_hat']))).pmf(x)
-     l1 = np.where(x == 0, -np.log(1 + np.exp(-query['logodds_hat'])) + np.log(Fhat), np.log(Fhat)).sum()
-     l0, l1
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[84]:
-   : (-1484.0973317567657, -491.4170443633362)
+   # Out[97]:
+   : (0, 0.0)
    :END:
 
 ** Running time

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-18 Wed 12:01 -->
+<!-- 2020-03-18 Wed 12:43 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -263,7 +263,7 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#orgd051fd5">Accuracy of parameter estimation</a></li>
 <li><a href="#org753cc61">Goodness of fit</a></li>
-<li><a href="#org2633da6">Running time</a></li>
+<li><a href="#org09c6f5e">Application to iPSCs</a></li>
 <li><a href="#org450128b">Application to Census of Immune Cells</a></li>
 </ul>
 </li>
@@ -275,10 +275,7 @@ for the JavaScript code in this tag.
 <h2 id="org62be355">Introduction</h2>
 <div class="outline-text-2" id="text-org62be355">
 <p>
-In our prior work (<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar
-et al. 2019</a>), we introduced a factor model to capture between donor
-individual variation in the mean and variance of gene expression in a single
-cell type \( 
+The <i>Empirical Bayes Poisson Means</i> (EBPM) problem is \( 
   \DeclareMathOperator\Gam{Gamma}
   \DeclareMathOperator\Poi{Poisson}
   \DeclareMathOperator\argmin{arg min}
@@ -291,11 +288,27 @@ cell type \(
 </p>
 
 \begin{align*}
+  x_i \mid s_i, \lambda_i &\sim \Poi(s_i \lambda_i)\\
+  \lambda_i &\sim g(\cdot) \in \mathcal{G},
+\end{align*}
+
+<p>
+where the (primary) inference goal is to estimate \(g\) by maximizing the
+likelihood. In our prior work
+(<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et al. 2019</a>), we
+used this approach to estimate the mean and variance of gene expression
+across a homogeneous sample of cells within each of a number of donor
+individuals, where we assumed \(\mathcal{G}\) was the family of point-Gamma
+distributions. In total, we solved 537,678 EBPM problems in parallel by
+formulating them as a single factor model
+</p>
+
+\begin{align*}
   x_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
   \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
   \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
   \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
-  \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij}\\
+  \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij},
 \end{align*}
 
 <p>
@@ -308,8 +321,8 @@ in cell \(i = 1, \ldots, n\)</li>
 <li>\(x_{i+} \triangleq \sum_j x_{ij}\) is the total number of molecules
 observed in sample \(i\)</li>
 <li>cells are taken from \(m\) donor individuals, \(\ml\) is \(n \times m\),
-each \(\mf_{\cdot}\) is \(p \times m\)</li>
-<li>assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}; k = 1,
+each \(\mf_{(\cdot)}\) is \(p \times m\)</li>
+<li>assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}, k = 1,
     \ldots, m\) are known and fixed.</li>
 </ul>
 
@@ -329,13 +342,15 @@ matrices. Here, we evaluate the method on simulations.
 <h2 id="setup"><a id="org9626900"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> mpebpm
+<pre class="src src-ipython"><span class="org-keyword">import</span> anndata
+<span class="org-keyword">import</span> mpebpm
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> scqtl
+<span class="org-keyword">import</span> time
 </pre>
 </div>
 
@@ -547,12 +562,50 @@ sig.shape[0], sig.shape[0] / result.shape[0]
 </div>
 </div>
 
-<div id="outline-container-org2633da6" class="outline-3">
-<h3 id="org2633da6">Running time</h3>
-<div class="outline-text-3" id="text-org2633da6">
+<div id="outline-container-org09c6f5e" class="outline-3">
+<h3 id="org09c6f5e">Application to iPSCs</h3>
+<div class="outline-text-3" id="text-org09c6f5e">
 <p>
-Compare the wallclock time of <code>scqtl</code> against <code>mpebpm</code> fixing \(p\) and
-increasing \(n\).
+We previously generated scRNA-seq of 5,597 cells from 54 donors (Sarkar et
+al. 2019). Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(x.shape[0]), (np.arange(x.shape[0]), pd.Categorical(x.obs[<span class="org-string">'chip_id'</span>]).codes))).tocsr()
+</pre>
+</div>
+
+<p>
+Fit <code>mpebpm</code>, and report the time elapsed in seconds.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">logodds</span>, <span class="org-variable-name">_</span> = mpebpm.ebpm_point_gamma(
+  x.X,
+  s=x.obs[<span class="org-string">'mol_hs'</span>].values.reshape(-1, 1),
+  onehot=onehot,
+  batch_size=32,
+  lr=1e-2,
+  max_epochs=20,
+  verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">elapsed</span> = time.time() - start
+elapsed
+</pre>
+</div>
+
+<p>
+0 - e979dff5-cd72-4b82-b83c-2cd05dcfdac7
+</p>
+
+<p>
+For comparison, this analysis previously required approximately 7 hours
+using <code>scqtl</code>.
 </p>
 </div>
 </div>
@@ -569,7 +622,7 @@ scRNA-seq data of 593,844 cells from 16 donors. To demonstrate the scalability o
 </p>
 
 <p>
-Read the sparse data and report its dimensions. (20 seconds)
+Read the sparse data and report its dimensions.
 </p>
 
 <div class="org-src-container">
@@ -578,22 +631,44 @@ y_csr.shape
 </pre>
 </div>
 
+<pre class="example">
+(593844, 16002)
+
+</pre>
+
 <p>
-Read the metadata.
+Read the metadata. Construct the sparse onehot matrix.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">genes</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
 <span class="org-variable-name">donor</span> = pd.Categorical(pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)[<span class="org-string">'0'</span>])
+<span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
 </pre>
 </div>
+
+<p>
+Fit <code>mpebpm</code>, and report the time elapsed.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">_</span> = mpebpm.ebpm_point_gamma(y_csr, onehot=onehot, batch_size=32, lr=1e-3, max_epochs=10)
+<span class="org-variable-name">elapsed</span> = time.time() - start
+elapsed
+</pre>
+</div>
+
+<p>
+0 - 46db089c-cf33-486a-b52c-67b9de1b42fa
+</p>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-18 Wed 12:01</p>
+<p class="date">Created: 2020-03-18 Wed 12:43</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

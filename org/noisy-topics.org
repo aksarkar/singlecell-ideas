@@ -1,0 +1,77 @@
+#+TITLE: Noisy topic models
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Matthew Stephens and Zihao Wang suggest a variation on hierarchical Poisson
+  matrix factorization (Cemgil 2009)\(
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Mult{Multinomial}
+  \newcommand\E[1]{\left\langle #1 \right\rangle}
+  \newcommand\const{\mathrm{const}}
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mf{\mathbf{F}}
+  \newcommand\vmu{\boldsymbol{\mu}}
+  \newcommand\mphi{\boldsymbol{\Phi}}
+  \)
+
+  \begin{align}
+    x_{ij} &= \sum_{k=1}^K z_{ijk}\\
+    z_{ijk} &\sim \Pois(l_{ik} \mu_j u_{jk})\\
+    u_{jk} &\sim \Gam(\theta_{jk}, \theta_{jk}),
+  \end{align}
+
+  where the Gamma distribution is parameterized by shape and rate, \(\E{u_{jk}}
+  = 1\), and \(V[u_{jk}] = 1 / \theta_{jk}\). The intuition is to rewrite
+  factors \(f_{jk} = \mu_j u_{jk}\). After a suitable scaling, \(\ml\) and
+  \(\mf\) are then a valid topic model in which most topics reflect the average
+  gene expression at most genes, and \(\theta_{jk}\) can be used to find genes
+  which depart from the mean, which could be of biological interest.
+
+* Inference
+
+  The log joint is
+
+  \begin{multline}
+    \ln p = \sum_{i,j,k} \left[ z_{ijk} \ln (l_{ik} \mu_j u_{jk}) - l_{ik} \mu_j u_{jk} - \ln\Gamma(z_{ijk} + 1) \right]\\
+    + \sum_{j,k} \left[ \theta_{jk}\ln \theta_{jk} + (\theta_{jk} - 1) \ln u_{jk} - \theta_{jk} u_{jk} - \ln\Gamma(\theta_{jk})\right],
+  \end{multline}
+
+  if \(x_{ij} = \sum_k z_{ijk}\), and \(-\infty\) otherwise. By a
+  variational argument
+
+  \begin{align}
+    q^*(z_{ij1}, \ldots, z_{ijK}) &\propto \exp(z_{ijk}(\ln(l_{ik} \mu_j) + \E{\ln u_{jk}}))\\
+    &= \Mult(x_{ij}, \pi_{ij1}, \ldots, \pi_{ijK}), \qquad \pi_{ijk} \propto l_{ik}\mu_j\exp(\E{\ln u_{jk}})\\
+    q^*(u_{jk}) &\propto \exp(\textstyle\sum_i (\E{z_{ijk}} + \theta_{jk} - 1) \ln u_{jk} - (l_{ik} \mu_j + \theta_{jk}) u_{jk})\\
+    &= \Gam(\textstyle\sum_i \E{z_{ijk}} + \theta_{jk}, \textstyle\sum_i l_{ik}\mu_j + \theta_{jk})\\
+    &\triangleq \Gam(\alpha_{jk}, \beta_{jk}).
+  \end{align}
+
+  where
+
+  \begin{align}
+    \E{z_{ijk}} &= x_{ij} \pi_{ijk}\\
+    \E{u_{jk}} &= \alpha_{jk} / \beta_{jk}\\
+    \E{\ln u_{jk}} &= \psi(\alpha_{jk}) - \ln \beta_{jk}
+  \end{align}
+
+  and \(\psi\) denotes the digamma function. The evidence lower bound (ELBO) is
+
+  \begin{multline}
+    \ell = \sum_{i,j,k} \left[ \E{z_{ijk}} (\ln (l_{ik} \mu_j) + \E{\ln u_{jk}} - \ln\pi_{ijk}) - l_{ik} \mu_j \E{u_{jk}} \right] - \sum_{i,j} \ln\Gamma(x_{ij} + 1)\\
+    + \sum_{j,k} \left[ (\theta_{jk} - \alpha_{jk}) \E{\ln u_{jk}} - (\theta_{jk} - \beta_{jk}) \E{u_{jk}} - \theta_{jk}\ln \theta_{jk} + \beta_{jk} \ln\alpha_{jk} - \ln\Gamma(\theta_{jk}) + \ln\Gamma(\alpha_{jk})\right],
+  \end{multline}
+
+  To maximize the ELBO,
+
+  \begin{align}
+    \frac{\partial\ell}{\partial l_{ik}} &= \sum_j \frac{\E{z_{ijk}}}{l_{ik}} - \mu_j \E{u_{jk}} = 0\\
+    l_{ik} &= \frac{\sum_j \E{z_{ijk}}}{\sum_j \mu_j \E{u_{jk}}}\\
+    \frac{\partial\ell}{\partial \mu_j} &= \sum_{i, k} \frac{\E{z_{ijk}}}{\mu_j} - l_{ik} \E{u_{jk}} = 0\\
+    \mu_j &= \frac{\sum_{i, k} \E{z_{ijk}}}{\sum_{i, k} l_{ik} \E{u_{jk}}}\\
+    \frac{\partial\ell}{\partial \theta_{jk}} &= 1 + \ln \theta_{jk} + \E{\ln u_{jk}} - \psi(\theta_{jk})
+  \end{align}
+
+  where \(\theta_{jk}\) can be updated via gradient ascent with line search.

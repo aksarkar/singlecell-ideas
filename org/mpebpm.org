@@ -74,7 +74,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 66467247
+  : Submitted batch job 66497371
 
   #+BEGIN_SRC ipython
     import anndata
@@ -321,7 +321,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[4]:
    #+BEGIN_EXAMPLE
      <5597x9957 sparse matrix of type '<class 'numpy.float32'>'
      with 39654337 stored elements in Compressed Sparse Row format>
@@ -339,7 +339,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[6]:
    :END:
 
    Fit ~mpebpm~, and report the time elapsed in minutes.
@@ -355,17 +355,26 @@
        max_epochs=80,
        verbose=True)
      elapsed = time.time() - start
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npz', log_mu)
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npz', neg_log_phi)
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npz', log_mu)
      elapsed / 60
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
-   : 4.631162142753601
+   # Out[7]:
+   : 4.908937855561574
    :END:
 
    For comparison, this analysis previously required 395 minutes using
    ~scqtl~. Estimate the full data log likelihood.
+
+   #+BEGIN_SRC ipython
+     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npz')
+     neg_log_phi = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npz')
+     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npz')
+   #+END_SRC
 
    #+BEGIN_SRC ipython :async t
      mean = s.ravel() * onehot @ np.exp(log_mu)
@@ -381,7 +390,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[23]:
+   # Out[8]:
    : -163.68023324162735
    :END:
 
@@ -442,6 +451,122 @@
    :RESULTS:
    # Out[19]:
    [[file:figure/mpebpm.org/mpebpm-ipsc.png]]
+   :END:
+
+   Test each individual-gene combination for goodness-of-fit to the
+   ~mpebpm~-estimated distribution.
+
+   #+BEGIN_SRC ipython :async t
+     result = dict()
+     for j in range(x.shape[1]):
+       for k, donor in enumerate(pd.Categorical(x.obs['chip_id']).categories):
+         idx = onehot[:,k].A.ravel().astype(bool)
+         d, p = scqtl.diagnostic.diagnostic_test(
+           x.X[idx,j].A,
+           log_mu[k,j],
+           -neg_log_phi[k,j],
+           -logodds[k,j],
+           s[idx],
+           np.ones((int(idx.sum()), 1)),
+           n_samples=1)
+         result[(donor, x.var.iloc[j].name)] = pd.Series({'stat': d, 'p': p})
+     result = pd.DataFrame.from_dict(result, orient='index')
+     result.index.names = ['donor', 'gene']
+     result = result.reset_index()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[35]:
+   :END:
+
+   Write out the GOF tests.
+
+   #+BEGIN_SRC ipython
+     result.to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-gof.txt.gz', sep='\t')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   :END:
+
+   Plot the histogram of GOF \(p\)-values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-ipsc-gof.png
+     plt.clf()
+     plt.gcf().set_size_inches(2, 2)
+     plt.hist(result['p'], bins=np.linspace(0, 1, 11), color='0.7', density=True)
+     plt.axhline(y=1, lw=1, ls=':', c='k')
+     plt.xlim(0, 1)
+     plt.xlabel('$p$-value')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[76]:
+   [[file:figure/mpebpm.org/mpebpm-ipsc-gof.png]]
+   :END:
+
+   Report how many individual-gene combinations (proportion) depart
+   significantly from the estimated distribution.
+
+   #+BEGIN_SRC ipython
+     sig = result.loc[result['p'] < 0.05 / result.shape[0]]
+     sig.shape[0], sig.shape[0] / result.shape[0]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[43]:
+   : (64, 0.00011903034901930151)
+   :END:
+
+   Look at one of the examples where the data depart from the estimated
+   distribution.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-ipsc-ex.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(6, 4)
+     query = x[x.obs['chip_id'] == sig.iloc[0]['donor'], x.var.index == sig.iloc[0]['gene']].X.A.ravel()
+     ax[0].hist(query, bins=np.arange(query.max() + 1), color='k')
+     ax[0].set_xlabel('Number of molecules')
+     ax[0].set_ylabel('Number of cells')
+     ax[0].set_title(x.var.loc[sig.iloc[0]['gene'], 'name'])
+
+     grid = np.linspace(0, 1e-3, 1000)
+     j = list(x.var.index).index(sig.iloc[0]['gene'])
+     k = list(pd.Categorical(x.obs['chip_id']).categories).index(sig.iloc[0]['donor'])
+     ax[1].plot(grid, st.gamma(a=np.exp(neg_log_phi[k,j]), scale=np.exp(log_mu[k,j] - neg_log_phi[k,j])).cdf(grid), c='k', lw=1)
+     ax[1].set_xlabel('Latent gene expression')
+     ax[1].set_ylabel('CDF')
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[75]:
+   [[file:figure/mpebpm.org/mpebpm-ipsc-ex.png]]
+   :END:
+
+   Report all genes at which the data depart from the estimated distribution
+   for at least one individual.
+
+   #+BEGIN_SRC ipython
+     x.var.merge(sig, left_index=True, right_on='gene', how='inner')['name'].unique()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[82]:
+   #+BEGIN_EXAMPLE
+     array(['NUP98', 'ANXA5', 'RPL27A', 'RHOG', 'MT-CO2', 'MT-ND4', 'MT-CO3',
+     'MT-ND4L', 'MT-ATP8'], dtype=object)
+   #+END_EXAMPLE
    :END:
 
 ** Application to Census of Immune Cells

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-18 Wed 17:30 -->
+<!-- 2020-03-19 Thu 11:22 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -304,8 +304,8 @@ parallel by formulating them as a single factor model
 </p>
 
 \begin{align*}
-  x_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
-  \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
+  x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
+  \lambda_{ij} \mid \mu_{ij}, \phi_{ij}, \pi_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
   \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
   \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
   \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij},
@@ -785,7 +785,7 @@ pd.DataFrame(-neg_log_phi, index=donor.categories, columns=genes[<span class="or
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-18 Wed 17:30</p>
+<p class="date">Created: 2020-03-19 Thu 11:22</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

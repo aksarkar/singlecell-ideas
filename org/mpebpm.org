@@ -32,8 +32,8 @@
   parallel by formulating them as a single factor model
 
   \begin{align*}
-    x_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
-    \lambda_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
+    x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
+    \lambda_{ij} \mid \mu_{ij}, \phi_{ij}, \pi_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
     \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
     \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
     \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij},

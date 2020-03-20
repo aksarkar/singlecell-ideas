@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-19 Thu 20:42 -->
+<!-- 2020-03-20 Fri 13:08 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Noisy topic models</title>
@@ -258,7 +258,13 @@ for the JavaScript code in this tag.
 <div id="text-table-of-contents">
 <ul>
 <li><a href="#org72849d9">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#orgafc42e0">Methods</a>
+<ul>
 <li><a href="#org3c0af52">Inference</a></li>
+<li><a href="#org52d4c56">Implementation</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -298,9 +304,31 @@ which depart from the mean, which could be of biological interest.
 </div>
 </div>
 
-<div id="outline-container-org3c0af52" class="outline-2">
-<h2 id="org3c0af52">Inference</h2>
-<div class="outline-text-2" id="text-org3c0af52">
+<div id="outline-container-org8a9b53a" class="outline-2">
+<h2 id="setup"><a id="org8a9b53a"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgafc42e0" class="outline-2">
+<h2 id="orgafc42e0">Methods</h2>
+<div class="outline-text-2" id="text-orgafc42e0">
+</div>
+<div id="outline-container-org3c0af52" class="outline-3">
+<h3 id="org3c0af52">Inference</h3>
+<div class="outline-text-3" id="text-org3c0af52">
 <p>
 The log joint is
 </p>
@@ -359,10 +387,74 @@ where \(\theta_{jk}\) can be updated via gradient ascent with line search.
 </p>
 </div>
 </div>
+
+<div id="outline-container-org52d4c56" class="outline-3">
+<h3 id="org52d4c56">Implementation</h3>
+<div class="outline-text-3" id="text-org52d4c56">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">hpmf</span>(x, rank, atol=1e-4, max_iters=1000, verbose=<span class="org-constant">False</span>):
+  <span class="org-keyword">if</span> <span class="org-keyword">not</span> ss.isspmatrix_coo(x):
+    <span class="org-variable-name">x</span> = ss.coo_matrix(x)
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
+  <span class="org-variable-name">l</span> = np.random.uniform(size=(n, rank))
+  <span class="org-variable-name">mu</span> = np.ones((p, 1))
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Sparse representation of variational parameters for non-zero x</span>
+  <span class="org-variable-name">z_idx</span> = np.vstack((x.row, x.col))
+  <span class="org-variable-name">pi</span> = np.ones((x.nnz, rank)) / rank
+  <span class="org-variable-name">alpha</span> = np.ones((p, rank))
+  <span class="org-variable-name">beta</span> = np.ones((p, rank))
+  <span class="org-variable-name">theta</span> = np.ones((p, rank))
+
+  <span class="org-variable-name">obj</span> = elbo(x, z_idx, pi, l, mu, alpha, beta)
+  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Expectations wrt variational distribution</span>
+    <span class="org-variable-name">u</span> = alpha / beta
+    <span class="org-variable-name">log_u</span> = sp.digamma(alpha) - np.log(beta)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Coordinate updates</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Hyperparameter updates</span>
+    <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p):
+      <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(rank):
+        <span class="org-variable-name">theta</span>[j,k] = update_theta(u[j,k], log_u[j,k], alpha[j,k], beta[j,k])
+    <span class="org-variable-name">update</span> = elbo(x, z_idx, pi, l, mu, alpha, beta)
+    <span class="org-keyword">if</span> update &lt; obj:
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'objective increased'</span>)
+    <span class="org-keyword">elif</span> <span class="org-builtin">abs</span>(update - obj) &lt; atol:
+      <span class="org-keyword">return</span> l, mu, alpha, beta
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">obj</span> = update
+      <span class="org-keyword">print</span>(f<span class="org-string">'[{t}] elbo={elbo:.2g}'</span>)
+  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'max_iters exceeded'</span>)
+
+<span class="org-keyword">def</span> <span class="org-function-name">elbo</span>(x, z_idx, pi, l, mu, alpha, beta):
+  <span class="org-keyword">pass</span>
+
+<span class="org-keyword">def</span> <span class="org-function-name">theta_loss</span>(theta, u, log_u, alpha, beta):
+  <span class="org-keyword">pass</span>
+
+<span class="org-keyword">def</span> <span class="org-function-name">update_theta</span>(theta, u, log_u, alpha, beta, step=1, c=0.5, tau=0.5, max_iters=32):
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: take steps wrt log_inv_disp to avoid non-negativity constraint</span>
+  <span class="org-variable-name">log_inv_disp</span> = np.log(inv_disp)
+  <span class="org-variable-name">d</span> = _D_loss_theta(inv_disp, u, log_u, w) * inv_disp
+  <span class="org-variable-name">loss</span> = _nbmf_loss(x, lam, inv_disp=inv_disp, w=w)
+  <span class="org-variable-name">update</span> = _nbmf_loss(x, lam, inv_disp=np.exp(log_inv_disp + step * d), w=w)
+  <span class="org-keyword">while</span> (<span class="org-keyword">not</span> np.isfinite(update) <span class="org-keyword">or</span> update &gt; loss + c * step * d) <span class="org-keyword">and</span> max_iters &gt; 0:
+    <span class="org-variable-name">step</span> *= tau
+    <span class="org-variable-name">update</span> = _nbmf_loss(x, lam, inv_disp=np.exp(log_inv_disp + step * d), w=w)
+    <span class="org-variable-name">max_iters</span> -= 1
+  <span class="org-keyword">if</span> max_iters == 0:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Step size is small enough that update can be skipped</span>
+    <span class="org-keyword">return</span> inv_disp
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">return</span> np.exp(log_inv_disp + step * d) + 1e-15
+</pre>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-19 Thu 20:42</p>
+<p class="date">Created: 2020-03-20 Fri 13:08</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

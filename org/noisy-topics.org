@@ -29,7 +29,34 @@
   gene expression at most genes, and \(\theta_{jk}\) can be used to find genes
   which depart from the mean, which could be of biological interest.
 
-* Inference
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+* Methods
+** Inference
 
   The log joint is
 
@@ -75,3 +102,62 @@
   \end{align}
 
   where \(\theta_{jk}\) can be updated via gradient ascent with line search.
+
+** Implementation
+
+  #+BEGIN_SRC ipython
+    def hpmf(x, rank, atol=1e-4, max_iters=1000, verbose=False):
+      if not ss.isspmatrix_coo(x):
+        x = ss.coo_matrix(x)
+      n, p = x.shape
+      l = np.random.uniform(size=(n, rank))
+      mu = np.ones((p, 1))
+      # Sparse representation of variational parameters for non-zero x
+      z_idx = np.vstack((x.row, x.col))
+      pi = np.ones((x.nnz, rank)) / rank
+      alpha = np.ones((p, rank))
+      beta = np.ones((p, rank))
+      theta = np.ones((p, rank))
+
+      obj = elbo(x, z_idx, pi, l, mu, alpha, beta)
+      for t in range(max_iters):
+        # Expectations wrt variational distribution
+        u = alpha / beta
+        log_u = sp.digamma(alpha) - np.log(beta)
+        # Coordinate updates
+        # Hyperparameter updates
+        for j in range(p):
+          for k in range(rank):
+            theta[j,k] = update_theta(u[j,k], log_u[j,k], alpha[j,k], beta[j,k])
+        update = elbo(x, z_idx, pi, l, mu, alpha, beta)
+        if update < obj:
+          raise RuntimeError('objective increased')
+        elif abs(update - obj) < atol:
+          return l, mu, alpha, beta
+        else:
+          obj = update
+          print(f'[{t}] elbo={elbo:.2g}')
+      raise RuntimeError('max_iters exceeded')
+
+    def elbo(x, z_idx, pi, l, mu, alpha, beta):
+      pass
+
+    def theta_loss(theta, u, log_u, alpha, beta):
+      pass
+
+    def update_theta(theta, u, log_u, alpha, beta, step=1, c=0.5, tau=0.5, max_iters=32):
+      # Important: take steps wrt log_inv_disp to avoid non-negativity constraint
+      log_inv_disp = np.log(inv_disp)
+      d = _D_loss_theta(inv_disp, u, log_u, w) * inv_disp
+      loss = _nbmf_loss(x, lam, inv_disp=inv_disp, w=w)
+      update = _nbmf_loss(x, lam, inv_disp=np.exp(log_inv_disp + step * d), w=w)
+      while (not np.isfinite(update) or update > loss + c * step * d) and max_iters > 0:
+        step *= tau
+        update = _nbmf_loss(x, lam, inv_disp=np.exp(log_inv_disp + step * d), w=w)
+        max_iters -= 1
+      if max_iters == 0:
+        # Step size is small enough that update can be skipped
+        return inv_disp
+      else:
+        return np.exp(log_inv_disp + step * d) + 1e-15
+  #+END_SRC

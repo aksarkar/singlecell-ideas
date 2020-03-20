@@ -74,7 +74,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 66497371
+  : Submitted batch job 66532852
 
   #+BEGIN_SRC ipython
     import anndata
@@ -84,6 +84,7 @@
     import scipy.sparse as ss
     import scipy.special as sp
     import scipy.stats as st
+    import scmodes
     import scqtl
     import time
   #+END_SRC
@@ -580,10 +581,19 @@
    scRNA-seq data of 593,844 cells from 16 donors. To demonstrate the scalability of
    ~mpebpm~, fit a Gamma distribution to each gene in each donor.
 
-   Read the sparse data and report its dimensions.
+   Read the sparse data, filter out genes which are all 0 in some individual,
+   and report its dimensions. This is much faster than reading ~h5ad~.
 
    #+BEGIN_SRC ipython :async t
      y_csr = ss.load_npz('/scratch/midway2/aksarkar/modes/immune-cell-census.npz')
+     y_csc = y_csr.tocsc()
+     # keep = (((onehot.T @ y_csc) > 0).sum(axis=0) == len(donor.categories)).A.ravel()
+     # y_csc = y_csc[keep]
+     # y_csr = y_csc.tocsr()
+     s = y_csr.sum(axis=1).A.ravel()
+     genes = pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz', sep='\t', index_col=0)
+     donor = pd.Categorical(pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz', sep='\t', index_col=0)['0'])
+     onehot = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
      y_csr
    #+END_SRC
 
@@ -596,52 +606,141 @@
    #+END_EXAMPLE
    :END:
 
-   Read the metadata.
-
-   #+BEGIN_SRC ipython
-     genes = pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz', sep='\t', index_col=0)
-     donor = pd.Categorical(pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz', sep='\t', index_col=0)['0'])
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[5]:
-   :END:
-
-   Prepare the data.
-
-   #+BEGIN_SRC ipython
-     onehot = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[6]:
-   :END:
-
    Fit ~mpebpm~, and report the time elapsed in minutes.
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
-     log_mu, neg_log_phi, _ = mpebpm.ebpm_gamma(y_csr, onehot=onehot, batch_size=32, lr=1e-3, max_epochs=10, verbose=True)
+     log_mu, neg_log_phi = mpebpm.sgd.ebpm_gamma(y_csr, onehot=onehot, batch_size=64, lr=1e-2, max_epochs=10, shuffle=True, verbose=True)
      elapsed = time.time() - start
+     pd.DataFrame(log_mu, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz', sep='\t')
+     pd.DataFrame(neg_log_phi, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-neg-log-phi.txt.gz', sep='\t')
+     pd.DataFrame(logodds, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-logodds.txt.gz', sep='\t')
      elapsed / 60
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
-   : 61.57025446097056
    :END:
 
-   Write out the estimated parameters.
+   Read the estimated parameters.
 
    #+BEGIN_SRC ipython
-     pd.DataFrame(log_mu, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz', sep='\t')
-     pd.DataFrame(-neg_log_phi, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-log-phi.txt.gz', sep='\t')
+     log_mu = pd.read_csv('/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz', sep='\t', index_col=0)
+     neg_log_phi = pd.read_csv('/scratch/midway2/aksarkar/ideas/immune-census-neg-log-phi.txt.gz', sep='\t', index_col=0)
+     logodds = pd.read_csv('/scratch/midway2/aksarkar/ideas/immune-census-logodds.txt.gz', sep='\t', index_col=0)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
+   # Out[14]:
+   :END:
+
+   Test each donor-gene combination for goodness-of-fit to the
+   ~mpebpm~-estimated distribution.
+
+   #+BEGIN_SRC ipython :async t
+     result = dict()
+     for j in range(y_csr.shape[1]):
+       query = y_csc[:,j].tocsr()
+       for k, name in enumerate(donor.categories):
+         idx = onehot[:,k].tocsc().indices
+         N = idx.shape[0]
+         x = query[idx].A.ravel()
+         n = np.exp(-neg_log_phi.iloc[k,j])
+         p = 1 / (1 + s[idx] * np.exp(log_mu.iloc[k,j] - neg_log_phi.iloc[k,j]))         
+         pi0 = sp.expit(-logodds.iloc[k,j])
+         F = st.nbinom(n=n, p=p)
+         Fx_1 = F.cdf(x - 1)
+         Fx_1 = np.where(x > 0, pi0 + (1 - pi0) * Fx_1, Fx_1)
+         fx = F.pmf(x)
+         u = np.random.uniform(size=N)
+         d, p = st.kstest(Fx_1 + u * fx, 'uniform')
+         result[(name, genes.iloc[j]['Gene'])] = pd.Series({'stat': d, 'p': p})
+
+     result = pd.DataFrame.from_dict(result, orient='index')
+     result.index.names = ['donor', 'gene']
+     result = result.reset_index()
+     result.to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-gof.txt.gz', sep='\t')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   Plot the histogram of GOF \(p\)-values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/immune-census-gof.png
+     plt.clf()
+     plt.gcf().set_size_inches(2, 2)
+     plt.hist(result['p'], bins=np.linspace(0, 1, 11), color='0.7', density=True)
+     plt.axhline(y=1, lw=1, ls=':', c='k')
+     plt.xlabel('$p$-value')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   [[file:figure/mpebpm.org/immune-census-gof.png]]
+   :END:
+
+   Look at an example.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/ic-dpm1.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+
+     j = 1
+     k = 0
+     query = y_csc[:,k].tocsr()
+     idx = onehot[:,j].tocsc().indices
+     x = query[idx].A.ravel()
+     ax[0].hist(x, bins=np.arange(x.max() + 2), color='k')
+     ax[0].set_xlabel('Number of molecules')
+     ax[0].set_ylabel('Number of cells')
+     ax[0].set_title(genes.iloc[1]['Gene'])
+
+     grid = np.linspace(0, 1e-5, 1000)
+     pi0 = sp.expit(-logodds.iloc[k,j])
+     F = pi0 + (1 - pi0) * st.gamma(a=np.exp(-neg_log_phi.iloc[k,j]), scale=np.exp(log_mu.iloc[k,j] - neg_log_phi.iloc[k,j])).cdf(grid)
+     ax[1].plot(grid, F, c='k', lw=1)
+     ax[1].set_xlabel('Latent gene expression')
+     ax[1].set_ylabel('CDF')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[51]:
+   [[file:figure/mpebpm.org/ic-dpm1.png]]
+   :END:
+
+   Fit just this gene.
+
+   #+BEGIN_SRC ipython :async t
+     scmodes.ebpm.ebpm_point_gamma(x, s[idx].ravel())
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[55]:
+   #+BEGIN_EXAMPLE
+     (-12.289583305728296,
+     14.014278232411597,
+     0.9672324267648861,
+     -857.9082245516674)
+   #+END_EXAMPLE
+   :END:
+
+
+   #+BEGIN_SRC ipython
+     log_mu.iloc[k,j], neg_log_phi.iloc[k,j], logodds.iloc[k,j]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[56]:
+   : (-9.686181, 1.9767971999999998, -1.9064716)
    :END:

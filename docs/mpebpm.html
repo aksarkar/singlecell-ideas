@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-19 Thu 13:46 -->
+<!-- 2020-03-21 Sat 16:50 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -349,6 +349,7 @@ evaluate the method on simulations and large biological data sets.
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> scmodes
 <span class="org-keyword">import</span> scqtl
 <span class="org-keyword">import</span> time
 </pre>
@@ -849,11 +850,20 @@ scRNA-seq data of 593,844 cells from 16 donors. To demonstrate the scalability o
 </p>
 
 <p>
-Read the sparse data and report its dimensions.
+Read the sparse data, filter out genes which are all 0 in some individual,
+and report its dimensions. This is much faster than reading <code>h5ad</code>.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">y_csr</span> = ss.load_npz(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census.npz'</span>)
+<span class="org-variable-name">y_csc</span> = y_csr.tocsc()
+<span class="org-comment-delimiter"># </span><span class="org-comment">keep = (((onehot.T @ y_csc) &gt; 0).sum(axis=0) == len(donor.categories)).A.ravel()</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">y_csc = y_csc[keep]</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">y_csr = y_csc.tocsr()</span>
+<span class="org-variable-name">s</span> = y_csr.<span class="org-builtin">sum</span>(axis=1).A.ravel()
+<span class="org-variable-name">genes</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
+<span class="org-variable-name">donor</span> = pd.Categorical(pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)[<span class="org-string">'0'</span>])
+<span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
 y_csr
 </pre>
 </div>
@@ -864,57 +874,150 @@ with 551836788 stored elements in Compressed Sparse Row format&gt;
 </pre>
 
 <p>
-Read the metadata.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">genes</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
-<span class="org-variable-name">donor</span> = pd.Categorical(pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)[<span class="org-string">'0'</span>])
-</pre>
-</div>
-
-<p>
-Prepare the data.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
-</pre>
-</div>
-
-<p>
 Fit <code>mpebpm</code>, and report the time elapsed in minutes.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">_</span> = mpebpm.ebpm_gamma(y_csr, onehot=onehot, batch_size=32, lr=1e-3, max_epochs=10, verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span> = mpebpm.sgd.ebpm_gamma(y_csr, onehot=onehot, batch_size=64, lr=1e-2, max_epochs=10, shuffle=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>)
 <span class="org-variable-name">elapsed</span> = time.time() - start
+pd.DataFrame(log_mu, index=donor.categories, columns=genes[<span class="org-string">'featurekey'</span>]).to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+pd.DataFrame(neg_log_phi, index=donor.categories, columns=genes[<span class="org-string">'featurekey'</span>]).to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-neg-log-phi.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+pd.DataFrame(logodds, index=donor.categories, columns=genes[<span class="org-string">'featurekey'</span>]).to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-logodds.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
 elapsed / 60
 </pre>
 </div>
 
-<pre class="example">
-61.57025446097056
-
-</pre>
-
 <p>
-Write out the estimated parameters.
+Read the estimated parameters.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">pd.DataFrame(log_mu, index=donor.categories, columns=genes[<span class="org-string">'featurekey'</span>]).to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
-pd.DataFrame(-neg_log_phi, index=donor.categories, columns=genes[<span class="org-string">'featurekey'</span>]).to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-log-phi.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">log_mu</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
+<span class="org-variable-name">neg_log_phi</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-neg-log-phi.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
+<span class="org-variable-name">logodds</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/immune-census-logodds.txt.gz'</span>, sep=<span class="org-string">'\t'</span>, index_col=0)
 </pre>
 </div>
+
+<p>
+Test each donor-gene combination for goodness-of-fit to the
+<code>mpebpm</code>-estimated distribution.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = <span class="org-builtin">dict</span>()
+<span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(y_csr.shape[1]):
+  <span class="org-variable-name">query</span> = y_csc[:,j].tocsr()
+  <span class="org-keyword">for</span> k, name <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(donor.categories):
+    <span class="org-variable-name">idx</span> = onehot[:,k].tocsc().indices
+    <span class="org-variable-name">N</span> = idx.shape[0]
+    <span class="org-variable-name">x</span> = query[idx].A.ravel()
+    <span class="org-variable-name">n</span> = np.exp(-neg_log_phi.iloc[k,j])
+    <span class="org-variable-name">p</span> = 1 / (1 + s[idx] * np.exp(log_mu.iloc[k,j] - neg_log_phi.iloc[k,j]))         
+    <span class="org-variable-name">pi0</span> = sp.expit(-logodds.iloc[k,j])
+    <span class="org-variable-name">F</span> = st.nbinom(n=n, p=p)
+    <span class="org-variable-name">Fx_1</span> = F.cdf(x - 1)
+    <span class="org-variable-name">Fx_1</span> = np.where(x &gt; 0, pi0 + (1 - pi0) * Fx_1, Fx_1)
+    <span class="org-variable-name">fx</span> = F.pmf(x)
+    <span class="org-variable-name">u</span> = np.random.uniform(size=N)
+    <span class="org-variable-name">d</span>, <span class="org-variable-name">p</span> = st.kstest(Fx_1 + u * fx, <span class="org-string">'uniform'</span>)
+    result[(name, genes.iloc[j][<span class="org-string">'Gene'</span>])] = pd.Series({<span class="org-string">'stat'</span>: d, <span class="org-string">'p'</span>: p})
+
+<span class="org-variable-name">result</span> = pd.DataFrame.from_dict(result, orient=<span class="org-string">'index'</span>)
+<span class="org-variable-name">result.index.names</span> = [<span class="org-string">'donor'</span>, <span class="org-string">'gene'</span>]
+<span class="org-variable-name">result</span> = result.reset_index()
+result.to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-gof.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+</pre>
+</div>
+
+<p>
+Plot the histogram of GOF \(p\)-values.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2, 2)
+plt.hist(result[<span class="org-string">'p'</span>], bins=np.linspace(0, 1, 11), color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+plt.axhline(y=1, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'$p$-value'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mpebpm.org/immune-census-gof.png" alt="immune-census-gof.png">
+</p>
+</div>
+
+<p>
+Look at an example.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+
+<span class="org-variable-name">j</span> = 1
+<span class="org-variable-name">k</span> = 0
+<span class="org-variable-name">query</span> = y_csc[:,k].tocsr()
+<span class="org-variable-name">idx</span> = onehot[:,j].tocsc().indices
+<span class="org-variable-name">x</span> = query[idx].A.ravel()
+ax[0].hist(x, bins=np.arange(x.<span class="org-builtin">max</span>() + 2), color=<span class="org-string">'k'</span>)
+ax[0].set_xlabel(<span class="org-string">'Number of molecules'</span>)
+ax[0].set_ylabel(<span class="org-string">'Number of cells'</span>)
+ax[0].set_title(genes.iloc[1][<span class="org-string">'Gene'</span>])
+
+<span class="org-variable-name">grid</span> = np.linspace(0, 1e-5, 1000)
+<span class="org-variable-name">pi0</span> = sp.expit(-logodds.iloc[k,j])
+<span class="org-variable-name">F</span> = pi0 + (1 - pi0) * st.gamma(a=np.exp(-neg_log_phi.iloc[k,j]), scale=np.exp(log_mu.iloc[k,j] - neg_log_phi.iloc[k,j])).cdf(grid)
+ax[1].plot(grid, F, c=<span class="org-string">'k'</span>, lw=1)
+ax[1].set_xlabel(<span class="org-string">'Latent gene expression'</span>)
+ax[1].set_ylabel(<span class="org-string">'CDF'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mpebpm.org/ic-dpm1.png" alt="ic-dpm1.png">
+</p>
+</div>
+
+<p>
+Fit just this gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">scmodes.ebpm.ebpm_point_gamma(x, s[idx].ravel())
+</pre>
+</div>
+
+<pre class="example">
+(-12.289583305728296,
+14.014278232411597,
+0.9672324267648861,
+-857.9082245516674)
+</pre>
+
+
+<div class="org-src-container">
+<pre class="src src-ipython">log_mu.iloc[k,j], neg_log_phi.iloc[k,j], logodds.iloc[k,j]
+</pre>
+</div>
+
+<pre class="example">
+(-9.686181, 1.9767971999999998, -1.9064716)
+
+</pre>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-19 Thu 13:46</p>
+<p class="date">Created: 2020-03-21 Sat 16:50</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

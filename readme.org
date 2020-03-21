@@ -5,12 +5,13 @@
 
   The minimal description of the working environment is:
 
-  #+BEGIN_SRC sh :exports code :results example drawer
+  #+BEGIN_SRC sh :exports code :results none
     srun --partition=build --mem=4G xargs -L100 conda create -y -c aksarkar -n singlecell <<EOF
     colorcet
     ipython
     jupyter_console
     matplotlib
+    numba
     numpy
     pandas
     pytest
@@ -27,309 +28,14 @@
   #+END_SRC
 
   #+RESULTS:
-  :RESULTS:
-  Collecting package metadata (current_repodata.json): ...working... done
-  Solving environment: ...working... failed with repodata from current_repodata.json, will retry with next repodata source.
-  Collecting package metadata (repodata.json): ...working... done
-  Solving environment: ...working... done
 
-  ## Package Plan ##
-
-    environment location: /scratch/midway2/aksarkar/miniconda3/envs/singlecell
-
-    added / updated specs:
-      - colorcet
-      - ipython
-      - jupyter_console
-      - matplotlib
-      - numpy
-      - pandas
-      - pytest
-      - python
-      - r-ashr
-      - r-descend
-      - r-flashr
-      - r-glmpca
-      - scikit-learn
-      - scipy
-      - scqtl
-      - tensorflow-gpu==1.15.0
-
-
-  The following packages will be downloaded:
-
-      package                    |            build
-      ---------------------------|-----------------
-      _tflow_select-2.1.0        |              gpu           2 KB
-      cupti-10.0.130             |                0         1.5 MB
-      decorator-4.4.2            |             py_0          14 KB
-      ipython-7.13.0             |   py37h5ca1d4c_0         991 KB
-      packaging-20.3             |             py_0          36 KB
-      r-ashr-2.2.39.dev1         |   r351hf484d3e_0         403 KB  aksarkar
-      r-descend-0.0.0.9000       |           r351_0         1.1 MB  aksarkar
-      r-etrunct-0.1              |   r351h6115d3f_0          16 KB  aksarkar
-      r-mixsqp-0.3.17            |   r351h29659fb_0         210 KB  aksarkar
-      r-pscl-1.5.2               |   r351h96ca727_0         3.4 MB  aksarkar
-      r-truncnorm-1.0_8          |   r351h96ca727_0          35 KB  aksarkar
-      scqtl-0.1.dev1             |           py37_0          23 KB  aksarkar
-      tensorflow-1.15.0          |gpu_py37h0f0df58_0           4 KB
-      tensorflow-base-1.15.0     |gpu_py37h9dcbed7_0       156.5 MB
-      tensorflow-gpu-1.15.0      |       h0d30ee6_0           3 KB
-      tornado-6.0.4              |   py37h7b6447c_1         611 KB
-      ------------------------------------------------------------
-                                             Total:       164.8 MB
-
-  The following NEW packages will be INSTALLED:
-
-    _libgcc_mutex      pkgs/main/linux-64::_libgcc_mutex-0.1-main
-    _r-mutex           pkgs/r/linux-64::_r-mutex-1.0.0-anacondar_1
-    _tflow_select      pkgs/main/linux-64::_tflow_select-2.1.0-gpu
-    absl-py            pkgs/main/linux-64::absl-py-0.9.0-py37_0
-    asn1crypto         pkgs/main/linux-64::asn1crypto-1.3.0-py37_0
-    astor              pkgs/main/linux-64::astor-0.8.0-py37_0
-    attrs              pkgs/main/noarch::attrs-19.3.0-py_0
-    backcall           pkgs/main/linux-64::backcall-0.1.0-py37_0
-    binutils_impl_lin~ pkgs/main/linux-64::binutils_impl_linux-64-2.33.1-he6710b0_7
-    binutils_linux-64  pkgs/main/linux-64::binutils_linux-64-2.33.1-h9595d00_15
-    blas               pkgs/main/linux-64::blas-1.0-mkl
-    bwidget            pkgs/main/linux-64::bwidget-1.9.11-1
-    bzip2              pkgs/main/linux-64::bzip2-1.0.8-h7b6447c_0
-    c-ares             pkgs/main/linux-64::c-ares-1.15.0-h7b6447c_1001
-    ca-certificates    pkgs/main/linux-64::ca-certificates-2020.1.1-0
-    cairo              pkgs/main/linux-64::cairo-1.14.12-h8948797_3
-    certifi            pkgs/main/linux-64::certifi-2019.11.28-py37_0
-    cffi               pkgs/main/linux-64::cffi-1.14.0-py37h2e261b9_0
-    chardet            pkgs/main/linux-64::chardet-3.0.4-py37_1003
-    colorcet           pkgs/main/noarch::colorcet-2.0.2-py_0
-    cryptography       pkgs/main/linux-64::cryptography-2.8-py37h1ba5d50_0
-    cudatoolkit        pkgs/main/linux-64::cudatoolkit-10.0.130-0
-    cudnn              pkgs/main/linux-64::cudnn-7.6.5-cuda10.0_0
-    cupti              pkgs/main/linux-64::cupti-10.0.130-0
-    curl               pkgs/main/linux-64::curl-7.67.0-hbc83047_0
-    cycler             pkgs/main/linux-64::cycler-0.10.0-py37_0
-    dbus               pkgs/main/linux-64::dbus-1.13.12-h746ee38_0
-    decorator          pkgs/main/noarch::decorator-4.4.2-py_0
-    expat              pkgs/main/linux-64::expat-2.2.6-he6710b0_0
-    fontconfig         pkgs/main/linux-64::fontconfig-2.13.0-h9420a91_0
-    freetype           pkgs/main/linux-64::freetype-2.9.1-h8a8886c_1
-    fribidi            pkgs/main/linux-64::fribidi-1.0.5-h7b6447c_0
-    gast               pkgs/main/linux-64::gast-0.2.2-py37_0
-    gcc_impl_linux-64  pkgs/main/linux-64::gcc_impl_linux-64-7.3.0-habb00fd_1
-    gcc_linux-64       pkgs/main/linux-64::gcc_linux-64-7.3.0-h553295d_15
-    gfortran_impl_lin~ pkgs/main/linux-64::gfortran_impl_linux-64-7.3.0-hdf63c60_1
-    gfortran_linux-64  pkgs/main/linux-64::gfortran_linux-64-7.3.0-h553295d_15
-    glib               pkgs/main/linux-64::glib-2.63.1-h5a9c865_0
-    google-pasta       pkgs/main/noarch::google-pasta-0.1.8-py_0
-    graphite2          pkgs/main/linux-64::graphite2-1.3.13-h23475e2_0
-    grpcio             pkgs/main/linux-64::grpcio-1.27.2-py37hf8bcb03_0
-    gsl                pkgs/main/linux-64::gsl-2.4-h14c3975_4
-    gst-plugins-base   pkgs/main/linux-64::gst-plugins-base-1.14.0-hbbd80ab_1
-    gstreamer          pkgs/main/linux-64::gstreamer-1.14.0-hb453b48_1
-    gxx_impl_linux-64  pkgs/main/linux-64::gxx_impl_linux-64-7.3.0-hdf63c60_1
-    gxx_linux-64       pkgs/main/linux-64::gxx_linux-64-7.3.0-h553295d_15
-    h5py               pkgs/main/linux-64::h5py-2.10.0-py37h7918eee_0
-    harfbuzz           pkgs/main/linux-64::harfbuzz-1.8.8-hffaf4a1_0
-    hdf5               pkgs/main/linux-64::hdf5-1.10.4-hb1b8bf9_0
-    icu                pkgs/main/linux-64::icu-58.2-h9c2bf20_1
-    idna               pkgs/main/linux-64::idna-2.8-py37_0
-    importlib_metadata pkgs/main/linux-64::importlib_metadata-1.5.0-py37_0
-    intel-openmp       pkgs/main/linux-64::intel-openmp-2020.0-166
-    ipykernel          pkgs/main/linux-64::ipykernel-5.1.4-py37h39e3cac_0
-    ipython            pkgs/main/linux-64::ipython-7.13.0-py37h5ca1d4c_0
-    ipython_genutils   pkgs/main/linux-64::ipython_genutils-0.2.0-py37_0
-    jedi               pkgs/main/linux-64::jedi-0.16.0-py37_0
-    joblib             pkgs/main/noarch::joblib-0.14.1-py_0
-    jpeg               pkgs/main/linux-64::jpeg-9b-h024ee3a_2
-    jupyter_client     pkgs/main/linux-64::jupyter_client-5.3.4-py37_0
-    jupyter_console    pkgs/main/noarch::jupyter_console-6.1.0-py_0
-    jupyter_core       pkgs/main/linux-64::jupyter_core-4.6.1-py37_0
-    keras-applications pkgs/main/noarch::keras-applications-1.0.8-py_0
-    keras-preprocessi~ pkgs/main/noarch::keras-preprocessing-1.1.0-py_1
-    kiwisolver         pkgs/main/linux-64::kiwisolver-1.1.0-py37he6710b0_0
-    krb5               pkgs/main/linux-64::krb5-1.16.4-h173b8e3_0
-    ld_impl_linux-64   pkgs/main/linux-64::ld_impl_linux-64-2.33.1-h53a641e_7
-    libcurl            pkgs/main/linux-64::libcurl-7.67.0-h20c2e04_0
-    libedit            pkgs/main/linux-64::libedit-3.1.20181209-hc058e9b_0
-    libffi             pkgs/main/linux-64::libffi-3.2.1-hd88cf55_4
-    libgcc-ng          pkgs/main/linux-64::libgcc-ng-9.1.0-hdf63c60_0
-    libgfortran-ng     pkgs/main/linux-64::libgfortran-ng-7.3.0-hdf63c60_0
-    libpng             pkgs/main/linux-64::libpng-1.6.37-hbc83047_0
-    libprotobuf        pkgs/main/linux-64::libprotobuf-3.11.4-hd408876_0
-    libsodium          pkgs/main/linux-64::libsodium-1.0.16-h1bed415_0
-    libssh2            pkgs/main/linux-64::libssh2-1.9.0-h1ba5d50_1
-    libstdcxx-ng       pkgs/main/linux-64::libstdcxx-ng-9.1.0-hdf63c60_0
-    libtiff            pkgs/main/linux-64::libtiff-4.1.0-h2733197_0
-    libuuid            pkgs/main/linux-64::libuuid-1.0.3-h1bed415_2
-    libxcb             pkgs/main/linux-64::libxcb-1.13-h1bed415_1
-    libxml2            pkgs/main/linux-64::libxml2-2.9.9-hea5a465_1
-    make               pkgs/main/linux-64::make-4.2.1-h1bed415_1
-    markdown           pkgs/main/linux-64::markdown-3.1.1-py37_0
-    matplotlib         pkgs/main/linux-64::matplotlib-3.1.3-py37_0
-    matplotlib-base    pkgs/main/linux-64::matplotlib-base-3.1.3-py37hef1b27d_0
-    mkl                pkgs/main/linux-64::mkl-2020.0-166
-    mkl-service        pkgs/main/linux-64::mkl-service-2.3.0-py37he904b0f_0
-    mkl_fft            pkgs/main/linux-64::mkl_fft-1.0.15-py37ha843d7b_0
-    mkl_random         pkgs/main/linux-64::mkl_random-1.1.0-py37hd6b4f25_0
-    more-itertools     pkgs/main/noarch::more-itertools-8.2.0-py_0
-    ncurses            pkgs/main/linux-64::ncurses-6.2-he6710b0_0
-    numpy              pkgs/main/linux-64::numpy-1.18.1-py37h4f9e942_0
-    numpy-base         pkgs/main/linux-64::numpy-base-1.18.1-py37hde5b4d6_1
-    openssl            pkgs/main/linux-64::openssl-1.1.1d-h7b6447c_4
-    opt_einsum         pkgs/main/noarch::opt_einsum-3.1.0-py_0
-    packaging          pkgs/main/noarch::packaging-20.3-py_0
-    pandas             pkgs/main/linux-64::pandas-1.0.1-py37h0573a6f_0
-    pango              pkgs/main/linux-64::pango-1.42.4-h049681c_0
-    param              pkgs/main/noarch::param-1.9.3-py_0
-    parso              pkgs/main/noarch::parso-0.6.1-py_0
-    pcre               pkgs/main/linux-64::pcre-8.43-he6710b0_0
-    pexpect            pkgs/main/linux-64::pexpect-4.8.0-py37_0
-    pickleshare        pkgs/main/linux-64::pickleshare-0.7.5-py37_0
-    pip                pkgs/main/linux-64::pip-20.0.2-py37_1
-    pixman             pkgs/main/linux-64::pixman-0.38.0-h7b6447c_0
-    pluggy             pkgs/main/linux-64::pluggy-0.13.1-py37_0
-    prompt_toolkit     pkgs/main/noarch::prompt_toolkit-3.0.3-py_0
-    protobuf           pkgs/main/linux-64::protobuf-3.11.4-py37he6710b0_0
-    ptyprocess         pkgs/main/linux-64::ptyprocess-0.6.0-py37_0
-    py                 pkgs/main/noarch::py-1.8.1-py_0
-    pycparser          pkgs/main/linux-64::pycparser-2.19-py37_0
-    pyct               pkgs/main/linux-64::pyct-0.4.6-py37_0
-    pygments           pkgs/main/noarch::pygments-2.5.2-py_0
-    pyopenssl          pkgs/main/linux-64::pyopenssl-19.1.0-py37_0
-    pyparsing          pkgs/main/noarch::pyparsing-2.4.6-py_0
-    pyqt               pkgs/main/linux-64::pyqt-5.9.2-py37h05f1152_2
-    pysocks            pkgs/main/linux-64::pysocks-1.7.1-py37_0
-    pytest             pkgs/main/linux-64::pytest-5.3.5-py37_0
-    python             pkgs/main/linux-64::python-3.7.6-h0371630_2
-    python-dateutil    pkgs/main/noarch::python-dateutil-2.8.1-py_0
-    pytz               pkgs/main/noarch::pytz-2019.3-py_0
-    pyyaml             pkgs/main/linux-64::pyyaml-5.3-py37h7b6447c_0
-    pyzmq              pkgs/main/linux-64::pyzmq-18.1.1-py37he6710b0_0
-    qt                 pkgs/main/linux-64::qt-5.9.7-h5867ecd_1
-    r-ashr             aksarkar/linux-64::r-ashr-2.2.39.dev1-r351hf484d3e_0
-    r-assertthat       pkgs/r/linux-64::r-assertthat-0.2.0-r351h6115d3f_0
-    r-base             pkgs/r/linux-64::r-base-3.5.1-h1e0a451_2
-    r-cli              pkgs/r/linux-64::r-cli-1.0.0-r351h6115d3f_1
-    r-codetools        pkgs/r/linux-64::r-codetools-0.2_15-r351h6115d3f_0
-    r-colorspace       pkgs/r/linux-64::r-colorspace-1.3_2-r351h96ca727_0
-    r-crayon           pkgs/r/linux-64::r-crayon-1.3.4-r351h6115d3f_0
-    r-descend          aksarkar/linux-64::r-descend-0.0.0.9000-r351_0
-    r-dichromat        pkgs/r/linux-64::r-dichromat-2.0_0-r351h6115d3f_4
-    r-digest           pkgs/r/linux-64::r-digest-0.6.15-r351h96ca727_0
-    r-doparallel       pkgs/r/linux-64::r-doparallel-1.0.11-r351h6115d3f_0
-    r-etrunct          aksarkar/linux-64::r-etrunct-0.1-r351h6115d3f_0
-    r-fansi            pkgs/r/linux-64::r-fansi-0.2.3-r351h96ca727_0
-    r-flashr           aksarkar/linux-64::r-flashr-0.6_3-r351_0
-    r-foreach          pkgs/r/linux-64::r-foreach-1.4.4-r351h6115d3f_0
-    r-ggplot2          pkgs/r/linux-64::r-ggplot2-3.0.0-r351h6115d3f_0
-    r-glmpca           aksarkar/linux-64::r-glmpca-0.1.0.dev1-r351_0
-    r-glue             pkgs/r/linux-64::r-glue-1.3.0-r351h96ca727_0
-    r-gtable           pkgs/r/linux-64::r-gtable-0.2.0-r351h6115d3f_0
-    r-irlba            pkgs/r/linux-64::r-irlba-2.3.2-r351h96ca727_0
-    r-iterators        pkgs/r/linux-64::r-iterators-1.0.10-r351h6115d3f_0
-    r-labeling         pkgs/r/linux-64::r-labeling-0.3-r351h6115d3f_4
-    r-lattice          pkgs/r/linux-64::r-lattice-0.20_35-r351h96ca727_0
-    r-lazyeval         pkgs/r/linux-64::r-lazyeval-0.2.1-r351h96ca727_0
-    r-magrittr         pkgs/r/linux-64::r-magrittr-1.5-r351h6115d3f_4
-    r-mass             pkgs/r/linux-64::r-mass-7.3_50-r351h96ca727_0
-    r-matrix           pkgs/r/linux-64::r-matrix-1.2_14-r351h96ca727_0
-    r-matrixmodels     pkgs/r/linux-64::r-matrixmodels-0.4_1-r351h6115d3f_4
-    r-mgcv             pkgs/r/linux-64::r-mgcv-1.8_24-r351h96ca727_0
-    r-mixsqp           aksarkar/linux-64::r-mixsqp-0.3.17-r351h29659fb_0
-    r-munsell          pkgs/r/linux-64::r-munsell-0.5.0-r351h6115d3f_0
-    r-nlme             pkgs/r/linux-64::r-nlme-3.1_137-r351ha65eedd_0
-    r-pillar           pkgs/r/linux-64::r-pillar-1.3.0-r351h6115d3f_0
-    r-plyr             pkgs/r/linux-64::r-plyr-1.8.4-r351h29659fb_0
-    r-pscl             aksarkar/linux-64::r-pscl-1.5.2-r351h96ca727_0
-    r-quantreg         pkgs/r/linux-64::r-quantreg-5.36-r351ha65eedd_0
-    r-r6               pkgs/r/linux-64::r-r6-2.2.2-r351h6115d3f_0
-    r-rcolorbrewer     pkgs/r/linux-64::r-rcolorbrewer-1.1_2-r351h6115d3f_0
-    r-rcpp             pkgs/r/linux-64::r-rcpp-0.12.18-r351h29659fb_0
-    r-rcpparmadillo    pkgs/r/linux-64::r-rcpparmadillo-0.8.600.0.0-r351h29659fb_0
-    r-reshape2         pkgs/r/linux-64::r-reshape2-1.4.3-r351h29659fb_0
-    r-rlang            pkgs/r/linux-64::r-rlang-0.2.1-r351h96ca727_0
-    r-scales           pkgs/r/linux-64::r-scales-0.5.0-r351h29659fb_0
-    r-softimpute       aksarkar/linux-64::r-softimpute-1.4-r351ha65eedd_0
-    r-sparsem          pkgs/r/linux-64::r-sparsem-1.77-r351ha65eedd_0
-    r-squarem          pkgs/r/linux-64::r-squarem-2017.10_1-r351h6115d3f_0
-    r-stringi          pkgs/r/linux-64::r-stringi-1.2.4-r351h29659fb_0
-    r-stringr          pkgs/r/linux-64::r-stringr-1.3.1-r351h6115d3f_0
-    r-tibble           pkgs/r/linux-64::r-tibble-1.4.2-r351h96ca727_0
-    r-truncnorm        aksarkar/linux-64::r-truncnorm-1.0_8-r351h96ca727_0
-    r-utf8             pkgs/r/linux-64::r-utf8-1.1.4-r351h96ca727_0
-    r-viridislite      pkgs/r/linux-64::r-viridislite-0.3.0-r351h6115d3f_0
-    r-withr            pkgs/r/linux-64::r-withr-2.1.2-r351h6115d3f_0
-    readline           pkgs/main/linux-64::readline-7.0-h7b6447c_5
-    requests           pkgs/main/linux-64::requests-2.23.0-py37_0
-    scikit-learn       pkgs/main/linux-64::scikit-learn-0.22.1-py37hd81dba3_0
-    scipy              pkgs/main/linux-64::scipy-1.4.1-py37h0b6359f_0
-    scqtl              aksarkar/linux-64::scqtl-0.1.dev1-py37_0
-    setuptools         pkgs/main/linux-64::setuptools-46.0.0-py37_0
-    sip                pkgs/main/linux-64::sip-4.19.8-py37hf484d3e_0
-    six                pkgs/main/linux-64::six-1.14.0-py37_0
-    sqlite             pkgs/main/linux-64::sqlite-3.31.1-h7b6447c_0
-    tensorboard        pkgs/main/noarch::tensorboard-1.15.0-pyhb230dea_0
-    tensorflow         pkgs/main/linux-64::tensorflow-1.15.0-gpu_py37h0f0df58_0
-    tensorflow-base    pkgs/main/linux-64::tensorflow-base-1.15.0-gpu_py37h9dcbed7_0
-    tensorflow-estima~ pkgs/main/noarch::tensorflow-estimator-1.15.1-pyh2649769_0
-    tensorflow-gpu     pkgs/main/linux-64::tensorflow-gpu-1.15.0-h0d30ee6_0
-    termcolor          pkgs/main/linux-64::termcolor-1.1.0-py37_1
-    tk                 pkgs/main/linux-64::tk-8.6.8-hbc83047_0
-    tktable            pkgs/main/linux-64::tktable-2.10-h14c3975_0
-    tornado            pkgs/main/linux-64::tornado-6.0.4-py37h7b6447c_1
-    traitlets          pkgs/main/linux-64::traitlets-4.3.3-py37_0
-    urllib3            pkgs/main/linux-64::urllib3-1.25.8-py37_0
-    wcwidth            pkgs/main/noarch::wcwidth-0.1.8-py_0
-    webencodings       pkgs/main/linux-64::webencodings-0.5.1-py37_1
-    werkzeug           pkgs/main/noarch::werkzeug-0.16.1-py_0
-    wheel              pkgs/main/linux-64::wheel-0.34.2-py37_0
-    wrapt              pkgs/main/linux-64::wrapt-1.11.2-py37h7b6447c_0
-    xz                 pkgs/main/linux-64::xz-5.2.4-h14c3975_4
-    yaml               pkgs/main/linux-64::yaml-0.1.7-had09818_2
-    zeromq             pkgs/main/linux-64::zeromq-4.3.1-he6710b0_3
-    zipp               pkgs/main/noarch::zipp-2.2.0-py_0
-    zlib               pkgs/main/linux-64::zlib-1.2.11-h7b6447c_3
-    zstd               pkgs/main/linux-64::zstd-1.3.7-h0b5b093_0
-
-
-
-  Downloading and Extracting Packages
-  tensorflow-base-1.15 | 156.5 MB  |            |   0% tensorflow-base-1.15 | 156.5 MB  |            |   1% tensorflow-base-1.15 | 156.5 MB  | 3          |   3% tensorflow-base-1.15 | 156.5 MB  | 5          |   5% tensorflow-base-1.15 | 156.5 MB  | 7          |   8% tensorflow-base-1.15 | 156.5 MB  | #          |  10% tensorflow-base-1.15 | 156.5 MB  | #2         |  12% tensorflow-base-1.15 | 156.5 MB  | #4         |  15% tensorflow-base-1.15 | 156.5 MB  | #6         |  17% tensorflow-base-1.15 | 156.5 MB  | #9         |  19% tensorflow-base-1.15 | 156.5 MB  | ##1        |  22% tensorflow-base-1.15 | 156.5 MB  | ##3        |  24% tensorflow-base-1.15 | 156.5 MB  | ##6        |  26% tensorflow-base-1.15 | 156.5 MB  | ##8        |  29% tensorflow-base-1.15 | 156.5 MB  | ###        |  31% tensorflow-base-1.15 | 156.5 MB  | ###3       |  33% tensorflow-base-1.15 | 156.5 MB  | ###5       |  35% tensorflow-base-1.15 | 156.5 MB  | ###7       |  37% tensorflow-base-1.15 | 156.5 MB  | ###9       |  40% tensorflow-base-1.15 | 156.5 MB  | ####1      |  42% tensorflow-base-1.15 | 156.5 MB  | ####3      |  44% tensorflow-base-1.15 | 156.5 MB  | ####6      |  46% tensorflow-base-1.15 | 156.5 MB  | ####8      |  48% tensorflow-base-1.15 | 156.5 MB  | #####      |  51% tensorflow-base-1.15 | 156.5 MB  | #####3     |  53% tensorflow-base-1.15 | 156.5 MB  | #####5     |  56% tensorflow-base-1.15 | 156.5 MB  | #####7     |  58% tensorflow-base-1.15 | 156.5 MB  | ######     |  60% tensorflow-base-1.15 | 156.5 MB  | ######2    |  62% tensorflow-base-1.15 | 156.5 MB  | ######4    |  65% tensorflow-base-1.15 | 156.5 MB  | ######7    |  67% tensorflow-base-1.15 | 156.5 MB  | ######9    |  69% tensorflow-base-1.15 | 156.5 MB  | #######1   |  72% tensorflow-base-1.15 | 156.5 MB  | #######4   |  74% tensorflow-base-1.15 | 156.5 MB  | #######6   |  77% tensorflow-base-1.15 | 156.5 MB  | #######9   |  79% tensorflow-base-1.15 | 156.5 MB  | ########1  |  81% tensorflow-base-1.15 | 156.5 MB  | ########3  |  84% tensorflow-base-1.15 | 156.5 MB  | ########5  |  86% tensorflow-base-1.15 | 156.5 MB  | ########8  |  88% tensorflow-base-1.15 | 156.5 MB  | #########  |  90% tensorflow-base-1.15 | 156.5 MB  | #########2 |  93% tensorflow-base-1.15 | 156.5 MB  | #########5 |  95% tensorflow-base-1.15 | 156.5 MB  | #########7 |  98% tensorflow-base-1.15 | 156.5 MB  | #########9 | 100% tensorflow-base-1.15 | 156.5 MB  | ########## | 100% 
-  r-descend-0.0.0.9000 | 1.1 MB    |            |   0% r-descend-0.0.0.9000 | 1.1 MB    | 1          |   1% r-descend-0.0.0.9000 | 1.1 MB    | #########4 |  95% r-descend-0.0.0.9000 | 1.1 MB    | ########## | 100% 
-  cupti-10.0.130       | 1.5 MB    |            |   0% cupti-10.0.130       | 1.5 MB    | ########## | 100% 
-  r-pscl-1.5.2         | 3.4 MB    |            |   0% r-pscl-1.5.2         | 3.4 MB    |            |   0% r-pscl-1.5.2         | 3.4 MB    | ########3  |  83% r-pscl-1.5.2         | 3.4 MB    | ########## | 100% 
-  r-truncnorm-1.0_8    | 35 KB     |            |   0% r-truncnorm-1.0_8    | 35 KB     | ####5      |  46% r-truncnorm-1.0_8    | 35 KB     | ########## | 100% 
-  tornado-6.0.4        | 611 KB    |            |   0% tornado-6.0.4        | 611 KB    | ########## | 100% 
-  _tflow_select-2.1.0  | 2 KB      |            |   0% _tflow_select-2.1.0  | 2 KB      | ########## | 100% 
-  ipython-7.13.0       | 991 KB    |            |   0% ipython-7.13.0       | 991 KB    | ########## | 100% 
-  r-ashr-2.2.39.dev1   | 403 KB    |            |   0% r-ashr-2.2.39.dev1   | 403 KB    | 3          |   4% r-ashr-2.2.39.dev1   | 403 KB    | ########## | 100% 
-  r-etrunct-0.1        | 16 KB     |            |   0% r-etrunct-0.1        | 16 KB     | #########7 |  98% r-etrunct-0.1        | 16 KB     | ########## | 100% 
-  tensorflow-gpu-1.15. | 3 KB      |            |   0% tensorflow-gpu-1.15. | 3 KB      | ########## | 100% 
-  tensorflow-1.15.0    | 4 KB      |            |   0% tensorflow-1.15.0    | 4 KB      | ########## | 100% 
-  r-mixsqp-0.3.17      | 210 KB    |            |   0% r-mixsqp-0.3.17      | 210 KB    | 7          |   8% r-mixsqp-0.3.17      | 210 KB    | ########## | 100% 
-  packaging-20.3       | 36 KB     |            |   0% packaging-20.3       | 36 KB     | ########## | 100% 
-  scqtl-0.1.dev1       | 23 KB     |            |   0% scqtl-0.1.dev1       | 23 KB     | ######8    |  69% scqtl-0.1.dev1       | 23 KB     | ########## | 100% 
-  decorator-4.4.2      | 14 KB     |            |   0% decorator-4.4.2      | 14 KB     | ########## | 100% 
-  Preparing transaction: ...working... done
-  Verifying transaction: ...working... done
-  Executing transaction: ...working... done
-  #
-  # To activate this environment, use
-  #
-  #     $ conda activate singlecell
-  #
-  # To deactivate an active environment, use
-  #
-  #     $ conda deactivate
-
-  :END:
-
-  #+BEGIN_SRC sh :exports code :results example drawer
+  #+BEGIN_SRC sh :exports code :results none
     source activate singlecell
     srun --partition=build --mem=8G xargs -L100 python -m pip install <<EOF
     git+https://github.com/aksarkar/wlra.git#egg=wlra
     git+https://github.com/aksarkar/scaa.git#egg=scaa
     dash==1.9.0
-    h5py==2.9.0
+    h5py==2.10.0
     rpy2==3.2.4
     scvi
     scanpy
@@ -338,133 +44,8 @@
   #+END_SRC
 
   #+RESULTS:
-  :RESULTS:
-  Collecting wlra
-    Cloning https://github.com/aksarkar/wlra.git to /tmp/jobs/66401595/pip-install-grbbkirh/wlra
-  Collecting scaa
-    Cloning https://github.com/aksarkar/scaa.git to /tmp/jobs/66401595/pip-install-grbbkirh/scaa
-  Processing /home/aksarkar/.cache/pip/wheels/39/23/57/e2cbc7df1ebc88f7d856484e67d686e7bb2802f789629e71bf/dash-1.9.0-py3-none-any.whl
-  Collecting h5py==2.9.0
-    Using cached h5py-2.9.0-cp37-cp37m-manylinux1_x86_64.whl (2.8 MB)
-  Processing /home/aksarkar/.cache/pip/wheels/10/ae/0e/54b3f6a4f4f37df3e20cc365d0b01302215e0ce02e64bdeff7/rpy2-3.2.4-cp37-cp37m-linux_x86_64.whl
-  Collecting scvi
-    Downloading scvi-0.6.1-py2.py3-none-any.whl (150 kB)
-  Collecting scanpy
-    Using cached scanpy-1.4.5.1-py3-none-any.whl (6.5 MB)
-  Processing /home/aksarkar/.cache/pip/wheels/a3/56/56/8694a9e75173a5c61a9308db33aa6501356610ca8b73590df4/DCA-0.2.3-py3-none-any.whl
-  Requirement already satisfied: numpy in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from wlra) (1.18.1)
-  Requirement already satisfied: scipy in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from wlra) (1.4.1)
-  Requirement already satisfied: scikit-learn in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from wlra) (0.22.1)
-  Requirement already satisfied: matplotlib in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scaa) (3.1.3)
-  Requirement already satisfied: pandas in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scaa) (1.0.1)
-  Processing /home/aksarkar/.cache/pip/wheels/76/03/bb/589d421d27431bcd2c6da284d5f2286c8e3b2ea3cf1594c074/sklearn-0.0-py2.py3-none-any.whl
-  Collecting torch
-    Using cached torch-1.4.0-cp37-cp37m-manylinux1_x86_64.whl (753.4 MB)
-  Collecting plotly
-    Downloading plotly-4.5.4-py2.py3-none-any.whl (7.1 MB)
-  Collecting Flask>=1.0.2
-    Using cached Flask-1.1.1-py2.py3-none-any.whl (94 kB)
-  Processing /home/aksarkar/.cache/pip/wheels/5a/12/e8/9920d4d2ceeb46831c85b42a1ffd58f4ed59e0178bc031e7f0/dash_renderer-1.2.4-py3-none-any.whl
-  Processing /home/aksarkar/.cache/pip/wheels/66/b2/28/9d63b13e75f25fa3c608df468b2ae69925097fde4b46780cd0/dash_core_components-1.8.0-py3-none-any.whl
-  Processing /home/aksarkar/.cache/pip/wheels/56/b0/fe/4410d17b32f1f0c3cf54cdfb2bc04d7b4b8f4ae377e2229ba0/future-0.18.2-py3-none-any.whl
-  Processing /home/aksarkar/.cache/pip/wheels/1f/42/7e/72241359a71f5f9d4e97f55e6d4ac99939efaec4e1fa7b23b8/Flask_Compress-1.4.0-py3-none-any.whl
-  Processing /home/aksarkar/.cache/pip/wheels/ad/0d/82/015c7dcc01512ff5c1e7c54aef5745e362a93434c4a5342d82/dash_table-4.6.0-py3-none-any.whl
-  Processing /home/aksarkar/.cache/pip/wheels/a6/d8/ef/32c8d935a11ddd862853d296a0963e7326fa10e7a14fe51343/dash_html_components-1.0.2-py3-none-any.whl
-  Requirement already satisfied: six in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from h5py==2.9.0) (1.14.0)
-  Processing /home/aksarkar/.cache/pip/wheels/90/de/df/f1324f4dd966636ab877b82d467acad38a0998b1c42ddb7288/simplegeneric-0.8.1-py3-none-any.whl
-  Requirement already satisfied: cffi>=1.13.1 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from rpy2==3.2.4) (1.14.0)
-  Collecting jinja2
-    Using cached Jinja2-2.11.1-py2.py3-none-any.whl (126 kB)
-  Requirement already satisfied: pytz in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from rpy2==3.2.4) (2019.3)
-  Requirement already satisfied: pytest in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from rpy2==3.2.4) (5.3.5)
-  Collecting tzlocal
-    Using cached tzlocal-2.0.0-py2.py3-none-any.whl (15 kB)
-  Collecting anndata>=0.6.22rc1
-    Using cached anndata-0.7.1-py3-none-any.whl (97 kB)
-  Processing /home/aksarkar/.cache/pip/wheels/f9/a4/90/5a98ad83419732b0fba533b81a2a52ba3dbe230a936ca4cdc9/loompy-3.0.6-cp37-none-any.whl
-  Collecting numba==0.45.0
-    Using cached numba-0.45.0-cp37-cp37m-manylinux1_x86_64.whl (3.5 MB)
-  Collecting hyperopt==0.1.2
-    Using cached hyperopt-0.1.2-py3-none-any.whl (115 kB)
-  Collecting statsmodels
-    Using cached statsmodels-0.11.1-cp37-cp37m-manylinux1_x86_64.whl (8.7 MB)
-  Collecting llvmlite==0.30.0
-    Downloading llvmlite-0.30.0-cp37-cp37m-manylinux1_x86_64.whl (20.2 MB)
-  Collecting tqdm>=4.31.1
-    Using cached tqdm-4.43.0-py2.py3-none-any.whl (59 kB)
-  Collecting xlrd>=1.2.0
-    Using cached xlrd-1.2.0-py2.py3-none-any.whl (103 kB)
-  Collecting patsy
-    Using cached patsy-0.5.1-py2.py3-none-any.whl (231 kB)
-  Collecting seaborn
-    Using cached seaborn-0.10.0-py3-none-any.whl (215 kB)
-  Collecting natsort
-    Using cached natsort-7.0.1-py3-none-any.whl (33 kB)
-  Processing /home/aksarkar/.cache/pip/wheels/d0/f8/d5/8e3af3ee957feb9b403a060ebe72f7561887fef9dea658326e/umap_learn-0.3.10-cp37-none-any.whl
-  Collecting setuptools-scm
-    Using cached setuptools_scm-3.5.0-py2.py3-none-any.whl (26 kB)
-  Requirement already satisfied: packaging in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scanpy) (20.3)
-  Requirement already satisfied: joblib in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scanpy) (0.14.1)
-  Requirement already satisfied: importlib-metadata>=0.7; python_version < "3.8" in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scanpy) (1.5.0)
-  Collecting networkx
-    Using cached networkx-2.4-py3-none-any.whl (1.6 MB)
-  Collecting tables
-    Using cached tables-3.6.1-cp37-cp37m-manylinux1_x86_64.whl (4.3 MB)
-  Collecting legacy-api-wrap
-    Using cached legacy_api_wrap-1.2-py3-none-any.whl (37 kB)
-  Collecting keras>=2.0.8
-    Using cached Keras-2.3.1-py2.py3-none-any.whl (377 kB)
-  Processing /home/aksarkar/.cache/pip/wheels/21/07/fb/61d6d91da2defece9f6f91aa94f4370fc920324e28eb9010a9/kopt-0.1.0-py2.py3-none-any.whl
-  Requirement already satisfied: cycler>=0.10 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from matplotlib->scaa) (0.10.0)
-  Requirement already satisfied: pyparsing!=2.0.4,!=2.1.2,!=2.1.6,>=2.0.1 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from matplotlib->scaa) (2.4.6)
-  Requirement already satisfied: kiwisolver>=1.0.1 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from matplotlib->scaa) (1.1.0)
-  Requirement already satisfied: python-dateutil>=2.1 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from matplotlib->scaa) (2.8.1)
-  Processing /home/aksarkar/.cache/pip/wheels/f9/8d/8d/f6af3f7f9eea3553bc2fe6d53e4b287dad18b06a861ac56ddf/retrying-1.3.3-py3-none-any.whl
-  Requirement already satisfied: Werkzeug>=0.15 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from Flask>=1.0.2->dash==1.9.0) (0.16.1)
-  Collecting itsdangerous>=0.24
-    Using cached itsdangerous-1.1.0-py2.py3-none-any.whl (16 kB)
-  Collecting click>=5.1
-    Downloading click-7.1.1-py2.py3-none-any.whl (82 kB)
-  Requirement already satisfied: pycparser in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from cffi>=1.13.1->rpy2==3.2.4) (2.19)
-  Collecting MarkupSafe>=0.23
-    Using cached MarkupSafe-1.1.1-cp37-cp37m-manylinux1_x86_64.whl (27 kB)
-  Requirement already satisfied: py>=1.5.0 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2==3.2.4) (1.8.1)
-  Requirement already satisfied: attrs>=17.4.0 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2==3.2.4) (19.3.0)
-  Requirement already satisfied: more-itertools>=4.0.0 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2==3.2.4) (8.2.0)
-  Requirement already satisfied: pluggy<1.0,>=0.12 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2==3.2.4) (0.13.1)
-  Requirement already satisfied: wcwidth in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2==3.2.4) (0.1.8)
-  Requirement already satisfied: setuptools in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from loompy>=2.0.16->scvi) (46.0.0.post20200309)
-  Processing /home/aksarkar/.cache/pip/wheels/30/ac/83/64d5f9293aeaec63f9539142fc629a41af064cae1b3d8d94aa/numpy_groupies-0+unknown-cp37-none-any.whl
-  Collecting pymongo
-    Using cached pymongo-3.10.1-cp37-cp37m-manylinux2014_x86_64.whl (462 kB)
-  Requirement already satisfied: zipp>=0.5 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from importlib-metadata>=0.7; python_version < "3.8"->scanpy) (2.2.0)
-  Requirement already satisfied: decorator>=4.3.0 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from networkx->scanpy) (4.4.2)
-  Collecting numexpr>=2.6.2
-    Using cached numexpr-2.7.1-cp37-cp37m-manylinux1_x86_64.whl (162 kB)
-  Collecting get-version>=2.0.4
-    Using cached get_version-2.1-py3-none-any.whl (43 kB)
-  Requirement already satisfied: keras-applications>=1.0.6 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from keras>=2.0.8->DCA) (1.0.8)
-  Requirement already satisfied: keras-preprocessing>=1.0.5 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from keras>=2.0.8->DCA) (1.1.0)
-  Requirement already satisfied: pyyaml in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from keras>=2.0.8->DCA) (5.3)
-  Building wheels for collected packages: wlra, scaa
-    Building wheel for wlra (setup.py): started
-    Building wheel for wlra (setup.py): finished with status 'done'
-    Created wheel for wlra: filename=wlra-0.1-py3-none-any.whl size=9140 sha256=bd5b2165b5cb8a00c566746d32f41f59b4a26f01c32c8320e107049f7fda83c9
-    Stored in directory: /tmp/jobs/66401595/pip-ephem-wheel-cache-5nzfkmrc/wheels/97/c6/d6/9bf06e3954591c11527e077de8fbbd14854d74066aa9344745
-    Building wheel for scaa (setup.py): started
-    Building wheel for scaa (setup.py): finished with status 'done'
-    Created wheel for scaa: filename=scaa-0.1-py3-none-any.whl size=8332 sha256=3db737320a3025168801354793a080494687b0aea2a65bb30d9c2eab51a246e3
-    Stored in directory: /tmp/jobs/66401595/pip-ephem-wheel-cache-5nzfkmrc/wheels/f3/ff/d2/fba96883d1378d704406c3ca1632aa9a10b40270d508678404
-  Successfully built wlra scaa
-  Installing collected packages: wlra, h5py, sklearn, torch, scaa, retrying, plotly, itsdangerous, click, MarkupSafe, jinja2, Flask, dash-renderer, dash-core-components, future, flask-compress, dash-table, dash-html-components, dash, simplegeneric, tzlocal, rpy2, natsort, anndata, llvmlite, numba, numpy-groupies, loompy, pymongo, tqdm, networkx, hyperopt, patsy, statsmodels, xlrd, scvi, seaborn, umap-learn, setuptools-scm, numexpr, tables, get-version, legacy-api-wrap, scanpy, keras, kopt, DCA
-    Attempting uninstall: h5py
-      Found existing installation: h5py 2.10.0
-      Uninstalling h5py-2.10.0:
-        Successfully uninstalled h5py-2.10.0
-  Successfully installed DCA-0.2.3 Flask-1.1.1 MarkupSafe-1.1.1 anndata-0.7.1 click-7.1.1 dash-1.9.0 dash-core-components-1.8.0 dash-html-components-1.0.2 dash-renderer-1.2.4 dash-table-4.6.0 flask-compress-1.4.0 future-0.18.2 get-version-2.1 h5py-2.9.0 hyperopt-0.1.2 itsdangerous-1.1.0 jinja2-2.11.1 keras-2.3.1 kopt-0.1.0 legacy-api-wrap-1.2 llvmlite-0.30.0 loompy-3.0.6 natsort-7.0.1 networkx-2.4 numba-0.45.0 numexpr-2.7.1 numpy-groupies-0+unknown patsy-0.5.1 plotly-4.5.4 pymongo-3.10.1 retrying-1.3.3 rpy2-3.2.4 scaa-0.1 scanpy-1.4.5.1 scvi-0.6.1 seaborn-0.10.0 setuptools-scm-3.5.0 simplegeneric-0.8.1 sklearn-0.0 statsmodels-0.11.1 tables-3.6.1 torch-1.4.0 tqdm-4.43.0 tzlocal-2.0.0 umap-learn-0.3.10 wlra-0.1 xlrd-1.2.0
-  :END:
 
-  #+BEGIN_SRC sh :exports code :results example drawer
+  #+BEGIN_SRC sh :exports code :results none
     source activate singlecell
     pip install -e /project2/mstephens/aksarkar/projects/anmf/
     pip install -e /project2/mstephens/aksarkar/projects/mpebpm/
@@ -473,51 +54,6 @@
   #+END_SRC
 
   #+RESULTS:
-  :RESULTS:
-  Obtaining file:///project2/mstephens/aksarkar/projects/anmf
-  Requirement already satisfied: numpy in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from anmf==0.1) (1.18.1)
-  Requirement already satisfied: scipy in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from anmf==0.1) (1.4.1)
-  Requirement already satisfied: torch in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from anmf==0.1) (1.4.0)
-  Installing collected packages: anmf
-    Running setup.py develop for anmf
-  Successfully installed anmf
-  Obtaining file:///project2/mstephens/aksarkar/projects/poisbeta
-  Requirement already satisfied: numpy in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from poisbeta==0.1) (1.18.1)
-  Requirement already satisfied: scipy in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from poisbeta==0.1) (1.4.1)
-  Installing collected packages: poisbeta
-    Running setup.py develop for poisbeta
-  Successfully installed poisbeta
-  Obtaining file:///project2/mstephens/aksarkar/projects/scmodes
-  Requirement already satisfied: numpy in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scmodes==0.5) (1.18.1)
-  Requirement already satisfied: pandas in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scmodes==0.5) (1.0.1)
-  Requirement already satisfied: rpy2 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scmodes==0.5) (3.2.4)
-  Requirement already satisfied: scipy in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scmodes==0.5) (1.4.1)
-  Requirement already satisfied: scikit-learn in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scmodes==0.5) (0.22.1)
-  Requirement already satisfied: torch in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scmodes==0.5) (1.4.0)
-  Requirement already satisfied: python-dateutil>=2.6.1 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pandas->scmodes==0.5) (2.8.1)
-  Requirement already satisfied: pytz>=2017.2 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pandas->scmodes==0.5) (2019.3)
-  Requirement already satisfied: cffi>=1.13.1 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from rpy2->scmodes==0.5) (1.14.0)
-  Requirement already satisfied: jinja2 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from rpy2->scmodes==0.5) (2.11.1)
-  Requirement already satisfied: tzlocal in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from rpy2->scmodes==0.5) (2.0.0)
-  Requirement already satisfied: simplegeneric in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from rpy2->scmodes==0.5) (0.8.1)
-  Requirement already satisfied: pytest in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from rpy2->scmodes==0.5) (5.3.5)
-  Requirement already satisfied: joblib>=0.11 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from scikit-learn->scmodes==0.5) (0.14.1)
-  Requirement already satisfied: six>=1.5 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from python-dateutil>=2.6.1->pandas->scmodes==0.5) (1.14.0)
-  Requirement already satisfied: pycparser in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from cffi>=1.13.1->rpy2->scmodes==0.5) (2.19)
-  Requirement already satisfied: MarkupSafe>=0.23 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from jinja2->rpy2->scmodes==0.5) (1.1.1)
-  Requirement already satisfied: py>=1.5.0 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2->scmodes==0.5) (1.8.1)
-  Requirement already satisfied: packaging in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2->scmodes==0.5) (20.3)
-  Requirement already satisfied: attrs>=17.4.0 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2->scmodes==0.5) (19.3.0)
-  Requirement already satisfied: more-itertools>=4.0.0 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2->scmodes==0.5) (8.2.0)
-  Requirement already satisfied: pluggy<1.0,>=0.12 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2->scmodes==0.5) (0.13.1)
-  Requirement already satisfied: wcwidth in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2->scmodes==0.5) (0.1.8)
-  Requirement already satisfied: importlib-metadata>=0.12 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from pytest->rpy2->scmodes==0.5) (1.5.0)
-  Requirement already satisfied: pyparsing>=2.0.2 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from packaging->pytest->rpy2->scmodes==0.5) (2.4.6)
-  Requirement already satisfied: zipp>=0.5 in /scratch/midway2/aksarkar/miniconda3/envs/singlecell/lib/python3.7/site-packages (from importlib-metadata>=0.12->pytest->rpy2->scmodes==0.5) (2.2.0)
-  Installing collected packages: scmodes
-    Running setup.py develop for scmodes
-  Successfully installed scmodes
-  :END:
 
   We need to
   [[https://www.anaconda.com/using-pip-in-a-conda-environment/][mix

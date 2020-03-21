@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-20 Fri 13:08 -->
+<!-- 2020-03-21 Sat 17:45 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Noisy topic models</title>
@@ -263,6 +263,12 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#org3c0af52">Inference</a></li>
 <li><a href="#org52d4c56">Implementation</a></li>
+<li><a href="#orgecac982">Simulation</a></li>
+</ul>
+</li>
+<li><a href="#org770ae79">Results</a>
+<ul>
+<li><a href="#org33beff7">Simulated example</a></li>
 </ul>
 </li>
 </ul>
@@ -275,15 +281,16 @@ for the JavaScript code in this tag.
 <p>
 Matthew Stephens and Zihao Wang suggest a variation on hierarchical Poisson
 matrix factorization (Cemgil 2009)\(
-  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\Dir{Dirichlet}
   \DeclareMathOperator\Gam{Gamma}
   \DeclareMathOperator\Mult{Multinomial}
+  \DeclareMathOperator\Pois{Poisson}
   \newcommand\E[1]{\left\langle #1 \right\rangle}
   \newcommand\const{\mathrm{const}}
-  \newcommand\ml{\mathbf{L}}
   \newcommand\mf{\mathbf{F}}
-  \newcommand\vmu{\boldsymbol{\mu}}
+  \newcommand\ml{\mathbf{L}}
   \newcommand\mphi{\boldsymbol{\Phi}}
+  \newcommand\vmu{\boldsymbol{\mu}}
   \)
 </p>
 
@@ -307,6 +314,16 @@ which depart from the mean, which could be of biological interest.
 <div id="outline-container-org8a9b53a" class="outline-2">
 <h2 id="setup"><a id="org8a9b53a"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> ctypes
+<span class="org-keyword">import</span> numba
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
+<span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+</pre>
+</div>
+
 <div class="org-src-container">
 <pre class="src src-ipython">%matplotlib inline
 %config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
@@ -392,69 +409,223 @@ where \(\theta_{jk}\) can be updated via gradient ascent with line search.
 <h3 id="org52d4c56">Implementation</h3>
 <div class="outline-text-3" id="text-org52d4c56">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">hpmf</span>(x, rank, atol=1e-4, max_iters=1000, verbose=<span class="org-constant">False</span>):
+<pre class="src src-ipython"><span class="org-variable-name">lgamma</span> = ctypes.CFUNCTYPE(ctypes.c_double, ctypes.c_double)(
+  numba.extending.get_cython_function_address(<span class="org-string">'scipy.special.cython_special'</span>, <span class="org-string">'gammaln'</span>))
+<span class="org-variable-name">digamma</span> = ctypes.CFUNCTYPE(ctypes.c_double, ctypes.c_double)(
+  numba.extending.get_cython_function_address(<span class="org-string">'scipy.special.cython_special'</span>, <span class="org-string">'__pyx_fuse_1psi'</span>))
+
+<span class="org-keyword">def</span> <span class="org-function-name">hpmf</span>(x, rank, step=1e-2, atol=1e-4, max_epochs=1000, verbose=<span class="org-constant">False</span>):
+  <span class="org-doc">"""Fit hierarchical PMF</span>
+
+<span class="org-doc">  rank - number of latent factors</span>
+<span class="org-doc">  step - initial step size for VBEM update to log(theta)</span>
+<span class="org-doc">  atol - convergence criterion (change in ELBO)</span>
+<span class="org-doc">  max_epochs - max number of VBEM updates</span>
+<span class="org-doc">  verbose - report ELBO after each epoch</span>
+
+<span class="org-doc">  """</span>
   <span class="org-keyword">if</span> <span class="org-keyword">not</span> ss.isspmatrix_coo(x):
     <span class="org-variable-name">x</span> = ss.coo_matrix(x)
   <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
   <span class="org-variable-name">l</span> = np.random.uniform(size=(n, rank))
   <span class="org-variable-name">mu</span> = np.ones((p, 1))
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Sparse representation of variational parameters for non-zero x</span>
-  <span class="org-variable-name">z_idx</span> = np.vstack((x.row, x.col))
-  <span class="org-variable-name">pi</span> = np.ones((x.nnz, rank)) / rank
+  <span class="org-variable-name">log_pi</span> = np.full((x.nnz, rank), -rank)
   <span class="org-variable-name">alpha</span> = np.ones((p, rank))
   <span class="org-variable-name">beta</span> = np.ones((p, rank))
   <span class="org-variable-name">theta</span> = np.ones((p, rank))
 
-  <span class="org-variable-name">obj</span> = elbo(x, z_idx, pi, l, mu, alpha, beta)
-  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
+  <span class="org-comment-delimiter"># </span><span class="org-comment">numba requires arguments be array, not coo_matrix</span>
+  <span class="org-variable-name">obj</span> = elbo(x.data, x.row, x.col, log_pi, l, mu, alpha, beta)
+  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_epochs):
     <span class="org-comment-delimiter"># </span><span class="org-comment">Expectations wrt variational distribution</span>
     <span class="org-variable-name">u</span> = alpha / beta
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this needs to be vectorized</span>
     <span class="org-variable-name">log_u</span> = sp.digamma(alpha) - np.log(beta)
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Coordinate updates</span>
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Hyperparameter updates</span>
-    <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p):
-      <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(rank):
-        <span class="org-variable-name">theta</span>[j,k] = update_theta(u[j,k], log_u[j,k], alpha[j,k], beta[j,k])
-    <span class="org-variable-name">update</span> = elbo(x, z_idx, pi, l, mu, alpha, beta)
+    <span class="org-variable-name">z</span> = x.data.reshape(-1, 1) * np.exp(log_pi)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Coordinate updates (in-place)</span>
+    update_l(l, z, x.row, u, mu)
+    update_mu(mu, z, x.row, u, l)
+    update_u(alpha, beta, z, x.col, l, mu, theta)
+    update_z(log_pi, x.row, x.col, l, mu, log_u)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Hyperparameter update (in-place)</span>
+    <span class="org-variable-name">theta</span> = update_theta(theta, u, log_u, alpha, beta, step=step)
+
+    <span class="org-variable-name">update</span> = elbo(x.data, x.row, x.col, log_pi, l, mu, alpha, beta)
     <span class="org-keyword">if</span> update &lt; obj:
       <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'objective increased'</span>)
     <span class="org-keyword">elif</span> <span class="org-builtin">abs</span>(update - obj) &lt; atol:
-      <span class="org-keyword">return</span> l, mu, alpha, beta
+      <span class="org-keyword">return</span> l, mu, alpha, beta, theta
     <span class="org-keyword">else</span>:
       <span class="org-variable-name">obj</span> = update
       <span class="org-keyword">print</span>(f<span class="org-string">'[{t}] elbo={elbo:.2g}'</span>)
-  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'max_iters exceeded'</span>)
+  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'max_epochs exceeded'</span>)
 
-<span class="org-keyword">def</span> <span class="org-function-name">elbo</span>(x, z_idx, pi, l, mu, alpha, beta):
-  <span class="org-keyword">pass</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">@numba.njit(parallel=True)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">update_l</span>(l, z, row, u, mu):
+  <span class="org-variable-name">d</span> = mu.reshape(-1, 1) * u
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> numba.prange(l.shape[0]):
+    <span class="org-variable-name">zi</span> = z[row == i]
+    <span class="org-keyword">if</span> zi.shape[0] == 0:
+      <span class="org-keyword">continue</span>
+    <span class="org-keyword">for</span> k <span class="org-keyword">in</span> numba.prange(z.shape[1]):
+      <span class="org-variable-name">l</span>[i,k] = zi[:,k].<span class="org-builtin">sum</span>() / d[:,k].<span class="org-builtin">sum</span>()
+
+<span class="org-comment-delimiter"># </span><span class="org-comment">@numba.njit(parallel=True)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">update_mu</span>(mu, z, row, u, l):
+  <span class="org-variable-name">d</span> = l @ u.T
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> numba.prange(l.shape[0]):
+    <span class="org-variable-name">zi</span> = z[row == i]
+    <span class="org-keyword">if</span> zi.shape[0] == 0:
+      <span class="org-keyword">continue</span>
+    <span class="org-variable-name">di</span> = d[i].<span class="org-builtin">sum</span>()
+    <span class="org-keyword">for</span> j <span class="org-keyword">in</span> numba.prange(mu.shape[0]):
+      <span class="org-variable-name">mu</span>[j] = zi[j].<span class="org-builtin">sum</span>() / di
+
+<span class="org-comment-delimiter"># </span><span class="org-comment">@numba.njit(parallel=True)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">update_u</span>(alpha, beta, z, col, l, mu, theta):
+  <span class="org-keyword">for</span> j <span class="org-keyword">in</span> numba.prange(alpha.shape[0]):
+    <span class="org-variable-name">zj</span> = z[col == j]
+    <span class="org-keyword">if</span> zj.shape[0] == 0:
+      <span class="org-keyword">continue</span>
+    <span class="org-variable-name">lj</span> = (l * mu).<span class="org-builtin">sum</span>(axis=1)
+    <span class="org-keyword">for</span> k <span class="org-keyword">in</span> numba.prange(alpha.shape[1]):
+      <span class="org-variable-name">alpha</span>[j,k] = zj.<span class="org-builtin">sum</span>() + theta[j,k]
+      <span class="org-variable-name">beta</span>[j,k] = lj.<span class="org-builtin">sum</span>() + theta[j,k]
+
+<span class="org-comment-delimiter"># </span><span class="org-comment">@numba.njit(parallel=True)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">update_z</span>(log_pi, row, col, l, mu, log_u):
+  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> numba.prange(log_pi.shape[0]):
+    <span class="org-variable-name">i</span> = row[t]
+    <span class="org-variable-name">j</span> = col[t]
+    <span class="org-variable-name">log_pi</span>[t] = np.log(l[i,j]) + np.log(mu[j]) + log_u[j]
+    <span class="org-variable-name">w</span> = np.exp(log_pi[t] - log_pi[t].<span class="org-builtin">max</span>())
+    <span class="org-variable-name">log_pi</span>[t] -= w
 
 <span class="org-keyword">def</span> <span class="org-function-name">theta_loss</span>(theta, u, log_u, alpha, beta):
-  <span class="org-keyword">pass</span>
+  <span class="org-keyword">return</span> (theta - alpha) * log_u - (theta - beta) * u - theta * np.log(theta) - lgamma(theta)
 
-<span class="org-keyword">def</span> <span class="org-function-name">update_theta</span>(theta, u, log_u, alpha, beta, step=1, c=0.5, tau=0.5, max_iters=32):
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: take steps wrt log_inv_disp to avoid non-negativity constraint</span>
-  <span class="org-variable-name">log_inv_disp</span> = np.log(inv_disp)
-  <span class="org-variable-name">d</span> = _D_loss_theta(inv_disp, u, log_u, w) * inv_disp
-  <span class="org-variable-name">loss</span> = _nbmf_loss(x, lam, inv_disp=inv_disp, w=w)
-  <span class="org-variable-name">update</span> = _nbmf_loss(x, lam, inv_disp=np.exp(log_inv_disp + step * d), w=w)
-  <span class="org-keyword">while</span> (<span class="org-keyword">not</span> np.isfinite(update) <span class="org-keyword">or</span> update &gt; loss + c * step * d) <span class="org-keyword">and</span> max_iters &gt; 0:
-    <span class="org-variable-name">step</span> *= tau
-    <span class="org-variable-name">update</span> = _nbmf_loss(x, lam, inv_disp=np.exp(log_inv_disp + step * d), w=w)
-    <span class="org-variable-name">max_iters</span> -= 1
-  <span class="org-keyword">if</span> max_iters == 0:
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Step size is small enough that update can be skipped</span>
-    <span class="org-keyword">return</span> inv_disp
-  <span class="org-keyword">else</span>:
-    <span class="org-keyword">return</span> np.exp(log_inv_disp + step * d) + 1e-15
+<span class="org-comment-delimiter"># </span><span class="org-comment">@numba.njit(parallel=True)</span>
+<span class="org-keyword">def</span> <span class="org-function-name">update_theta</span>(theta, u, log_u, alpha, beta, step=1, c=0.5, tau=0.5, max_iters=32, eps=1e-15):
+  <span class="org-keyword">for</span> j <span class="org-keyword">in</span> numba.prange(theta.shape[0]):
+    <span class="org-keyword">for</span> k <span class="org-keyword">in</span> numba.prange(theta.shape[1]):
+      <span class="org-comment-delimiter"># </span><span class="org-comment">Important: take steps wrt log_theta to avoid non-negativity constraint</span>
+      <span class="org-variable-name">log_theta</span> = np.log(theta[j,k])
+      <span class="org-variable-name">d</span> = (1 + np.log(theta[j,k]) + log_u[j,k] - digamma(theta[j,k])) * theta
+      <span class="org-variable-name">loss</span> = theta_loss(theta[j,k], u[j,k], log_u[j,k], alpha[j,k], beta[j,k])
+      <span class="org-variable-name">update</span> = theta_loss(np.exp(theta[j,k] + step * d), u[j,k], log_u[j,k], alpha[j,k], beta[j,k])
+      <span class="org-keyword">while</span> (<span class="org-keyword">not</span> np.isfinite(update) <span class="org-keyword">or</span> update &gt; loss + c * step * d) <span class="org-keyword">and</span> max_iters &gt; 0:
+        <span class="org-variable-name">step</span> *= tau
+        <span class="org-variable-name">update</span> = theta_loss(np.exp(theta[j,k] + step * d), u[j,k], log_u[j,k], alpha[j,k], beta[j,k])
+        <span class="org-variable-name">max_iters</span> -= 1
+      <span class="org-keyword">if</span> max_iters == 0:
+        <span class="org-keyword">pass</span>
+      <span class="org-keyword">else</span>:
+        <span class="org-variable-name">theta</span>[j,k] = np.exp(log_theta + step * d) + eps
+
+<span class="org-keyword">def</span> <span class="org-function-name">elbo</span>(data, row, col, log_pi, l, mu, u, log_u):
+  <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: this is E_q[ln p] only</span>
+  <span class="org-variable-name">temp</span> = np.zeros_like(data)
+  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> numba.prange(data.shape[0]):
+    <span class="org-variable-name">i</span> = row[t]
+    <span class="org-variable-name">j</span> = col[t]
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this has shape (k,)</span>
+    <span class="org-variable-name">temp</span>[t] = (data[t] * np.exp(log_pi[t]) * (np.log(l[i]) + np.log(mu[j]) + log_u[j])
+               - l[i] * mu[j] * u[j]).<span class="org-builtin">sum</span>() + lgamma(data[t] + 1)
+  <span class="org-keyword">return</span> temp.<span class="org-builtin">sum</span>()
 </pre>
 </div>
+</div>
+</div>
+
+<div id="outline-container-orgecac982" class="outline-3">
+<h3 id="orgecac982">Simulation</h3>
+<div class="outline-text-3" id="text-orgecac982">
+<p>
+Simulate from a noisy topic model
+</p>
+
+\begin{align}
+  x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+  \lambda_{ij} &= (\ml\mf')_{ij}\\
+  l_{i\cdot} &\sim \Dir(\boldsymbol{1}_k)\\
+  f_{jk} &= \mu_j u_{jk}\\
+  \mu_j &\sim \Dir(\boldsymbol{1}_p)\\
+  u_{jk} &\sim \Gam(\phi_{jk}, \phi_{jk})\\
+  \phi_{jk} &\sim \operatorname{Discrete}(\cdot)
+\end{align}
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate</span>(n, p, k, s=1e4, seed=0):
+  np.random.seed(0)
+  <span class="org-variable-name">mu</span> = np.random.dirichlet(np.ones(p))
+  <span class="org-variable-name">phi</span> = np.ones((p, k))
+  <span class="org-variable-name">idx</span> = np.random.uniform(size=(p, k)) &lt;= 0.01
+  <span class="org-variable-name">phi</span>[idx] = 2
+  <span class="org-variable-name">u</span> = st.gamma(a=1 / phi, scale=phi).rvs(size=(p, k))
+  <span class="org-variable-name">f</span> = mu.reshape(-1, 1) * u
+  <span class="org-variable-name">l</span> = np.random.dirichlet(np.ones(k), size=n)
+  <span class="org-variable-name">lam</span> = l @ f.T
+  <span class="org-variable-name">x</span> = np.random.poisson(s * lam)
+  <span class="org-keyword">return</span> x, l, mu, phi
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org770ae79" class="outline-2">
+<h2 id="org770ae79">Results</h2>
+<div class="outline-text-2" id="text-org770ae79">
+</div>
+<div id="outline-container-org33beff7" class="outline-3">
+<h3 id="org33beff7">Simulated example</h3>
+<div class="outline-text-3" id="text-org33beff7">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">l</span>, <span class="org-variable-name">mu</span>, <span class="org-variable-name">phi</span> = simulate(n=100, p=10000, k=5, s=1e3)
+<span class="org-variable-name">x</span> = ss.coo_matrix(x)
+x
+</pre>
+</div>
+
+<pre class="example">
+&lt;100x10000 sparse matrix of type '&lt;class 'numpy.int64'&gt;'
+with 89681 stored elements in COOrdinate format&gt;
+</pre>
+
+<p>
+Report the largest observed count, and the sparsity of the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">x.<span class="org-builtin">max</span>(), (x &gt; 0).mean()
+</pre>
+</div>
+
+<pre class="example">
+(8, 0.08968100000000152)
+
+</pre>
+
+<p>
+Analyze a subset of the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = x.tocsc()[:,:6].tocoo()
+<span class="org-variable-name">res</span> = hpmf(y, rank=5, verbose=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+0 - 6f2e5199-b6aa-4b3d-886f-8e3374688295
+</p>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-20 Fri 13:08</p>
+<p class="date">Created: 2020-03-21 Sat 17:45</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

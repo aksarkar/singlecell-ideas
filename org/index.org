@@ -4,6 +4,7 @@
 A collection of various (often incomplete or broken) ideas for single cell
 analysis plus some related topics.
 
+- [[file:rpp.org][Parallel computation of randomized quantiles]]
 - [[file:noisy-topics.org][Noisy topic models]]
 - [[file:mpebpm.org][Massively Parallel Empirical Bayes Poisson Means]]
 - [[file:mnn.org][Mutual nearest neighbors in topic model space]]

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-26 Thu 11:07 -->
+<!-- 2020-03-26 Thu 11:12 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Parallel computation of randomized quantiles</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,41 +227,248 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">Parallel computation of randomized quantiles</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org16cdd6a">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org5b445ad">Implementation</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org16cdd6a" class="outline-2">
+<h2 id="org16cdd6a">Introduction</h2>
+<div class="outline-text-2" id="text-org16cdd6a">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+A simple idea to test goodness of fit is to use the fact that if \(x_i \sim
+  F\), \(i = 1, \ldots, n\), then \(F(x_i) \sim \operatorname{Uniform}(0,
+  1)\). However, this idea breaks down for discontinuous \(F\), as arises from
+discrete data. Randomized quantiles
+(<a href="https://www.jstor.org/stable/1390802">Dunn and Smyth 1996</a>,
+<a href="https://arxiv.org/pdf/1708.08527">Feng et al. 2017</a>) can be used to
+side-step this issue. For count data, randomized quantiles are generated as
 </p>
 
-<ul class="org-ul">
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
-<li><a href="zinb-vae-gmm.html"><del>ZINB-VAE-GMM</del></a></li>
-</ul>
+\begin{align}
+  q_i \mid x_i, u_i &\sim F(x_i - 1) + u_i f(x_i)\\
+  u_i &\sim \operatorname{Uniform}(0, 1).
+\end{align}
+</div>
+</div>
+
+<div id="outline-container-orge3a26b3" class="outline-2">
+<h2 id="setup"><a id="orge3a26b3"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> sys
+<span class="org-keyword">import</span> time
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5b445ad" class="outline-2">
+<h2 id="org5b445ad">Implementation</h2>
+<div class="outline-text-2" id="text-org5b445ad">
+<p>
+Time evaluation of the Poisson CDF for 15,000 elements.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">p</span> = 15000
+<span class="org-variable-name">x</span> = np.ones(p)
+%timeit st.poisson(x).cdf(x)
+</pre>
+</div>
+
+<pre class="example">
+2.47 ms ± 25.4 µs per loop (mean ± std. dev. of 7 runs, 100 loops each)
+
+</pre>
+
+<p>
+For comparison, do the same in R.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">module load R
+srun --partition=mstephens R --quiet --no-save &lt;&lt;EOF
+<span class="org-sh-heredoc">p &lt;- 15000</span>
+<span class="org-sh-heredoc">x &lt;- rep(1, p)</span>
+<span class="org-sh-heredoc">system.time(ppois(x, x))</span>
+<span class="org-sh-heredoc">EOF</span>
+</pre>
+</div>
+
+<pre class="example">
+&gt; p &lt;- 15000
+&gt; x &lt;- rep(1, p)
+&gt; system.time(ppois(x, x))
+   user  system elapsed 
+  0.003   0.001   0.003 
+&gt; 
+
+</pre>
+
+<p>
+The
+<a href="https://data.humancellatlas.org/explore/projects/cc95ff89-2e68-4a08-a234-480eca21ce79">Census
+of Immune Cells</a> is part of the Human Cell Atlas. Currently, it comprises
+scRNA-seq data of 593,844 cells from 16 donors. Read the sparse data and take
+150,000 cells.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n</span> = 150000
+<span class="org-variable-name">x_csr</span> = ss.load_npz(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census.npz'</span>)
+<span class="org-variable-name">x_csc</span> = x_csr[:150000].tocsc()
+x_csc
+</pre>
+</div>
+
+<pre class="example">
+&lt;150000x16002 sparse matrix of type '&lt;class 'numpy.int32'&gt;'
+with 139419510 stored elements in Compressed Sparse Column format&gt;
+</pre>
+
+<p>
+Compute the sparsity of \([x_{ij}]\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">1 - x_csc.nnz / np.prod(x_csc.shape)
+</pre>
+</div>
+
+<pre class="example">
+0.9419157980252468
+
+</pre>
+
+<p>
+Compute how many GB are used to store \([x_{ij}]\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">4 * (x_csc.data.shape[0] + x_csc.indptr.shape[0] + x_csc.indices.shape[0]) / (2 ** 32)
+</pre>
+</div>
+
+<pre class="example">
+0.2597039779648185
+
+</pre>
+
+<p>
+Under the assumption \(x_{ij} \sim \operatorname{Pois}(\lambda_{ij})\),
+compute how many GB would be required to store \(\lambda_{ij}\). This will be
+much larger than storing \(x_{ij}\) because \(\lambda_{ij}\) is not sparse.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x_csc.shape
+(n * p * 4) / (2 ** 32)
+</pre>
+</div>
+
+<pre class="example">
+2.235453575849533
+
+</pre>
+
+<p>
+Generate some
+<a href="https://github.com/scikit-learn/scikit-learn/blob/bac89c2/sklearn/decomposition/nmf.py#L315">random
+non-negative loadings and factors</a>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rank</span> = 2
+<span class="org-variable-name">scale</span> = np.sqrt(x_csc.mean() / rank)
+<span class="org-variable-name">l</span> = np.random.uniform(1e-8, scale, size=(n, rank))
+<span class="org-variable-name">f</span> = np.random.uniform(1e-8, scale, size=(p, rank))
+<span class="org-variable-name">lam</span> = l @ f.T
+</pre>
+</div>
+
+<p>
+Draw one randomized quantile for each element \(x_{ij}\). Report how many
+minutes elapsed.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(x_csc.shape[1]):
+  <span class="org-variable-name">F</span> = st.poisson(lam[:,j])
+  <span class="org-variable-name">u</span> = np.random.uniform(size=n)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Convert sparse to dense, because scipy.stats does not support sparse</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">arguments</span>
+  <span class="org-variable-name">query</span> = x_csc[:,j].A.ravel()
+  <span class="org-variable-name">rpp</span> = F.cdf(query - 1) + u * F.pmf(query)
+<span class="org-variable-name">elapsed</span> = time.time() - start
+elapsed / 60
+</pre>
+</div>
+
+<pre class="example">
+7.754513065020244
+
+</pre>
+
+<p>
+This problem is embarassingly parallel, because each iteration of the loop is
+independent (up to collecting the results).
+</p>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-26 Thu 11:07</p>
+<p class="date">Created: 2020-03-26 Thu 11:12</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

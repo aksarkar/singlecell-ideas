@@ -1,0 +1,204 @@
+#+TITLE: Parallel computation of randomized quantiles
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  A simple idea to test goodness of fit is to use the fact that if \(x_i \sim
+  F\), \(i = 1, \ldots, n\), then \(F(x_i) \sim \operatorname{Uniform}(0,
+  1)\). However, this idea breaks down for discontinuous \(F\), as arises from
+  discrete data. Randomized quantiles
+  ([[https://www.jstor.org/stable/1390802][Dunn and Smyth 1996]],
+  [[https://arxiv.org/pdf/1708.08527][Feng et al. 2017]]) can be used to
+  side-step this issue. For count data, randomized quantiles are generated as
+
+  \begin{align}
+    q_i \mid x_i, u_i &\sim F(x_i - 1) + u_i f(x_i)\\
+    u_i &\sim \operatorname{Uniform}(0, 1).
+  \end{align}
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="32G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+RESULTS:
+  : Submitted batch job 66606088
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import scipy.sparse as ss
+    import scipy.stats as st
+    import sys
+    import time
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[14]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Implementation
+
+  Time evaluation of the Poisson CDF for 15,000 elements.
+
+  #+BEGIN_SRC ipython :results output verbatim pp
+    p = 15000
+    x = np.ones(p)
+    %timeit st.poisson(x).cdf(x)
+  #+END_SRC
+
+  #+RESULTS:
+  : 2.47 ms ± 25.4 µs per loop (mean ± std. dev. of 7 runs, 100 loops each)
+
+  For comparison, do the same in R.
+
+  #+BEGIN_SRC sh
+    module load R
+    srun --partition=mstephens R --quiet --no-save <<EOF
+    p <- 15000
+    x <- rep(1, p)
+    system.time(ppois(x, x))
+    EOF
+  #+END_SRC
+
+  #+RESULTS:
+  : > p <- 15000
+  : > x <- rep(1, p)
+  : > system.time(ppois(x, x))
+  :    user  system elapsed 
+  :   0.003   0.001   0.003 
+  : > 
+
+  The
+  [[https://data.humancellatlas.org/explore/projects/cc95ff89-2e68-4a08-a234-480eca21ce79][Census
+  of Immune Cells]] is part of the Human Cell Atlas. Currently, it comprises
+  scRNA-seq data of 593,844 cells from 16 donors. Read the sparse data and take
+  150,000 cells.
+
+  #+BEGIN_SRC ipython :async t
+    n = 150000
+    x_csr = ss.load_npz('/scratch/midway2/aksarkar/modes/immune-cell-census.npz')
+    x_csc = x_csr[:150000].tocsc()
+    x_csc
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  #+BEGIN_EXAMPLE
+    <150000x16002 sparse matrix of type '<class 'numpy.int32'>'
+    with 139419510 stored elements in Compressed Sparse Column format>
+  #+END_EXAMPLE
+  :END:
+
+  Compute the sparsity of \([x_{ij}]\).
+
+  #+BEGIN_SRC ipython
+    1 - x_csc.nnz / np.prod(x_csc.shape)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[26]:
+  : 0.9419157980252468
+  :END:
+  
+  Compute how many GB are used to store \([x_{ij}]\).
+
+  #+BEGIN_SRC ipython
+    4 * (x_csc.data.shape[0] + x_csc.indptr.shape[0] + x_csc.indices.shape[0]) / (2 ** 32)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[12]:
+  : 0.2597039779648185
+  :END:
+
+  Under the assumption \(x_{ij} \sim \operatorname{Pois}(\lambda_{ij})\),
+  compute how many GB would be required to store \(\lambda_{ij}\). This will be
+  much larger than storing \(x_{ij}\) because \(\lambda_{ij}\) is not sparse.
+
+  #+BEGIN_SRC ipython
+    n, p = x_csc.shape
+    (n * p * 4) / (2 ** 32)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[4]:
+  : 2.235453575849533
+  :END:
+
+  Generate some
+  [[https://github.com/scikit-learn/scikit-learn/blob/bac89c2/sklearn/decomposition/nmf.py#L315][random
+  non-negative loadings and factors]].
+
+  #+BEGIN_SRC ipython :async t
+    rank = 2
+    scale = np.sqrt(x_csc.mean() / rank)
+    l = np.random.uniform(1e-8, scale, size=(n, rank))
+    f = np.random.uniform(1e-8, scale, size=(p, rank))
+    lam = l @ f.T
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[13]:
+  :END:
+
+  Draw one randomized quantile for each element \(x_{ij}\). Report how many
+  minutes elapsed.
+
+  #+BEGIN_SRC ipython :async t
+    start = time.time()
+    for j in range(x_csc.shape[1]):
+      F = st.poisson(lam[:,j])
+      u = np.random.uniform(size=n)
+      # Convert sparse to dense, because scipy.stats does not support sparse
+      # arguments
+      query = x_csc[:,j].A.ravel()
+      rpp = F.cdf(query - 1) + u * F.pmf(query)
+    elapsed = time.time() - start
+    elapsed / 60
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[17]:
+  : 7.754513065020244
+  :END:
+
+  This problem is embarassingly parallel, because each iteration of the loop is
+  independent (up to collecting the results).

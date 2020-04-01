@@ -68,7 +68,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/ideas/
 
   #+RESULTS:
-  : Submitted batch job 66401642
+  : Submitted batch job 66721381
 
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="32G") :exports none :dir /scratch/midway2/aksarkar/ideas/
 
@@ -95,7 +95,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[11]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -105,7 +105,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[18]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -117,7 +117,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[19]:
+  # Out[3]:
   :END:
 
 * Methods
@@ -149,7 +149,7 @@
 
    \begin{align*}
      \vl_i^* &= \argmin_{\vl_i} f(\vl_i, \vx_i, \mf)\\
-     f(\vl_i, \vx_i, \mf) &\triangleq \sum_j \operatorname{Poisson}(x_{ij}; \sum_k l_{ik} f_{jk}),
+     f(\vl_i, \vx_i, \mf) &\triangleq \sum_j \operatorname{Poisson}(x_{ij}; \textstyle\sum_k l_{ik} f_{jk}),
    \end{align*}
 
    where \(\vx_i\) is the context variable, and the goal is to learn
@@ -487,7 +487,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[16]:
+   # Out[4]:
    :END:
 
    Fit NMF via EM. Report the time elapsed (minutes).
@@ -520,9 +520,14 @@
    Read the fit.
 
    #+BEGIN_SRC ipython
-     with pickle.open('/scratch/midway2/aksarkar/ideas/anmf-sim.pkl', 'rb') as _ff:
+     with open('/scratch/midway2/aksarkar/ideas/anmf-sim.pkl', 'rb') as _f:
        lhat0, fhat0, loss0 = pickle.load(_f)
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
 
    Peter Carbonetto previously derived the KKT conditions for the NMF
    objective. Report the maximum absolute KKT residual.
@@ -537,8 +542,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[14]:
-   : (0.02684265002465202, 0.02111822607549802)
+   # Out[7]:
+   : (0.026842650024651946, 0.021118226075496564)
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-em-fhat.png
@@ -572,38 +577,38 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[21]:
+   # Out[8]:
    :END:
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
      fit = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=k)
-            .fit(data, max_epochs=1000, trace=True, lr=1e-2))
+            .fit(data, max_epochs=1000, trace=True, lr=1e-3))
      elapsed = time.time() - start
      elapsed
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[73]:
-   : 24.5138521194458
+   # Out[101]:
+   : 25.140480041503906
    :END:
 
-   Plot the optimization trace, focusing on the last 100 minibatches.
+   Plot the optimization trace.
 
    #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-trace.png
      plt.clf()
      plt.gcf().set_size_inches(4, 2)
-     plt.plot(np.array(fit.trace).ravel()[-400:] / (n * p), lw=1, c='k')
-     plt.xticks(np.arange(0, 500, 100), np.arange(-400, 100, 100))
-     plt.xlabel('Minibatch before end')
-     plt.ylabel('Per obs neg log lik')
+     plt.plot(np.log(np.array(fit.trace).ravel()), lw=1, c='k')
+     plt.xticks(np.arange(0, 8800, 800), np.arange(0, 1100, 100))
+     plt.xlabel('Epoch')
+     plt.ylabel('Neg log likelihood')
      plt.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[66]:
+   # Out[102]:
    [[file:figure/time-course.org/sim-trace.png]]
    :END:
 
@@ -624,7 +629,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[74]:
+   # Out[103]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-topics.png
@@ -643,7 +648,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[68]:
+   # Out[104]:
    [[file:figure/time-course.org/sim-topics.png]]
    :END:
 
@@ -658,8 +663,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[75]:
-   : (0.08683096761321933, 0.08068438603560046)
+   # Out[106]:
+   : (0.004942970805698425, 0.0033979455942014613)
    :END:
 
    Fit DCA optimizing Poisson loss.
@@ -672,7 +677,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[27]:
+   # Out[91]:
    :END:
 
    Report the loss achieved by each algorithm.
@@ -688,12 +693,12 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[76]:
+   # Out[107]:
    #+BEGIN_EXAMPLE
      oracle    2.165755
      em        2.159763
-     dca       2.101692
-     anmf      2.197470
+     dca       2.106039
+     anmf      2.189601
      dtype: float64
    #+END_EXAMPLE
    :END:
@@ -729,16 +734,12 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[92]:
+   # Out[93]:
    [[file:figure/time-course.org/sim-fit.png]]
    :END:
 
-   The log likelihood achieved by ANMF is lower than the oracle. Recent results
-   ([[https://arxiv.org/abs/1801.03558][Cremer et al 2020]]) suggest this is to
-   be expected: there is an /amortization gap/ due to the fact that we are not
-   directly optimizing the likelihood with respect to the local latent variable
-   \(\vl_i\) for each observation \(\vx_i\). To investigate this gap, fix the
-   factors to the ground truth, and see whether ANMF recovers the loadings.
+   The log likelihood achieved by ANMF is lower than the oracle. Initialize the
+   factors from the ground truth, and see whether ANMF recovers the loadings.
 
    #+BEGIN_SRC ipython :async t
      data = td.DataLoader(dense_data, batch_size=64, shuffle=False)
@@ -747,7 +748,6 @@
      # y = ln(1 + exp(x))
      # ln(exp(y) - 1) = x
      fit.decoder._f.data = torch.tensor(np.log(np.exp(f.T) - 1), dtype=torch.float)
-     fit.decoder._f.requires_grad = False
      fit.fit(data, max_epochs=1000, trace=True, lr=1e-3)
      elapsed = time.time() - start
      elapsed
@@ -755,11 +755,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[33]:
-   : 22.80696201324463
+   # Out[67]:
+   : 25.099331617355347
    :END:
 
-   Compare the fit fixing the ground truth \(\mf\) to the oracle.
+   Compare the fitted log likelihood to the oracle log likelihood.
 
    #+BEGIN_SRC ipython
      lhat = fit.loadings(xt)
@@ -772,80 +772,87 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[34]:
+   # Out[68]:
    #+BEGIN_EXAMPLE
      oracle    2.165755
-     anmf      2.177593
+     anmf      2.161778
      dtype: float64
    #+END_EXAMPLE
    :END:
 
+   Plot the optimization trace.
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/anmf-oracle-init-trace.png
+     plt.clf()
+     plt.gcf().set_size_inches(6, 2)
+     plt.plot(np.log(np.array(fit.trace).ravel()), lw=1, c='k')
+     plt.xticks(np.arange(0, 8800, 800), np.arange(0, 1100, 100))
+     plt.xlabel('Epoch')
+     plt.ylabel('Neg log likelihood')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[74]:
+   [[file:figure/time-course.org/anmf-oracle-init-trace.png]]
+   :END:
+
    Plot the estimated loadings against the true loadings.
+
+   #+BEGIN_SRC ipython
+     d = f / f.sum(axis=0, keepdims=True)
+     t = l * f.sum(axis=0, keepdims=True)
+     t /= t.sum(axis=1, keepdims=True)
+
+     lhat = fit.loadings(xt)
+     fhat = fit.factors()
+     dhat = (fhat / fhat.sum(axis=1, keepdims=True)).T
+     that = lhat * fhat.sum(axis=1)
+     that /= that.sum(axis=1, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[75]:
+   :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/time-course.org/sim-lhat.png
      plt.clf()
-     fig, ax = plt.subplots(2, 5, sharex=True, sharey=True)
-     fig.set_size_inches(8, 4)
-     lim = [0, 3]
+     fig, ax = plt.subplots(1, 4, sharex=True, sharey=True)
+     fig.set_size_inches(8, 2.5)
+     lim = [0, .15]
      for i, a in enumerate(ax.ravel()):
-       a.scatter(np.sqrt(l[:,i]), np.sqrt(s * lhat[:,i]), s=1, c='k')
+       a.scatter(np.sqrt(d[:,i]), np.sqrt(dhat[:,i]), s=1, c='k')
        a.plot(lim, lim, lw=1, ls=':', c='r')
-       a.set_title(f'Factor {i}')
+       a.set_title(f'Topic {i}')
        a.set_xlim(lim)
        a.set_ylim(lim)
      for a in ax:
-       a[0].set_ylabel('Sqrt est loading')
-     for a in ax.T:
-       a[-1].set_xlabel('Sqrt true loading')
+       a.set_xlabel('Sqrt true weight')
+     ax[0].set_ylabel('Sqrt est weight')
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[65]:
+   # Out[85]:
    [[file:figure/time-course.org/sim-lhat.png]]
    :END:
 
-   Check whether this is an algorithmic problem by trying batch gradient
-   descent instead.
+   Report the maximum absolute KKT residual.
 
    #+BEGIN_SRC ipython :async t
-     data = td.DataLoader(dense_data, batch_size=x.shape[0], shuffle=False)
-     fit = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=10)
-     fit.decoder._f.data = torch.tensor(np.log(np.exp(f.T) - 1), dtype=torch.float)
-     fit.decoder._f.requires_grad = False
-     fit.fit(data, max_epochs=6400, trace=True, lr=1e-3)
-
-     lhat = fit.loadings(xt)
-     fhat = fit.factors()
-     pd.Series({
-       'oracle': -st.poisson(mu=l @ f.T).logpmf(x).mean(),
-       'anmf': -st.poisson(mu=s.reshape(-1, 1) * lhat @ fhat).logpmf(x).mean(),
-     })
+     A = x / (s.reshape(-1, 1) * lhat.dot(fhat))
+     l_resid = abs(fhat.T * ((1 - A).T @ lhat)).max()
+     f_resid = abs(lhat * ((1 - A) @ fhat.T)).max()
+     l_resid, f_resid
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[68]:
-   #+BEGIN_EXAMPLE
-     oracle    2.664753
-     anmf      2.675015
-     dtype: float64
-   #+END_EXAMPLE
-   :END:
-
-   Try batch gradient descent without amortization.
-
-   #+BEGIN_SRC ipython :async t
-     m = (anmf.modules.GNMF(n=x.shape[0], p=x.shape[1], k=10)
-          .cuda()
-          .fit(xt, max_epochs=1000, lr=1e-2, verbose=True, trace=True))
-     m.loss(xt).detach().cpu().numpy() / (n * p)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   0 - 8cdb718e-f62b-4d43-960f-7301e2568059
+   # Out[65]:
+   : (0.006189874562055951, 0.014342307636255675)
    :END:
 
 ** ANMF on 68K PBMCs

@@ -1,0 +1,95 @@
+#+TITLE: Single cell QTL mapping via sparse multiple regression
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  [[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et al. 2019]]
+  discovered mean and variance effect QTLs using a modular approach, first
+  fitting the model \( 
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\N{N}
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\argmin{arg min}
+  \newcommand\mf{\mathbf{F}}
+  \newcommand\mg{\mathbf{G}}
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vx{\mathbf{x}}
+  \)
+
+  \begin{align}
+    x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
+    \lambda_{ij} \mid \mu_{ij}, \phi_{ij}, \pi_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
+    \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
+    \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
+    \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij},
+  \end{align}
+
+  where 
+
+  - \(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\) observed
+    in cell \(i = 1, \ldots, n\)
+  - \(x_{i+} \triangleq \sum_j x_{ij}\) is the total number of molecules
+    observed in sample \(i\)
+  - cells are taken from \(m\) donor individuals, \(\ml\) is \(n \times m\),
+    and each \(\mf_{(\cdot)}\) is \(p \times m\)
+  - assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}, k = 1,
+    \ldots, m\) are known and fixed.
+
+  and then using a standard QTL mapping approach (e.g.,
+  [[https://dx.doi.org/10.1038/nature10808][Degner et al. 2012]],
+  [[https://dx.doi.org/10.1126/science.1242429][McVicker et al. 2013]]) to
+  discover genetic effects on gene expression mean and variance. This approach
+  lost substantial power to detect effect on mean gene expression compared to
+  bulk RNA-seq on the same (number of) samples. One approach which might
+  increase power would be to incorporate genotype into the expression model for
+  gene \(j\)
+
+  \begin{align}
+    \lambda_{i} &= \Gam(\phi_{i}^{-1}, \mu_{i}^{-1} \phi_{i}^{-1})\\
+    \ln\mu_{i} &= \ml\mg\vb_{\mu}\\
+    \ln\phi_{i} &= \ml\mg\vb_{\phi},
+  \end{align}
+
+  where \(\mg\) denotes genotype (\(m \times s\)). This approach would increase
+  power by pooling samples across individuals with same (similar) genotypes. To
+  fit this model for \(s > m\), we can further assume a sparsity-inducing prior
+
+  \begin{align}
+    \vb_{\mu} &\sim \pi_{\mu} \delta_0(\cdot) + (1 - \pi_{\mu}) \N(0, \sigma_{\mu}^2)\\
+    \vb_{\phi} &\sim \pi_{\phi} \delta_0(\cdot) + (1 - \pi_{\phi}) \N(0, \sigma_{\phi}^2).
+  \end{align}
+
+  This model can be fit using Monte Carlo VBEM
+  ([[https://doi.org/10.1007/978-94-011-5014-9_12][Neal and Hinton 1998]],
+  [[https://cse.buffalo.edu/faculty/mbeal/thesis/][Beal 2003]],
+  [[https://arxiv.org/abs/1312.6114][Kingma and Welling 2014]],
+  [[https://arxiv.org/abs/1401.4082][Rezende et al. 2014]]).
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3() :exports none :dir /scratch/midway2/aksarkar
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC

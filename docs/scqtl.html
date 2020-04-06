@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-04-05 Sun 21:07 -->
+<!-- 2020-04-05 Sun 21:28 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Single cell QTL mapping via sparse multiple regression</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,42 +227,145 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">Single cell QTL mapping via sparse multiple regression</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgd860ef5">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgd860ef5" class="outline-2">
+<h2 id="orgd860ef5">Introduction</h2>
+<div class="outline-text-2" id="text-orgd860ef5">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et al. 2019</a>
+discovered mean and variance effect QTLs using a modular approach, first
+fitting the model \( 
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\N{N}
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\argmin{arg min}
+  \newcommand\mf{\mathbf{F}}
+  \newcommand\mg{\mathbf{G}}
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vx{\mathbf{x}}
+  \)
+</p>
+
+\begin{align}
+  x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
+  \lambda_{ij} \mid \mu_{ij}, \phi_{ij}, \pi_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
+  \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
+  \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
+  \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij},
+\end{align}
+
+<p>
+where 
 </p>
 
 <ul class="org-ul">
-<li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
-<li><a href="zinb-vae-gmm.html"><del>ZINB-VAE-GMM</del></a></li>
+<li>\(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\) observed
+in cell \(i = 1, \ldots, n\)</li>
+<li>\(x_{i+} \triangleq \sum_j x_{ij}\) is the total number of molecules
+observed in sample \(i\)</li>
+<li>cells are taken from \(m\) donor individuals, \(\ml\) is \(n \times m\),
+and each \(\mf_{(\cdot)}\) is \(p \times m\)</li>
+<li>assignments of cells to donors (loadings) \(l_{ik} \in \{0, 1\}, k = 1,
+    \ldots, m\) are known and fixed.</li>
 </ul>
+
+<p>
+and then using a standard QTL mapping approach (e.g.,
+<a href="https://dx.doi.org/10.1038/nature10808">Degner et al. 2012</a>,
+<a href="https://dx.doi.org/10.1126/science.1242429">McVicker et al. 2013</a>) to
+discover genetic effects on gene expression mean and variance. This approach
+lost substantial power to detect effect on mean gene expression compared to
+bulk RNA-seq on the same (number of) samples. One approach which might
+increase power would be to incorporate genotype into the expression model for
+gene \(j\)
+</p>
+
+\begin{align}
+  \lambda_{i} &= \Gam(\phi_{i}^{-1}, \mu_{i}^{-1} \phi_{i}^{-1})\\
+  \ln\mu_{i} &= \ml\mg\vb_{\mu}\\
+  \ln\phi_{i} &= \ml\mg\vb_{\phi},
+\end{align}
+
+<p>
+where \(\mg\) denotes genotype (\(m \times s\)). This approach would increase
+power by pooling samples across individuals with same (similar) genotypes. To
+fit this model for \(s > m\), we can further assume a sparsity-inducing prior
+</p>
+
+\begin{align}
+  \vb_{\mu} &\sim \pi_{\mu} \delta_0(\cdot) + (1 - \pi_{\mu}) \N(0, \sigma_{\mu}^2)\\
+  \vb_{\phi} &\sim \pi_{\phi} \delta_0(\cdot) + (1 - \pi_{\phi}) \N(0, \sigma_{\phi}^2).
+\end{align}
+
+<p>
+This model can be fit using Monte Carlo VBEM
+(<a href="https://doi.org/10.1007/978-94-011-5014-9_12">Neal and Hinton 1998</a>,
+<a href="https://cse.buffalo.edu/faculty/mbeal/thesis/">Beal 2003</a>,
+<a href="https://arxiv.org/abs/1312.6114">Kingma and Welling 2014</a>,
+<a href="https://arxiv.org/abs/1401.4082">Rezende et al. 2014</a>).
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0620222" class="outline-2">
+<h2 id="setup"><a id="org0620222"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-04-05 Sun 21:07</p>
+<p class="date">Created: 2020-04-05 Sun 21:28</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

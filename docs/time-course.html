@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-04-01 Wed 17:58 -->
+<!-- 2020-04-13 Mon 16:02 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -272,9 +272,9 @@ for the JavaScript code in this tag.
 <li><a href="#org1cce9ff">Results</a>
 <ul>
 <li><a href="#org13ff0f7">Simulation</a></li>
+<li><a href="#org687e657">ANMF on iPSC data</a></li>
 <li><a href="#orgb7e7231">ANMF on 68K PBMCs</a></li>
 <li><a href="#org8ec4008">ANMF on 10-way mixture</a></li>
-<li><a href="#org687e657">ANMF on iPSC data</a></li>
 </ul>
 </li>
 </ul>
@@ -349,7 +349,7 @@ e.g. Human Cell Atlas? As references, compare against
 <h2 id="setup"><a id="orgaef0b05"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <pre class="example">
-Submitted batch job 66400038
+Submitted batch job 67011638
 
 </pre>
 
@@ -360,15 +360,23 @@ Submitted batch job 66400038
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> pickle
+<span class="org-keyword">import</span> rpy2.robjects.packages
+<span class="org-keyword">import</span> rpy2.robjects.pandas2ri
 <span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
-<span class="org-keyword">import</span> scmodes
 <span class="org-keyword">import</span> scipy.io <span class="org-keyword">as</span> si
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> scmodes
 <span class="org-keyword">import</span> sklearn.decomposition <span class="org-keyword">as</span> skd
+<span class="org-keyword">import</span> time
 <span class="org-keyword">import</span> time
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
+
+<span class="org-variable-name">matrix</span> = rpy2.robjects.packages.importr(<span class="org-string">'Matrix'</span>)
+<span class="org-variable-name">ft</span> = rpy2.robjects.packages.importr(<span class="org-string">'fastTopics'</span>)
+
+rpy2.robjects.pandas2ri.activate()
 </pre>
 </div>
 
@@ -888,7 +896,7 @@ elapsed
 </div>
 
 <pre class="example">
-25.140480041503906
+36.379069805145264
 
 </pre>
 
@@ -1164,6 +1172,241 @@ l_resid, f_resid
 </div>
 </div>
 
+<div id="outline-container-org687e657" class="outline-3">
+<h3 id="org687e657">ANMF on iPSC data</h3>
+<div class="outline-text-3" id="text-org687e657">
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
+<span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1)
+</pre>
+</div>
+
+<p>
+Get the donor metadata.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">keep_samples</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt'</span>, index_col=0, header=<span class="org-constant">None</span>)
+<span class="org-variable-name">annotations</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-annotation.txt'</span>)
+<span class="org-variable-name">annotations</span> = annotations.loc[keep_samples.values.ravel()]
+<span class="org-variable-name">onehot</span> = pd.get_dummies(annotations[<span class="org-string">'chip_id'</span>])
+</pre>
+</div>
+
+<p>
+Fit NMF via extrapolated <code>scd</code>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">temp</span> = x.X.tocoo()
+<span class="org-variable-name">y</span> = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = ft.fit_poisson_nmf(y, k=54, numiter=20, method=<span class="org-string">'scd'</span>, control=rpy2.robjects.ListVector({<span class="org-string">'extrapolate'</span>: <span class="org-constant">True</span>}), verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">elapsed</span> = time.time() - start
+</pre>
+</div>
+
+<p>
+Report the time elapsed.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">elapsed / 3600, fit[-1][<span class="org-string">'timing'</span>].values.<span class="org-builtin">sum</span>() / 3600
+</pre>
+</div>
+
+<pre class="example">
+(0.696154232290056, 0.602129444444445)
+
+</pre>
+
+<p>
+Write out the fit.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">rpy2.robjects.r[<span class="org-string">'saveRDS'</span>](fit, <span class="org-string">'/scratch/midway2/aksarkar/singlecell/ipsc-nmf-scd.Rds'</span>)
+</pre>
+</div>
+
+<pre class="example">
+&lt;rpy2.rinterface.NULLType object at 0x7f8bf0af4780&gt; [RTYPES.NILSXP]
+
+</pre>
+
+<p>
+Plot the objective function over time.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(-fit[-1][<span class="org-string">'loglik'</span>].values.astype(<span class="org-builtin">float</span>), lw=1, c=<span class="org-string">'k'</span>)
+plt.xticks(np.arange(0, 20, 4))
+plt.xlabel(<span class="org-string">'Epoch'</span>)
+plt.ylabel(<span class="org-string">'Neg log lik'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-scd.png" alt="ipsc-scd.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lhat</span> = fit.rx2(<span class="org-string">'L'</span>)
+<span class="org-variable-name">fhat</span> = fit.rx2(<span class="org-string">'F'</span>)
+<span class="org-variable-name">s</span> = fhat.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">lhat</span> *= s
+<span class="org-variable-name">fhat</span> /= s
+<span class="org-variable-name">lhat</span> /= lhat.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.imshow(np.corrcoef(lhat.T, onehot.T)[:54,54:], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
+<span class="org-variable-name">cb</span> = plt.colorbar()
+cb.set_label(<span class="org-string">'Pearson corr'</span>)
+plt.xlabel(<span class="org-string">'Donor'</span>)
+plt.ylabel(<span class="org-string">'Factor'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-scd-lhat.png" alt="ipsc-scd-lhat.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
+<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=64, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
+</pre>
+</div>
+
+<p>
+Run ANMF on the data. A priori, we might expect the data to be rank 53
+(equal to the number of donor individuals). Indeed, this is the rank of the
+implicit factor model we originally fit to the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)
+       .fit(data, max_epochs=40, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=1e-2))
+<span class="org-variable-name">elapsed</span> = time.time() - start
+</pre>
+</div>
+
+<p>
+Report how long the optimization took (minutes).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">elapsed / 60
+</pre>
+</div>
+
+<pre class="example">
+2.7217764496803283
+
+</pre>
+
+<p>
+Plot the end of the optimization trace.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(np.array(fit.trace).ravel()[-100:] / (128 * x.shape[1]), lw=1, c=<span class="org-string">'k'</span>)
+plt.xticks(np.arange(0, 125, 25), np.arange(-100, 25, 25))
+plt.xlabel(<span class="org-string">'Minibatches before maximum'</span>)
+plt.ylabel(<span class="org-string">'Neg log lik per obs'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-trace.png" alt="ipsc-trace.png">
+</p>
+</div>
+
+<p>
+Save the fitted model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">torch.save(fit.state_dict(), <span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl'</span>)
+</pre>
+</div>
+
+<p>
+Load the fitted model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)     
+fit.load_state_dict(torch.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl'</span>))
+fit.cuda()
+</pre>
+</div>
+
+<pre class="example">
+ANMF(
+(encoder): Encoder(
+(net): Sequential(
+(0): Linear(in_features=9957, out_features=128, bias=True)
+(1): ReLU()
+(2): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+(3): Linear(in_features=128, out_features=53, bias=True)
+(4): Softplus(beta=1, threshold=20)
+)
+)
+(decoder): Pois()
+)
+</pre>
+
+<p>
+Look at the correlation between the loadings and the donor individuals.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">l</span> = np.vstack([fit.loadings(b) <span class="org-keyword">for</span> b, s <span class="org-keyword">in</span> data])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 4)
+plt.imshow(r, vmin=-1, vmax=1, cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>])
+plt.xlabel(<span class="org-string">'Estimated loadings'</span>)
+plt.ylabel(<span class="org-string">'Donor individual'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-loadings.png" alt="ipsc-loadings.png">
+</p>
+</div>
+</div>
+</div>
+
 <div id="outline-container-orgb7e7231" class="outline-3">
 <h3 id="orgb7e7231">ANMF on 68K PBMCs</h3>
 <div class="outline-text-3" id="text-orgb7e7231">
@@ -1375,154 +1618,11 @@ plt.tight_layout()
 </div>
 </div>
 </div>
-
-<div id="outline-container-org687e657" class="outline-3">
-<h3 id="org687e657">ANMF on iPSC data</h3>
-<div class="outline-text-3" id="text-org687e657">
-<p>
-Read the data.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
-<span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">sparse_data</span> = anmf.dataset.ExprDataset(x.X, s.A)
-<span class="org-variable-name">data</span> = td.DataLoader(sparse_data, batch_size=64, shuffle=<span class="org-constant">False</span>, collate_fn=sparse_data.collate_fn)
-</pre>
-</div>
-
-<p>
-Run ANMF on the data. A priori, we might expect the data to be rank 53
-(equal to the number of donor individuals). Indeed, this is the rank of the
-implicit factor model we originally fit to the data.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">fit</span> = (anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)
-       .fit(data, max_epochs=40, trace=<span class="org-constant">True</span>, verbose=<span class="org-constant">True</span>, lr=1e-2))
-<span class="org-variable-name">elapsed</span> = time.time() - start
-</pre>
-</div>
-
-<p>
-Report how long the optimization took (minutes).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">elapsed / 60
-</pre>
-</div>
-
-<pre class="example">
-2.7217764496803283
-
-</pre>
-
-<p>
-Plot the end of the optimization trace.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-plt.gcf().set_size_inches(4, 2)
-plt.plot(np.array(fit.trace).ravel()[-100:] / (128 * x.shape[1]), lw=1, c=<span class="org-string">'k'</span>)
-plt.xticks(np.arange(0, 125, 25), np.arange(-100, 25, 25))
-plt.xlabel(<span class="org-string">'Minibatches before maximum'</span>)
-plt.ylabel(<span class="org-string">'Neg log lik per obs'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/time-course.org/ipsc-trace.png" alt="ipsc-trace.png">
-</p>
-</div>
-
-<p>
-Save the fitted model.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">torch.save(fit.state_dict(), <span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl'</span>)
-</pre>
-</div>
-
-<p>
-Load the fitted model.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">fit</span> = anmf.modules.ANMF(input_dim=x.shape[1], latent_dim=53)     
-fit.load_state_dict(torch.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/ipsc-anmf.pkl'</span>))
-fit.cuda()
-</pre>
-</div>
-
-<pre class="example">
-ANMF(
-(encoder): Encoder(
-(net): Sequential(
-(0): Linear(in_features=9957, out_features=128, bias=True)
-(1): ReLU()
-(2): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-(3): Linear(in_features=128, out_features=53, bias=True)
-(4): Softplus(beta=1, threshold=20)
-)
-)
-(decoder): Pois()
-)
-</pre>
-
-<p>
-Look at the correlation between the loadings and the donor individuals.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">l</span> = np.vstack([fit.loadings(b) <span class="org-keyword">for</span> b, s <span class="org-keyword">in</span> data])
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">keep_samples</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt'</span>, index_col=0, header=<span class="org-constant">None</span>)
-<span class="org-variable-name">annotations</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-annotation.txt'</span>)
-<span class="org-variable-name">annotations</span> = annotations.loc[keep_samples.values.ravel()]
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">onehot</span> = pd.get_dummies(annotations[<span class="org-string">'chip_id'</span>])
-<span class="org-variable-name">r</span> = np.corrcoef(l.T, onehot.T)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-plt.gcf().set_size_inches(4, 4)
-plt.imshow(r, vmin=-1, vmax=1, cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>])
-plt.xlabel(<span class="org-string">'Estimated loadings'</span>)
-plt.ylabel(<span class="org-string">'Donor individual'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/time-course.org/ipsc-loadings.png" alt="ipsc-loadings.png">
-</p>
-</div>
-</div>
-</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-04-01 Wed 17:58</p>
+<p class="date">Created: 2020-04-13 Mon 16:02</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -19,10 +19,12 @@
     tensorflow-gpu==1.15.0
     r-ashr
     r-descend
+    r-fasttopics
     r-flashr
     r-glmpca
     scikit-learn
     scipy
+    scmodes
     scqtl
     EOF
   #+END_SRC
@@ -50,7 +52,6 @@
     pip install -e /project2/mstephens/aksarkar/projects/anmf/
     pip install -e /project2/mstephens/aksarkar/projects/mpebpm/
     pip install -e /project2/mstephens/aksarkar/projects/poisbeta/
-    pip install -e /project2/mstephens/aksarkar/projects/scmodes/
   #+END_SRC
 
   #+RESULTS:

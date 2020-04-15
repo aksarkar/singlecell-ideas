@@ -73,7 +73,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens",opts="-c4",memory="16G") :exports none :dir /scratch/midway2/aksarkar/ideas/
 
   #+RESULTS:
-  : Submitted batch job 67011638
+  : Submitted batch job 83345
 
   #+BEGIN_SRC ipython
     import anmf
@@ -118,6 +118,7 @@
 
   #+BEGIN_SRC ipython
     import colorcet
+    import matplotlib
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
     plt.rcParams['font.family'] = 'Nimbus Sans'
@@ -203,7 +204,8 @@
 
 ** iPSC data
 
-   Read the data.
+   Sarkar et al. 2019 generated scRNA-seq data for 9,957 genes in 5,597 cells
+   derived from 53 donors. Read the data.
 
    #+BEGIN_SRC ipython :async t
      keep_samples = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/quality-single-cells.txt', index_col=0, header=None)
@@ -232,6 +234,12 @@
    :RESULTS:
    # Out[33]:
    :END:
+
+** iPSC CM data
+
+   [[https://www.nature.com/articles/s41598-020-58327-6][Selewa et al. 2019]]
+   generated scRNA-seq for a time course differentiating iPSCs into
+   cardiomyocytes.
 
 ** 10-way mixture
 
@@ -1099,6 +1107,303 @@
    :RESULTS:
    # Out[89]:
    [[file:figure/time-course.org/ipsc-loadings.png]]
+   :END:
+
+** NMF on iPSC-CM data
+
+   Read the data.
+
+   #+BEGIN_SRC ipython :async t
+     x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/czi-ipsc-cm.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     rep1 = x[x.obs['ind'] == 'Rep1']
+     sc.pp.filter_genes(rep1, min_cells=1)
+     temp = rep1.X.tocoo()
+     y = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     start = time.time()
+     fit = ft.fit_poisson_nmf(y, k=50, numiter=40, method='scd', control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
+     fit = {k: v for k, v in zip(fit.names, fit)}
+     elapsed = time.time() - start
+     elapsed / 60
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[262]:
+   : 15.252534476915995
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     l = fit['L']
+     f = fit['F']
+     weights = l * f.sum(axis=0)
+     scale = weights.sum(axis=1, keepdims=True)
+     weights /= scale
+     topics = f / f.sum(axis=0, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[263]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     markers = [
+       # iPSC
+       'POU5F1',  # Oct-4
+       'SOX2',
+       'NANOG',
+       # mesoderm formation
+       'T',  # BRY/TBXT
+       'MIXL1',
+       # cardiogenic mesoderm
+       'MESP1',
+       'ISL1',
+       'KDR',
+       # cardiac progenitor
+       'NKX2-5',
+       'GATA4',
+       'TBX5',
+       'MEF2C',
+       'HAND1',
+       'HAND2',
+       # cardiomyocyte
+       'MYL2',
+       'MYL7',
+       'MYH6',
+       'TNNT2'
+       ]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/ipsc-cm-nmf-markers.png
+     r = np.corrcoef(pd.get_dummies(rep1.obs['day']).T, weights.T)[:4,4:]
+     day = pd.get_dummies(rep1.obs['day']).values.T
+     loss = (day @ np.log(weights) + (1 - day) @ np.log(1 - weights)) / weights.shape[0]
+     xorder = np.argsort(np.argmax(r, axis=0))
+     idx = rep1.var['name'].isin(markers)
+     yorder = np.argsort([markers.index(k) for k in rep1.var.loc[idx, 'name']])
+
+     plt.clf()
+     fig, ax = plt.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [1, 4.5]})
+     fig.set_size_inches(8, 4)
+
+     im = ax[0].imshow(r[:,xorder], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1, aspect='auto')
+     cb = fig.colorbar(im, ax=ax[0])
+     cb.set_label('Correlation')
+     ax[0].set_yticks(np.arange(len(rep1.obs['day'].cat.categories)))
+     ax[0].set_yticklabels(rep1.obs['day'].cat.categories)
+     ax[0].set_ylabel('Time point')
+
+     im = ax[1].imshow(topics[idx][yorder][:,xorder], cmap=colorcet.cm['fire'], aspect='auto', norm=matplotlib.colors.LogNorm())
+     cb = fig.colorbar(im, ax=ax[1])
+     cb.set_label('Relative expression')
+     ax[1].set_xlabel('Topic')
+     ax[1].set_ylabel('Marker gene expression')
+     ax[1].set_yticks(np.arange(len(markers)))
+     ax[1].set_yticklabels(rep1.var.loc[idx, 'name'][order])
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[264]:
+   [[file:figure/time-course.org/ipsc-cm-nmf-markers.png]]
+   :END:
+
+   Trace the expression of /POU5F1/ over time.
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/ipsc-cm-POU5F1.png
+     cm = plt.get_cmap('Dark2')
+     days = (0, 1, 3, 7)
+     query = (weights @ topics[rep1.var['name'] == 'POU5F1'].T).ravel()
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     grid = np.linspace(0, query.max(), 1000)
+     for i, k in enumerate(days):
+       f = st.gaussian_kde(query[rep1.obs['day'] == k])
+       plt.plot(grid, f(grid), c=cm(i), lw=1, label=k)
+     plt.xlim(0, grid.max())
+     plt.ylim(0, 35000)
+     plt.legend(frameon=False, title='Time point')
+     plt.title('POU5F1')
+     plt.xlabel('Latent gene expression')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[281]:
+   [[file:figure/time-course.org/ipsc-cm-POU5F1.png]]
+   :END:
+
+   Repeat the analysis for replicate 2.
+
+   #+BEGIN_SRC ipython :async t
+     rep2 = x[x.obs['ind'] == 'Rep2']
+     sc.pp.filter_genes(rep2, min_cells=1)
+     temp = rep2.X.tocoo()
+     y = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+     fit = ft.fit_poisson_nmf(y, k=50, numiter=40, method='scd', control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
+     fit = {k: v for k, v in zip(fit.names, fit)}
+     l = fit['L']
+     f = fit['F']
+     weights = l * f.sum(axis=0)
+     scale = weights.sum(axis=1, keepdims=True)
+     weights /= scale
+     topics = f / f.sum(axis=0, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[282]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/ipsc-cm-rep2-nmf-markers.png
+     r = np.corrcoef(pd.get_dummies(rep2.obs['day']).T, weights.T)[:5,5:]
+     day = pd.get_dummies(rep2.obs['day']).values.T
+     xorder = np.argsort(np.argmax(r, axis=0))
+     idx = rep2.var['name'].isin(markers)
+     yorder = np.argsort([markers.index(k) for k in rep2.var.loc[idx, 'name']])
+
+     plt.clf()
+     fig, ax = plt.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [1, 4.5]})
+     fig.set_size_inches(8, 4)
+
+     im = ax[0].imshow(r[:,xorder], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1, aspect='auto')
+     cb = fig.colorbar(im, ax=ax[0])
+     cb.set_label('Correlation')
+     ax[0].set_yticks(np.arange(len(rep2.obs['day'].cat.categories)))
+     ax[0].set_yticklabels(rep2.obs['day'].cat.categories)
+     ax[0].set_ylabel('Time point')
+
+     im = ax[1].imshow(topics[idx][yorder][:,xorder], cmap=colorcet.cm['fire'], aspect='auto', norm=matplotlib.colors.LogNorm())
+     cb = fig.colorbar(im, ax=ax[1])
+     cb.set_label('Relative expression')
+     ax[1].set_xlabel('Topic')
+     ax[1].set_ylabel('Marker gene')
+     ax[1].set_yticks(np.arange(len(markers)))
+     ax[1].set_yticklabels(rep2.var.loc[idx, 'name'][order])
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[287]:
+   [[file:figure/time-course.org/ipsc-cm-rep2-nmf-markers.png]]
+   :END:
+
+   Try jointly analyzing everything.
+
+   #+BEGIN_SRC ipython :async t
+     sc.pp.filter_genes(x, min_cells=1)
+     temp = x.X.tocoo()
+     y = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :async t
+     fit = ft.fit_poisson_nmf(y, k=11, numiter=40, method='scd', control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
+     fit = {k: v for k, v in zip(fit.names, fit)}
+     l = fit['L']
+     f = fit['F']
+     weights = l * f.sum(axis=0)
+     scale = weights.sum(axis=1, keepdims=True)
+     weights /= scale
+     topics = f / f.sum(axis=0, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[23]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/time-course.org/ipsc-cm-joint-nmf-markers.png
+     r0 = np.corrcoef(pd.get_dummies(x.obs['day']).values.T, weights.T)[:5,5:]
+     r1 = np.corrcoef(pd.get_dummies(x.obs['ind']).values.T, weights.T)[:2,2:]
+     xorder = np.argsort(np.argmax(r0, axis=0))
+     idx = x.var['name'].isin(markers)
+     yorder = np.argsort([markers.index(k) for k in x.var.loc[idx, 'name']])
+
+     plt.clf()
+     fig, ax = plt.subplots(3, 1, sharex=True, gridspec_kw={'height_ratios': [2, 5, 18]})
+     fig.set_size_inches(4, 6)
+
+     im = ax[0].imshow(r1[:,xorder], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1, aspect='auto')
+     cb = fig.colorbar(im, ax=ax[0])
+     cb.set_label('Correlation')
+     ax[0].set_ylabel('Replicate')
+
+     im = ax[1].imshow(r0[:,xorder], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1, aspect='auto')
+     cb = fig.colorbar(im, ax=ax[1])
+     cb.set_label('Correlation')
+     ax[1].set_yticks(np.arange(len(x.obs['day'].cat.categories)))
+     ax[1].set_yticklabels(x.obs['day'].cat.categories)
+     ax[1].set_ylabel('Time point')
+
+     im = ax[2].imshow(topics[idx][yorder][:,xorder], cmap=colorcet.cm['fire'], aspect='auto', norm=matplotlib.colors.LogNorm())
+     cb = fig.colorbar(im, ax=ax[2])
+     cb.set_label('Relative expression')
+     ax[2].set_xlabel('Topic')
+     ax[2].set_ylabel('Marker gene')
+     ax[2].set_yticks(np.arange(len(markers)))
+     ax[2].set_yticklabels(x.var.loc[idx, 'name'][yorder])
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   [[file:figure/time-course.org/ipsc-cm-joint-nmf-markers.png]]
+   :END:
+
+   Look at replicate 1, day 7.
+
+   #+BEGIN_SRC ipython :async t
+     query = x[np.logical_and(x.obs['ind'] == 'Rep1', x.obs['day'] == 7)]
+     sc.pp.filter_genes(query, min_cells=1)
+     temp = query.X.tocoo()
+     y = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[26]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     fit = ft.fit_poisson_nmf(y, k=11, numiter=40, method='scd', control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
+     fit = {k: v for k, v in zip(fit.names, fit)}
+     l = fit['L']
+     f = fit['F']
+     weights = l * f.sum(axis=0)
+     scale = weights.sum(axis=1, keepdims=True)
+     weights /= scale
+     topics = f / f.sum(axis=0, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[27]:
    :END:
 
 ** ANMF on 68K PBMCs

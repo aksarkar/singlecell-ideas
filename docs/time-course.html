@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-04-13 Mon 16:02 -->
+<!-- 2020-04-16 Thu 13:29 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fully unsupervised topic models of scRNA-seq time course data</title>
@@ -257,33 +257,35 @@ for the JavaScript code in this tag.
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orgbb76e5c">Introduction</a></li>
+<li><a href="#org65b71e4">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#org1860a88">Methods</a>
+<li><a href="#org9e18411">Methods</a>
 <ul>
-<li><a href="#org7d4bcf5">Amortized NMF</a></li>
-<li><a href="#org7c79f06">Amortized LDA</a></li>
-<li><a href="#orga68114a">iPSC data</a></li>
-<li><a href="#org042cb98">10-way mixture</a></li>
-<li><a href="#org0316d7a">Census of Immune Cells</a></li>
-<li><a href="#orge169581">Mouse Organogenesis Cell Atlas</a></li>
+<li><a href="#org82c213b">Amortized NMF</a></li>
+<li><a href="#org59bb306">Amortized LDA</a></li>
+<li><a href="#orgb998252">iPSC data</a></li>
+<li><a href="#orgf25e3a5">iPSC CM data</a></li>
+<li><a href="#org2019ba5">10-way mixture</a></li>
+<li><a href="#org6f10d4c">Census of Immune Cells</a></li>
+<li><a href="#orga01414f">Mouse Organogenesis Cell Atlas</a></li>
 </ul>
 </li>
-<li><a href="#org1cce9ff">Results</a>
+<li><a href="#org1f866f5">Results</a>
 <ul>
-<li><a href="#org13ff0f7">Simulation</a></li>
-<li><a href="#org687e657">ANMF on iPSC data</a></li>
-<li><a href="#orgb7e7231">ANMF on 68K PBMCs</a></li>
-<li><a href="#org8ec4008">ANMF on 10-way mixture</a></li>
+<li><a href="#org0f4b4a8">Simulation</a></li>
+<li><a href="#org016b06e">ANMF on iPSC data</a></li>
+<li><a href="#org5a20b29">NMF on iPSC-CM data</a></li>
+<li><a href="#orgca6e596">ANMF on 68K PBMCs</a></li>
+<li><a href="#org8fe675b">ANMF on 10-way mixture</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-orgbb76e5c" class="outline-2">
-<h2 id="orgbb76e5c">Introduction</h2>
-<div class="outline-text-2" id="text-orgbb76e5c">
+<div id="outline-container-org65b71e4" class="outline-2">
+<h2 id="org65b71e4">Introduction</h2>
+<div class="outline-text-2" id="text-org65b71e4">
 <p>
 In our prior work (<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar
 et al. 2019</a>), we introduced a factor model to capture between donor
@@ -345,11 +347,11 @@ e.g. Human Cell Atlas? As references, compare against
 </div>
 </div>
 
-<div id="outline-container-orgaef0b05" class="outline-2">
-<h2 id="setup"><a id="orgaef0b05"></a>Setup</h2>
+<div id="outline-container-org2008151" class="outline-2">
+<h2 id="setup"><a id="org2008151"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <pre class="example">
-Submitted batch job 67011638
+Submitted batch job 83345
 
 </pre>
 
@@ -388,6 +390,7 @@ rpy2.robjects.pandas2ri.activate()
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib
 <span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
@@ -396,13 +399,13 @@ rpy2.robjects.pandas2ri.activate()
 </div>
 </div>
 
-<div id="outline-container-org1860a88" class="outline-2">
-<h2 id="org1860a88">Methods</h2>
-<div class="outline-text-2" id="text-org1860a88">
+<div id="outline-container-org9e18411" class="outline-2">
+<h2 id="org9e18411">Methods</h2>
+<div class="outline-text-2" id="text-org9e18411">
 </div>
-<div id="outline-container-org7d4bcf5" class="outline-3">
-<h3 id="org7d4bcf5">Amortized NMF</h3>
-<div class="outline-text-3" id="text-org7d4bcf5">
+<div id="outline-container-org82c213b" class="outline-3">
+<h3 id="org82c213b">Amortized NMF</h3>
+<div class="outline-text-3" id="text-org82c213b">
 <p>
 Amortized inference
 (<a href="http://ruishu.io/2017/11/07/amortized-optimization/">Shu 2017</a>,
@@ -471,9 +474,9 @@ implement this functionality in the Python package <code>anmf</code>.
 </div>
 </div>
 
-<div id="outline-container-org7c79f06" class="outline-3">
-<h3 id="org7c79f06">Amortized LDA</h3>
-<div class="outline-text-3" id="text-org7c79f06">
+<div id="outline-container-org59bb306" class="outline-3">
+<h3 id="org59bb306">Amortized LDA</h3>
+<div class="outline-text-3" id="text-org59bb306">
 <p>
 NMF is intimately connected to LDA via the Multinomial-Poisson transform
 (<a href="http://www.jstor.org/stable/2348134">Baker 1994</a>). Briefly, if we have
@@ -498,11 +501,12 @@ concerned with recovering an approximate posterior over \(\mathbf{L},
 </div>
 </div>
 
-<div id="outline-container-orga68114a" class="outline-3">
-<h3 id="orga68114a">iPSC data</h3>
-<div class="outline-text-3" id="text-orga68114a">
+<div id="outline-container-orgb998252" class="outline-3">
+<h3 id="orgb998252">iPSC data</h3>
+<div class="outline-text-3" id="text-orgb998252">
 <p>
-Read the data.
+Sarkar et al. 2019 generated scRNA-seq data for 9,957 genes in 5,597 cells
+derived from 53 donors. Read the data.
 </p>
 
 <div class="org-src-container">
@@ -529,9 +533,20 @@ x.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlece
 </div>
 </div>
 
-<div id="outline-container-org042cb98" class="outline-3">
-<h3 id="org042cb98">10-way mixture</h3>
-<div class="outline-text-3" id="text-org042cb98">
+<div id="outline-container-orgf25e3a5" class="outline-3">
+<h3 id="orgf25e3a5">iPSC CM data</h3>
+<div class="outline-text-3" id="text-orgf25e3a5">
+<p>
+<a href="https://www.nature.com/articles/s41598-020-58327-6">Selewa et al. 2019</a>
+generated scRNA-seq for a time course differentiating iPSCs into
+cardiomyocytes.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2019ba5" class="outline-3">
+<h3 id="org2019ba5">10-way mixture</h3>
+<div class="outline-text-3" id="text-org2019ba5">
 <p>
 Read the FACS sorted data sets from
 <a href="https://dx.doi.org/10.1038/ncomms14049">Zheng et al 2017</a>.
@@ -597,9 +612,9 @@ x.write(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h
 </div>
 </div>
 
-<div id="outline-container-org0316d7a" class="outline-3">
-<h3 id="org0316d7a">Census of Immune Cells</h3>
-<div class="outline-text-3" id="text-org0316d7a">
+<div id="outline-container-org6f10d4c" class="outline-3">
+<h3 id="org6f10d4c">Census of Immune Cells</h3>
+<div class="outline-text-3" id="text-org6f10d4c">
 <p>
 We previously processed the Census of Immune Cells.
 </p>
@@ -625,9 +640,9 @@ Read the metadata.
 </div>
 </div>
 
-<div id="outline-container-orge169581" class="outline-3">
-<h3 id="orge169581">Mouse Organogenesis Cell Atlas</h3>
-<div class="outline-text-3" id="text-orge169581">
+<div id="outline-container-orga01414f" class="outline-3">
+<h3 id="orga01414f">Mouse Organogenesis Cell Atlas</h3>
+<div class="outline-text-3" id="text-orga01414f">
 <p>
 <a href="https://www.nature.com/articles/s41586-019-0969-x">Cao et al. 2019</a>
 generated an atlas of 2M mouse cells, analyzed by
@@ -774,13 +789,13 @@ Read the data.
 </div>
 </div>
 
-<div id="outline-container-org1cce9ff" class="outline-2">
-<h2 id="org1cce9ff">Results</h2>
-<div class="outline-text-2" id="text-org1cce9ff">
+<div id="outline-container-org1f866f5" class="outline-2">
+<h2 id="org1f866f5">Results</h2>
+<div class="outline-text-2" id="text-org1f866f5">
 </div>
-<div id="outline-container-org13ff0f7" class="outline-3">
-<h3 id="org13ff0f7">Simulation</h3>
-<div class="outline-text-3" id="text-org13ff0f7">
+<div id="outline-container-org0f4b4a8" class="outline-3">
+<h3 id="org0f4b4a8">Simulation</h3>
+<div class="outline-text-3" id="text-org0f4b4a8">
 <p>
 Simulate a simple example.
 </p>
@@ -1172,9 +1187,9 @@ l_resid, f_resid
 </div>
 </div>
 
-<div id="outline-container-org687e657" class="outline-3">
-<h3 id="org687e657">ANMF on iPSC data</h3>
-<div class="outline-text-3" id="text-org687e657">
+<div id="outline-container-org016b06e" class="outline-3">
+<h3 id="org016b06e">ANMF on iPSC data</h3>
+<div class="outline-text-3" id="text-org016b06e">
 <p>
 Read the data.
 </p>
@@ -1407,9 +1422,292 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orgb7e7231" class="outline-3">
-<h3 id="orgb7e7231">ANMF on 68K PBMCs</h3>
-<div class="outline-text-3" id="text-orgb7e7231">
+<div id="outline-container-org5a20b29" class="outline-3">
+<h3 id="org5a20b29">NMF on iPSC-CM data</h3>
+<div class="outline-text-3" id="text-org5a20b29">
+<p>
+Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/czi-ipsc-cm.h5ad'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rep1</span> = x[x.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>]
+sc.pp.filter_genes(rep1, min_cells=1)
+<span class="org-variable-name">temp</span> = rep1.X.tocoo()
+<span class="org-variable-name">y</span> = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
+<span class="org-variable-name">fit</span> = ft.fit_poisson_nmf(y, k=50, numiter=40, method=<span class="org-string">'scd'</span>, control=rpy2.robjects.ListVector({<span class="org-string">'extrapolate'</span>: <span class="org-constant">True</span>}), verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">fit</span> = {k: v <span class="org-keyword">for</span> k, v <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(fit.names, fit)}
+<span class="org-variable-name">elapsed</span> = time.time() - start
+elapsed / 60
+</pre>
+</div>
+
+<pre class="example">
+15.252534476915995
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">l</span> = fit[<span class="org-string">'L'</span>]
+<span class="org-variable-name">f</span> = fit[<span class="org-string">'F'</span>]
+<span class="org-variable-name">weights</span> = l * f.<span class="org-builtin">sum</span>(axis=0)
+<span class="org-variable-name">scale</span> = weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">weights</span> /= scale
+<span class="org-variable-name">topics</span> = f / f.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">markers</span> = [
+  <span class="org-comment-delimiter"># </span><span class="org-comment">iPSC</span>
+  <span class="org-string">'POU5F1'</span>,  <span class="org-comment-delimiter"># </span><span class="org-comment">Oct-4</span>
+  <span class="org-string">'SOX2'</span>,
+  <span class="org-string">'NANOG'</span>,
+  <span class="org-comment-delimiter"># </span><span class="org-comment">mesoderm formation</span>
+  <span class="org-string">'T'</span>,  <span class="org-comment-delimiter"># </span><span class="org-comment">BRY/TBXT</span>
+  <span class="org-string">'MIXL1'</span>,
+  <span class="org-comment-delimiter"># </span><span class="org-comment">cardiogenic mesoderm</span>
+  <span class="org-string">'MESP1'</span>,
+  <span class="org-string">'ISL1'</span>,
+  <span class="org-string">'KDR'</span>,
+  <span class="org-comment-delimiter"># </span><span class="org-comment">cardiac progenitor</span>
+  <span class="org-string">'NKX2-5'</span>,
+  <span class="org-string">'GATA4'</span>,
+  <span class="org-string">'TBX5'</span>,
+  <span class="org-string">'MEF2C'</span>,
+  <span class="org-string">'HAND1'</span>,
+  <span class="org-string">'HAND2'</span>,
+  <span class="org-comment-delimiter"># </span><span class="org-comment">cardiomyocyte</span>
+  <span class="org-string">'MYL2'</span>,
+  <span class="org-string">'MYL7'</span>,
+  <span class="org-string">'MYH6'</span>,
+  <span class="org-string">'TNNT2'</span>
+  ]
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(pd.get_dummies(rep1.obs[<span class="org-string">'day'</span>]).T, weights.T)[:4,4:]
+<span class="org-variable-name">day</span> = pd.get_dummies(rep1.obs[<span class="org-string">'day'</span>]).values.T
+<span class="org-variable-name">loss</span> = (day @ np.log(weights) + (1 - day) @ np.log(1 - weights)) / weights.shape[0]
+<span class="org-variable-name">xorder</span> = np.argsort(np.argmax(r, axis=0))
+<span class="org-variable-name">idx</span> = rep1.var[<span class="org-string">'name'</span>].isin(markers)
+<span class="org-variable-name">yorder</span> = np.argsort([markers.index(k) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> rep1.var.loc[idx, <span class="org-string">'name'</span>]])
+
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1, sharex=<span class="org-constant">True</span>, gridspec_kw={<span class="org-string">'height_ratios'</span>: [1, 4.5]})
+fig.set_size_inches(8, 4)
+
+<span class="org-variable-name">im</span> = ax[0].imshow(r[:,xorder], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1, aspect=<span class="org-string">'auto'</span>)
+<span class="org-variable-name">cb</span> = fig.colorbar(im, ax=ax[0])
+cb.set_label(<span class="org-string">'Correlation'</span>)
+ax[0].set_yticks(np.arange(<span class="org-builtin">len</span>(rep1.obs[<span class="org-string">'day'</span>].cat.categories)))
+ax[0].set_yticklabels(rep1.obs[<span class="org-string">'day'</span>].cat.categories)
+ax[0].set_ylabel(<span class="org-string">'Time point'</span>)
+
+<span class="org-variable-name">im</span> = ax[1].imshow(topics[idx][yorder][:,xorder], cmap=colorcet.cm[<span class="org-string">'fire'</span>], aspect=<span class="org-string">'auto'</span>, norm=matplotlib.colors.LogNorm())
+<span class="org-variable-name">cb</span> = fig.colorbar(im, ax=ax[1])
+cb.set_label(<span class="org-string">'Relative expression'</span>)
+ax[1].set_xlabel(<span class="org-string">'Topic'</span>)
+ax[1].set_ylabel(<span class="org-string">'Marker gene expression'</span>)
+ax[1].set_yticks(np.arange(<span class="org-builtin">len</span>(markers)))
+ax[1].set_yticklabels(rep1.var.loc[idx, <span class="org-string">'name'</span>][order])
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-cm-nmf-markers.png" alt="ipsc-cm-nmf-markers.png">
+</p>
+</div>
+
+<p>
+Trace the expression of <i>POU5F1</i> over time.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+<span class="org-variable-name">days</span> = (0, 1, 3, 7)
+<span class="org-variable-name">query</span> = (weights @ topics[rep1.var[<span class="org-string">'name'</span>] == <span class="org-string">'POU5F1'</span>].T).ravel()
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-variable-name">grid</span> = np.linspace(0, query.<span class="org-builtin">max</span>(), 1000)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(days):
+  <span class="org-variable-name">f</span> = st.gaussian_kde(query[rep1.obs[<span class="org-string">'day'</span>] == k])
+  plt.plot(grid, f(grid), c=cm(i), lw=1, label=k)
+plt.xlim(0, grid.<span class="org-builtin">max</span>())
+plt.ylim(0, 35000)
+plt.legend(frameon=<span class="org-constant">False</span>, title=<span class="org-string">'Time point'</span>)
+plt.title(<span class="org-string">'POU5F1'</span>)
+plt.xlabel(<span class="org-string">'Latent gene expression'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-cm-POU5F1.png" alt="ipsc-cm-POU5F1.png">
+</p>
+</div>
+
+<p>
+Repeat the analysis for replicate 2.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rep2</span> = x[x.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep2'</span>]
+sc.pp.filter_genes(rep2, min_cells=1)
+<span class="org-variable-name">temp</span> = rep2.X.tocoo()
+<span class="org-variable-name">y</span> = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+<span class="org-variable-name">fit</span> = ft.fit_poisson_nmf(y, k=50, numiter=40, method=<span class="org-string">'scd'</span>, control=rpy2.robjects.ListVector({<span class="org-string">'extrapolate'</span>: <span class="org-constant">True</span>}), verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">fit</span> = {k: v <span class="org-keyword">for</span> k, v <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(fit.names, fit)}
+<span class="org-variable-name">l</span> = fit[<span class="org-string">'L'</span>]
+<span class="org-variable-name">f</span> = fit[<span class="org-string">'F'</span>]
+<span class="org-variable-name">weights</span> = l * f.<span class="org-builtin">sum</span>(axis=0)
+<span class="org-variable-name">scale</span> = weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">weights</span> /= scale
+<span class="org-variable-name">topics</span> = f / f.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(pd.get_dummies(rep2.obs[<span class="org-string">'day'</span>]).T, weights.T)[:5,5:]
+<span class="org-variable-name">day</span> = pd.get_dummies(rep2.obs[<span class="org-string">'day'</span>]).values.T
+<span class="org-variable-name">xorder</span> = np.argsort(np.argmax(r, axis=0))
+<span class="org-variable-name">idx</span> = rep2.var[<span class="org-string">'name'</span>].isin(markers)
+<span class="org-variable-name">yorder</span> = np.argsort([markers.index(k) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> rep2.var.loc[idx, <span class="org-string">'name'</span>]])
+
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1, sharex=<span class="org-constant">True</span>, gridspec_kw={<span class="org-string">'height_ratios'</span>: [1, 4.5]})
+fig.set_size_inches(8, 4)
+
+<span class="org-variable-name">im</span> = ax[0].imshow(r[:,xorder], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1, aspect=<span class="org-string">'auto'</span>)
+<span class="org-variable-name">cb</span> = fig.colorbar(im, ax=ax[0])
+cb.set_label(<span class="org-string">'Correlation'</span>)
+ax[0].set_yticks(np.arange(<span class="org-builtin">len</span>(rep2.obs[<span class="org-string">'day'</span>].cat.categories)))
+ax[0].set_yticklabels(rep2.obs[<span class="org-string">'day'</span>].cat.categories)
+ax[0].set_ylabel(<span class="org-string">'Time point'</span>)
+
+<span class="org-variable-name">im</span> = ax[1].imshow(topics[idx][yorder][:,xorder], cmap=colorcet.cm[<span class="org-string">'fire'</span>], aspect=<span class="org-string">'auto'</span>, norm=matplotlib.colors.LogNorm())
+<span class="org-variable-name">cb</span> = fig.colorbar(im, ax=ax[1])
+cb.set_label(<span class="org-string">'Relative expression'</span>)
+ax[1].set_xlabel(<span class="org-string">'Topic'</span>)
+ax[1].set_ylabel(<span class="org-string">'Marker gene'</span>)
+ax[1].set_yticks(np.arange(<span class="org-builtin">len</span>(markers)))
+ax[1].set_yticklabels(rep2.var.loc[idx, <span class="org-string">'name'</span>][order])
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-cm-rep2-nmf-markers.png" alt="ipsc-cm-rep2-nmf-markers.png">
+</p>
+</div>
+
+<p>
+Try jointly analyzing everything.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">sc.pp.filter_genes(x, min_cells=1)
+<span class="org-variable-name">temp</span> = x.X.tocoo()
+<span class="org-variable-name">y</span> = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = ft.fit_poisson_nmf(y, k=11, numiter=40, method=<span class="org-string">'scd'</span>, control=rpy2.robjects.ListVector({<span class="org-string">'extrapolate'</span>: <span class="org-constant">True</span>}), verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">fit</span> = {k: v <span class="org-keyword">for</span> k, v <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(fit.names, fit)}
+<span class="org-variable-name">l</span> = fit[<span class="org-string">'L'</span>]
+<span class="org-variable-name">f</span> = fit[<span class="org-string">'F'</span>]
+<span class="org-variable-name">weights</span> = l * f.<span class="org-builtin">sum</span>(axis=0)
+<span class="org-variable-name">scale</span> = weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">weights</span> /= scale
+<span class="org-variable-name">topics</span> = f / f.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">r0</span> = np.corrcoef(pd.get_dummies(x.obs[<span class="org-string">'day'</span>]).values.T, weights.T)[:5,5:]
+<span class="org-variable-name">r1</span> = np.corrcoef(pd.get_dummies(x.obs[<span class="org-string">'ind'</span>]).values.T, weights.T)[:2,2:]
+<span class="org-variable-name">xorder</span> = np.argsort(np.argmax(r0, axis=0))
+<span class="org-variable-name">idx</span> = x.var[<span class="org-string">'name'</span>].isin(markers)
+<span class="org-variable-name">yorder</span> = np.argsort([markers.index(k) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> x.var.loc[idx, <span class="org-string">'name'</span>]])
+
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(3, 1, sharex=<span class="org-constant">True</span>, gridspec_kw={<span class="org-string">'height_ratios'</span>: [2, 5, 18]})
+fig.set_size_inches(4, 6)
+
+<span class="org-variable-name">im</span> = ax[0].imshow(r1[:,xorder], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1, aspect=<span class="org-string">'auto'</span>)
+<span class="org-variable-name">cb</span> = fig.colorbar(im, ax=ax[0])
+cb.set_label(<span class="org-string">'Correlation'</span>)
+ax[0].set_ylabel(<span class="org-string">'Replicate'</span>)
+
+<span class="org-variable-name">im</span> = ax[1].imshow(r0[:,xorder], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1, aspect=<span class="org-string">'auto'</span>)
+<span class="org-variable-name">cb</span> = fig.colorbar(im, ax=ax[1])
+cb.set_label(<span class="org-string">'Correlation'</span>)
+ax[1].set_yticks(np.arange(<span class="org-builtin">len</span>(x.obs[<span class="org-string">'day'</span>].cat.categories)))
+ax[1].set_yticklabels(x.obs[<span class="org-string">'day'</span>].cat.categories)
+ax[1].set_ylabel(<span class="org-string">'Time point'</span>)
+
+<span class="org-variable-name">im</span> = ax[2].imshow(topics[idx][yorder][:,xorder], cmap=colorcet.cm[<span class="org-string">'fire'</span>], aspect=<span class="org-string">'auto'</span>, norm=matplotlib.colors.LogNorm())
+<span class="org-variable-name">cb</span> = fig.colorbar(im, ax=ax[2])
+cb.set_label(<span class="org-string">'Relative expression'</span>)
+ax[2].set_xlabel(<span class="org-string">'Topic'</span>)
+ax[2].set_ylabel(<span class="org-string">'Marker gene'</span>)
+ax[2].set_yticks(np.arange(<span class="org-builtin">len</span>(markers)))
+ax[2].set_yticklabels(x.var.loc[idx, <span class="org-string">'name'</span>][yorder])
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/time-course.org/ipsc-cm-joint-nmf-markers.png" alt="ipsc-cm-joint-nmf-markers.png">
+</p>
+</div>
+
+<p>
+Look at replicate 1, day 7.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = x[np.logical_and(x.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>, x.obs[<span class="org-string">'day'</span>] == 7)]
+sc.pp.filter_genes(query, min_cells=1)
+<span class="org-variable-name">temp</span> = query.X.tocoo()
+<span class="org-variable-name">y</span> = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = ft.fit_poisson_nmf(y, k=11, numiter=40, method=<span class="org-string">'scd'</span>, control=rpy2.robjects.ListVector({<span class="org-string">'extrapolate'</span>: <span class="org-constant">True</span>}), verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">fit</span> = {k: v <span class="org-keyword">for</span> k, v <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(fit.names, fit)}
+<span class="org-variable-name">l</span> = fit[<span class="org-string">'L'</span>]
+<span class="org-variable-name">f</span> = fit[<span class="org-string">'F'</span>]
+<span class="org-variable-name">weights</span> = l * f.<span class="org-builtin">sum</span>(axis=0)
+<span class="org-variable-name">scale</span> = weights.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+<span class="org-variable-name">weights</span> /= scale
+<span class="org-variable-name">topics</span> = f / f.<span class="org-builtin">sum</span>(axis=0, keepdims=<span class="org-constant">True</span>)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgca6e596" class="outline-3">
+<h3 id="orgca6e596">ANMF on 68K PBMCs</h3>
+<div class="outline-text-3" id="text-orgca6e596">
 <p>
 Read the data, restricting to genes with non-zero observations in at least 1
 cell.
@@ -1491,9 +1789,9 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org8ec4008" class="outline-3">
-<h3 id="org8ec4008">ANMF on 10-way mixture</h3>
-<div class="outline-text-3" id="text-org8ec4008">
+<div id="outline-container-org8fe675b" class="outline-3">
+<h3 id="org8fe675b">ANMF on 10-way mixture</h3>
+<div class="outline-text-3" id="text-org8fe675b">
 <p>
 Read the data.
 </p>
@@ -1622,7 +1920,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-04-13 Mon 16:02</p>
+<p class="date">Created: 2020-04-16 Thu 13:29</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

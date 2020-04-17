@@ -1,0 +1,79 @@
+#+TITLE: Inter-individual vs. inter-condition variation in gene expression
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Suppose we have gene expression data \(x_{ijk}\) in individuals \(i = 1,
+  \ldots, n\), genes \(j = 1, \ldots, p\), and conditions \(k \in \{0,
+  1\}\). The data are noisy observations of true gene expression in each
+  individual, which in turn are realizations from a population distribution of
+  gene expression values in each condition. To what extent are inter-condition
+  differences in gene expression explained by inter-individual differences? \(
+  \DeclareMathOperator\N{\mathcal{N}}
+  \)
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/ideas/
+
+  #+RESULTS:
+  : Submitted batch job 195730
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import scipy.stats as st
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Results
+** Simplified example
+
+   Suppose \(y_{ijk} = \log_2(x_{ijk} / x_{i+k} + \epsilon)\). Then considering
+   gene \(j\),
+   ([[https://genomebiology.biomedcentral.com/articles/10.1186/gb-2014-15-2-r29][Law
+   et al. 2014]])
+
+   \begin{align}
+     y_{ik} \mid \mu_{ik}, s_{ik}^2 &\sim \N(\mu_{ik}, s_{ik}^2)\\
+     \mu_{ik} \mid \mu_k, \sigma_k^2 &\sim \N(\mu_k, \sigma_k^2)\\
+     \mu_k \mid \mu, \sigma^2 &\sim \N(\mu, \sigma^2).
+   \end{align}
+
+   In this model, the inter-condition variance is given by \(\sigma^2\) and the
+   inter-individual variance (within a condition) is given by \(\sigma_k^2\).

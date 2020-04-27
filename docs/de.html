@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-04-17 Fri 16:44 -->
+<!-- 2020-04-27 Mon 23:46 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Inter-individual vs. inter-condition variation in gene expression</title>
@@ -259,6 +259,7 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#org8ea400c">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
+<li><a href="#orgeebc9f3">Method</a></li>
 <li><a href="#org2f68a84">Results</a>
 <ul>
 <li><a href="#orgcf7b89e">Simplified example</a></li>
@@ -273,13 +274,12 @@ for the JavaScript code in this tag.
 <div class="outline-text-2" id="text-org8ea400c">
 <p>
 Suppose we have gene expression data \(x_{ijk}\) in individuals \(i = 1,
-  \ldots, n\), genes \(j = 1, \ldots, p\), and conditions \(k \in \{0,
-  1\}\). The data are noisy observations of true gene expression in each
+  \ldots, n\), genes \(j = 1, \ldots, p\), and conditions \(k = 1, \ldots,
+  m\). The data are noisy observations of true gene expression in each
 individual, which in turn are realizations from a population distribution of
 gene expression values in each condition. To what extent are inter-condition
 differences in gene expression explained by inter-individual differences? \(
-  \DeclareMathOperator\N{\mathcal{N}}
-  \)
+  \DeclareMathOperator\N{\mathcal{N}} \DeclareMathOperator\IG{\mathcal{IG}} \)
 </p>
 </div>
 </div>
@@ -300,7 +300,8 @@ differences in gene expression explained by inter-individual differences? \(
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
 </pre>
@@ -308,13 +309,9 @@ differences in gene expression explained by inter-individual differences? \(
 </div>
 </div>
 
-<div id="outline-container-org2f68a84" class="outline-2">
-<h2 id="org2f68a84">Results</h2>
-<div class="outline-text-2" id="text-org2f68a84">
-</div>
-<div id="outline-container-orgcf7b89e" class="outline-3">
-<h3 id="orgcf7b89e">Simplified example</h3>
-<div class="outline-text-3" id="text-orgcf7b89e">
+<div id="outline-container-orgeebc9f3" class="outline-2">
+<h2 id="orgeebc9f3">Method</h2>
+<div class="outline-text-2" id="text-orgeebc9f3">
 <p>
 Suppose \(y_{ijk} = \log_2(x_{ijk} / x_{i+k} + \epsilon)\). Then considering
 gene \(j\),
@@ -330,15 +327,201 @@ et al. 2014</a>)
 
 <p>
 In this model, the inter-condition variance is given by \(\sigma^2\) and the
-inter-individual variance (within a condition) is given by \(\sigma_k^2\).
+inter-individual variance (within a condition) is given by
+\(\sigma_k^2\). We can take an EB-like approach and set \(\mu = \bar{y}\),
+which is reasonable because the complete data are informative about the
+global mean. Assuming conjugate priors
 </p>
+
+\begin{align}
+  \sigma_k^2 &\sim \IG(a_k, b_k)\\
+  \sigma^2 &\sim \IG(a, b),
+\end{align}
+
+<p>
+the complete conditionals are analytic
+</p>
+
+\begin{align}
+  \mu_{ik} \mid \cdot &\sim \N\left(\frac{\sigma_k^2}{s_{ik}^2 + \sigma_k^2} y_{ik} + \frac{s_{ik}^2}{s_{ik}^2 + \sigma_k^2} \mu_{k}, \frac{s_{ik}^2 \sigma_k^2}{s_{ik}^2 + \sigma_k^2} \right)\\
+  \sigma_{k}^2 \mid \cdot &\sim \IG\left(a_k + \frac{n}{2}, b_k + \frac{1}{2} \sum_i (\mu_{ik} - \mu_k)^2 \right)\\
+  \mu_k \mid \cdot &\sim \N\left(\frac{\sigma^2}{\sigma_k^2 / n + \sigma^2} \frac{1}{n} \sum_i \mu_{ik} + \frac{\sigma_k^2 / n}{\sigma_k^2 / n + \sigma^2} \mu, \frac{\sigma_k^2 \sigma^2 / n}{\sigma_k^2 / n + \sigma^2} \right)\\
+  \sigma^2 \mid \cdot &\sim \IG\left(a + \frac{m}{2}, b + \frac{1}{2} \sum_k \mu_{k}^2 \right),
+\end{align}
+
+<p>
+and we can get posteriors on \(\sigma^2, \sigma_k^2\) by Gibbs sampling.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">est_var</span>(y, s2, ak, bk, a, b, num_samples=1000):
+  <span class="org-keyword">assert</span> y.shape == s2.shape
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">m</span> = y.shape
+  <span class="org-variable-name">mu</span> = y_ik.mean()
+  <span class="org-variable-name">sigma_2</span> = 1
+  <span class="org-variable-name">mu_k</span> = y_ik.mean(axis=0)
+  <span class="org-variable-name">sigma_k_2</span> = np.full(m, 1)
+  <span class="org-variable-name">mu_ik</span> = y_ik
+  <span class="org-variable-name">samples</span> = [(mu_ik, sigma_k_2, mu_k, sigma_2)]
+  <span class="org-variable-name">trace</span> = []
+  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_samples):
+    <span class="org-variable-name">log_joint</span> = (st.norm(loc=mu_ik, scale=np.sqrt(s2)).logpdf(y).<span class="org-builtin">sum</span>() +
+                 st.norm(loc=mu_k, scale=np.sqrt(sigma_k_2)).logpdf(mu_ik).<span class="org-builtin">sum</span>() +
+                 st.norm(scale=np.sqrt(sigma_2)).logpdf(mu_k).<span class="org-builtin">sum</span>() +
+                 st.invgamma(a=ak + n / 2, scale=bk + .5 * np.square(mu_ik - mu_k).<span class="org-builtin">sum</span>(axis=0)).logpdf(sigma_k_2).<span class="org-builtin">sum</span>() +
+                 st.invgamma(a=a + m / 2, scale=b + .5 * np.square(mu_k - mu).<span class="org-builtin">sum</span>()).logpdf(sigma_2))
+    trace.append(log_joint)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">mu_ik = st.norm(loc=sigma_k_2 / (s2 + sigma_k_2) * y + s2 / (s2 + sigma_k_2) * mu_k, scale=np.sqrt((s2 * sigma_k_2) / (s2 + sigma_k_2))).rvs(size=y.shape)</span>
+    <span class="org-variable-name">sigma_k_2</span> = st.invgamma(a=ak + n / 2, scale=bk + .5 * np.square(mu_ik - mu_k).<span class="org-builtin">sum</span>(axis=0)).rvs(size=m)
+    <span class="org-variable-name">mu_k</span> = st.norm(loc=sigma_2 / (sigma_k_2 / n + sigma_2) * mu_ik.mean(axis=0) + (sigma_k_2 / n) / (sigma_k_2 / n + sigma_2) * mu, scale=np.sqrt((sigma_k_2 * sigma_2 / n) / (sigma_k_2 / n + sigma_2))).rvs(size=m)
+    <span class="org-variable-name">sigma_2</span> = st.invgamma(a=a + m / 2, scale=b + .5 * np.square(mu_k - mu).<span class="org-builtin">sum</span>()).rvs(size=1)
+    samples.append((mu_ik, sigma_k_2, mu_k, sigma_2))
+  <span class="org-keyword">return</span> samples, trace
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2f68a84" class="outline-2">
+<h2 id="org2f68a84">Results</h2>
+<div class="outline-text-2" id="text-org2f68a84">
+</div>
+<div id="outline-container-orgcf7b89e" class="outline-3">
+<h3 id="orgcf7b89e">Simplified example</h3>
+<div class="outline-text-3" id="text-orgcf7b89e">
+<p>
+Simulate some data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(1)
+<span class="org-variable-name">m</span> = 2
+<span class="org-variable-name">n</span> = 100
+<span class="org-variable-name">s2</span> = 1
+<span class="org-variable-name">mu_k</span> = np.random.normal(scale=np.sqrt(s2), size=m)
+<span class="org-variable-name">s2_k</span> = np.full(m, .5)
+<span class="org-variable-name">mu_ik</span> = np.random.normal(loc=mu_k, scale=np.sqrt(s2_k), size=(n, m))
+<span class="org-variable-name">s2_ik</span> = np.full((n, m), .01)
+<span class="org-variable-name">y_ik</span> = np.random.normal(loc=mu_ik, scale=np.sqrt(s2_ik))
+</pre>
+</div>
+
+<p>
+Plot the simulated example.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+<span class="org-variable-name">grid</span> = np.linspace(-2, 5, 1000)
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(m):
+  plt.hist(y_ik[:,k], bins=12, density=<span class="org-constant">True</span>, color=cm(k), alpha=0.5)
+  plt.plot(grid, st.norm(loc=mu_k[k], scale=np.sqrt(s2_k[k])).pdf(grid), color=cm(k))
+plt.xlabel(<span class="org-string">'$y$'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/de.org/sim-ex.png" alt="sim-ex.png">
+</p>
+</div>
+
+<p>
+Get posterior samples.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(2)
+np.seterr(<span class="org-string">'raise'</span>)
+<span class="org-variable-name">samples</span>, <span class="org-variable-name">trace</span> = est_var(y_ik, s2_ik, ak=1e-2, bk=1e-2, a=1e-2, b=1e-2, num_samples=2000)
+<span class="org-variable-name">samples</span> = samples[-1000:]
+</pre>
+</div>
+
+<p>
+Plot the log joint over the samples.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3.5, 2)
+plt.plot(trace, lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Sample'</span>)
+plt.ylabel(<span class="org-string">'Log joint'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/de.org/sim-trace.png" alt="sim-trace.png">
+</p>
+</div>
+
+<p>
+Plot the estimated posterior distributions.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(7.5, 2.5)
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(m):
+  <span class="org-variable-name">query</span> = np.log(np.array([s[1][k] <span class="org-keyword">for</span> s <span class="org-keyword">in</span> samples]))
+  ax[k].hist(query, bins=10, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+  ax[k].axvline(x=np.log(s2_k[k]), c=<span class="org-string">'k'</span>, lw=1)
+  ax[k].axvline(x=query.mean(), c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">'--'</span>)
+  ax[k].set_xlabel(rf<span class="org-string">'$\ln(\sigma_{k}^2)$'</span>)
+
+<span class="org-variable-name">query</span> = np.log(np.array([s[-1] <span class="org-keyword">for</span> s <span class="org-keyword">in</span> samples]))
+ax[2].hist(query, bins=10, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+ax[2].set_xlabel(r<span class="org-string">'$\ln(\sigma^2)$'</span>)
+ax[2].axvline(x=np.log(s2), c=<span class="org-string">'k'</span>, lw=1)
+ax[2].axvline(x=query.mean(), c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">'--'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/de.org/sim-post.png" alt="sim-post.png">
+</p>
+</div>
+
+<p>
+Get the posterior distribution of \(\sigma_k^2 / \sigma^2\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+<span class="org-variable-name">query</span> = np.array([s[1][0] <span class="org-keyword">for</span> s <span class="org-keyword">in</span> samples]) / np.array([s[-1] <span class="org-keyword">for</span> s <span class="org-keyword">in</span> samples]).ravel()
+plt.hist(query, bins=10, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+plt.axvline(x=s2_k[0] / s2, lw=1, c=<span class="org-string">'k'</span>)
+plt.axvline(x=query.mean(), lw=1, ls=<span class="org-string">'--'</span>, c=<span class="org-string">'r'</span>)
+plt.xlabel(r<span class="org-string">'$\sigma_0^2 / \sigma^2$'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/de.org/sim-post-ratio.png" alt="sim-post-ratio.png">
+</p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-04-17 Fri 16:44</p>
+<p class="date">Created: 2020-04-27 Mon 23:46</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

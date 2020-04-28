@@ -27,7 +27,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/ideas/
 
   #+RESULTS:
-  : Submitted batch job 695114
+  : Submitted batch job 707342
 
   #+BEGIN_SRC ipython
     import numpy as np
@@ -124,11 +124,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[32]:
+   # Out[15]:
    :END:
 
 * Results
-** Simplified example
+** Two-group example
 
    Simulate some data.
 
@@ -247,4 +247,207 @@
    :RESULTS:
    # Out[108]:
    [[file:figure/de.org/sim-post-ratio.png]]
+   :END:
+
+** Large sample size example
+
+   Simulate some data.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(1)
+     m = 2
+     n = 1000
+     s2 = 1
+     mu_k = np.random.normal(scale=np.sqrt(s2), size=m)
+     s2_k = st.invgamma(a=24, scale=16).rvs(m)
+     mu_ik = np.random.normal(loc=mu_k, scale=np.sqrt(s2_k), size=(n, m))
+     s2_ik = np.full((n, m), .01)
+     y_ik = np.random.normal(loc=mu_ik, scale=np.sqrt(s2_ik))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   :END:
+
+   Plot the simulated example.
+
+   #+BEGIN_SRC ipython :ipyfile figure/de.org/sim-ex2.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     grid = np.linspace(-4, 5, 1000)
+     for k in range(m):
+       plt.hist(y_ik[:,k], bins=12, density=True, color=cm(k), alpha=0.5)
+       plt.plot(grid, st.norm(loc=mu_k[k], scale=np.sqrt(s2_k[k])).pdf(grid), color=cm(k))
+     plt.xlabel('$y$')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   [[file:figure/de.org/sim-ex2.png]]
+   :END:
+
+   Get posterior samples.
+
+   #+BEGIN_SRC ipython :async t
+     np.random.seed(2)
+     np.seterr('raise')
+     samples, trace = est_var(y_ik, s2_ik, ak=1e-2, bk=1e-2, a=1e-2, b=1e-2, num_samples=2000)
+     samples = samples[-1000:]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[16]:
+   :END:
+
+   Plot the log joint over the samples.
+
+   #+BEGIN_SRC ipython :ipyfile figure/de.org/sim-ex2-trace.png
+     plt.clf()
+     plt.gcf().set_size_inches(3.5, 2)
+     plt.plot(trace, lw=1, c='k')
+     plt.xlabel('Sample')
+     plt.ylabel('Log joint')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[17]:
+   [[file:figure/de.org/sim-ex2-trace.png]]
+   :END:
+
+   Plot the estimated posterior distributions.
+
+   #+BEGIN_SRC ipython :ipyfile figure/de.org/sim-ex2-post.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7.5, 2.5)
+     for k in range(m):
+       query = np.log(np.array([s[1][k] for s in samples]))
+       ax[k].hist(query, bins=10, density=True, color='0.7')
+       ax[k].axvline(x=np.log(s2_k[k]), c='k', lw=1)
+       ax[k].axvline(x=query.mean(), c='r', lw=1, ls='--')
+       ax[k].set_xlabel(rf'$\ln(\sigma_{k}^2)$')
+
+     query = np.log(np.array([s[-1] for s in samples]))
+     ax[2].hist(query, bins=10, density=True, color='0.7')
+     ax[2].set_xlabel(r'$\ln(\sigma^2)$')
+     ax[2].axvline(x=np.log(s2), c='k', lw=1)
+     ax[2].axvline(x=query.mean(), c='r', lw=1, ls='--')
+     ax[0].set_ylabel('Density')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[18]:
+   [[file:figure/de.org/sim-ex2-post.png]]
+   :END:
+
+   Get the posterior distribution of \(\sigma_k^2 / \sigma^2\).
+
+   #+BEGIN_SRC ipython :ipyfile figure/de.org/sim-ex2-post-ratio.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     query = np.log(np.array([s[1][0] for s in samples]) / np.array([s[-1] for s in samples]).ravel())
+     plt.hist(query, bins=10, density=True, color='0.7')
+     plt.axvline(x=np.log(s2_k[0] / s2), lw=1, c='k')
+     plt.axvline(x=query.mean(), lw=1, ls='--', c='r')
+     plt.xlabel(r'$\log(\sigma_0^2 / \sigma^2)$')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[22]:
+   [[file:figure/de.org/sim-ex2-post-ratio.png]]
+   :END:
+
+** Multi-group example
+
+   The previous example suggest that, assuming a relatively uninformative
+   prior, two groups is insufficient information to get a tight posterior on
+   \(\sigma^2\). Now, investigate whether increasing the number of groups to
+   \(m=10\) will give more information in the posterior.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(1)
+     m = 10
+     n = 100
+     s2 = 1
+     mu_k = np.random.normal(scale=np.sqrt(s2), size=m)
+     s2_k = st.invgamma(a=24, scale=16).rvs(m)
+     mu_ik = np.random.normal(loc=mu_k, scale=np.sqrt(s2_k), size=(n, m))
+     s2_ik = np.full((n, m), .01)
+     y_ik = np.random.normal(loc=mu_ik, scale=np.sqrt(s2_ik))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[27]:
+   :END:
+
+   Plot the simulated example.
+
+   #+BEGIN_SRC ipython :ipyfile figure/de.org/sim-ex3.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     grid = np.linspace(-5, 5, 1000)
+     for k in range(m):
+       plt.hist(y_ik[:,k], bins=10, density=True, color=cm(k), alpha=0.25)
+       plt.plot(grid, st.norm(loc=mu_k[k], scale=np.sqrt(s2_k[k])).pdf(grid), color=cm(k))
+     plt.xlabel('$y$')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[30]:
+   [[file:figure/de.org/sim-ex3.png]]
+   :END:
+
+   Get posterior samples.
+
+   #+BEGIN_SRC ipython :async t
+     np.random.seed(2)
+     np.seterr('raise')
+     samples, trace = est_var(y_ik, s2_ik, ak=1e-2, bk=1e-2, a=1e-2, b=1e-2, num_samples=2000)
+     samples = samples[-1000:]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[31]:
+   :END:
+
+   Plot the prior and posterior over \(\ln \sigma^2\).
+
+   #+BEGIN_SRC ipython :ipyfile figure/de.org/sim-ex3-post.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     grid = np.linspace(-1, 3)
+     prior = st.invgamma(a=1e-2, scale=1e-2).pdf(np.exp(grid)) * np.exp(grid)
+     query = np.log(np.array([s[-1] for s in samples]))
+     plt.hist(query, bins=10, density=True, color='0.7')
+     plt.plot(grid, prior, lw=1, c='k')
+     plt.axvline(x=np.log(s2), c='k', lw=1)
+     plt.axvline(x=query.mean(), c='r', lw=1, ls='--')
+     plt.xlabel(r'$\ln(\sigma^2)$')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   [[file:figure/de.org/sim-ex3-post.png]]
    :END:

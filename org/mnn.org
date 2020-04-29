@@ -163,6 +163,9 @@
          global_step = 0
          for epoch in range(n_epochs):
            for s, x, y in data:
+             s = s.cuda()
+             x = x.cuda()
+             y = y.cuda()
              opt.zero_grad()
              loss = self.forward(s, x, y, n_samples=n_samples, global_step=global_step)
              if torch.isnan(loss):
@@ -176,6 +179,9 @@
        def latent(self, data):
          res = []
          for s, x, y in data:
+           s = s.cuda()
+           x = x.cuda()
+           y = y.cuda()
            res.append(self.qz_mean(self.qz(torch.cat([x, y], dim=1))).cpu().numpy())
          res = np.vstack(res)
          return res
@@ -183,7 +189,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[118]:
+   # Out[151]:
    :END:
 
 * Results
@@ -382,7 +388,7 @@
    # Out[6]:
    :END:
 
-   Project \(\ln(x+1)\) into a principal component subspace and computing
+   Project \(\ln(x+1)\) into a principal component subspace and compute
    nearest neighbors.
 
    #+BEGIN_SRC ipython :async t
@@ -396,6 +402,8 @@
    :RESULTS:
    # Out[7]:
    :END:
+
+   Plot the UMAP embedding of the principal component subspace.
 
    #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-cm-day0-umap.png
      cm = plt.get_cmap('Paired')
@@ -416,6 +424,10 @@
    # Out[24]:
    [[file:figure/mnn.org/ipsc-cm-day0-umap.png]]
    :END:
+
+   Fit GMVAE.
+
+   # https://discuss.pytorch.org/t/how-to-prefetch-data-when-processing-with-gpu/548/19
 
    #+BEGIN_SRC ipython :async t
      s = y.X.sum(axis=1)
@@ -441,6 +453,9 @@
    # Out[119]:
    :END:
 
+   Estimate the GMVAE latent variables \(E[\mathbf{z}_i \mid \mathbf{x}_i
+   y_i]\), then compute a UMAP embedding of the latent space.
+
    #+BEGIN_SRC ipython :async t
      y.obsm['gmvae'] = fit.latent(data)
      sc.pp.neighbors(y, use_rep='gmvae')
@@ -451,6 +466,8 @@
    :RESULTS:
    # Out[129]:
    :END:
+
+   Plot the UMAP embedding.
 
    #+BEGIN_SRC ipython :ipyfile figure/mnn.org/gmvae-umap.png
      cm = plt.get_cmap('Paired')
@@ -470,6 +487,87 @@
    :RESULTS:
    # Out[138]:
    [[file:figure/mnn.org/gmvae-umap.png]]
+   :END:
+
+   Now, look at fitting a GMVAE for multiple days and replicates.
+
+   #+BEGIN_SRC ipython :async t
+     y = x[x.obs['day'].isin([0, 3])]
+     sc.pp.filter_genes(y, min_cells=1)
+     sc.pp.neighbors(y)
+     sc.tl.umap(y, copy=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[172]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-cm-day0-3.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     plt.gcf().set_size_inches(3.5, 2.5)
+     for i, (d, k) in enumerate(y.obs.groupby(['day', 'ind']).groups.keys()):
+       query = y[np.logical_and(y.obs['day'] == d, y.obs['ind'] == k)].obsm['X_umap']
+       plt.scatter(query[:,0], query[:,1], s=1, c=np.array(cm(i)).reshape(1, -1), label=f'Day {d}/{k}', alpha=0.1)
+     leg = plt.legend(markerscale=4, handletextpad=0, frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     for h in leg.legendHandles:
+       h.set_alpha(1)
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[183]:
+   [[file:figure/mnn.org/ipsc-cm-day0-3.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     s = y.X.sum(axis=1)
+     rep = pd.get_dummies(y.obs['ind'])
+     dataset = td.TensorDataset(
+       torch.tensor(s.A.ravel()),
+       torch.tensor(y.X.A),
+       torch.tensor(rep.values, dtype=torch.float))
+     data = td.DataLoader(dataset, batch_size=64, shuffle=True, num_workers=1)
+     fit = VAE(input_dim=y.shape[1], latent_dim=10, label_dim=2).fit(data, n_epochs=10, lr=1e-2)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[156]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     y.obsm['gmvae'] = fit.latent(td.DataLoader(dataset, batch_size=64, shuffle=False, num_workers=1))
+     sc.pp.neighbors(y, use_rep='gmvae')
+     sc.tl.umap(y, copy=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[168]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-cm-day0-3-gmvae.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     plt.gcf().set_size_inches(3.75, 2.5)
+     for i, (d, k) in enumerate(y.obs.groupby(['day', 'ind']).groups.keys()):
+       query = y[np.logical_and(y.obs['day'] == d, y.obs['ind'] == k)].obsm['gmvae']
+       plt.scatter(query[:,0], query[:,1], s=1, c=cm(i), label=f'Day {d}/{k}', alpha=0.5)
+     plt.legend(markerscale=4, handletextpad=0, frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[169]:
+   [[file:figure/mnn.org/ipsc-cm-day0-3-gmvae.png]]
    :END:
 
 ** NMF

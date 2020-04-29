@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-04-29 Wed 14:50 -->
+<!-- 2020-04-29 Wed 17:27 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mutual nearest neighbors in topic model space</title>
@@ -435,6 +435,9 @@ presented in Kingma &amp; Welling 2014.
     <span class="org-variable-name">global_step</span> = 0
     <span class="org-keyword">for</span> epoch <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
       <span class="org-keyword">for</span> s, x, y <span class="org-keyword">in</span> data:
+        <span class="org-variable-name">s</span> = s.cuda()
+        <span class="org-variable-name">x</span> = x.cuda()
+        <span class="org-variable-name">y</span> = y.cuda()
         opt.zero_grad()
         <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(s, x, y, n_samples=n_samples, global_step=global_step)
         <span class="org-keyword">if</span> torch.isnan(loss):
@@ -448,6 +451,9 @@ presented in Kingma &amp; Welling 2014.
   <span class="org-keyword">def</span> <span class="org-function-name">latent</span>(<span class="org-keyword">self</span>, data):
     <span class="org-variable-name">res</span> = []
     <span class="org-keyword">for</span> s, x, y <span class="org-keyword">in</span> data:
+      <span class="org-variable-name">s</span> = s.cuda()
+      <span class="org-variable-name">x</span> = x.cuda()
+      <span class="org-variable-name">y</span> = y.cuda()
       res.append(<span class="org-keyword">self</span>.qz_mean(<span class="org-keyword">self</span>.qz(torch.cat([x, y], dim=1))).cpu().numpy())
     <span class="org-variable-name">res</span> = np.vstack(res)
     <span class="org-keyword">return</span> res
@@ -651,7 +657,7 @@ looking at scRNA-seq of iPSCs generated using Drop-Seq (Selewa et al. 2019).
 </div>
 
 <p>
-Project \(\ln(x+1)\) into a principal component subspace and computing
+Project \(\ln(x+1)\) into a principal component subspace and compute
 nearest neighbors.
 </p>
 
@@ -662,6 +668,10 @@ sc.pp.neighbors(y)
 sc.tl.umap(y, copy=<span class="org-constant">False</span>)
 </pre>
 </div>
+
+<p>
+Plot the UMAP embedding of the principal component subspace.
+</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
@@ -684,6 +694,10 @@ plt.tight_layout()
 </p>
 </div>
 
+<p>
+Fit GMVAE.
+</p>
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">s</span> = y.X.<span class="org-builtin">sum</span>(axis=1)
 <span class="org-variable-name">rep</span> = pd.get_dummies(y.obs[<span class="org-string">'ind'</span>])
@@ -700,12 +714,21 @@ plt.tight_layout()
 </pre>
 </div>
 
+<p>
+Estimate the GMVAE latent variables \(E[\mathbf{z}_i \mid \mathbf{x}_i
+   y_i]\), then compute a UMAP embedding of the latent space.
+</p>
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">y.obsm</span>[<span class="org-string">'gmvae'</span>] = fit.latent(data)
 sc.pp.neighbors(y, use_rep=<span class="org-string">'gmvae'</span>)
 sc.tl.umap(y, copy=<span class="org-constant">False</span>)
 </pre>
 </div>
+
+<p>
+Plot the UMAP embedding.
+</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
@@ -725,6 +748,79 @@ plt.tight_layout()
 
 <div class="figure">
 <p><img src="figure/mnn.org/gmvae-umap.png" alt="gmvae-umap.png">
+</p>
+</div>
+
+<p>
+Now, look at fitting a GMVAE for multiple days and replicates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = x[x.obs[<span class="org-string">'day'</span>].isin([0, 3])]
+sc.pp.filter_genes(y, min_cells=1)
+sc.pp.neighbors(y)
+sc.tl.umap(y, copy=<span class="org-constant">False</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
+plt.clf()
+plt.gcf().set_size_inches(3.5, 2.5)
+<span class="org-keyword">for</span> i, (d, k) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(y.obs.groupby([<span class="org-string">'day'</span>, <span class="org-string">'ind'</span>]).groups.keys()):
+  <span class="org-variable-name">query</span> = y[np.logical_and(y.obs[<span class="org-string">'day'</span>] == d, y.obs[<span class="org-string">'ind'</span>] == k)].obsm[<span class="org-string">'X_umap'</span>]
+  plt.scatter(query[:,0], query[:,1], s=1, c=np.array(cm(i)).reshape(1, -1), label=f<span class="org-string">'Day {d}/{k}'</span>, alpha=0.1)
+<span class="org-variable-name">leg</span> = plt.legend(markerscale=4, handletextpad=0, frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+<span class="org-keyword">for</span> h <span class="org-keyword">in</span> leg.legendHandles:
+  h.set_alpha(1)
+plt.xlabel(<span class="org-string">'UMAP 1'</span>)
+plt.ylabel(<span class="org-string">'UMAP 2'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mnn.org/ipsc-cm-day0-3.png" alt="ipsc-cm-day0-3.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">s</span> = y.X.<span class="org-builtin">sum</span>(axis=1)
+<span class="org-variable-name">rep</span> = pd.get_dummies(y.obs[<span class="org-string">'ind'</span>])
+<span class="org-variable-name">dataset</span> = td.TensorDataset(
+  torch.tensor(s.A.ravel()),
+  torch.tensor(y.X.A),
+  torch.tensor(rep.values, dtype=torch.<span class="org-builtin">float</span>))
+<span class="org-variable-name">data</span> = td.DataLoader(dataset, batch_size=64, shuffle=<span class="org-constant">True</span>, num_workers=1)
+<span class="org-variable-name">fit</span> = VAE(input_dim=y.shape[1], latent_dim=10, label_dim=2).fit(data, n_epochs=10, lr=1e-2)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y.obsm</span>[<span class="org-string">'gmvae'</span>] = fit.latent(td.DataLoader(dataset, batch_size=64, shuffle=<span class="org-constant">False</span>, num_workers=1))
+sc.pp.neighbors(y, use_rep=<span class="org-string">'gmvae'</span>)
+sc.tl.umap(y, copy=<span class="org-constant">False</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
+plt.clf()
+plt.gcf().set_size_inches(3.75, 2.5)
+<span class="org-keyword">for</span> i, (d, k) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(y.obs.groupby([<span class="org-string">'day'</span>, <span class="org-string">'ind'</span>]).groups.keys()):
+  <span class="org-variable-name">query</span> = y[np.logical_and(y.obs[<span class="org-string">'day'</span>] == d, y.obs[<span class="org-string">'ind'</span>] == k)].obsm[<span class="org-string">'gmvae'</span>]
+  plt.scatter(query[:,0], query[:,1], s=1, c=cm(i), label=f<span class="org-string">'Day {d}/{k}'</span>, alpha=0.5)
+plt.legend(markerscale=4, handletextpad=0, frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+plt.xlabel(<span class="org-string">'UMAP 1'</span>)
+plt.ylabel(<span class="org-string">'UMAP 2'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mnn.org/ipsc-cm-day0-3-gmvae.png" alt="ipsc-cm-day0-3-gmvae.png">
 </p>
 </div>
 </div>
@@ -779,7 +875,7 @@ sc.tl.umap(x, copy=<span class="org-constant">False</span>)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-04-29 Wed 14:50</p>
+<p class="date">Created: 2020-04-29 Wed 17:27</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

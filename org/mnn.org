@@ -47,22 +47,25 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 65529686
+  : Submitted batch job 743010
 
   #+BEGIN_SRC ipython
     import anndata
     import numpy as np
     import pandas as pd
-    import scanpy.api as sc
+    import scanpy as sc
     import sklearn.decomposition as skd
+    import torch
+    import torch.utils.data as td
+    import torch.utils.tensorboard as tb
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[79]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -72,7 +75,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[32]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -83,7 +86,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[33]:
   :END:
 
 * Methods
@@ -92,6 +95,96 @@
    - M. Aumüller, E. Bernhardsson, A. Faithfull: ANN-Benchmarks: A Benchmarking
      Tool for Approximate Nearest Neighbor Algorithms. Information
      Systems 2019. doi:10.1016/j.is.2019.02.006 https://github.com/erikbern/ann-benchmarks
+
+** GMVAE
+
+   [[http://ruishu.io/2016/12/25/gmvae/][GMVAE]] is a modification of the semi-supervised generative model first
+   presented in Kingma & Welling 2014.
+
+   #+BEGIN_SRC ipython
+     def net(input_dim, hidden_dim):
+       return torch.nn.Sequential(
+         torch.nn.Linear(input_dim, hidden_dim),
+         torch.nn.BatchNorm1d(hidden_dim),
+         torch.nn.ReLU(),
+         torch.nn.Linear(hidden_dim, hidden_dim),
+         torch.nn.BatchNorm1d(hidden_dim),
+         torch.nn.ReLU(),
+       )  
+
+     class VAE(torch.nn.Module):
+       def __init__(self, input_dim, latent_dim, label_dim, hidden_dim=128):
+         super().__init__()
+         # q(z | x, y)
+         self.qz = net(input_dim + label_dim, hidden_dim)
+         self.qz_mean = torch.nn.Linear(hidden_dim, latent_dim)
+         self.qz_scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, latent_dim), torch.nn.Softplus())
+         # p(z | y)
+         self.pz = net(label_dim, hidden_dim)
+         self.pz_mean = torch.nn.Linear(hidden_dim, latent_dim)
+         self.pz_scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, latent_dim), torch.nn.Softplus())
+         # p(x | z)
+         self.px = net(latent_dim, hidden_dim)
+         self.px_lam = torch.nn.Sequential(torch.nn.Linear(hidden_dim, input_dim), torch.nn.Softplus())
+
+         self.writer = tb.SummaryWriter()
+
+       def forward(self, s, x, y, n_samples, global_step):
+         # [batch_size, input_dim + label_dim]
+         h = self.qz(torch.cat([x, y], dim=1))
+         # [batch_size, latent_dim]
+         mean = self.qz_mean(h)
+         scale = self.qz_scale(h)
+         # [n_samples, batch_size, latent_dim]
+         qz = torch.distributions.Normal(mean, scale).rsample(n_samples)
+
+         h = self.pz(y)
+         prior_mean = self.pz_mean(h)
+         prior_scale = self.pz_scale(h)
+         # [n_samples,]
+         kl = torch.sum(.5 * (1 + 2 * torch.log(scale / prior_scale) + ((prior_mean - mean) ** 2 + prior_scale - scale) / scale), axis=1)
+         self.writer.add_scalar('loss/kl', kl.sum(), global_step)
+
+         lam = self.px_lam(self.px(qz.reshape([-1, qz.shape[2]]))).reshape([qz.shape[0], qz.shape[1], -1])
+         s = torch.reshape(s, [1, -1, 1])
+         # [n_samples,]
+         err = torch.mean(torch.sum(x * torch.log(s * lam) - s * lam + torch.lgamma(x + 1), dim=2), dim=0)
+         self.writer.add_scalar('loss/err', err.sum(), global_step)
+         loss = -torch.sum(err - kl)
+         self.writer.add_scalar('loss/elbo', loss, global_step)
+         assert not torch.isnan(loss)
+         return loss
+
+       def fit(self, data, n_epochs, n_samples=10, **kwargs):
+         assert torch.cuda.is_available()
+         self.cuda()
+         n_samples = torch.Size([n_samples])
+         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         global_step = 0
+         for epoch in range(n_epochs):
+           for s, x, y in data:
+             opt.zero_grad()
+             loss = self.forward(s, x, y, n_samples=n_samples, global_step=global_step)
+             if torch.isnan(loss):
+               raise RuntimeError('nan loss')
+             loss.backward()
+             opt.step()
+             global_step += 1
+         return self
+
+       @torch.no_grad()
+       def latent(self, data):
+         res = []
+         for s, x, y in data:
+           res.append(self.qz_mean(self.qz(torch.cat([x, y], dim=1))).cpu().numpy())
+         res = np.vstack(res)
+         return res
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[118]:
+   :END:
 
 * Results
 ** iPSC data
@@ -273,6 +366,110 @@
    :RESULTS:
    # Out[74]:
    [[file:figure/mnn.org/ipsc-umap.png]]
+   :END:
+
+** iPSC Drop-Seq data
+
+   Is it the case that Fluidigm C1 batch effects are really smaller? Try
+   looking at scRNA-seq of iPSCs generated using Drop-Seq (Selewa et al. 2019).
+
+   #+BEGIN_SRC ipython :async t
+     x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/czi-ipsc-cm.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
+
+   Project \(\ln(x+1)\) into a principal component subspace and computing
+   nearest neighbors.
+
+   #+BEGIN_SRC ipython :async t
+     y = x[x.obs['day'] == 0]
+     sc.pp.filter_genes(y, min_cells=1)
+     sc.pp.neighbors(y)
+     sc.tl.umap(y, copy=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-cm-day0-umap.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     for i, k in enumerate(y.obs['ind'].unique()):
+       query = y[y.obs['ind'] == k].obsm['X_umap']
+       plt.scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k)
+     plt.legend(markerscale=8, handletextpad=0, frameon=False)
+     plt.title('By donor')
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   [[file:figure/mnn.org/ipsc-cm-day0-umap.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     s = y.X.sum(axis=1)
+     rep = pd.get_dummies(y.obs['ind'])
+     dataset = td.TensorDataset(
+       torch.tensor(s.A.ravel(), device='cuda:0'),
+       torch.tensor(y.X.A, device='cuda:0'),
+       torch.tensor(rep.values, dtype=torch.float, device='cuda:0'))
+     data = td.DataLoader(dataset, batch_size=64, shuffle=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[9]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     fit = VAE(input_dim=y.shape[1], latent_dim=10, label_dim=2).fit(data, n_epochs=10, lr=1e-2)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[119]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     y.obsm['gmvae'] = fit.latent(data)
+     sc.pp.neighbors(y, use_rep='gmvae')
+     sc.tl.umap(y, copy=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[129]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/gmvae-umap.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     for i, k in enumerate(y.obs['ind'].unique()):
+       query = y[y.obs['ind'] == k].obsm['gmvae']
+       plt.scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k, zorder=-i)
+     plt.legend(markerscale=8, handletextpad=0, frameon=False)
+     plt.title('By donor')
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[138]:
+   [[file:figure/mnn.org/gmvae-umap.png]]
    :END:
 
 ** NMF

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-04-29 Wed 17:27 -->
+<!-- 2020-04-30 Thu 16:44 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mutual nearest neighbors in topic model space</title>
@@ -375,6 +375,10 @@ presented in Kingma &amp; Welling 2014.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">net</span>(input_dim, hidden_dim):
+  <span class="org-doc">"""Return fully connected network, ReLU activations, one hidden layer, batch</span>
+<span class="org-doc">normalization at each layer</span>
+
+<span class="org-doc">  """</span>
   <span class="org-keyword">return</span> torch.nn.Sequential(
     torch.nn.Linear(input_dim, hidden_dim),
     torch.nn.BatchNorm1d(hidden_dim),
@@ -384,45 +388,62 @@ presented in Kingma &amp; Welling 2014.
     torch.nn.ReLU(),
   )  
 
-<span class="org-keyword">class</span> <span class="org-type">VAE</span>(torch.nn.Module):
-  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, latent_dim, label_dim, hidden_dim=128):
-    <span class="org-builtin">super</span>().__init__()
-    <span class="org-comment-delimiter"># </span><span class="org-comment">q(z | x, y)</span>
-    <span class="org-keyword">self</span>.qz = net(input_dim + label_dim, hidden_dim)
-    <span class="org-keyword">self</span>.qz_mean = torch.nn.Linear(hidden_dim, latent_dim)
-    <span class="org-keyword">self</span>.qz_scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, latent_dim), torch.nn.Softplus())
-    <span class="org-comment-delimiter"># </span><span class="org-comment">p(z | y)</span>
-    <span class="org-keyword">self</span>.pz = net(label_dim, hidden_dim)
-    <span class="org-keyword">self</span>.pz_mean = torch.nn.Linear(hidden_dim, latent_dim)
-    <span class="org-keyword">self</span>.pz_scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, latent_dim), torch.nn.Softplus())
-    <span class="org-comment-delimiter"># </span><span class="org-comment">p(x | z)</span>
-    <span class="org-keyword">self</span>.px = net(latent_dim, hidden_dim)
-    <span class="org-keyword">self</span>.px_lam = torch.nn.Sequential(torch.nn.Linear(hidden_dim, input_dim), torch.nn.Softplus())
+<span class="org-comment-delimiter"># </span><span class="org-comment">Distributions parameterized by neural nets, to be used for priors and</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">variational approximations.</span>
 
+<span class="org-keyword">class</span> <span class="org-type">Categorical</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, output_dim, hidden_dim=128):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.net = net(input_dim, hidden_dim)
+    <span class="org-keyword">self</span>.logits = torch.nn.Linear(hidden_dim, output_dim)
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-variable-name">h</span> = <span class="org-keyword">self</span>.net(x)
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.logits(h)
+
+<span class="org-keyword">class</span> <span class="org-type">Gaussian</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, output_dim, hidden_dim=128):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.net = net(input_dim, hidden_dim)
+    <span class="org-keyword">self</span>.mean = torch.nn.Linear(hidden_dim, output_dim)
+    <span class="org-keyword">self</span>.scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, output_dim), torch.nn.Softplus())
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-variable-name">h</span> = <span class="org-keyword">self</span>.net(x)
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.mean(h), <span class="org-keyword">self</span>.scale(h)
+
+<span class="org-keyword">class</span> <span class="org-type">Poisson</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, output_dim, hidden_dim=128):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.net = net(input_dim, hidden_dim)
+    <span class="org-keyword">self</span>.lam = torch.nn.Sequential(torch.nn.Linear(hidden_dim, output_dim), torch.nn.Softplus())
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-variable-name">h</span> = <span class="org-keyword">self</span>.net(x)
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.lam(h)
+
+<span class="org-keyword">class</span> <span class="org-type">PVAE</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, latent_dim, covar_dim, hidden_dim=128):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.qz = Gaussian(input_dim, latent_dim)
+    <span class="org-keyword">self</span>.px = Poisson(latent_dim + covar_dim, input_dim)
     <span class="org-keyword">self</span>.writer = tb.SummaryWriter()
 
-  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, s, x, y, n_samples, global_step):
-    <span class="org-comment-delimiter"># </span><span class="org-comment">[batch_size, input_dim + label_dim]</span>
-    <span class="org-variable-name">h</span> = <span class="org-keyword">self</span>.qz(torch.cat([x, y], dim=1))
-    <span class="org-comment-delimiter"># </span><span class="org-comment">[batch_size, latent_dim]</span>
-    <span class="org-variable-name">mean</span> = <span class="org-keyword">self</span>.qz_mean(h)
-    <span class="org-variable-name">scale</span> = <span class="org-keyword">self</span>.qz_scale(h)
-    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size, latent_dim]</span>
-    <span class="org-variable-name">qz</span> = torch.distributions.Normal(mean, scale).rsample(n_samples)
-
-    <span class="org-variable-name">h</span> = <span class="org-keyword">self</span>.pz(y)
-    <span class="org-variable-name">prior_mean</span> = <span class="org-keyword">self</span>.pz_mean(h)
-    <span class="org-variable-name">prior_scale</span> = <span class="org-keyword">self</span>.pz_scale(h)
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, s, x, c, n_samples, global_step):
+    <span class="org-variable-name">mean</span>, <span class="org-variable-name">scale</span> = <span class="org-keyword">self</span>.qz.forward(x)
     <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples,]</span>
-    <span class="org-variable-name">kl</span> = torch.<span class="org-builtin">sum</span>(.5 * (1 + 2 * torch.log(scale / prior_scale) + ((prior_mean - mean) ** 2 + prior_scale - scale) / scale), axis=1)
-    <span class="org-keyword">self</span>.writer.add_scalar(<span class="org-string">'loss/kl'</span>, kl.<span class="org-builtin">sum</span>(), global_step)
-
-    <span class="org-variable-name">lam</span> = <span class="org-keyword">self</span>.px_lam(<span class="org-keyword">self</span>.px(qz.reshape([-1, qz.shape[2]]))).reshape([qz.shape[0], qz.shape[1], -1])
+    <span class="org-variable-name">kl_z</span> = torch.<span class="org-builtin">sum</span>(.5 * (1 - 2 * torch.log(scale) + mean ** 2 + scale ** 2), axis=1)
+    <span class="org-keyword">self</span>.writer.add_scalar(<span class="org-string">'loss/kl_z'</span>, kl_z.<span class="org-builtin">sum</span>(), global_step)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size, input_dim]</span>
+    <span class="org-variable-name">qz</span> = torch.distributions.Normal(mean, scale).rsample(n_samples)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size, input_dim + covar_dim]</span>
+    <span class="org-variable-name">qz</span> = torch.cat([qz, c.unsqueeze(0).expand(qz.shape[0], -1, -1)], dim=-1)
+    <span class="org-variable-name">lam</span> = <span class="org-keyword">self</span>.px.forward(qz.reshape([-1, qz.shape[2]])).reshape([qz.shape[0], qz.shape[1], -1])
     <span class="org-variable-name">s</span> = torch.reshape(s, [1, -1, 1])
     <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples,]</span>
     <span class="org-variable-name">err</span> = torch.mean(torch.<span class="org-builtin">sum</span>(x * torch.log(s * lam) - s * lam + torch.lgamma(x + 1), dim=2), dim=0)
     <span class="org-keyword">self</span>.writer.add_scalar(<span class="org-string">'loss/err'</span>, err.<span class="org-builtin">sum</span>(), global_step)
-    <span class="org-variable-name">loss</span> = -torch.<span class="org-builtin">sum</span>(err - kl)
+    <span class="org-variable-name">loss</span> = -torch.<span class="org-builtin">sum</span>(err - kl_z)
     <span class="org-keyword">self</span>.writer.add_scalar(<span class="org-string">'loss/elbo'</span>, loss, global_step)
     <span class="org-keyword">assert</span> <span class="org-keyword">not</span> torch.isnan(loss)
     <span class="org-keyword">return</span> loss
@@ -434,12 +455,12 @@ presented in Kingma &amp; Welling 2014.
     <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), **kwargs)
     <span class="org-variable-name">global_step</span> = 0
     <span class="org-keyword">for</span> epoch <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
-      <span class="org-keyword">for</span> s, x, y <span class="org-keyword">in</span> data:
+      <span class="org-keyword">for</span> s, x, c <span class="org-keyword">in</span> data:
         <span class="org-variable-name">s</span> = s.cuda()
         <span class="org-variable-name">x</span> = x.cuda()
-        <span class="org-variable-name">y</span> = y.cuda()
+        <span class="org-variable-name">c</span> = c.cuda()
         opt.zero_grad()
-        <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(s, x, y, n_samples=n_samples, global_step=global_step)
+        <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(s, x, c, n_samples=n_samples, global_step=global_step)
         <span class="org-keyword">if</span> torch.isnan(loss):
           <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'nan loss'</span>)
         loss.backward()
@@ -450,11 +471,113 @@ presented in Kingma &amp; Welling 2014.
   <span class="org-type">@torch.no_grad</span>()
   <span class="org-keyword">def</span> <span class="org-function-name">latent</span>(<span class="org-keyword">self</span>, data):
     <span class="org-variable-name">res</span> = []
-    <span class="org-keyword">for</span> s, x, y <span class="org-keyword">in</span> data:
-      <span class="org-variable-name">s</span> = s.cuda()
+    <span class="org-keyword">for</span> _, x, _ <span class="org-keyword">in</span> data:
+      res.append(<span class="org-keyword">self</span>.qz.forward(x.cuda())[0].cpu().numpy())
+    <span class="org-variable-name">res</span> = np.vstack(res)
+    <span class="org-keyword">return</span> res
+
+<span class="org-keyword">class</span> <span class="org-type">GMVAE</span>(torch.nn.Module):
+  r<span class="org-doc">"""Deep generative model</span>
+
+<span class="org-doc">  x_ij \mid s_i, z_i, c_i ~ Pois(s_i [&#955;(z_i, c_i)]_j)</span>
+<span class="org-doc">  z_i \mid y_i ~ N(&#956;(y_i), &#963;^2(y_i))</span>
+<span class="org-doc">  y_i ~ Mult(1, 1/m, ..., 1/m)</span>
+
+<span class="org-doc">  q(y_i \mid x_i) = Mult(1, &#960;(y_i))</span>
+<span class="org-doc">  q(z_i \mid x_i, y_i) = N(m(x_i, y_i), s^2(x_i, y_i))</span>
+
+<span class="org-doc">  where </span>
+
+<span class="org-doc">  x_{ij} is molecule count (cell i, gene j)</span>
+<span class="org-doc">  s_i is total molecule count (cell i)</span>
+<span class="org-doc">  c_i is covariate vector (cell i)</span>
+<span class="org-doc">  z_i is latent representation (cell i)</span>
+<span class="org-doc">  y_i is latent label (cell i)</span>
+<span class="org-doc">  &#955; is a neural network mapping latent_dim + covar_dim =&gt; input_dim</span>
+<span class="org-doc">  &#956;, &#963;^2 are neural nets mapping label_dim =&gt; latent_dim</span>
+<span class="org-doc">  &#960; is a neural net mapping input_dim =&gt; label_dim</span>
+<span class="org-doc">  m, s^2 are neural nets mapping </span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, latent_dim, covar_dim, label_dim=0, hidden_dim=128):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">if</span> label_dim &gt; 0:
+      <span class="org-keyword">self</span>.qy = Categorical(input_dim, label_dim)
+      <span class="org-keyword">self</span>.py = torch.distributions.Categorical(probs=torch.ones(label_dim).cuda())
+      <span class="org-keyword">self</span>.pz = Gaussian(label_dim, hidden_dim)
+    <span class="org-keyword">else</span>:
+      <span class="org-keyword">self</span>.qy = <span class="org-constant">None</span>
+      <span class="org-keyword">self</span>.py = <span class="org-constant">None</span>
+      <span class="org-keyword">self</span>.pz = <span class="org-constant">None</span>
+    <span class="org-keyword">self</span>.qz = Gaussian(input_dim + label_dim, hidden_dim)
+    <span class="org-keyword">self</span>.px = Poisson(latent_dim + covar_dim, hidden_dim)
+    <span class="org-keyword">self</span>.writer = tb.SummaryWriter()
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, s, x, c, n_samples, global_step):
+    <span class="org-keyword">if</span> <span class="org-keyword">self</span>.qy <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">logits</span> = <span class="org-keyword">self</span>.qy.forward(x)
+      <span class="org-comment-delimiter"># </span><span class="org-comment">[batch_size, label_dim]</span>
+      <span class="org-variable-name">qy</span> = torch.distributions.Categorical(logits=logits)
+      <span class="org-variable-name">kl_y</span> = torch.distributions.kl.kl_divergence(qy, <span class="org-keyword">self</span>.py).<span class="org-builtin">sum</span>()
+      <span class="org-keyword">self</span>.writer.add_scalar(<span class="org-string">'loss/kl_y'</span>, kl_y, global_step)
+      <span class="org-variable-name">y</span> = torch.nn.functional.one_hot(qy.rsample())
+      <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size, latent_dim]</span>
+      <span class="org-variable-name">prior_mean</span>, <span class="org-variable-name">prior_scale</span> = <span class="org-keyword">self</span>.pz.forward(qy)
+      <span class="org-comment-delimiter"># </span><span class="org-comment">[batch_size, latent_dim]</span>
+      <span class="org-variable-name">mean</span>, <span class="org-variable-name">scale</span> = <span class="org-keyword">self</span>.qz.forward(torch.cat([x, y], dim=1))
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">y</span> = torch.empty(0)
+      <span class="org-variable-name">kl_y</span> = 0
+      <span class="org-variable-name">prior_mean</span> = 0
+      <span class="org-variable-name">prior_scale</span> = 1
+      <span class="org-variable-name">mean</span>, <span class="org-variable-name">scale</span> = <span class="org-keyword">self</span>.qz.forward(x)
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size, latent_dim]</span>
+    <span class="org-variable-name">qz</span> = torch.distributions.Normal(mean, scale).rsample(n_samples)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples,]</span>
+    <span class="org-variable-name">kl_z</span> = torch.<span class="org-builtin">sum</span>(.5 * (1 + 2 * torch.log(scale / prior_scale) + ((prior_mean - mean) ** 2 + prior_scale - scale) / scale), axis=1)
+    <span class="org-keyword">self</span>.writer.add_scalar(<span class="org-string">'loss/kl_z'</span>, kl.<span class="org-builtin">sum</span>(), global_step)
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size, input_dim]</span>
+    <span class="org-variable-name">lam</span> = <span class="org-keyword">self</span>.px.forward(qz.reshape([-1, qz.shape[2]])).reshape([qz.shape[0], qz.shape[1], -1])
+    <span class="org-variable-name">s</span> = torch.reshape(s, [1, -1, 1])
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples,]</span>
+    <span class="org-variable-name">err</span> = torch.mean(torch.<span class="org-builtin">sum</span>(x * torch.log(s * lam) - s * lam + torch.lgamma(x + 1), dim=2), dim=0)
+    <span class="org-keyword">self</span>.writer.add_scalar(<span class="org-string">'loss/err'</span>, err.<span class="org-builtin">sum</span>(), global_step)
+    <span class="org-variable-name">loss</span> = -torch.<span class="org-builtin">sum</span>(err - kl_y - kl_z)
+    <span class="org-keyword">self</span>.writer.add_scalar(<span class="org-string">'loss/elbo'</span>, loss, global_step)
+    <span class="org-keyword">assert</span> <span class="org-keyword">not</span> torch.isnan(loss)
+    <span class="org-keyword">return</span> loss
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, data, n_epochs, n_samples=10, **kwargs):
+    <span class="org-keyword">assert</span> torch.cuda.is_available()
+    <span class="org-keyword">self</span>.cuda()
+    <span class="org-variable-name">n_samples</span> = torch.Size([n_samples])
+    <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), **kwargs)
+    <span class="org-variable-name">global_step</span> = 0
+    <span class="org-keyword">for</span> epoch <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
+      <span class="org-keyword">for</span> s, x, c <span class="org-keyword">in</span> data:
+        <span class="org-variable-name">s</span> = s.cuda()
+        <span class="org-variable-name">x</span> = x.cuda()
+        <span class="org-variable-name">c</span> = c.cuda()
+        opt.zero_grad()
+        <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(s, x, c, n_samples=n_samples, global_step=global_step)
+        <span class="org-keyword">if</span> torch.isnan(loss):
+          <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'nan loss'</span>)
+        loss.backward()
+        opt.step()
+        <span class="org-variable-name">global_step</span> += 1
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+
+  <span class="org-type">@torch.no_grad</span>()
+  <span class="org-keyword">def</span> <span class="org-function-name">latent</span>(<span class="org-keyword">self</span>, data):
+    <span class="org-variable-name">res</span> = []
+    <span class="org-keyword">for</span> _, x, _ <span class="org-keyword">in</span> data:
       <span class="org-variable-name">x</span> = x.cuda()
-      <span class="org-variable-name">y</span> = y.cuda()
-      res.append(<span class="org-keyword">self</span>.qz_mean(<span class="org-keyword">self</span>.qz(torch.cat([x, y], dim=1))).cpu().numpy())
+      <span class="org-variable-name">logits</span> = <span class="org-keyword">self</span>.qy.forward(x)
+      torch.distributions.Categorical(logits=logits)
+      <span class="org-variable-name">y</span> = torch.nn.functional.one_hot(qy.rsample())
+      res.append(<span class="org-keyword">self</span>.qz.forward(torch.cat([x, y], dim=1)).cpu().numpy())
     <span class="org-variable-name">res</span> = np.vstack(res)
     <span class="org-keyword">return</span> res
 </pre>
@@ -695,22 +818,22 @@ plt.tight_layout()
 </div>
 
 <p>
-Fit GMVAE.
+Fit PVAE.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">s</span> = y.X.<span class="org-builtin">sum</span>(axis=1)
 <span class="org-variable-name">rep</span> = pd.get_dummies(y.obs[<span class="org-string">'ind'</span>])
 <span class="org-variable-name">dataset</span> = td.TensorDataset(
-  torch.tensor(s.A.ravel(), device=<span class="org-string">'cuda:0'</span>),
-  torch.tensor(y.X.A, device=<span class="org-string">'cuda:0'</span>),
-  torch.tensor(rep.values, dtype=torch.<span class="org-builtin">float</span>, device=<span class="org-string">'cuda:0'</span>))
-<span class="org-variable-name">data</span> = td.DataLoader(dataset, batch_size=64, shuffle=<span class="org-constant">True</span>)
+  torch.tensor(s.A.ravel()),
+  torch.tensor(y.X.A),
+  torch.tensor(rep.values, dtype=torch.<span class="org-builtin">float</span>))
+<span class="org-variable-name">data</span> = td.DataLoader(dataset, batch_size=64, shuffle=<span class="org-constant">True</span>, num_workers=2)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">fit</span> = VAE(input_dim=y.shape[1], latent_dim=10, label_dim=2).fit(data, n_epochs=10, lr=1e-2)
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = PVAE(input_dim=y.shape[1], latent_dim=10, covar_dim=2).fit(data, n_epochs=10, lr=1e-2)
 </pre>
 </div>
 
@@ -720,8 +843,8 @@ Estimate the GMVAE latent variables \(E[\mathbf{z}_i \mid \mathbf{x}_i
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">y.obsm</span>[<span class="org-string">'gmvae'</span>] = fit.latent(data)
-sc.pp.neighbors(y, use_rep=<span class="org-string">'gmvae'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">y.obsm</span>[<span class="org-string">'pvae'</span>] = fit.latent(td.DataLoader(dataset, batch_size=128, shuffle=<span class="org-constant">False</span>, num_workers=2))
+sc.pp.neighbors(y, use_rep=<span class="org-string">'pvae'</span>)
 sc.tl.umap(y, copy=<span class="org-constant">False</span>)
 </pre>
 </div>
@@ -735,8 +858,8 @@ Plot the UMAP embedding.
 plt.clf()
 plt.gcf().set_size_inches(3, 3)
 <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(y.obs[<span class="org-string">'ind'</span>].unique()):
-  <span class="org-variable-name">query</span> = y[y.obs[<span class="org-string">'ind'</span>] == k].obsm[<span class="org-string">'gmvae'</span>]
-  plt.scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k, zorder=-i)
+  <span class="org-variable-name">query</span> = y[y.obs[<span class="org-string">'ind'</span>] == k].obsm[<span class="org-string">'pvae'</span>]
+  plt.scatter(query[:,0], query[:,1], s=1, c=np.array(cm(i)).reshape(1, -1), label=k, zorder=-i)
 plt.legend(markerscale=8, handletextpad=0, frameon=<span class="org-constant">False</span>)
 plt.title(<span class="org-string">'By donor'</span>)
 plt.xlabel(<span class="org-string">'UMAP 1'</span>)
@@ -747,12 +870,12 @@ plt.tight_layout()
 
 
 <div class="figure">
-<p><img src="figure/mnn.org/gmvae-umap.png" alt="gmvae-umap.png">
+<p><img src="figure/mnn.org/pvae-umap.png" alt="pvae-umap.png">
 </p>
 </div>
 
 <p>
-Now, look at fitting a GMVAE for multiple days and replicates.
+Now, look at fitting PVAE for multiple days and replicates.
 </p>
 
 <div class="org-src-container">
@@ -793,13 +916,13 @@ plt.tight_layout()
   torch.tensor(y.X.A),
   torch.tensor(rep.values, dtype=torch.<span class="org-builtin">float</span>))
 <span class="org-variable-name">data</span> = td.DataLoader(dataset, batch_size=64, shuffle=<span class="org-constant">True</span>, num_workers=1)
-<span class="org-variable-name">fit</span> = VAE(input_dim=y.shape[1], latent_dim=10, label_dim=2).fit(data, n_epochs=10, lr=1e-2)
+<span class="org-variable-name">fit</span> = PVAE(input_dim=y.shape[1], latent_dim=10, covar_dim=2).fit(data, n_epochs=10, lr=1e-2)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">y.obsm</span>[<span class="org-string">'gmvae'</span>] = fit.latent(td.DataLoader(dataset, batch_size=64, shuffle=<span class="org-constant">False</span>, num_workers=1))
-sc.pp.neighbors(y, use_rep=<span class="org-string">'gmvae'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">y.obsm</span>[<span class="org-string">'pvae'</span>] = fit.latent(td.DataLoader(dataset, batch_size=64, shuffle=<span class="org-constant">False</span>, num_workers=1))
+sc.pp.neighbors(y, use_rep=<span class="org-string">'pvae'</span>)
 sc.tl.umap(y, copy=<span class="org-constant">False</span>)
 </pre>
 </div>
@@ -809,8 +932,8 @@ sc.tl.umap(y, copy=<span class="org-constant">False</span>)
 plt.clf()
 plt.gcf().set_size_inches(3.75, 2.5)
 <span class="org-keyword">for</span> i, (d, k) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(y.obs.groupby([<span class="org-string">'day'</span>, <span class="org-string">'ind'</span>]).groups.keys()):
-  <span class="org-variable-name">query</span> = y[np.logical_and(y.obs[<span class="org-string">'day'</span>] == d, y.obs[<span class="org-string">'ind'</span>] == k)].obsm[<span class="org-string">'gmvae'</span>]
-  plt.scatter(query[:,0], query[:,1], s=1, c=cm(i), label=f<span class="org-string">'Day {d}/{k}'</span>, alpha=0.5)
+  <span class="org-variable-name">query</span> = y[np.logical_and(y.obs[<span class="org-string">'day'</span>] == d, y.obs[<span class="org-string">'ind'</span>] == k)].obsm[<span class="org-string">'pvae'</span>]
+  plt.scatter(query[:,0], query[:,1], s=1, c=np.array(cm(i)).reshape(1, -1), label=f<span class="org-string">'Day {d}/{k}'</span>, alpha=0.5)
 plt.legend(markerscale=4, handletextpad=0, frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
 plt.xlabel(<span class="org-string">'UMAP 1'</span>)
 plt.ylabel(<span class="org-string">'UMAP 2'</span>)
@@ -820,7 +943,7 @@ plt.tight_layout()
 
 
 <div class="figure">
-<p><img src="figure/mnn.org/ipsc-cm-day0-3-gmvae.png" alt="ipsc-cm-day0-3-gmvae.png">
+<p><img src="figure/mnn.org/ipsc-cm-day0-3-pvae.png" alt="ipsc-cm-day0-3-pvae.png">
 </p>
 </div>
 </div>
@@ -875,7 +998,7 @@ sc.tl.umap(x, copy=<span class="org-constant">False</span>)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-04-29 Wed 17:27</p>
+<p class="date">Created: 2020-04-30 Thu 16:44</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

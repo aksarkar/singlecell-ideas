@@ -50,7 +50,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+RESULTS:
-  : Submitted batch job 743010
+  : Submitted batch job 775478
 
   #+BEGIN_SRC ipython
     import anndata
@@ -65,7 +65,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[79]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -75,7 +75,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[32]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -86,7 +86,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[33]:
+  # Out[3]:
   :END:
 
 * Methods
@@ -103,6 +103,10 @@
 
    #+BEGIN_SRC ipython
      def net(input_dim, hidden_dim):
+       """Return fully connected network, ReLU activations, one hidden layer, batch
+     normalization at each layer
+
+       """
        return torch.nn.Sequential(
          torch.nn.Linear(input_dim, hidden_dim),
          torch.nn.BatchNorm1d(hidden_dim),
@@ -112,45 +116,62 @@
          torch.nn.ReLU(),
        )  
 
-     class VAE(torch.nn.Module):
-       def __init__(self, input_dim, latent_dim, label_dim, hidden_dim=128):
-         super().__init__()
-         # q(z | x, y)
-         self.qz = net(input_dim + label_dim, hidden_dim)
-         self.qz_mean = torch.nn.Linear(hidden_dim, latent_dim)
-         self.qz_scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, latent_dim), torch.nn.Softplus())
-         # p(z | y)
-         self.pz = net(label_dim, hidden_dim)
-         self.pz_mean = torch.nn.Linear(hidden_dim, latent_dim)
-         self.pz_scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, latent_dim), torch.nn.Softplus())
-         # p(x | z)
-         self.px = net(latent_dim, hidden_dim)
-         self.px_lam = torch.nn.Sequential(torch.nn.Linear(hidden_dim, input_dim), torch.nn.Softplus())
+     # Distributions parameterized by neural nets, to be used for priors and
+     # variational approximations.
 
+     class Categorical(torch.nn.Module):
+       def __init__(self, input_dim, output_dim, hidden_dim=128):
+         super().__init__()
+         self.net = net(input_dim, hidden_dim)
+         self.logits = torch.nn.Linear(hidden_dim, output_dim)
+
+       def forward(self, x):
+         h = self.net(x)
+         return self.logits(h)
+
+     class Gaussian(torch.nn.Module):
+       def __init__(self, input_dim, output_dim, hidden_dim=128):
+         super().__init__()
+         self.net = net(input_dim, hidden_dim)
+         self.mean = torch.nn.Linear(hidden_dim, output_dim)
+         self.scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, output_dim), torch.nn.Softplus())
+
+       def forward(self, x):
+         h = self.net(x)
+         return self.mean(h), self.scale(h)
+
+     class Poisson(torch.nn.Module):
+       def __init__(self, input_dim, output_dim, hidden_dim=128):
+         super().__init__()
+         self.net = net(input_dim, hidden_dim)
+         self.lam = torch.nn.Sequential(torch.nn.Linear(hidden_dim, output_dim), torch.nn.Softplus())
+
+       def forward(self, x):
+         h = self.net(x)
+         return self.lam(h)
+
+     class PVAE(torch.nn.Module):
+       def __init__(self, input_dim, latent_dim, covar_dim, hidden_dim=128):
+         super().__init__()
+         self.qz = Gaussian(input_dim, latent_dim)
+         self.px = Poisson(latent_dim + covar_dim, input_dim)
          self.writer = tb.SummaryWriter()
 
-       def forward(self, s, x, y, n_samples, global_step):
-         # [batch_size, input_dim + label_dim]
-         h = self.qz(torch.cat([x, y], dim=1))
-         # [batch_size, latent_dim]
-         mean = self.qz_mean(h)
-         scale = self.qz_scale(h)
-         # [n_samples, batch_size, latent_dim]
-         qz = torch.distributions.Normal(mean, scale).rsample(n_samples)
-
-         h = self.pz(y)
-         prior_mean = self.pz_mean(h)
-         prior_scale = self.pz_scale(h)
+       def forward(self, s, x, c, n_samples, global_step):
+         mean, scale = self.qz.forward(x)
          # [n_samples,]
-         kl = torch.sum(.5 * (1 + 2 * torch.log(scale / prior_scale) + ((prior_mean - mean) ** 2 + prior_scale - scale) / scale), axis=1)
-         self.writer.add_scalar('loss/kl', kl.sum(), global_step)
-
-         lam = self.px_lam(self.px(qz.reshape([-1, qz.shape[2]]))).reshape([qz.shape[0], qz.shape[1], -1])
+         kl_z = torch.sum(.5 * (1 - 2 * torch.log(scale) + mean ** 2 + scale ** 2), axis=1)
+         self.writer.add_scalar('loss/kl_z', kl_z.sum(), global_step)
+         # [n_samples, batch_size, input_dim]
+         qz = torch.distributions.Normal(mean, scale).rsample(n_samples)
+         # [n_samples, batch_size, input_dim + covar_dim]
+         qz = torch.cat([qz, c.unsqueeze(0).expand(qz.shape[0], -1, -1)], dim=-1)
+         lam = self.px.forward(qz.reshape([-1, qz.shape[2]])).reshape([qz.shape[0], qz.shape[1], -1])
          s = torch.reshape(s, [1, -1, 1])
          # [n_samples,]
          err = torch.mean(torch.sum(x * torch.log(s * lam) - s * lam + torch.lgamma(x + 1), dim=2), dim=0)
          self.writer.add_scalar('loss/err', err.sum(), global_step)
-         loss = -torch.sum(err - kl)
+         loss = -torch.sum(err - kl_z)
          self.writer.add_scalar('loss/elbo', loss, global_step)
          assert not torch.isnan(loss)
          return loss
@@ -162,12 +183,12 @@
          opt = torch.optim.RMSprop(self.parameters(), **kwargs)
          global_step = 0
          for epoch in range(n_epochs):
-           for s, x, y in data:
+           for s, x, c in data:
              s = s.cuda()
              x = x.cuda()
-             y = y.cuda()
+             c = c.cuda()
              opt.zero_grad()
-             loss = self.forward(s, x, y, n_samples=n_samples, global_step=global_step)
+             loss = self.forward(s, x, c, n_samples=n_samples, global_step=global_step)
              if torch.isnan(loss):
                raise RuntimeError('nan loss')
              loss.backward()
@@ -178,18 +199,120 @@
        @torch.no_grad()
        def latent(self, data):
          res = []
-         for s, x, y in data:
-           s = s.cuda()
+         for _, x, _ in data:
+           res.append(self.qz.forward(x.cuda())[0].cpu().numpy())
+         res = np.vstack(res)
+         return res
+
+     class GMVAE(torch.nn.Module):
+       r"""Deep generative model
+
+       x_ij \mid s_i, z_i, c_i ~ Pois(s_i [λ(z_i, c_i)]_j)
+       z_i \mid y_i ~ N(μ(y_i), σ^2(y_i))
+       y_i ~ Mult(1, 1/m, ..., 1/m)
+
+       q(y_i \mid x_i) = Mult(1, π(y_i))
+       q(z_i \mid x_i, y_i) = N(m(x_i, y_i), s^2(x_i, y_i))
+
+       where 
+
+       x_{ij} is molecule count (cell i, gene j)
+       s_i is total molecule count (cell i)
+       c_i is covariate vector (cell i)
+       z_i is latent representation (cell i)
+       y_i is latent label (cell i)
+       λ is a neural network mapping latent_dim + covar_dim => input_dim
+       μ, σ^2 are neural nets mapping label_dim => latent_dim
+       π is a neural net mapping input_dim => label_dim
+       m, s^2 are neural nets mapping 
+
+       """
+       def __init__(self, input_dim, latent_dim, covar_dim, label_dim=0, hidden_dim=128):
+         super().__init__()
+         if label_dim > 0:
+           self.qy = Categorical(input_dim, label_dim)
+           self.py = torch.distributions.Categorical(probs=torch.ones(label_dim).cuda())
+           self.pz = Gaussian(label_dim, hidden_dim)
+         else:
+           self.qy = None
+           self.py = None
+           self.pz = None
+         self.qz = Gaussian(input_dim + label_dim, hidden_dim)
+         self.px = Poisson(latent_dim + covar_dim, hidden_dim)
+         self.writer = tb.SummaryWriter()
+
+       def forward(self, s, x, c, n_samples, global_step):
+         if self.qy is not None:
+           logits = self.qy.forward(x)
+           # [batch_size, label_dim]
+           qy = torch.distributions.Categorical(logits=logits)
+           kl_y = torch.distributions.kl.kl_divergence(qy, self.py).sum()
+           self.writer.add_scalar('loss/kl_y', kl_y, global_step)
+           y = torch.nn.functional.one_hot(qy.rsample())
+           # [n_samples, batch_size, latent_dim]
+           prior_mean, prior_scale = self.pz.forward(qy)
+           # [batch_size, latent_dim]
+           mean, scale = self.qz.forward(torch.cat([x, y], dim=1))
+         else:
+           y = torch.empty(0)
+           kl_y = 0
+           prior_mean = 0
+           prior_scale = 1
+           mean, scale = self.qz.forward(x)
+
+         # [n_samples, batch_size, latent_dim]
+         qz = torch.distributions.Normal(mean, scale).rsample(n_samples)
+         # [n_samples,]
+         kl_z = torch.sum(.5 * (1 + 2 * torch.log(scale / prior_scale) + ((prior_mean - mean) ** 2 + prior_scale - scale) / scale), axis=1)
+         self.writer.add_scalar('loss/kl_z', kl.sum(), global_step)
+
+         # [n_samples, batch_size, input_dim]
+         lam = self.px.forward(qz.reshape([-1, qz.shape[2]])).reshape([qz.shape[0], qz.shape[1], -1])
+         s = torch.reshape(s, [1, -1, 1])
+         # [n_samples,]
+         err = torch.mean(torch.sum(x * torch.log(s * lam) - s * lam + torch.lgamma(x + 1), dim=2), dim=0)
+         self.writer.add_scalar('loss/err', err.sum(), global_step)
+         loss = -torch.sum(err - kl_y - kl_z)
+         self.writer.add_scalar('loss/elbo', loss, global_step)
+         assert not torch.isnan(loss)
+         return loss
+
+       def fit(self, data, n_epochs, n_samples=10, **kwargs):
+         assert torch.cuda.is_available()
+         self.cuda()
+         n_samples = torch.Size([n_samples])
+         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         global_step = 0
+         for epoch in range(n_epochs):
+           for s, x, c in data:
+             s = s.cuda()
+             x = x.cuda()
+             c = c.cuda()
+             opt.zero_grad()
+             loss = self.forward(s, x, c, n_samples=n_samples, global_step=global_step)
+             if torch.isnan(loss):
+               raise RuntimeError('nan loss')
+             loss.backward()
+             opt.step()
+             global_step += 1
+         return self
+
+       @torch.no_grad()
+       def latent(self, data):
+         res = []
+         for _, x, _ in data:
            x = x.cuda()
-           y = y.cuda()
-           res.append(self.qz_mean(self.qz(torch.cat([x, y], dim=1))).cpu().numpy())
+           logits = self.qy.forward(x)
+           torch.distributions.Categorical(logits=logits)
+           y = torch.nn.functional.one_hot(qy.rsample())
+           res.append(self.qz.forward(torch.cat([x, y], dim=1)).cpu().numpy())
          res = np.vstack(res)
          return res
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[151]:
+   # Out[55]:
    :END:
 
 * Results
@@ -385,7 +508,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[5]:
    :END:
 
    Project \(\ln(x+1)\) into a principal component subspace and compute
@@ -400,7 +523,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[6]:
    :END:
 
    Plot the UMAP embedding of the principal component subspace.
@@ -425,7 +548,7 @@
    [[file:figure/mnn.org/ipsc-cm-day0-umap.png]]
    :END:
 
-   Fit GMVAE.
+   Fit PVAE.
 
    # https://discuss.pytorch.org/t/how-to-prefetch-data-when-processing-with-gpu/548/19
 
@@ -433,49 +556,49 @@
      s = y.X.sum(axis=1)
      rep = pd.get_dummies(y.obs['ind'])
      dataset = td.TensorDataset(
-       torch.tensor(s.A.ravel(), device='cuda:0'),
-       torch.tensor(y.X.A, device='cuda:0'),
-       torch.tensor(rep.values, dtype=torch.float, device='cuda:0'))
-     data = td.DataLoader(dataset, batch_size=64, shuffle=True)
+       torch.tensor(s.A.ravel()),
+       torch.tensor(y.X.A),
+       torch.tensor(rep.values, dtype=torch.float))
+     data = td.DataLoader(dataset, batch_size=64, shuffle=True, num_workers=2)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[11]:
    :END:
 
    #+BEGIN_SRC ipython :async t
-     fit = VAE(input_dim=y.shape[1], latent_dim=10, label_dim=2).fit(data, n_epochs=10, lr=1e-2)
+     fit = PVAE(input_dim=y.shape[1], latent_dim=10, covar_dim=2).fit(data, n_epochs=10, lr=1e-2)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[119]:
+   # Out[64]:
    :END:
 
    Estimate the GMVAE latent variables \(E[\mathbf{z}_i \mid \mathbf{x}_i
    y_i]\), then compute a UMAP embedding of the latent space.
 
    #+BEGIN_SRC ipython :async t
-     y.obsm['gmvae'] = fit.latent(data)
-     sc.pp.neighbors(y, use_rep='gmvae')
+     y.obsm['pvae'] = fit.latent(td.DataLoader(dataset, batch_size=128, shuffle=False, num_workers=2))
+     sc.pp.neighbors(y, use_rep='pvae')
      sc.tl.umap(y, copy=False)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[129]:
+   # Out[67]:
    :END:
 
    Plot the UMAP embedding.
 
-   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/gmvae-umap.png
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/pvae-umap.png
      cm = plt.get_cmap('Paired')
      plt.clf()
      plt.gcf().set_size_inches(3, 3)
      for i, k in enumerate(y.obs['ind'].unique()):
-       query = y[y.obs['ind'] == k].obsm['gmvae']
-       plt.scatter(query[:,0], query[:,1], s=1, c=cm(i), label=k, zorder=-i)
+       query = y[y.obs['ind'] == k].obsm['pvae']
+       plt.scatter(query[:,0], query[:,1], s=1, c=np.array(cm(i)).reshape(1, -1), label=k, zorder=-i)
      plt.legend(markerscale=8, handletextpad=0, frameon=False)
      plt.title('By donor')
      plt.xlabel('UMAP 1')
@@ -485,11 +608,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[138]:
-   [[file:figure/mnn.org/gmvae-umap.png]]
+   # Out[72]:
+   [[file:figure/mnn.org/pvae-umap.png]]
    :END:
 
-   Now, look at fitting a GMVAE for multiple days and replicates.
+   Now, look at fitting PVAE for multiple days and replicates.
 
    #+BEGIN_SRC ipython :async t
      y = x[x.obs['day'].isin([0, 3])]
@@ -500,7 +623,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[172]:
+   # Out[73]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-cm-day0-3.png
@@ -520,7 +643,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[183]:
+   # Out[74]:
    [[file:figure/mnn.org/ipsc-cm-day0-3.png]]
    :END:
 
@@ -532,32 +655,32 @@
        torch.tensor(y.X.A),
        torch.tensor(rep.values, dtype=torch.float))
      data = td.DataLoader(dataset, batch_size=64, shuffle=True, num_workers=1)
-     fit = VAE(input_dim=y.shape[1], latent_dim=10, label_dim=2).fit(data, n_epochs=10, lr=1e-2)
+     fit = PVAE(input_dim=y.shape[1], latent_dim=10, covar_dim=2).fit(data, n_epochs=10, lr=1e-2)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[156]:
+   # Out[75]:
    :END:
 
    #+BEGIN_SRC ipython :async t
-     y.obsm['gmvae'] = fit.latent(td.DataLoader(dataset, batch_size=64, shuffle=False, num_workers=1))
-     sc.pp.neighbors(y, use_rep='gmvae')
+     y.obsm['pvae'] = fit.latent(td.DataLoader(dataset, batch_size=64, shuffle=False, num_workers=1))
+     sc.pp.neighbors(y, use_rep='pvae')
      sc.tl.umap(y, copy=False)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[168]:
+   # Out[76]:
    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-cm-day0-3-gmvae.png
+   #+BEGIN_SRC ipython :ipyfile figure/mnn.org/ipsc-cm-day0-3-pvae.png
      cm = plt.get_cmap('Paired')
      plt.clf()
      plt.gcf().set_size_inches(3.75, 2.5)
      for i, (d, k) in enumerate(y.obs.groupby(['day', 'ind']).groups.keys()):
-       query = y[np.logical_and(y.obs['day'] == d, y.obs['ind'] == k)].obsm['gmvae']
-       plt.scatter(query[:,0], query[:,1], s=1, c=cm(i), label=f'Day {d}/{k}', alpha=0.5)
+       query = y[np.logical_and(y.obs['day'] == d, y.obs['ind'] == k)].obsm['pvae']
+       plt.scatter(query[:,0], query[:,1], s=1, c=np.array(cm(i)).reshape(1, -1), label=f'Day {d}/{k}', alpha=0.5)
      plt.legend(markerscale=4, handletextpad=0, frameon=False, loc='center left', bbox_to_anchor=(1, .5))
      plt.xlabel('UMAP 1')
      plt.ylabel('UMAP 2')
@@ -566,8 +689,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[169]:
-   [[file:figure/mnn.org/ipsc-cm-day0-3-gmvae.png]]
+   # Out[78]:
+   [[file:figure/mnn.org/ipsc-cm-day0-3-pvae.png]]
    :END:
 
 ** NMF

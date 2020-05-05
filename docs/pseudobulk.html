@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-04 Mon 23:03 -->
+<!-- 2020-05-05 Tue 10:06 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Alternative approaches to scRNA-seq pseudobulk models</title>
@@ -300,6 +300,7 @@ and demonstrate that it is not biased by variation in size factors.
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> sqlite3
 </pre>
 </div>
 
@@ -323,15 +324,16 @@ and demonstrate that it is not biased by variation in size factors.
 <div class="outline-text-2" id="text-orge7fa045">
 <p>
 We assume (<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et
- al. 2019</a>) \(\DeclareMathOperator\Gam{Gamma}
-  \DeclareMathOperator\Poi{Poisson}
-  \DeclareMathOperator\argmin{arg min}
-  \newcommand\mf{\mathbf{F}} 
-  \newcommand\ml{\mathbf{L}}
-  \newcommand\mx{\mathbf{X}}
-  \newcommand\vl{\mathbf{l}}
-  \newcommand\vx{\mathbf{x}}
-  \)
+ al. 2019</a>) \(
+   \DeclareMathOperator\Gam{Gamma}
+   \DeclareMathOperator\Poi{Poisson}
+   \DeclareMathOperator\argmin{arg min}
+   \newcommand\mf{\mathbf{F}} 
+   \newcommand\ml{\mathbf{L}}
+   \newcommand\mx{\mathbf{X}}
+   \newcommand\vl{\mathbf{l}}
+   \newcommand\vx{\mathbf{x}}
+   \)
 </p>
 
 \begin{align*}
@@ -427,9 +429,9 @@ Read the <a href="mpebpm.html#ipsc">estimated model parameters</a>.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">log_mu</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npz.npy'</span>)
-<span class="org-variable-name">neg_log_phi</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npz.npy'</span>)
-<span class="org-variable-name">logodds</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npz.npy'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">log_mu</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npy'</span>)
+<span class="org-variable-name">neg_log_phi</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npy'</span>)
+<span class="org-variable-name">logodds</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npy'</span>)
 </pre>
 </div>
 
@@ -440,19 +442,22 @@ Estimate the mean latent gene expression \(E[\lambda_{ij}] = (1 - \pi_{ij})
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">m</span>, <span class="org-variable-name">p</span> = log_mu.shape
-<span class="org-comment-delimiter"># </span><span class="org-comment">Important: log(sigmoid(x)) = softplus(-x)</span>
-<span class="org-variable-name">log_mean</span> = np.log1p(np.exp(logodds)) + log_mu
+<span class="org-comment-delimiter"># </span><span class="org-comment">Important: log(sigmoid(x)) = -softplus(-x)</span>
+<span class="org-variable-name">log_mean</span> = -np.log1p(np.exp(-logodds)) + log_mu
+<span class="org-variable-name">y</span> = log_mean - log_mean.mean(axis=0)
+<span class="org-variable-name">y</span> /= y.std(axis=0)
 </pre>
 </div>
 
 <p>
-Simulate a null response.
+Simulate a null covariate.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython">np.random.seed(1)
-<span class="org-variable-name">y</span> = np.random.normal(size=log_mean.shape[0])
-<span class="org-variable-name">y</span> -= y.mean()
+<span class="org-variable-name">x</span> = np.random.normal(size=log_mean.shape[0])
+<span class="org-variable-name">x</span> -= x.mean()
+<span class="org-variable-name">x</span> /= x.std()
 </pre>
 </div>
 
@@ -464,33 +469,10 @@ expression for each gene.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">bhat</span> = []
 <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p):
-  <span class="org-variable-name">b</span> = log_mean[:,j] @ y / (log_mean[:,j].T @ log_mean[:,j])
+  <span class="org-variable-name">b</span> = x @ y[:,j] / (x.T @ x)
   bhat.append(b)
 <span class="org-variable-name">bhat</span> = np.array(bhat)
 </pre>
-</div>
-
-<p>
-Plot the distribution of the estimated regression coefficients.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(bhat.<span class="org-builtin">min</span>(), bhat.<span class="org-builtin">max</span>(), 1000)
-plt.clf()
-plt.gcf().set_size_inches(2.5, 2.5)
-plt.hist(bhat, bins=20, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
-plt.plot(grid, st.norm(loc=bhat.mean(), scale=bhat.std()).pdf(grid), c=<span class="org-string">'k'</span>, lw=1)
-plt.axvline(x=bhat.mean(), c=<span class="org-string">'k'</span>, lw=1)
-plt.xlabel(<span class="org-string">'Estimated effect size'</span>)
-plt.ylabel(<span class="org-string">'Density'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/pseudobulk.org/null-covar.png" alt="null-covar.png">
-</p>
 </div>
 
 <p>
@@ -519,29 +501,123 @@ it is straightforward to show
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
-plt.gcf().set_size_inches(4, 2.5)
-<span class="org-keyword">for</span> i <span class="org-keyword">in</span> np.arange(1, grid.shape[0]):
-  plt.boxplot(bhat[bins == i], positions=[i - .5], widths=.5, flierprops={<span class="org-string">'markersize'</span>: 1}, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>})
-plt.axhline(y=0, lw=1, ls=<span class="org-string">'--'</span>, c=<span class="org-string">'k'</span>)
-plt.xticks(np.arange(grid.shape[0]), [f<span class="org-string">'{g:.3g}'</span> <span class="org-keyword">for</span> g <span class="org-keyword">in</span> grid], rotation=90)
-plt.xlabel(<span class="org-string">'Mean latent gene expression'</span>)
-plt.ylabel(<span class="org-string">'Estimated effect size'</span>)
-plt.tight_layout()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1, sharex=<span class="org-constant">True</span>)
+fig.set_size_inches(5.5, 4)
+ax[0].bar(<span class="org-builtin">range</span>(grid.shape[0] - 1), [(bins == i).<span class="org-builtin">sum</span>() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, grid.shape[0])], align=<span class="org-string">'edge'</span>, width=1, color=<span class="org-string">'k'</span>)
+ax[0].set_ylabel(<span class="org-string">'Number of genes'</span>)
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, grid.shape[0]):
+  ax[1].boxplot(bhat[bins == i], positions=[i - .5], widths=.5, flierprops={<span class="org-string">'markersize'</span>: 1}, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>})
+ax[1].axhline(y=0, lw=1, ls=<span class="org-string">'--'</span>, c=<span class="org-string">'k'</span>)
+ax[1].set_xticks(np.arange(grid.shape[0]))
+ax[1].set_xticklabels([f<span class="org-string">'{g:.3g}'</span> <span class="org-keyword">for</span> g <span class="org-keyword">in</span> grid], rotation=90)
+ax[1].set_xlabel(<span class="org-string">'Mean latent gene expression'</span>)
+ax[1].set_ylabel(<span class="org-string">'Estimated effect size'</span>)
+fig.tight_layout()
 </pre>
 </div>
 
 
 <div class="figure">
-<p><img src="figure/pseudobulk.org/null-covar-by-mean.png" alt="null-covar-by-mean.png">
+<p><img src="figure/pseudobulk.org/null-covariate-effect-by-mean.png" alt="null-covariate-effect-by-mean.png">
 </p>
 </div>
+
+<p>
+<i>SKP1</i> was the top eQTL in this data (refer to the
+<a href="http://shiny.stephenslab.uchicago.edu:5007/qtls">browser</a>). Extract the
+genotypes at the top cis-SNP for this gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> sqlite3.connect(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db'</span>) <span class="org-keyword">as</span> con:
+  <span class="org-variable-name">query</span> = pd.read_sql(<span class="org-string">'select ind, value from mean_qtl_geno, qtls where mean_qtl_geno.gene == qtls.gene and qtls.name == "SKP1";'</span>, con=con)
+</pre>
+</div>
+
+<p>
+Fit a linear model regressing the response against the mean latent gene
+expression for each gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">design</span> = query[<span class="org-string">'value'</span>] - query[<span class="org-string">'value'</span>].mean()
+<span class="org-variable-name">design</span> /= design.std()
+<span class="org-variable-name">design.index</span> = query[<span class="org-string">'ind'</span>]
+<span class="org-variable-name">response</span> = pd.DataFrame(y, index=dat.obs[<span class="org-string">'chip_id'</span>].unique(), columns=dat.var[<span class="org-string">'name'</span>])
+<span class="org-variable-name">design</span>, <span class="org-variable-name">response</span> = design.align(response, join=<span class="org-string">'inner'</span>)
+<span class="org-variable-name">bhat</span> = []
+<span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p):
+  <span class="org-variable-name">b</span> = design @ response.iloc[:,j] / (design.T @ design)
+  bhat.append(b)
+<span class="org-variable-name">bhat</span> = np.array(bhat)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1, sharex=<span class="org-constant">True</span>)
+fig.set_size_inches(5.5, 4)
+ax[0].bar(<span class="org-builtin">range</span>(grid.shape[0] - 1), [(bins == i).<span class="org-builtin">sum</span>() <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, grid.shape[0])], align=<span class="org-string">'edge'</span>, width=1, color=<span class="org-string">'k'</span>)
+ax[0].set_ylabel(<span class="org-string">'Number of genes'</span>)
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, grid.shape[0]):
+  ax[1].boxplot(bhat[bins == i], positions=[i - .5], widths=.5, flierprops={<span class="org-string">'markersize'</span>: 1}, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>})
+ax[1].axhline(y=0, lw=1, ls=<span class="org-string">'--'</span>, c=<span class="org-string">'k'</span>)
+ax[1].set_xticks(np.arange(grid.shape[0]))
+ax[1].set_xticklabels([f<span class="org-string">'{g:.3g}'</span> <span class="org-keyword">for</span> g <span class="org-keyword">in</span> grid], rotation=90)
+ax[1].set_xlabel(<span class="org-string">'Mean latent gene expression'</span>)
+ax[1].set_ylabel(<span class="org-string">'Estimated effect size'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pseudobulk.org/eqtl-effect-by-mean.png" alt="eqtl-effect-by-mean.png">
+</p>
+</div>
+
+<p>
+Report the global mean gene expression of <i>SKP1</i> (marking which gene
+expression bin it fell into).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series(global_log_mean.A.ravel(), index=response.columns).loc[<span class="org-string">'SKP1'</span>]
+</pre>
+</div>
+
+<pre class="example">
+-6.9060464
+
+</pre>
+
+<p>
+After centering and scaling the data, the sampling variance of the
+regression coefficient should be \(1 / 53\). Compare the standard deviation
+of the estimated \(\hat{b_1}, \ldots, \hat{b_p}\) to this theoretical
+expectation.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series({
+  <span class="org-string">'theoretical'</span>: np.sqrt(1 / 53),
+  <span class="org-string">'empirical'</span>: bhat.std()
+})
+</pre>
+</div>
+
+<pre class="example">
+theoretical    0.137361
+empirical      0.136828
+dtype: float64
+</pre>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-04 Mon 23:03</p>
+<p class="date">Created: 2020-05-05 Tue 10:06</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

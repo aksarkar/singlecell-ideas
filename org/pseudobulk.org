@@ -32,7 +32,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 921814
+  : Submitted batch job 934980
 
   #+BEGIN_SRC ipython
     import anndata
@@ -40,11 +40,12 @@
     import pandas as pd
     import scipy.special as sp
     import scipy.stats as st
+    import sqlite3
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[35]:
+  # Out[55]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -71,15 +72,16 @@
 * Method
 
   We assume ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
-   al. 2019]]) \(\DeclareMathOperator\Gam{Gamma}
-  \DeclareMathOperator\Poi{Poisson}
-  \DeclareMathOperator\argmin{arg min}
-  \newcommand\mf{\mathbf{F}} 
-  \newcommand\ml{\mathbf{L}}
-  \newcommand\mx{\mathbf{X}}
-  \newcommand\vl{\mathbf{l}}
-  \newcommand\vx{\mathbf{x}}
-  \)
+   al. 2019]]) \(
+   \DeclareMathOperator\Gam{Gamma}
+   \DeclareMathOperator\Poi{Poisson}
+   \DeclareMathOperator\argmin{arg min}
+   \newcommand\mf{\mathbf{F}} 
+   \newcommand\ml{\mathbf{L}}
+   \newcommand\mx{\mathbf{X}}
+   \newcommand\vl{\mathbf{l}}
+   \newcommand\vx{\mathbf{x}}
+   \)
   
   \begin{align*}
     x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
@@ -123,7 +125,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[36]:
+   # Out[4]:
    :END:
 
    Construct pseudobulk data.
@@ -134,7 +136,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[47]:
+   # Out[5]:
    :END:
 
    Plot the distribution of size factors for the pseudobulk data.
@@ -157,14 +159,14 @@
    Read the [[file:mpebpm.org::#ipsc][estimated model parameters]].
 
    #+BEGIN_SRC ipython
-     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npz.npy')
-     neg_log_phi = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npz.npy')
-     logodds = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npz.npy')
+     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npy')
+     neg_log_phi = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npy')
+     logodds = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npy')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[7]:
    :END:
 
    Estimate the mean latent gene expression \(E[\lambda_{ij}] = (1 - \pi_{ij})
@@ -172,26 +174,29 @@
 
    #+BEGIN_SRC ipython
      m, p = log_mu.shape
-     # Important: log(sigmoid(x)) = softplus(-x)
-     log_mean = np.log1p(np.exp(logodds)) + log_mu
+     # Important: log(sigmoid(x)) = -softplus(-x)
+     log_mean = -np.log1p(np.exp(-logodds)) + log_mu
+     y = log_mean - log_mean.mean(axis=0)
+     y /= y.std(axis=0)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[12]:
+   # Out[116]:
    :END:
 
-   Simulate a null response.
+   Simulate a null covariate.
 
    #+BEGIN_SRC ipython
      np.random.seed(1)
-     y = np.random.normal(size=log_mean.shape[0])
-     y -= y.mean()
+     x = np.random.normal(size=log_mean.shape[0])
+     x -= x.mean()
+     x /= x.std()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[13]:
+   # Out[117]:
    :END:
 
    Fit a linear model regressing the response against the mean latent gene
@@ -200,34 +205,14 @@
    #+BEGIN_SRC ipython :async t
      bhat = []
      for j in range(p):
-       b = log_mean[:,j] @ y / (log_mean[:,j].T @ log_mean[:,j])
+       b = x @ y[:,j] / (x.T @ x)
        bhat.append(b)
      bhat = np.array(bhat)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[27]:
-   :END:
-
-   Plot the distribution of the estimated regression coefficients.
-
-   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/null-covar.png
-     grid = np.linspace(bhat.min(), bhat.max(), 1000)
-     plt.clf()
-     plt.gcf().set_size_inches(2.5, 2.5)
-     plt.hist(bhat, bins=20, color='0.7', density=True)
-     plt.plot(grid, st.norm(loc=bhat.mean(), scale=bhat.std()).pdf(grid), c='k', lw=1)
-     plt.axvline(x=bhat.mean(), c='k', lw=1)
-     plt.xlabel('Estimated effect size')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[56]:
-   [[file:figure/pseudobulk.org/null-covar.png]]
+   # Out[118]:
    :END:
 
    Plot the distribution of regression coefficients, binned by the mean latent
@@ -247,23 +232,119 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[71]:
+   # Out[119]:
    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/null-covar-by-mean.png
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/null-covariate-effect-by-mean.png
      plt.clf()
-     plt.gcf().set_size_inches(4, 2.5)
-     for i in np.arange(1, grid.shape[0]):
-       plt.boxplot(bhat[bins == i], positions=[i - .5], widths=.5, flierprops={'markersize': 1}, medianprops={'color': 'k'})
-     plt.axhline(y=0, lw=1, ls='--', c='k')
-     plt.xticks(np.arange(grid.shape[0]), [f'{g:.3g}' for g in grid], rotation=90)
-     plt.xlabel('Mean latent gene expression')
-     plt.ylabel('Estimated effect size')
-     plt.tight_layout()
+     fig, ax = plt.subplots(2, 1, sharex=True)
+     fig.set_size_inches(5.5, 4)
+     ax[0].bar(range(grid.shape[0] - 1), [(bins == i).sum() for i in range(1, grid.shape[0])], align='edge', width=1, color='k')
+     ax[0].set_ylabel('Number of genes')
+     for i in range(1, grid.shape[0]):
+       ax[1].boxplot(bhat[bins == i], positions=[i - .5], widths=.5, flierprops={'markersize': 1}, medianprops={'color': 'k'})
+     ax[1].axhline(y=0, lw=1, ls='--', c='k')
+     ax[1].set_xticks(np.arange(grid.shape[0]))
+     ax[1].set_xticklabels([f'{g:.3g}' for g in grid], rotation=90)
+     ax[1].set_xlabel('Mean latent gene expression')
+     ax[1].set_ylabel('Estimated effect size')
+     fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[124]:
-   [[file:figure/pseudobulk.org/null-covar-by-mean.png]]
+   # Out[120]:
+   [[file:figure/pseudobulk.org/null-covariate-effect-by-mean.png]]
+   :END:
+
+   /SKP1/ was the top eQTL in this data (refer to the
+   [[http://shiny.stephenslab.uchicago.edu:5007/qtls][browser]]). Extract the
+   genotypes at the top cis-SNP for this gene.
+
+   #+BEGIN_SRC ipython
+     with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as con:
+       query = pd.read_sql('select ind, value from mean_qtl_geno, qtls where mean_qtl_geno.gene == qtls.gene and qtls.name == "SKP1";', con=con)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[104]:
+   :END:
+
+   Fit a linear model regressing the response against the mean latent gene
+   expression for each gene.
+
+   #+BEGIN_SRC ipython :async t
+     design = query['value'] - query['value'].mean()
+     design /= design.std()
+     design.index = query['ind']
+     response = pd.DataFrame(y, index=dat.obs['chip_id'].unique(), columns=dat.var['name'])
+     design, response = design.align(response, join='inner')
+     bhat = []
+     for j in range(p):
+       b = design @ response.iloc[:,j] / (design.T @ design)
+       bhat.append(b)
+     bhat = np.array(bhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[121]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/eqtl-effect-by-mean.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 1, sharex=True)
+     fig.set_size_inches(5.5, 4)
+     ax[0].bar(range(grid.shape[0] - 1), [(bins == i).sum() for i in range(1, grid.shape[0])], align='edge', width=1, color='k')
+     ax[0].set_ylabel('Number of genes')
+     for i in range(1, grid.shape[0]):
+       ax[1].boxplot(bhat[bins == i], positions=[i - .5], widths=.5, flierprops={'markersize': 1}, medianprops={'color': 'k'})
+     ax[1].axhline(y=0, lw=1, ls='--', c='k')
+     ax[1].set_xticks(np.arange(grid.shape[0]))
+     ax[1].set_xticklabels([f'{g:.3g}' for g in grid], rotation=90)
+     ax[1].set_xlabel('Mean latent gene expression')
+     ax[1].set_ylabel('Estimated effect size')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[122]:
+   [[file:figure/pseudobulk.org/eqtl-effect-by-mean.png]]
+   :END:
+
+   Report the global mean gene expression of /SKP1/ (marking which gene
+   expression bin it fell into).
+
+   #+BEGIN_SRC ipython
+     pd.Series(global_log_mean.A.ravel(), index=response.columns).loc['SKP1']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[123]:
+   : -6.9060464
+   :END:
+
+   After centering and scaling the data, the sampling variance of the
+   regression coefficient should be \(1 / 53\). Compare the standard deviation
+   of the estimated \(\hat{b_1}, \ldots, \hat{b_p}\) to this theoretical
+   expectation.
+
+   #+BEGIN_SRC ipython
+     pd.Series({
+       'theoretical': np.sqrt(1 / 53),
+       'empirical': bhat.std()
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[129]:
+   #+BEGIN_EXAMPLE
+     theoretical    0.137361
+     empirical      0.136828
+     dtype: float64
+   #+END_EXAMPLE
    :END:

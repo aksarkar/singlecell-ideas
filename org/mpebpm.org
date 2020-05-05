@@ -74,7 +74,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 66532852
+  : Submitted batch job 925038
 
   #+BEGIN_SRC ipython
     import anndata
@@ -340,14 +340,14 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[5]:
    :END:
 
    Fit ~mpebpm~, and report the time elapsed in minutes.
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
-     log_mu, neg_log_phi, logodds, _ = mpebpm.ebpm_point_gamma(
+     log_mu, neg_log_phi, logodds = mpebpm.ebpm_point_gamma(
        y,
        s=s,
        onehot=onehot,
@@ -356,46 +356,50 @@
        max_epochs=80,
        verbose=True)
      elapsed = time.time() - start
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npz', log_mu)
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npz', neg_log_phi)
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npz', log_mu)
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu', log_mu)
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi', neg_log_phi)
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds', logodds)
      elapsed / 60
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
-   : 4.908937855561574
+   # Out[10]:
+   : 4.786360724767049
    :END:
 
    For comparison, this analysis previously required 395 minutes using
    ~scqtl~. Estimate the full data log likelihood.
 
    #+BEGIN_SRC ipython
-     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npz')
-     neg_log_phi = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npz')
-     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npz')
+     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npy')
+     neg_log_phi = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npy')
+     logodds = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npy')
    #+END_SRC
 
    #+BEGIN_SRC ipython :async t
      mean = s.ravel() * onehot @ np.exp(log_mu)
      inv_disp = onehot @ np.exp(neg_log_phi)
-     (y * np.log(mean / inv_disp)
-      - y * np.log(1 + mean / inv_disp)
-      - inv_disp * np.log(1 + mean / inv_disp)
-      # Important: these terms are why we use inverse dispersion
-      + sp.gammaln(y + inv_disp)
-      - sp.gammaln(inv_disp)
-      - sp.gammaln(y + 1)).mean()
+     nb_llik = (y * np.log(mean / inv_disp)
+                - y * np.log(1 + mean / inv_disp)
+                - inv_disp * np.log(1 + mean / inv_disp)
+                # Important: these terms are why we use inverse dispersion
+                + sp.gammaln(y + inv_disp)
+                - sp.gammaln(inv_disp)
+                - sp.gammaln(y + 1))
+     case_zero = -np.log1p(np.exp(onehot @ -logodds)) + np.log1p(np.exp(nb_llik - (onehot @ logodds)))
+     case_non_zero = -np.log1p(np.exp(onehot @ logodds)) + nb_llik
+     np.where(y < 1, case_zero, case_non_zero).mean()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
-   : -163.68023324162735
+   # Out[17]:
+   : -128.0825405344857
    :END:
 
-   Read the previously estimated parameters, and the full data log likelihood.
+   Read the previously estimated parameters, and estimate the full data log
+   likelihood.
 
    #+BEGIN_SRC ipython
      log_mu0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-mu.txt.gz", index_col=0, sep=' ')
@@ -403,21 +407,30 @@
      logodds0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-logodds.txt.gz", index_col=0, sep=' ')
    #+END_SRC
 
-   #+BEGIN_SRC ipython
+   #+RESULTS:
+   :RESULTS:
+   # Out[18]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
      mean0 = s.ravel() * onehot @ np.exp(log_mu0.values.T)
      inv_disp0 = onehot @ np.exp(-log_phi0.values.T)
-     (y * np.log(mean0 / inv_disp0)
-      - y * np.log(1 + mean0 / inv_disp0)
-      - inv_disp0 * np.log(1 + mean0 / inv_disp0)
-      + sp.gammaln(y + inv_disp0)
-      - sp.gammaln(inv_disp0)
-      - sp.gammaln(y + 1)).mean()
+     nb_llik = (y * np.log(mean0 / inv_disp0)
+                - y * np.log(1 + mean0 / inv_disp0)
+                - inv_disp0 * np.log(1 + mean0 / inv_disp0)
+                # Important: these terms are why we use inverse disp0ersion
+                     + sp.gammaln(y + inv_disp0)
+                - sp.gammaln(inv_disp0)
+                - sp.gammaln(y + 1))
+     case_zero = -np.log1p(np.exp(onehot @ -logodds0.values.T)) + np.log1p(np.exp(nb_llik - (onehot @ logodds0.values.T)))
+     case_non_zero = -np.log1p(np.exp(onehot @ logodds0.values.T)) + nb_llik
+     np.where(y < 1, case_zero, case_non_zero).mean()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[24]:
-   : -394.82726690970867
+   # Out[22]:
+   : -248.24867762696132
    :END:
 
    Plot the fitted values of the two methods against each other.

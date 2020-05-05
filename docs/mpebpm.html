@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-03-21 Sat 16:50 -->
+<!-- 2020-05-05 Tue 00:14 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -601,7 +601,7 @@ Fit <code>mpebpm</code>, and report the time elapsed in minutes.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">logodds</span>, <span class="org-variable-name">_</span> = mpebpm.ebpm_point_gamma(
+<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">logodds</span> = mpebpm.ebpm_point_gamma(
   y,
   s=s,
   onehot=onehot,
@@ -610,15 +610,15 @@ Fit <code>mpebpm</code>, and report the time elapsed in minutes.
   max_epochs=80,
   verbose=<span class="org-constant">True</span>)
 <span class="org-variable-name">elapsed</span> = time.time() - start
-np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npz'</span>, log_mu)
-np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npz'</span>, neg_log_phi)
-np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npz'</span>, log_mu)
+np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu'</span>, log_mu)
+np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi'</span>, neg_log_phi)
+np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds'</span>, logodds)
 elapsed / 60
 </pre>
 </div>
 
 <pre class="example">
-4.908937855561574
+4.786360724767049
 
 </pre>
 
@@ -628,32 +628,36 @@ For comparison, this analysis previously required 395 minutes using
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">log_mu</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npz'</span>)
-<span class="org-variable-name">neg_log_phi</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npz'</span>)
-<span class="org-variable-name">log_mu</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npz'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">log_mu</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npy'</span>)
+<span class="org-variable-name">neg_log_phi</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npy'</span>)
+<span class="org-variable-name">logodds</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npy'</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">mean</span> = s.ravel() * onehot @ np.exp(log_mu)
 <span class="org-variable-name">inv_disp</span> = onehot @ np.exp(neg_log_phi)
-(y * np.log(mean / inv_disp)
- - y * np.log(1 + mean / inv_disp)
- - inv_disp * np.log(1 + mean / inv_disp)
- <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these terms are why we use inverse dispersion</span>
- + sp.gammaln(y + inv_disp)
- - sp.gammaln(inv_disp)
- - sp.gammaln(y + 1)).mean()
+<span class="org-variable-name">nb_llik</span> = (y * np.log(mean / inv_disp)
+           - y * np.log(1 + mean / inv_disp)
+           - inv_disp * np.log(1 + mean / inv_disp)
+           <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these terms are why we use inverse dispersion</span>
+           + sp.gammaln(y + inv_disp)
+           - sp.gammaln(inv_disp)
+           - sp.gammaln(y + 1))
+<span class="org-variable-name">case_zero</span> = -np.log1p(np.exp(onehot @ -logodds)) + np.log1p(np.exp(nb_llik - (onehot @ logodds)))
+<span class="org-variable-name">case_non_zero</span> = -np.log1p(np.exp(onehot @ logodds)) + nb_llik
+np.where(y &lt; 1, case_zero, case_non_zero).mean()
 </pre>
 </div>
 
 <pre class="example">
--163.68023324162735
+-128.0825405344857
 
 </pre>
 
 <p>
-Read the previously estimated parameters, and the full data log likelihood.
+Read the previously estimated parameters, and estimate the full data log
+likelihood.
 </p>
 
 <div class="org-src-container">
@@ -666,17 +670,21 @@ Read the previously estimated parameters, and the full data log likelihood.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">mean0</span> = s.ravel() * onehot @ np.exp(log_mu0.values.T)
 <span class="org-variable-name">inv_disp0</span> = onehot @ np.exp(-log_phi0.values.T)
-(y * np.log(mean0 / inv_disp0)
- - y * np.log(1 + mean0 / inv_disp0)
- - inv_disp0 * np.log(1 + mean0 / inv_disp0)
- + sp.gammaln(y + inv_disp0)
- - sp.gammaln(inv_disp0)
- - sp.gammaln(y + 1)).mean()
+<span class="org-variable-name">nb_llik</span> = (y * np.log(mean0 / inv_disp0)
+           - y * np.log(1 + mean0 / inv_disp0)
+           - inv_disp0 * np.log(1 + mean0 / inv_disp0)
+           <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these terms are why we use inverse disp0ersion</span>
+                + sp.gammaln(y + inv_disp0)
+           - sp.gammaln(inv_disp0)
+           - sp.gammaln(y + 1))
+<span class="org-variable-name">case_zero</span> = -np.log1p(np.exp(onehot @ -logodds0.values.T)) + np.log1p(np.exp(nb_llik - (onehot @ logodds0.values.T)))
+<span class="org-variable-name">case_non_zero</span> = -np.log1p(np.exp(onehot @ logodds0.values.T)) + nb_llik
+np.where(y &lt; 1, case_zero, case_non_zero).mean()
 </pre>
 </div>
 
 <pre class="example">
--394.82726690970867
+-248.24867762696132
 
 </pre>
 
@@ -1017,7 +1025,7 @@ Fit just this gene.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-03-21 Sat 16:50</p>
+<p class="date">Created: 2020-05-05 Tue 00:14</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -1,0 +1,269 @@
+#+TITLE: Alternative approaches to scRNA-seq pseudobulk models
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  One strategy for simplifying the analysis of scRNA-seq data is to construct
+  /pseudo-bulk data/. If we have molecule counts generated using scRNA-seq for
+  genes \(j = 1, \ldots, p\) measured in cells \(i = 1, \ldots, n\), belonging
+  to \(m\) different groups denoted by indicator variables \(z_{ik}, k = 1,
+  \ldots, m\), then this approach constructs new data \(y_{kj} = \sum_i x_{ij}
+  z_{ik}\). The key idea of this approach is that the new data \(y_{kj}\) can
+  be treated as bulk RNA-seq data in downstream analysis.
+
+  However, this approach has been observed to lead to biases in regression and
+  differential expression analyses, possibly due to differing size factors
+  (total number of molecules observed). Here, we outline an alternative procedure
+  and demonstrate that it is not biased by variation in size factors.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+
+  #+RESULTS:
+  : Submitted batch job 921814
+
+  #+BEGIN_SRC ipython
+    import anndata
+    import numpy as np
+    import pandas as pd
+    import scipy.special as sp
+    import scipy.stats as st
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[35]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Method
+
+  We assume ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
+   al. 2019]]) \(\DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\argmin{arg min}
+  \newcommand\mf{\mathbf{F}} 
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vx{\mathbf{x}}
+  \)
+  
+  \begin{align*}
+    x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
+    \lambda_{ij} \mid \mu_{ij}, \phi_{ij}, \pi_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
+    \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
+    \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
+    \operatorname{logit} \pi_{ij} &= (\ml \mf_\pi')_{ij},
+  \end{align*}
+
+  where 
+
+  - \(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\) observed
+    in cell \(i = 1, \ldots, n\)
+  - \(x_{i+} \triangleq \sum_j x_{ij}\) is the total number of molecules
+    observed in sample \(i\)
+  - cells are taken from \(m\) conditions, \(\ml\) is \(n \times m\),
+    and each \(\mf_{(\cdot)}\) is \(p \times m\)
+  - assignments of cells to conditions (loadings) \(l_{ik} \in \{0, 1\}, k = 1,
+    \ldots, m\) are known and fixed.
+
+  Under this model, latent gene expression \(\lambda_{ij} \sim g_{ij}(\cdot)\),
+  and e.g., the mean gene expression is
+
+  \[ E[\lambda_{ij} \mid \hat{g}] = (1 - \hat\pi_{ij}) \hat\mu_{ij}. \]
+
+  We fit the model by maximizing the likelihood using
+  [[file:mpebpm.org][stochastic gradient descent]].
+
+* Results
+** iPSC data
+
+   Read the iPSC data
+   ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
+   al. 2019]]). We generated scRNA-seq data for 5,597 induced pluripotent stem
+   cells derived from 54 donor individuals at 9,957 genes (after quality
+   control) using the Fludigm C1 platform.
+
+   #+BEGIN_SRC ipython
+     dat = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[36]:
+   :END:
+
+   Construct pseudobulk data.
+
+   #+BEGIN_SRC ipython :async t
+     y = pd.get_dummies(dat.obs['chip_id']).values.T @ dat.X
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   :END:
+
+   Plot the distribution of size factors for the pseudobulk data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/size.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.hist(y.sum(axis=1).ravel(), bins=12, color='0.7')
+     plt.xlabel('Size factor')
+     plt.ylabel('Number of conditions')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[54]:
+   [[file:figure/pseudobulk.org/size.png]]
+   :END:
+
+   Read the [[file:mpebpm.org::#ipsc][estimated model parameters]].
+
+   #+BEGIN_SRC ipython
+     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npz.npy')
+     neg_log_phi = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npz.npy')
+     logodds = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npz.npy')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   Estimate the mean latent gene expression \(E[\lambda_{ij}] = (1 - \pi_{ij})
+   \mu_{ij}\).
+
+   #+BEGIN_SRC ipython
+     m, p = log_mu.shape
+     # Important: log(sigmoid(x)) = softplus(-x)
+     log_mean = np.log1p(np.exp(logodds)) + log_mu
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[12]:
+   :END:
+
+   Simulate a null response.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(1)
+     y = np.random.normal(size=log_mean.shape[0])
+     y -= y.mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   :END:
+
+   Fit a linear model regressing the response against the mean latent gene
+   expression for each gene.
+
+   #+BEGIN_SRC ipython :async t
+     bhat = []
+     for j in range(p):
+       b = log_mean[:,j] @ y / (log_mean[:,j].T @ log_mean[:,j])
+       bhat.append(b)
+     bhat = np.array(bhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[27]:
+   :END:
+
+   Plot the distribution of the estimated regression coefficients.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/null-covar.png
+     grid = np.linspace(bhat.min(), bhat.max(), 1000)
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.hist(bhat, bins=20, color='0.7', density=True)
+     plt.plot(grid, st.norm(loc=bhat.mean(), scale=bhat.std()).pdf(grid), c='k', lw=1)
+     plt.axvline(x=bhat.mean(), c='k', lw=1)
+     plt.xlabel('Estimated effect size')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[56]:
+   [[file:figure/pseudobulk.org/null-covar.png]]
+   :END:
+
+   Plot the distribution of regression coefficients, binned by the mean latent
+   gene expression over all cells. Assuming
+
+   \[ x_{ij} \mid x_{i+}, \mu_j \sim \Poi(x_{i+} \mu_j), \]
+
+   it is straightforward to show
+
+   \[ \hat{\mu_j} = \frac{\sum_i x_{ij}}{\sum_i x_{i+}} \]
+
+   #+BEGIN_SRC ipython :async t
+     global_log_mean = np.log(dat.X.sum(axis=0) / dat.X.sum()).ravel()
+     grid = np.linspace(global_log_mean.min(), global_log_mean.max(), 15)
+     bins = np.digitize(global_log_mean, grid).ravel()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[71]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/null-covar-by-mean.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2.5)
+     for i in np.arange(1, grid.shape[0]):
+       plt.boxplot(bhat[bins == i], positions=[i - .5], widths=.5, flierprops={'markersize': 1}, medianprops={'color': 'k'})
+     plt.axhline(y=0, lw=1, ls='--', c='k')
+     plt.xticks(np.arange(grid.shape[0]), [f'{g:.3g}' for g in grid], rotation=90)
+     plt.xlabel('Mean latent gene expression')
+     plt.ylabel('Estimated effect size')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[124]:
+   [[file:figure/pseudobulk.org/null-covar-by-mean.png]]
+   :END:

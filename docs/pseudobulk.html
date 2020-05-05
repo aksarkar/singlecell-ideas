@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-05 Tue 10:06 -->
+<!-- 2020-05-05 Tue 11:47 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Alternative approaches to scRNA-seq pseudobulk models</title>
@@ -523,6 +523,31 @@ fig.tight_layout()
 </div>
 
 <p>
+Plot the distribution of regression coefficients for equal-sized bins of
+genes, ranked by global mean latent gene expression.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_bins</span> = 15
+<span class="org-variable-name">temp</span> = bhat[np.argsort(global_log_mean.A.ravel())]
+plt.clf()
+plt.gcf().set_size_inches(4, 3)
+plt.boxplot(np.array_split(temp, 15), positions=<span class="org-builtin">range</span>(15), widths=.5, flierprops={<span class="org-string">'markersize'</span>: 1}, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>})
+plt.axhline(y=0, lw=1, ls=<span class="org-string">'--'</span>, c=<span class="org-string">'k'</span>)
+plt.xticks(np.arange(n_bins))
+plt.xlabel(<span class="org-string">'Mean latent gene expression bin'</span>)
+plt.ylabel(<span class="org-string">'Estimated effect size'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pseudobulk.org/null-covariate-effect-by-mean-equal-bins.png" alt="null-covariate-effect-by-mean-equal-bins.png">
+</p>
+</div>
+
+<p>
 <i>SKP1</i> was the top eQTL in this data (refer to the
 <a href="http://shiny.stephenslab.uchicago.edu:5007/qtls">browser</a>). Extract the
 genotypes at the top cis-SNP for this gene.
@@ -611,13 +636,38 @@ theoretical    0.137361
 empirical      0.136828
 dtype: float64
 </pre>
+
+<p>
+Plot the distribution of regression coefficients for equal-sized bins of
+genes, ranked by global mean latent gene expression.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_bins</span> = 15
+<span class="org-variable-name">temp</span> = bhat[np.argsort(global_log_mean.A.ravel())]
+plt.clf()
+plt.gcf().set_size_inches(4, 3)
+plt.boxplot(np.array_split(temp, 15), positions=<span class="org-builtin">range</span>(15), widths=.5, flierprops={<span class="org-string">'markersize'</span>: 1}, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>})
+plt.axhline(y=0, lw=1, ls=<span class="org-string">'--'</span>, c=<span class="org-string">'k'</span>)
+plt.xticks(np.arange(n_bins))
+plt.xlabel(<span class="org-string">'Mean latent gene expression bin'</span>)
+plt.ylabel(<span class="org-string">'Estimated effect size'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pseudobulk.org/eqtl-effect-by-mean-equal-bins.png" alt="eqtl-effect-by-mean-equal-bins.png">
+</p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-05 Tue 10:06</p>
+<p class="date">Created: 2020-05-05 Tue 11:47</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

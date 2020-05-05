@@ -196,7 +196,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[117]:
+   # Out[130]:
    :END:
 
    Fit a linear model regressing the response against the mean latent gene
@@ -212,7 +212,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[118]:
+   # Out[131]:
    :END:
 
    Plot the distribution of regression coefficients, binned by the mean latent
@@ -232,7 +232,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[119]:
+   # Out[132]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/null-covariate-effect-by-mean.png
@@ -255,6 +255,28 @@
    :RESULTS:
    # Out[120]:
    [[file:figure/pseudobulk.org/null-covariate-effect-by-mean.png]]
+   :END:
+
+   Plot the distribution of regression coefficients for equal-sized bins of
+   genes, ranked by global mean latent gene expression.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/null-covariate-effect-by-mean-equal-bins.png
+     n_bins = 15
+     temp = bhat[np.argsort(global_log_mean.A.ravel())]
+     plt.clf()
+     plt.gcf().set_size_inches(4, 3)
+     plt.boxplot(np.array_split(temp, 15), positions=range(15), widths=.5, flierprops={'markersize': 1}, medianprops={'color': 'k'})
+     plt.axhline(y=0, lw=1, ls='--', c='k')
+     plt.xticks(np.arange(n_bins))
+     plt.xlabel('Mean latent gene expression bin')
+     plt.ylabel('Estimated effect size')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[144]:
+   [[file:figure/pseudobulk.org/null-covariate-effect-by-mean-equal-bins.png]]
    :END:
 
    /SKP1/ was the top eQTL in this data (refer to the
@@ -289,7 +311,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[121]:
+   # Out[145]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/eqtl-effect-by-mean.png
@@ -348,3 +370,26 @@
      dtype: float64
    #+END_EXAMPLE
    :END:
+
+   Plot the distribution of regression coefficients for equal-sized bins of
+   genes, ranked by global mean latent gene expression.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/eqtl-effect-by-mean-equal-bins.png
+     n_bins = 15
+     temp = bhat[np.argsort(global_log_mean.A.ravel())]
+     plt.clf()
+     plt.gcf().set_size_inches(4, 3)
+     plt.boxplot(np.array_split(temp, 15), positions=range(15), widths=.5, flierprops={'markersize': 1}, medianprops={'color': 'k'})
+     plt.axhline(y=0, lw=1, ls='--', c='k')
+     plt.xticks(np.arange(n_bins))
+     plt.xlabel('Mean latent gene expression bin')
+     plt.ylabel('Estimated effect size')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[146]:
+   [[file:figure/pseudobulk.org/eqtl-effect-by-mean-equal-bins.png]]
+   :END:
+

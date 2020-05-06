@@ -199,8 +199,8 @@
    # Out[130]:
    :END:
 
-   Fit a linear model regressing the response against the mean latent gene
-   expression for each gene.
+   For each gene, fit a linear model regressing mean latent gene expression in
+   each individual against the covariate.
 
    #+BEGIN_SRC ipython :async t
      bhat = []
@@ -293,8 +293,8 @@
    # Out[104]:
    :END:
 
-   Fit a linear model regressing the response against the mean latent gene
-   expression for each gene.
+   For each gene, fit a linear model regressing mean latent gene expression on
+   genotype at the cis-SNP.
 
    #+BEGIN_SRC ipython :async t
      design = query['value'] - query['value'].mean()

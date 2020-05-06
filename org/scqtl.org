@@ -7,7 +7,7 @@
   discovered mean and variance effect QTLs using a modular approach, first
   fitting the model \( 
   \DeclareMathOperator\Gam{Gamma}
-  \DeclareMathOperator\N{N}
+  \DeclareMathOperator\N{\mathcal{N}}
   \DeclareMathOperator\Poi{Poisson}
   \DeclareMathOperator\argmin{arg min}
   \newcommand\mf{\mathbf{F}}
@@ -41,11 +41,17 @@
   and then using a standard QTL mapping approach (e.g.,
   [[https://dx.doi.org/10.1038/nature10808][Degner et al. 2012]],
   [[https://dx.doi.org/10.1126/science.1242429][McVicker et al. 2013]]) to
-  discover genetic effects on gene expression mean and variance. This approach
-  lost substantial power to detect effect on mean gene expression compared to
-  bulk RNA-seq on the same (number of) samples. One approach which might
-  increase power would be to incorporate genotype into the expression model for
-  gene \(j\)
+  discover genetic effects on gene expression mean \(E[\lambda_{ij}]\),
+  dispersion \(\phi_{ij}\), and variance \(V[\lambda_{ij}]\). Critically, these
+  quantities describe the distribution of latent gene expression, removing the
+  effect of measurement noise
+  ([[https://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens 2020]]).
+
+  This approach lost substantial power to detect effect on mean gene expression
+  compared to bulk RNA-seq on the same (number of) samples
+  ([[https://dx.doi.org/10.1101/gr.224436.117][Banovich et al. 2018]]). One
+  approach which might increase power would be to incorporate genotype into the
+  expression model for gene \(j\)
 
   \begin{align}
     \lambda_{i} &= \Gam(\phi_{i}^{-1}, \mu_{i}^{-1} \phi_{i}^{-1})\\
@@ -54,19 +60,29 @@
   \end{align}
 
   where \(\mg\) denotes genotype (\(m \times s\)). This approach would increase
-  power by pooling samples across individuals with same (similar) genotypes. To
-  fit this model for \(s > m\), we can further assume a sparsity-inducing prior
+  power by pooling samples across individuals with same (similar) genotypes,
+  and is similar to previously proposed approaches (e.g.,
+  [[https://www.genetics.org/content/188/2/435][Rönnegård and Valdar 2011]],
+  [[https://bmcgenet.biomedcentral.com/articles/10.1186/1471-2156-13-63][Rönnegård
+  and Valdar 2012]]). To fit this model for \(s > m\), we can further assume a
+  sparsity-inducing prior
 
   \begin{align}
     \vb_{\mu} &\sim \pi_{\mu} \delta_0(\cdot) + (1 - \pi_{\mu}) \N(0, \sigma_{\mu}^2)\\
     \vb_{\phi} &\sim \pi_{\phi} \delta_0(\cdot) + (1 - \pi_{\phi}) \N(0, \sigma_{\phi}^2).
   \end{align}
 
-  This model can be fit using Monte Carlo VBEM
-  ([[https://doi.org/10.1007/978-94-011-5014-9_12][Neal and Hinton 1998]],
-  [[https://cse.buffalo.edu/faculty/mbeal/thesis/][Beal 2003]],
-  [[https://arxiv.org/abs/1312.6114][Kingma and Welling 2014]],
-  [[https://arxiv.org/abs/1401.4082][Rezende et al. 2014]]).
+  The prior is non-conjugate to the likelihood, so we perform variational
+  inference (Blei et al. 2017), optimizing a stochastic objective
+  ([[https://arxiv.org/abs/1312.6114][Kingma and Welling 2014]],
+  [[https://arxiv.org/abs/1401.4082][Rezende et al. 2014]],
+  [[http://proceedings.mlr.press/v32/titsias14.html][Titsias and
+  Lázaro-Gredilla 2014]],
+  [[http://proceedings.mlr.press/v33/ranganath14.html][Ranganath et al. 2014]])
+  via gradient descent. We use a local reparameterization
+  ([[https://papers.nips.cc/paper/5666-variational-dropout-and-the-local-reparameterization-trick][Kingma
+  et al. 2015]]) to speed up convergence
+  ([[https://dx.doi.org/10.1101/107623][Park et al. 2017]]).
 
 * Setup
   :PROPERTIES:
@@ -81,15 +97,123 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3() :exports none :dir /scratch/midway2/aksarkar
+  #+CALL: ipython3(venv="singlecell",partition="broadwl",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+
+  #+RESULTS:
+  : Submitted batch job 989845
+
+  #+BEGIN_SRC ipython
+    import anndata
+    import numpy as np
+    import pandas as pd
+    import txpred
+    import txpred.models.susie
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[40]:
+  :END:
 
   #+BEGIN_SRC ipython
     %matplotlib inline
     %config InlineBackend.figure_formats = set(['retina'])
   #+END_SRC
 
+  #+RESULTS:
+  :RESULTS:
+  # Out[41]:
+  :END:
+
   #+BEGIN_SRC ipython
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
     plt.rcParams['font.family'] = 'Nimbus Sans'
   #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[42]:
+  :END:
+
+* Results
+** /SKP1/
+
+   Read the data.
+
+   #+BEGIN_SRC ipython :async t
+     y = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[43]:
+   :END:
+
+   /SKP1/ was the top eQTL discovered in Sarkar et al. 2019. Extract the
+   genotypes around the TSS.
+
+   #+BEGIN_SRC ipython
+     y.var[y.var['name'] == 'SKP1']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   #+BEGIN_EXAMPLE
+     chr      start        end  name strand      source
+     index
+     ENSG00000113558  hs5  133484633  133512729  SKP1      -  H. sapiens
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/singlecell/
+     tabix -h /project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/yri-120-dosages.vcf.gz chr5:$((133484633-1000000))-$((133484633+1000000)) | gzip >skp1.vcf.gz
+   #+END_SRC
+
+   #+RESULTS:
+
+   Read the genotypes, and align it to the individuals with single cell
+   measurements.
+
+   #+BEGIN_SRC ipython :async t
+     dat = pd.read_csv('/scratch/midway2/aksarkar/singlecell/skp1.vcf.gz', skiprows=2, sep='\t')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     L = pd.get_dummies(y.obs['chip_id'])
+     x = dat.filter(like='NA', axis=1)
+     x.index = dat['POS']
+     L, x = L.align(x, axis=1, join='inner')
+     x.T.shape
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[45]:
+   : (54, 5778)
+   :END:
+
+   Fit the sparse regression model.
+
+   #+BEGIN_SRC ipython :async t
+     n, m = L.shape
+     s, _ = x.shape
+     fit = (txpred.models.susie.PoisGamRegression(
+       mean_prior=txpred.models.susie.SpikeSlab(s),
+       inv_disp_prior=txpred.models.susie.SpikeSlab(s))
+            .fit(torch.tensor(L @ x.T),
+                 torch.tensor(y[y.var['name'] == 'SKP1'].X.A),
+                 n_epochs=1000,
+                 trace=True))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - d3c3f57e-8888-45d7-b3a0-55307098f869
+   :END:

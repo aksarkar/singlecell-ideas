@@ -5,7 +5,7 @@
 
   The minimal description of the working environment is:
 
-  #+BEGIN_SRC sh :exports code :results none
+  #+BEGIN_SRC sh :results none
     srun --partition=build --mem=4G xargs -L100 conda create -y -c aksarkar -n singlecell <<EOF
     colorcet
     ipython
@@ -14,6 +14,7 @@
     numba
     numpy
     pandas
+    pyplink
     pytest
     python
     tensorflow-gpu==1.15.0
@@ -29,32 +30,23 @@
     EOF
   #+END_SRC
 
-  #+RESULTS:
-
-  #+BEGIN_SRC sh :exports code :results none
+  #+BEGIN_SRC sh :results none
     source activate singlecell
     srun --partition=build --mem=8G xargs -L100 python -m pip install <<EOF
-    git+https://github.com/aksarkar/wlra.git#egg=wlra
-    git+https://github.com/aksarkar/scaa.git#egg=scaa
+    -e /project2/mstephens/aksarkar/projects/anmf/
+    -e /project2/mstephens/aksarkar/projects/gtex-pred/
+    -e /project2/mstephens/aksarkar/projects/mpebpm/
+    -e /project2/mstephens/aksarkar/projects/poisbeta/
     dash==1.9.0
+    dca
+    git+https://github.com/aksarkar/scaa.git#egg=scaa
+    git+https://github.com/aksarkar/wlra.git#egg=wlra
     h5py==2.10.0
     rpy2==3.2.4
-    scvi
     scanpy
-    dca
+    scvi
     EOF
   #+END_SRC
-
-  #+RESULTS:
-
-  #+BEGIN_SRC sh :exports code :results none
-    source activate singlecell
-    pip install -e /project2/mstephens/aksarkar/projects/anmf/
-    pip install -e /project2/mstephens/aksarkar/projects/mpebpm/
-    pip install -e /project2/mstephens/aksarkar/projects/poisbeta/
-  #+END_SRC
-
-  #+RESULTS:
 
   We need to
   [[https://www.anaconda.com/using-pip-in-a-conda-environment/][mix

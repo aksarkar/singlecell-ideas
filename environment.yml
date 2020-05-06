@@ -30,7 +30,7 @@ dependencies:
   - cupti=10.0.130=0
   - curl=7.67.0=hbc83047_0
   - cycler=0.10.0=py37_0
-  - dbus=1.13.12=h746ee38_0
+  - dbus=1.13.14=hb2f20db_0
   - decorator=4.4.2=py_0
   - entrypoints=0.3=py37_0
   - expat=2.2.6=he6710b0_0
@@ -54,23 +54,23 @@ dependencies:
   - h5py=2.10.0=py37h7918eee_0
   - harfbuzz=1.8.8=hffaf4a1_0
   - hdf5=1.10.4=hb1b8bf9_0
-  - icu=58.2=h9c2bf20_1
+  - icu=58.2=he6710b0_3
   - idna=2.9=py_1
   - importlib_metadata=1.5.0=py37_0
   - intel-openmp=2020.0=166
   - ipykernel=5.1.4=py37h39e3cac_0
   - ipython=7.13.0=py37h5ca1d4c_0
   - ipython_genutils=0.2.0=py37_0
-  - jedi=0.16.0=py37_1
-  - jinja2=2.11.1=py_0
+  - jedi=0.17.0=py37_0
+  - jinja2=2.11.2=py_0
   - joblib=0.14.1=py_0
   - jpeg=9b=h024ee3a_2
-  - jupyter_client=6.1.2=py_0
+  - jupyter_client=6.1.3=py_0
   - jupyter_console=6.1.0=py_0
   - jupyter_core=4.6.3=py37_0
   - keras-applications=1.0.8=py_0
   - keras-preprocessing=1.1.0=py_1
-  - kiwisolver=1.1.0=py37he6710b0_0
+  - kiwisolver=1.2.0=py37hfd86e86_0
   - krb5=1.16.4=h173b8e3_0
   - ld_impl_linux-64=2.33.1=h53a641e_7
   - libcurl=7.67.0=h20c2e04_0
@@ -87,7 +87,7 @@ dependencies:
   - libuuid=1.0.3=h1bed415_2
   - libxcb=1.13=h1bed415_1
   - libxml2=2.9.9=hea5a465_1
-  - llvmlite=0.31.0=py37hd408876_0
+  - llvmlite=0.32.0=py37hd408876_0
   - make=4.2.1=h1bed415_1
   - markdown=3.1.1=py37_0
   - markupsafe=1.1.1=py37h7b6447c_0
@@ -98,18 +98,18 @@ dependencies:
   - mkl_fft=1.0.15=py37ha843d7b_0
   - mkl_random=1.1.0=py37hd6b4f25_0
   - more-itertools=8.2.0=py_0
-  - ncurses=6.2=he6710b0_0
+  - ncurses=6.2=he6710b0_1
   - ninja=1.9.0=py37hfd86e86_0
-  - numba=0.48.0=py37h0573a6f_0
+  - numba=0.49.0=py37h0573a6f_0
   - numpy=1.18.1=py37h4f9e942_0
   - numpy-base=1.18.1=py37hde5b4d6_1
-  - openssl=1.1.1f=h7b6447c_0
+  - openssl=1.1.1g=h7b6447c_0
   - opt_einsum=3.1.0=py_0
   - packaging=20.3=py_0
   - pandas=1.0.3=py37h0573a6f_0
   - pango=1.42.4=h049681c_0
   - param=1.9.3=py_0
-  - parso=0.6.2=py_0
+  - parso=0.7.0=py_0
   - pcre=8.43=he6710b0_0
   - pexpect=4.8.0=py37_0
   - pickleshare=0.7.5=py37_0
@@ -125,14 +125,15 @@ dependencies:
   - pyct=0.4.6=py37_0
   - pygments=2.6.1=py_0
   - pyopenssl=19.1.0=py37_0
-  - pyparsing=2.4.6=py_0
+  - pyparsing=2.4.7=py_0
+  - pyplink=1.3.5=py37_0
   - pyqt=5.9.2=py37h05f1152_2
   - pysocks=1.7.1=py37_0
   - pytest=5.4.1=py37_0
   - python=3.7.7=h191fe78_0_cpython
   - python-dateutil=2.8.1=py_0
   - pytorch=1.4.0=cuda100py37h75a84eb_0
-  - pytz=2019.3=py_0
+  - pytz=2020.1=py_0
   - pyyaml=5.3.1=py37h7b6447c_0
   - pyzmq=18.1.1=py37he6710b0_0
   - qt=5.9.7=h5867ecd_1
@@ -217,7 +218,7 @@ dependencies:
   - setuptools=46.1.3=py37_0
   - sip=4.19.8=py37hf484d3e_0
   - six=1.14.0=py37_0
-  - sqlite=3.31.1=h7b6447c_0
+  - sqlite=3.31.1=h62c20be_1
   - tensorboard=1.15.0=pyhb230dea_0
   - tensorflow=1.15.0=gpu_py37h0f0df58_0
   - tensorflow-base=1.15.0=gpu_py37h9dcbed7_0
@@ -234,15 +235,16 @@ dependencies:
   - werkzeug=0.16.1=py_0
   - wheel=0.34.2=py37_0
   - wrapt=1.12.1=py37h7b6447c_1
-  - xz=5.2.4=h14c3975_4
+  - xz=5.2.5=h7b6447c_0
   - yaml=0.1.7=had09818_2
   - zeromq=4.3.1=he6710b0_3
-  - zipp=2.2.0=py_0
+  - zipp=3.1.0=py_0
   - zlib=1.2.11=h7b6447c_3
   - zstd=1.3.7=h0b5b093_0
   - pip:
     - anndata==0.7.1
-    - click==7.1.1
+    - brotli==1.0.7
+    - click==7.1.2
     - dash==1.9.0
     - dash-core-components==1.8.0
     - dash-html-components==1.0.2
@@ -250,7 +252,7 @@ dependencies:
     - dash-table==4.6.0
     - dca==0.2.3
     - flask==1.1.2
-    - flask-compress==1.4.0
+    - flask-compress==1.5.0
     - future==0.18.2
     - get-version==2.1
     - hyperopt==0.1.2
@@ -258,26 +260,33 @@ dependencies:
     - keras==2.3.1
     - kopt==0.1.0
     - legacy-api-wrap==1.2
+    - loompy==3.0.6
+    - mpebpm==0.1
     - natsort==7.0.1
     - networkx==2.4
     - numexpr==2.7.1
+    - numpy-groupies==0+unknown
     - patsy==0.5.1
-    - plotly==4.6.0
+    - plotly==4.7.0
+    - poisbeta==0.1
     - pymongo==3.10.1
     - retrying==1.3.3
     - rpy2==3.2.4
     - scaa==0.1
     - scanpy==1.4.6
-    - seaborn==0.10.0
+    - scvi==0.6.4
+    - seaborn==0.10.1
     - setuptools-scm==3.5.0
     - simplegeneric==0.8.1
     - sklearn==0.0
     - statsmodels==0.11.1
     - tables==3.6.1
     - tbb==2020.0.133
-    - tqdm==4.45.0
+    - tqdm==4.46.0
+    - txpred==0.2
     - tzlocal==2.0.0
-    - umap-learn==0.4.1
+    - umap-learn==0.4.2
     - wlra==0.1
+    - xlrd==1.2.0
 prefix: /scratch/midway2/aksarkar/miniconda3/envs/singlecell
 

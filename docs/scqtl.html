@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-07 Thu 14:41 -->
+<!-- 2020-05-07 Thu 15:18 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Single cell QTL mapping via sparse multiple regression</title>
@@ -334,15 +334,25 @@ expression model for gene \(j\)
 
 \begin{align}
   \lambda_{i} &= \Gam(\phi_{i}^{-1}, \mu_{i}^{-1} \phi_{i}^{-1})\\
-  \ln\mu_{i} &= \ml\mg\vb_{\mu} + \vb_{\mu 0}\\
-  \ln\phi_{i} &= \ml\mg\vb_{\phi} + \vb_{\phi 0},
+  \ln\mu_{i} &= \ml(\mg\vb_{\mu} + b_{\mu 0})\\
+  \ln\phi_{i} &= \ml(\mg\vb_{\phi} + b_{\phi 0}),
 \end{align}
 
 <p>
-where \(\mg\) denotes genotype (\(m \times s\)). This approach would increase
-power by pooling samples across individuals with same (similar) genotypes,
-and is similar to previously proposed approaches (e.g.,
-<a href="https://www.genetics.org/content/188/2/435">Rönnegård and Valdar 2011</a>,
+where
+</p>
+
+<ul class="org-ul">
+<li>\(\mg\) denotes genotype (\(m \times s\))</li>
+<li>\(\vb_{\mu}\), \(\vb_{\phi}\) denote genetic effects (\(s \times 1)\)</li>
+<li>\(b_{\mu 0}\), \(b_{\phi 0}\) denote (scalar) intercepts</li>
+</ul>
+
+<p>
+This approach would increase power by pooling samples across individuals with
+same (similar) genotypes, and is similar to previously proposed approaches
+(e.g., <a href="https://www.genetics.org/content/188/2/435">Rönnegård and Valdar
+2011</a>,
 <a href="https://bmcgenet.biomedcentral.com/articles/10.1186/1471-2156-13-63">Rönnegård
 and Valdar 2012</a>). To fit this model for \(s > m\), we can further assume a
 sparsity-inducing prior
@@ -530,14 +540,12 @@ Fit the sparse regression model.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">data</span> = td.DataLoader(
   td.TensorDataset(
-    torch.tensor(L.values @ x.values.T, dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(L.values, dtype=torch.<span class="org-builtin">float</span>),
     torch.tensor(y[:,y.var[<span class="org-string">'name'</span>] == <span class="org-string">'SKP1'</span>].X.A, dtype=torch.<span class="org-builtin">float</span>),
     torch.tensor(y.obs[<span class="org-string">'mol_hs'</span>].values, dtype=torch.<span class="org-builtin">float</span>)),
   batch_size=128, shuffle=<span class="org-constant">True</span>)
-<span class="org-variable-name">fit</span> = (txpred.models.susie.PoisGamRegression(
-  mean_prior=txpred.models.susie.SpikeSlab(x.shape[0], fit_intercept=<span class="org-constant">True</span>),
-  inv_disp_prior=txpred.models.susie.SpikeSlab(x.shape[0], fit_intercept=<span class="org-constant">True</span>))
-       .fit(data, n_epochs=80, trace=<span class="org-constant">True</span>))
+<span class="org-variable-name">fit</span> = (txpred.models.susie.PoisGamRegression(m=L.shape[1], p=x.shape[0])
+       .fit(torch.tensor(x.values.T, dtype=torch.<span class="org-builtin">float</span>), data, n_epochs=80, trace=<span class="org-constant">False</span>))
 </pre>
 </div>
 
@@ -552,6 +560,8 @@ ax[0].scatter(grid[pip &gt; 1e-2], pip[pip &gt; 1e-2], s=2, c=<span class="org-s
   <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
     a.axvline(x=t, lw=.5, c=<span class="org-string">'0.7'</span>, zorder=-1)
 ax[0].set_ylabel(r<span class="org-string">'PIP $\ln(\mu)$'</span>)
+ax[0].set_xlim(grid.<span class="org-builtin">min</span>(), grid.<span class="org-builtin">max</span>())
+ax[0].set_ylim(0, 1)
 <span class="org-variable-name">pip</span> = torch.sigmoid(fit.inv_disp_prior.logits.detach()).numpy().ravel()
 ax[1].scatter(grid[pip &gt; 1e-2], pip[pip &gt; 1e-2], s=2, c=<span class="org-string">'k'</span>)
 <span class="org-keyword">for</span> t <span class="org-keyword">in</span> grid[pip &gt; .5]:
@@ -579,7 +589,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-07 Thu 14:41</p>
+<p class="date">Created: 2020-05-07 Thu 15:18</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

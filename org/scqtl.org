@@ -55,14 +55,20 @@
 
   \begin{align}
     \lambda_{i} &= \Gam(\phi_{i}^{-1}, \mu_{i}^{-1} \phi_{i}^{-1})\\
-    \ln\mu_{i} &= \ml\mg\vb_{\mu} + \vb_{\mu 0}\\
-    \ln\phi_{i} &= \ml\mg\vb_{\phi} + \vb_{\phi 0},
+    \ln\mu_{i} &= \ml(\mg\vb_{\mu} + b_{\mu 0})\\
+    \ln\phi_{i} &= \ml(\mg\vb_{\phi} + b_{\phi 0}),
   \end{align}
 
-  where \(\mg\) denotes genotype (\(m \times s\)). This approach would increase
-  power by pooling samples across individuals with same (similar) genotypes,
-  and is similar to previously proposed approaches (e.g.,
-  [[https://www.genetics.org/content/188/2/435][Rönnegård and Valdar 2011]],
+  where
+
+  - \(\mg\) denotes genotype (\(m \times s\))
+  - \(\vb_{\mu}\), \(\vb_{\phi}\) denote genetic effects (\(s \times 1)\)
+  - \(b_{\mu 0}\), \(b_{\phi 0}\) denote (scalar) intercepts
+
+  This approach would increase power by pooling samples across individuals with
+  same (similar) genotypes, and is similar to previously proposed approaches
+  (e.g., [[https://www.genetics.org/content/188/2/435][Rönnegård and Valdar
+  2011]],
   [[https://bmcgenet.biomedcentral.com/articles/10.1186/1471-2156-13-63][Rönnegård
   and Valdar 2012]]). To fit this model for \(s > m\), we can further assume a
   sparsity-inducing prior
@@ -269,18 +275,17 @@
    #+BEGIN_SRC ipython :async t
      data = td.DataLoader(
        td.TensorDataset(
-         torch.tensor(L.values @ x.values.T, dtype=torch.float),
+         torch.tensor(L.values, dtype=torch.float),
          torch.tensor(y[:,y.var['name'] == 'SKP1'].X.A, dtype=torch.float),
          torch.tensor(y.obs['mol_hs'].values, dtype=torch.float)),
        batch_size=128, shuffle=True)
-     fit = (txpred.models.susie.PoisGamRegression(
-       mean_prior=txpred.models.susie.SpikeSlab(x.shape[0], fit_intercept=True),
-       inv_disp_prior=txpred.models.susie.SpikeSlab(x.shape[0], fit_intercept=True))
-            .fit(data, n_epochs=80, trace=True))
+     fit = (txpred.models.susie.PoisGamRegression(m=L.shape[1], p=x.shape[0])
+            .fit(torch.tensor(x.values.T, dtype=torch.float), data, n_epochs=80, trace=False))
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
+   # Out[119]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/scqtl.org/skp1.png
@@ -294,6 +299,8 @@
        for a in ax:
          a.axvline(x=t, lw=.5, c='0.7', zorder=-1)
      ax[0].set_ylabel(r'PIP $\ln(\mu)$')
+     ax[0].set_xlim(grid.min(), grid.max())
+     ax[0].set_ylim(0, 1)
      pip = torch.sigmoid(fit.inv_disp_prior.logits.detach()).numpy().ravel()
      ax[1].scatter(grid[pip > 1e-2], pip[pip > 1e-2], s=2, c='k')
      for t in grid[pip > .5]:
@@ -311,6 +318,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[94]:
+   # Out[121]:
    [[file:figure/scqtl.org/skp1.png]]
    :END:

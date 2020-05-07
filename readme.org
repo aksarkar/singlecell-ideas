@@ -19,10 +19,9 @@
     python
     tensorflow-gpu==1.15.0
     r-ashr
-    r-descend
     r-fasttopics
     r-flashr
-    r-glmpca
+    r-susier
     scikit-learn
     scipy
     scmodes

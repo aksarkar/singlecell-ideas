@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-06 Wed 19:49 -->
+<!-- 2020-05-07 Thu 14:41 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Single cell QTL mapping via sparse multiple regression</title>
@@ -261,6 +261,7 @@ for the JavaScript code in this tag.
 <li><a href="#setup">Setup</a></li>
 <li><a href="#org4ae132f">Results</a>
 <ul>
+<li><a href="#org6155286">Fine mapping dispersion effects</a></li>
 <li><a href="#org8e84eda"><i>SKP1</i></a></li>
 </ul>
 </li>
@@ -333,8 +334,8 @@ expression model for gene \(j\)
 
 \begin{align}
   \lambda_{i} &= \Gam(\phi_{i}^{-1}, \mu_{i}^{-1} \phi_{i}^{-1})\\
-  \ln\mu_{i} &= \ml\mg\vb_{\mu}\\
-  \ln\phi_{i} &= \ml\mg\vb_{\phi},
+  \ln\mu_{i} &= \ml\mg\vb_{\mu} + \vb_{\mu 0}\\
+  \ln\phi_{i} &= \ml\mg\vb_{\phi} + \vb_{\phi 0},
 \end{align}
 
 <p>
@@ -375,6 +376,9 @@ et al. 2015</a>) to speed up convergence
 <pre class="src src-ipython"><span class="org-keyword">import</span> anndata
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> tabix
+<span class="org-keyword">import</span> torch
+<span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 <span class="org-keyword">import</span> txpred
 <span class="org-keyword">import</span> txpred.models.susie
 </pre>
@@ -399,6 +403,67 @@ et al. 2015</a>) to speed up convergence
 <h2 id="org4ae132f">Results</h2>
 <div class="outline-text-2" id="text-org4ae132f">
 </div>
+<div id="outline-container-org6155286" class="outline-3">
+<h3 id="org6155286">Fine mapping dispersion effects</h3>
+<div class="outline-text-3" id="text-org6155286">
+<p>
+The motivation for restricting QTL mapping to 100kb windows was to reduce
+the number of single SNP tests, and therefore increase the power to detect
+associations at a fixed FDR (intuitively, the BH procedure penalizes each
+test based on the total number of tests). Using fast multiple regression
+methods with Bayesian variable selection guarantees, we can simply avoid
+this issue. Read the estimated dispersion parameters.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_phi</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-phi.txt.gz'</span>, index_col=0, sep=<span class="org-string">' '</span>).T
+log_phi.shape
+</pre>
+</div>
+
+<pre class="example">
+(54, 9957)
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = log_phi[<span class="org-string">'ENSG00000113558'</span>]
+<span class="org-variable-name">dat</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/skp1.vcf.gz'</span>, skiprows=2, sep=<span class="org-string">'\t'</span>)
+<span class="org-variable-name">x</span> = dat.<span class="org-builtin">filter</span>(like=<span class="org-string">'NA'</span>, axis=1).T
+<span class="org-variable-name">x.columns</span> = dat[<span class="org-string">'POS'</span>]
+<span class="org-variable-name">x</span> = x.sub(x.mean(axis=1), axis=0)
+<span class="org-variable-name">x</span> = x.div(x.std(axis=1), axis=0)
+<span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = x.align(y, axis=0, join=<span class="org-string">'inner'</span>)
+x.shape
+</pre>
+</div>
+
+<pre class="example">
+(54, 5778)
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> rpy2.robjects.packages
+<span class="org-keyword">import</span> rpy2.robjects.pandas2ri
+rpy2.robjects.pandas2ri.activate()
+<span class="org-variable-name">susie</span> = rpy2.robjects.packages.importr(<span class="org-string">'susieR'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = susie.susie(x.values, y.values, L=10)
+susie.susie_get_cs(fit, x.values).rx2(<span class="org-string">'cs'</span>)
+</pre>
+</div>
+
+<pre class="example">
+&lt;rpy2.rinterface.NULLType object at 0x7fb121e3e410&gt; [RTYPES.NILSXP]
+
+</pre>
+</div>
+</div>
+
 <div id="outline-container-org8e84eda" class="outline-3">
 <h3 id="org8e84eda"><i>SKP1</i></h3>
 <div class="outline-text-3" id="text-org8e84eda">
@@ -446,6 +511,8 @@ measurements.
 <pre class="src src-ipython"><span class="org-variable-name">L</span> = pd.get_dummies(y.obs[<span class="org-string">'chip_id'</span>])
 <span class="org-variable-name">x</span> = dat.<span class="org-builtin">filter</span>(like=<span class="org-string">'NA'</span>, axis=1)
 <span class="org-variable-name">x.index</span> = dat[<span class="org-string">'POS'</span>]
+<span class="org-variable-name">x</span> = x.sub(x.mean(axis=1), axis=0)
+<span class="org-variable-name">x</span> = x.div(x.std(axis=1), axis=0)
 <span class="org-variable-name">L</span>, <span class="org-variable-name">x</span> = L.align(x, axis=1, join=<span class="org-string">'inner'</span>)
 x.T.shape
 </pre>
@@ -461,28 +528,58 @@ Fit the sparse regression model.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">n</span>, <span class="org-variable-name">m</span> = L.shape
-<span class="org-variable-name">s</span>, <span class="org-variable-name">_</span> = x.shape
+<pre class="src src-ipython"><span class="org-variable-name">data</span> = td.DataLoader(
+  td.TensorDataset(
+    torch.tensor(L.values @ x.values.T, dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(y[:,y.var[<span class="org-string">'name'</span>] == <span class="org-string">'SKP1'</span>].X.A, dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(y.obs[<span class="org-string">'mol_hs'</span>].values, dtype=torch.<span class="org-builtin">float</span>)),
+  batch_size=128, shuffle=<span class="org-constant">True</span>)
 <span class="org-variable-name">fit</span> = (txpred.models.susie.PoisGamRegression(
-  mean_prior=txpred.models.susie.SpikeSlab(s),
-  inv_disp_prior=txpred.models.susie.SpikeSlab(s))
-       .fit(torch.tensor(L @ x.T),
-            torch.tensor(y[y.var[<span class="org-string">'name'</span>] == <span class="org-string">'SKP1'</span>].X.A),
-            n_epochs=1000,
-            trace=<span class="org-constant">True</span>))
+  mean_prior=txpred.models.susie.SpikeSlab(x.shape[0], fit_intercept=<span class="org-constant">True</span>),
+  inv_disp_prior=txpred.models.susie.SpikeSlab(x.shape[0], fit_intercept=<span class="org-constant">True</span>))
+       .fit(data, n_epochs=80, trace=<span class="org-constant">True</span>))
 </pre>
 </div>
 
-<p>
-0 - d3c3f57e-8888-45d7-b3a0-55307098f869
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(4, 3)
+<span class="org-variable-name">grid</span> = np.array(x.index) / 1e6
+<span class="org-variable-name">pip</span> = torch.sigmoid(fit.mean_prior.logits.detach()).numpy().ravel()
+ax[0].scatter(grid[pip &gt; 1e-2], pip[pip &gt; 1e-2], s=2, c=<span class="org-string">'k'</span>)
+<span class="org-keyword">for</span> t <span class="org-keyword">in</span> grid[pip &gt; .5]:
+  <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+    a.axvline(x=t, lw=.5, c=<span class="org-string">'0.7'</span>, zorder=-1)
+ax[0].set_ylabel(r<span class="org-string">'PIP $\ln(\mu)$'</span>)
+<span class="org-variable-name">pip</span> = torch.sigmoid(fit.inv_disp_prior.logits.detach()).numpy().ravel()
+ax[1].scatter(grid[pip &gt; 1e-2], pip[pip &gt; 1e-2], s=2, c=<span class="org-string">'k'</span>)
+<span class="org-keyword">for</span> t <span class="org-keyword">in</span> grid[pip &gt; .5]:
+  <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+    a.axvline(x=t, lw=.5, c=<span class="org-string">'0.7'</span>, zorder=-1)
+ax[1].set_xlabel(<span class="org-string">'Position (MB)'</span>)
+ax[1].set_ylabel(r<span class="org-string">'PIP $\ln(\phi)$'</span>)
+<span class="org-variable-name">t</span> = y.var.loc[y.var[<span class="org-string">'name'</span>] == <span class="org-string">'SKP1'</span>, <span class="org-string">'start'</span>][0] / 1e6
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.axvline(x=t + .1, c=<span class="org-string">'b'</span>, lw=.5, zorder=3)
+  a.axvline(x=t - .1, c=<span class="org-string">'b'</span>, lw=.5, zorder=3)
+ax[0].set_title(<span class="org-string">'SKP1'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/scqtl.org/skp1.png" alt="skp1.png">
 </p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-06 Wed 19:49</p>
+<p class="date">Created: 2020-05-07 Thu 14:41</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

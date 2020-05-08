@@ -55,8 +55,8 @@
 
   \begin{align}
     \lambda_{i} &= \Gam(\phi_{i}^{-1}, \mu_{i}^{-1} \phi_{i}^{-1})\\
-    h^{-1}(\mu_{i}) &= \ml\mg\vb_{\mu} + b_{\mu 0}\\
-    h^{-1}(\phi_{i}) &= \ml\mg\vb_{\phi} + b_{\phi 0},
+    h^{-1}(\mu_{i}) &= (\ml\mg\vb_{\mu})_i + b_{\mu 0}\\
+    h^{-1}(\phi_{i}) &= (\ml\mg\vb_{\phi})_i + b_{\phi 0},
   \end{align}
 
   where
@@ -111,6 +111,7 @@
   #+RESULTS:
   : Submitted batch job 1009091
 
+  #+NAME: imports
   #+BEGIN_SRC ipython
     import anndata
     import gzip
@@ -370,3 +371,88 @@
    # Out[57]:
    [[file:figure/scqtl.org/pois-gam-skp1.png]]
    :END:
+
+   Fit a model for each gene, and output genes for which some mean effect or
+   dispersion effect has PIP > 0.5.
+
+   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/scqtl.py
+     <<imports>>
+     n_epochs = 80 
+     window = 1e6
+     pip_thresh = 0.5
+     mean_effects = dict()
+     inv_disp_effects = dict()
+
+     y = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+     L = pd.get_dummies(y.obs['chip_id'])
+
+     with gzip.open('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/yri-120-dosages.vcf.gz', 'rt') as f:
+       for line in f:
+         if line.startswith('#CHROM'):
+           header = line.split()
+           break
+
+     f = tabix.open('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/yri-120-dosages.vcf.gz')
+     for k, (chrom, start, end, name, _, _) in y.var.iterrows():
+       try:
+         query = pd.DataFrame(list(f.query(f'chr{chrom[2:]}', start - int(window), end + int(window))))
+         if query.empty:
+           print(f'skipping gene {k} (empty window)')
+           continue
+         query.columns = header
+         x = query.filter(like='NA', axis=1).astype(float).align(L, axis=1, join='inner')[0]
+       except tabix.TabixError:
+         print(f'skipping gene {k} (TabixError)')
+         continue
+       print(f'fitting gene {k}')
+       torch.manual_seed(1)
+       data = td.DataLoader(
+         td.TensorDataset(
+           torch.tensor(L.values, dtype=torch.float),
+           torch.tensor(y[:,k].X.A, dtype=torch.float),
+           torch.tensor(y.obs['mol_hs'].values, dtype=torch.float)),
+         batch_size=128, shuffle=True)
+       fit = (txpred.models.susie.PoisGamRegression(m=L.shape[1], p=x.shape[0])
+              .fit(torch.tensor(x.values.T, dtype=torch.float), data, n_epochs=n_epochs))
+
+       alpha = torch.sigmoid(fit.mean_prior.logits.detach()).numpy()
+       mu = fit.mean_prior.mean.detach().numpy()
+       if (alpha > pip_thresh).any():
+         mean_effects[(k, name, chrom)] = pd.DataFrame({
+           'pos': query.loc[alpha > pip_thresh, 'POS'],
+           'alpha': alpha[alpha > pip_thresh],
+           'mu': mu[alpha > pip_thresh]})
+
+       alpha = torch.sigmoid(fit.inv_disp_prior.logits.detach()).numpy()
+       mu = fit.inv_disp_prior.mean.detach().numpy()
+       if (alpha > pip_thresh).any():
+         inv_disp_effects[(k, name, chrom)] = pd.DataFrame({
+           'pos': query.loc[alpha > pip_thresh, 'POS'],
+           'alpha': alpha[alpha > pip_thresh],
+           'mu': mu[alpha > pip_thresh]})
+
+     if mean_effects:
+       mean_df = (pd.concat(mean_effects)
+                  .reset_index(level=[0, 1, 2])
+                  .rename({f'level_{i}': k for i, k in enumerate(['gene', 'name', 'chr', 'pos'])}, axis=1))
+       mean_df.to_csv('/scratch/midway2/aksarkar/singlecell/test/ipsc-mean-effects.txt.gz', sep='\t')
+     if inv_disp_effects:
+       inv_disp_df = (pd.concat(inv_disp_effects)
+                      .reset_index(level=[0, 1, 2])
+                      .rename({f'level_{i}': k for i, k in enumerate(['gene', 'name', 'chr', 'pos'])}, axis=1))
+       inv_disp_df.to_csv('/scratch/midway2/aksarkar/singlecell/test/ipsc-inv-disp-effects.txt.gz', sep='\t')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   :END:
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/singlecell/
+     sbatch --partition=mstephens --mem=4G
+     #!/bin/bash
+     source activate singlecell
+     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/scqtl.py
+   #+END_SRC
+
+   #+RESULTS:
+   : Submitted batch job 1080540

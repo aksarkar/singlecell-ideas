@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-08 Fri 01:05 -->
+<!-- 2020-05-08 Fri 10:59 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -264,7 +264,7 @@ for the JavaScript code in this tag.
 <li><a href="#accuracy">Accuracy of parameter estimation</a></li>
 <li><a href="#gof">Goodness of fit</a></li>
 <li><a href="#ipsc">Application to iPSCs</a></li>
-<li><a href="#org1a9953a">Confounder correction in iPSC data</a></li>
+<li><a href="#confounders">Confounder correction in iPSC data</a></li>
 <li><a href="#immune-census">Application to Census of Immune Cells</a></li>
 </ul>
 </li>
@@ -343,7 +343,7 @@ evaluate the method on simulations and large biological data sets.
 <h2 id="setup"><a id="org9626900"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <pre class="example">
-Submitted batch job 1033114
+Submitted batch job 1040050
 
 </pre>
 
@@ -868,10 +868,11 @@ array(['NUP98', 'ANXA5', 'RPL27A', 'RHOG', 'MT-CO2', 'MT-ND4', 'MT-CO3',
 </div>
 
 <div id="outline-container-org1a9953a" class="outline-3">
-<h3 id="org1a9953a">Confounder correction in iPSC data</h3>
-<div class="outline-text-3" id="text-org1a9953a">
+<h3 id="confounders"><a id="org1a9953a"></a>Confounder correction in iPSC data</h3>
+<div class="outline-text-3" id="text-confounders">
 <p>
-Repeat the analysis, including batch as a covariate.
+Repeat the analysis, including C1 chip as a covariate. Report the wall clock
+time for the analysis, in minutes.
 </p>
 
 <div class="org-src-container">
@@ -1046,6 +1047,35 @@ fig.tight_layout()
 
 <div class="figure">
 <p><img src="figure/mpebpm.org/scqtl-mpebpm-design.png" alt="scqtl-mpebpm-design.png">
+</p>
+</div>
+
+<p>
+Compare the <code>mpebpm</code> estimated mean latent gene expression against the
+<code>scqtl</code> estimate.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mean1</span> = -np.log1p(np.exp(logodds1)) + log_mu1
+<span class="org-variable-name">mean2</span> = -np.log1p(np.exp(logodds2)) + log_mu2
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.scatter(mean1.ravel(), mean2.values.ravel(order=<span class="org-string">'F'</span>), c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+plt.xlim(plt.ylim())
+plt.plot(plt.xlim(), plt.ylim(), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+plt.xlabel(<span class="org-string">'mpebpm log latent mean'</span>)
+plt.ylabel(<span class="org-string">'scqtl log latent mean'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mpebpm.org/mpebpm-scqtl-ipsc-latent-mean.png" alt="mpebpm-scqtl-ipsc-latent-mean.png">
 </p>
 </div>
 
@@ -1279,7 +1309,7 @@ Fit just this gene.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-08 Fri 01:05</p>
+<p class="date">Created: 2020-05-08 Fri 10:59</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

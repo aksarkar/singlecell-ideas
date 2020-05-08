@@ -76,7 +76,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 1033114
+  : Submitted batch job 1040050
 
   #+BEGIN_SRC ipython
     import anndata
@@ -93,7 +93,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -108,7 +108,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[5]:
+  # Out[3]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -118,7 +118,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[4]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -129,7 +129,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[5]:
   :END:
 
 * Results
@@ -610,8 +610,12 @@
    :END:
 
 ** Confounder correction in iPSC data
+   :PROPERTIES:
+   :CUSTOM_ID: confounders
+   :END:
 
-   Repeat the analysis, including batch as a covariate.
+   Repeat the analysis, including C1 chip as a covariate. Report the wall clock
+   time for the analysis, in minutes.
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
@@ -654,7 +658,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[89]:
+   # Out[6]:
    :END:
 
    Compute the full data log likelihood at the ~mpebpm~ solution.
@@ -778,6 +782,31 @@
    :RESULTS:
    # Out[112]:
    [[file:figure/mpebpm.org/scqtl-mpebpm-design.png]]
+   :END:
+
+   Compare the ~mpebpm~ estimated mean latent gene expression against the
+   ~scqtl~ estimate.
+
+   #+BEGIN_SRC ipython
+     mean1 = -np.log1p(np.exp(logodds1)) + log_mu1
+     mean2 = -np.log1p(np.exp(logodds2)) + log_mu2
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-scqtl-ipsc-latent-mean.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.scatter(mean1.ravel(), mean2.values.ravel(order='F'), c='k', s=1, alpha=0.1)
+     plt.xlim(plt.ylim())
+     plt.plot(plt.xlim(), plt.ylim(), lw=1, ls=':', c='r')
+     plt.xlabel('mpebpm log latent mean')
+     plt.ylabel('scqtl log latent mean')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   [[file:figure/mpebpm.org/mpebpm-scqtl-ipsc-latent-mean.png]]
    :END:
 
    Fit a /susie/ model (Wang et al. 2018) for each gene \(j\), regressing

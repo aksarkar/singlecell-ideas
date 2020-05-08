@@ -97,21 +97,6 @@
   :END:
 
   #+BEGIN_SRC ipython
-    import gzip
-    import rpy2.robjects.pandas2ri
-    import rpy2.robjects.packages
-    import tabix
-
-    rpy2.robjects.pandas2ri.activate()
-    susie = rpy2.robjects.packages.importr('susieR')
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  # Out[3]:
-  :END:
-
-  #+BEGIN_SRC ipython
     %matplotlib inline
     %config InlineBackend.figure_formats = set(['retina'])
   #+END_SRC
@@ -807,56 +792,6 @@
    :RESULTS:
    # Out[10]:
    [[file:figure/mpebpm.org/mpebpm-scqtl-ipsc-latent-mean.png]]
-   :END:
-
-   Fit a /susie/ model (Wang et al. 2018) for each gene \(j\), regressing
-   \(E[\lambda_{ij}]\) against /cis/-genotypes within the interval (TSS - 1MB,
-   TES + 1MB).
-
-   #+BEGIN_SRC ipython :async t
-     log_mean = -np.log1p(np.exp(logodds1)) + log_mu1
-     window = 1e6
-     with gzip.open('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/yri-120-dosages.vcf.gz', 'rt') as f:
-       for line in f:
-         if line.startswith('#CHROM'):
-           header = line.split()
-           break
-     f = tabix.open('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/yri-120-dosages.vcf.gz')
-     for (k, v), pheno in zip(x.var.iterrows(), log_mean.T):
-       if k != 'ENSG00000113558':
-         continue
-       try:
-         query = pd.DataFrame(list(f.query(f'chr{v["chr"][2:]}', v['start'] - int(window), v['start'] + int(window))))
-         query.columns = header
-         dose = query.filter(like='NA', axis=1).astype(float).T
-         dose.columns = query['POS']
-       except tabix.TabixError:
-         continue
-       pheno = pd.Series(pheno, index=x.obs['chip_id'].unique())
-       del pheno['NA18498']
-       dose, pheno = dose.align(pheno, axis=0, join='inner')
-       fit = susie.susie(dose.values, pheno.values, L=10, standardize=True)
-       break
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[130]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/skp1.png
-     plt.clf()
-     plt.gcf().set_size_inches(2.5, 2.5)
-     plt.scatter(dose["133515530"], pheno, c='k', s=2)
-     plt.xlabel('Dosage')
-     plt.ylabel('Log latent mean gene expression')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[136]:
-   [[file:figure/mpebpm.org/skp1.png]]
    :END:
 
 ** Application to Census of Immune Cells

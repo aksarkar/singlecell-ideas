@@ -55,8 +55,8 @@
 
   \begin{align}
     \lambda_{i} &= \Gam(\phi_{i}^{-1}, \mu_{i}^{-1} \phi_{i}^{-1})\\
-    \ln\mu_{i} &= \ml(\mg\vb_{\mu} + b_{\mu 0})\\
-    \ln\phi_{i} &= \ml(\mg\vb_{\phi} + b_{\phi 0}),
+    h^{-1}(\mu_{i}) &= \ml\mg\vb_{\mu} + b_{\mu 0}\\
+    h^{-1}(\phi_{i}) &= \ml\mg\vb_{\phi} + b_{\phi 0},
   \end{align}
 
   where
@@ -64,6 +64,9 @@
   - \(\mg\) denotes genotype (\(m \times s\))
   - \(\vb_{\mu}\), \(\vb_{\phi}\) denote genetic effects (\(s \times 1)\)
   - \(b_{\mu 0}\), \(b_{\phi 0}\) denote (scalar) intercepts
+  - \(h\) denotes a non-linearity mapping reals to positive reals (for
+    practical purposes, we use the softplus function rather than the
+    exponential function)
 
   This approach would increase power by pooling samples across individuals with
   same (similar) genotypes, and is similar to previously proposed approaches
@@ -110,18 +113,24 @@
 
   #+BEGIN_SRC ipython
     import anndata
+    import gzip
     import numpy as np
     import pandas as pd
+    import rpy2.robjects.pandas2ri
+    import rpy2.robjects.packages
     import tabix
     import torch
     import torch.utils.data as td
     import txpred
     import txpred.models.susie
+
+    rpy2.robjects.pandas2ri.activate()
+    susie = rpy2.robjects.packages.importr('susieR')
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[12]:
+  # Out[47]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -146,18 +155,20 @@
   :END:
 
 * Results
-** Fine mapping dispersion effects
+** Two stage approach
 
-   The motivation for restricting QTL mapping to 100kb windows was to reduce
-   the number of single SNP tests, and therefore increase the power to detect
-   associations at a fixed FDR (intuitively, the BH procedure penalizes each
-   test based on the total number of tests). Using fast multiple regression
-   methods with Bayesian variable selection guarantees, we can simply avoid
-   this issue. Read the estimated dispersion parameters.
+   The motivation for restricting QTL mapping to 100kb windows in Sarkar et
+   al. 2019 was to reduce the number of single SNP tests, and therefore
+   increase the power to detect associations at a fixed FDR (intuitively, the
+   BH procedure penalizes each test based on the total number of tests). Using
+   multiple regression methods with Bayesian variable selection guarantees, we
+   can simply avoid this issue. Read the
+   [[file:mpebpm.org::#confounders][estimated parameters]].
 
    #+BEGIN_SRC ipython
-     log_phi = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-phi.txt.gz', index_col=0, sep=' ').T
-     log_phi.shape
+     log_mu1 = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-log-mu.npy')
+     neg_log_phi1 = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-neg-log-phi.npy')
+     logodds1 = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-logodds.npy')
    #+END_SRC
 
    #+RESULTS:
@@ -166,47 +177,84 @@
    : (54, 9957)
    :END:
 
-   #+BEGIN_SRC ipython
-     y = log_phi['ENSG00000113558']
-     dat = pd.read_csv('/scratch/midway2/aksarkar/singlecell/skp1.vcf.gz', skiprows=2, sep='\t')
-     x = dat.filter(like='NA', axis=1).T
-     x.columns = dat['POS']
-     x = x.sub(x.mean(axis=1), axis=0)
-     x = x.div(x.std(axis=1), axis=0)
-     x, y = x.align(y, axis=0, join='inner')
-     x.shape
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[24]:
-   : (54, 5778)
-   :END:
-
-   #+BEGIN_SRC ipython
-     import rpy2.robjects.packages
-     import rpy2.robjects.pandas2ri
-     rpy2.robjects.pandas2ri.activate()
-     susie = rpy2.robjects.packages.importr('susieR')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[25]:
-   :END:
+   Read the data/metadata.
 
    #+BEGIN_SRC ipython :async t
-     fit = susie.susie(x.values, y.values, L=10)
-     susie.susie_get_cs(fit, x.values).rx2('cs')
+     y = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
    # Out[42]:
-   : <rpy2.rinterface.NULLType object at 0x7fb121e3e410> [RTYPES.NILSXP]
    :END:
 
-** /SKP1/
+   Normalize the phenotype.
+
+   #+BEGIN_SRC ipython :async t
+     def qqnorm(x):
+       return np.array(rpy2.robjects.r['qqnorm'](x)[0])
+
+     mean = (pd.DataFrame(np.exp(-np.log1p(np.exp(logodds1)) + log_mu1),
+                          index=y.obs['chip_id'].unique(),
+                          columns=y.var.index)
+             .drop('NA18498', axis=0)
+             .apply(qqnorm, axis=1))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[43]:
+   :END:
+
+   Fit a /susie/ model (Wang et al. 2018) for each gene \(j\), regressing
+   \(E[\lambda_{ij}]\) against /cis/-genotypes within the interval (TSS - 1MB,
+   TES + 1MB).
+
+   #+BEGIN_SRC ipython :async t
+     window = 1e6
+     with gzip.open('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/yri-120-dosages.vcf.gz', 'rt') as f:
+       for line in f:
+         if line.startswith('#CHROM'):
+           header = line.split()
+           break
+     f = tabix.open('/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/yri-120-dosages.vcf.gz')
+     for k, pheno in log_mean.iteritems():
+       if y.var.loc[k, 'name'] != 'SKP1':
+         continue
+       try:
+         info = y.var.loc[k]
+         query = pd.DataFrame(list(f.query(f'chr{info["chr"][2:]}', info['start'] - int(window), info['start'] + int(window))))
+         query.columns = header
+         dose = query.filter(like='NA', axis=1).astype(float).T
+         dose.columns = query['POS']
+       except tabix.TabixError:
+         continue
+       dose, pheno = dose.align(pheno, axis=0, join='inner')
+       fit = susie.susie(dose.values, pheno, L=1)
+       break
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/scqtl.org/skp1.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.scatter(dose["133515530"], pheno, c='k', s=2)
+     plt.xlabel('Dosage')
+     plt.ylabel('Log latent mean gene expression')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[59]:
+   [[file:figure/scqtl.org/skp1.png]]
+   :END:
+
+** Single stage approach
 
    Read the data.
 
@@ -251,7 +299,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[76]:
+   # Out[50]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -266,13 +314,14 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[49]:
+   # Out[51]:
    : (54, 5778)
    :END:
 
    Fit the sparse regression model.
 
    #+BEGIN_SRC ipython :async t
+     torch.manual_seed(1)
      data = td.DataLoader(
        td.TensorDataset(
          torch.tensor(L.values, dtype=torch.float),
@@ -285,10 +334,10 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[119]:
+   # Out[55]:
    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/scqtl.org/skp1.png
+   #+BEGIN_SRC ipython :ipyfile figure/scqtl.org/pois-gam-skp1.png
      plt.clf()
      fig, ax = plt.subplots(2, 1, sharex=True, sharey=True)
      fig.set_size_inches(4, 3)
@@ -298,7 +347,7 @@
      for t in grid[pip > .5]:
        for a in ax:
          a.axvline(x=t, lw=.5, c='0.7', zorder=-1)
-     ax[0].set_ylabel(r'PIP $\ln(\mu)$')
+     ax[0].set_ylabel(r'PIP $\mathbf{b}_{\mu}$')
      ax[0].set_xlim(grid.min(), grid.max())
      ax[0].set_ylim(0, 1)
      pip = torch.sigmoid(fit.inv_disp_prior.logits.detach()).numpy().ravel()
@@ -307,7 +356,7 @@
        for a in ax:
          a.axvline(x=t, lw=.5, c='0.7', zorder=-1)
      ax[1].set_xlabel('Position (MB)')
-     ax[1].set_ylabel(r'PIP $\ln(\phi)$')
+     ax[1].set_ylabel(r'PIP $\mathbf{b}_{\phi}$')
      t = y.var.loc[y.var['name'] == 'SKP1', 'start'][0] / 1e6
      for a in ax:
        a.axvline(x=t + .1, c='b', lw=.5, zorder=3)
@@ -318,6 +367,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[121]:
-   [[file:figure/scqtl.org/skp1.png]]
+   # Out[57]:
+   [[file:figure/scqtl.org/pois-gam-skp1.png]]
    :END:

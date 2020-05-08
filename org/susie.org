@@ -395,5 +395,3 @@
 
 ** Simulation study
 ** Application to GTEx
-
-

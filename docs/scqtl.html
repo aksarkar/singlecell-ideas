@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-08 Fri 16:47 -->
+<!-- 2020-05-09 Sat 16:49 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Single cell QTL mapping via sparse multiple regression</title>
@@ -368,7 +368,8 @@ sparsity-inducing prior
 
 <p>
 The prior is non-conjugate to the likelihood, so we perform variational
-inference (Blei et al. 2017), optimizing a stochastic objective
+inference (<a href="https://dx.doi.org/10.1080/01621459.2017.1285773">Blei et
+al. 2017</a>), optimizing a stochastic objective
 (<a href="https://arxiv.org/abs/1312.6114">Kingma and Welling 2014</a>,
 <a href="https://arxiv.org/abs/1401.4082">Rezende et al. 2014</a>,
 <a href="http://proceedings.mlr.press/v32/titsias14.html">Titsias and
@@ -385,14 +386,21 @@ et al. 2015</a>) to speed up convergence
 <div id="outline-container-org0620222" class="outline-2">
 <h2 id="setup"><a id="org0620222"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
+<pre class="example">
+Submitted batch job 1009091
+
+</pre>
+
 <div class="org-src-container">
 <pre class="src src-ipython" id="orgbeb6183"><span class="org-keyword">import</span> anndata
 <span class="org-keyword">import</span> gzip
+<span class="org-keyword">import</span> os
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> rpy2.robjects.pandas2ri
 <span class="org-keyword">import</span> rpy2.robjects.packages
 <span class="org-keyword">import</span> tabix
+<span class="org-keyword">import</span> time
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 <span class="org-keyword">import</span> txpred
@@ -410,7 +418,8 @@ rpy2.robjects.pandas2ri.activate()
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
 </pre>
@@ -585,15 +594,17 @@ Fit the sparse regression model.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">torch.manual_seed(1)
+<pre class="src src-ipython">torch.manual_seed(2)
+<span class="org-comment-delimiter"># </span><span class="org-comment">TODO: This doesn't get faster on the GPU. Utilization problem?</span>
+<span class="org-variable-name">device</span> = <span class="org-string">'cpu:0'</span>
 <span class="org-variable-name">data</span> = td.DataLoader(
   td.TensorDataset(
-    torch.tensor(L.values, dtype=torch.<span class="org-builtin">float</span>),
-    torch.tensor(y[:,y.var[<span class="org-string">'name'</span>] == <span class="org-string">'SKP1'</span>].X.A, dtype=torch.<span class="org-builtin">float</span>),
-    torch.tensor(y.obs[<span class="org-string">'mol_hs'</span>].values, dtype=torch.<span class="org-builtin">float</span>)),
-  batch_size=128, shuffle=<span class="org-constant">True</span>)
+    torch.tensor(L.values, dtype=torch.<span class="org-builtin">float</span>, device=device),
+    torch.tensor(y[:,y.var[<span class="org-string">'name'</span>] == <span class="org-string">'SKP1'</span>].X.A, dtype=torch.<span class="org-builtin">float</span>, device=device),
+    torch.tensor(y.obs[<span class="org-string">'mol_hs'</span>].values, dtype=torch.<span class="org-builtin">float</span>, device=device)),
+  batch_size=256, shuffle=<span class="org-constant">True</span>)
 <span class="org-variable-name">fit</span> = (txpred.models.susie.PoisGamRegression(m=L.shape[1], p=x.shape[0])
-       .fit(torch.tensor(x.values.T, dtype=torch.<span class="org-builtin">float</span>), data, n_epochs=80, trace=<span class="org-constant">False</span>))
+       .fit(torch.tensor(x.values.T, dtype=torch.<span class="org-builtin">float</span>, device=device), data, n_epochs=480, trace=<span class="org-constant">True</span>))
 </pre>
 </div>
 
@@ -629,6 +640,32 @@ fig.tight_layout()
 
 <div class="figure">
 <p><img src="figure/scqtl.org/pois-gam-skp1.png" alt="pois-gam-skp1.png">
+</p>
+</div>
+
+<p>
+Look at the Pearson correlation between the SNPs with \(\mathrm{PIP}_{\mu}
+   \triangleq p(b_{\mu j} \neq 0 \mid \cdot) > 0.5\) and those with
+\(\mathrm{PIP}_{\phi} > 0.5\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-variable-name">r</span> = np.corrcoef(x[torch.sigmoid(fit.inv_disp_prior.logits.detach()).numpy().ravel() &gt; 0.5],
+            x[torch.sigmoid(fit.mean_prior.logits.detach()).numpy().ravel() &gt; 0.5])
+plt.imshow(r, cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
+<span class="org-variable-name">cb</span> = plt.colorbar(shrink=0.5)
+cb.set_label(<span class="org-string">'Pearson $r$'</span>)
+plt.xlabel(<span class="org-string">'SNP'</span>)
+plt.ylabel(<span class="org-string">'SNP'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/scqtl.org/pois-gam-skp1-ld.png" alt="pois-gam-skp1-ld.png">
 </p>
 </div>
 
@@ -697,17 +734,17 @@ dispersion effect has PIP &gt; 0.5.
   <span class="org-variable-name">mean_df</span> = (pd.concat(mean_effects)
              .reset_index(level=[0, 1, 2])
              .rename({f<span class="org-string">'level_{i}'</span>: k <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>([<span class="org-string">'gene'</span>, <span class="org-string">'name'</span>, <span class="org-string">'chr'</span>, <span class="org-string">'pos'</span>])}, axis=1))
-  mean_df.to_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/ipsc-mean-effects.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+  mean_df.to_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/test/ipsc-mean-effects.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
 <span class="org-keyword">if</span> inv_disp_effects:
   <span class="org-variable-name">inv_disp_df</span> = (pd.concat(inv_disp_effects)
                  .reset_index(level=[0, 1, 2])
                  .rename({f<span class="org-string">'level_{i}'</span>: k <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>([<span class="org-string">'gene'</span>, <span class="org-string">'name'</span>, <span class="org-string">'chr'</span>, <span class="org-string">'pos'</span>])}, axis=1))
-  inv_disp_df.to_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/ipsc-inv-disp-effects.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+  inv_disp_df.to_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/test/ipsc-inv-disp-effects.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-sh">sbatch --partition=mstephens --mem=4G --time=6:00:00
+<pre class="src src-sh">sbatch --partition=mstephens --mem=4G
 <span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
 <span class="org-builtin">source</span> activate singlecell
 python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/scqtl.py
@@ -715,7 +752,7 @@ python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/scqtl.py
 </div>
 
 <pre class="example">
-Submitted batch job 1048952
+Submitted batch job 1080540
 
 </pre>
 </div>
@@ -724,7 +761,7 @@ Submitted batch job 1048952
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-08 Fri 16:47</p>
+<p class="date">Created: 2020-05-09 Sat 16:49</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

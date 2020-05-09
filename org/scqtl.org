@@ -82,7 +82,8 @@
   \end{align}
 
   The prior is non-conjugate to the likelihood, so we perform variational
-  inference (Blei et al. 2017), optimizing a stochastic objective
+  inference ([[https://dx.doi.org/10.1080/01621459.2017.1285773][Blei et
+  al. 2017]]), optimizing a stochastic objective
   ([[https://arxiv.org/abs/1312.6114][Kingma and Welling 2014]],
   [[https://arxiv.org/abs/1401.4082][Rezende et al. 2014]],
   [[http://proceedings.mlr.press/v32/titsias14.html][Titsias and
@@ -106,6 +107,11 @@
   #+RESULTS:
   : 1
 
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+
+  #+RESULTS:
+  : Submitted batch job 1094435
+
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
@@ -115,11 +121,13 @@
   #+BEGIN_SRC ipython
     import anndata
     import gzip
+    import os
     import numpy as np
     import pandas as pd
     import rpy2.robjects.pandas2ri
     import rpy2.robjects.packages
     import tabix
+    import time
     import torch
     import torch.utils.data as td
     import txpred
@@ -128,6 +136,11 @@
     rpy2.robjects.pandas2ri.activate()
     susie = rpy2.robjects.packages.importr('susieR')
   #+END_SRC
+
+  #+RESULTS: imports
+  :RESULTS:
+  # Out[9]:
+  :END:
 
   #+RESULTS:
   :RESULTS:
@@ -145,6 +158,7 @@
   :END:
 
   #+BEGIN_SRC ipython
+    import colorcet
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
     plt.rcParams['font.family'] = 'Nimbus Sans'
@@ -152,7 +166,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[39]:
   :END:
 
 * Results
@@ -265,7 +279,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[47]:
+   # Out[4]:
    :END:
 
    /SKP1/ was the top eQTL discovered in Sarkar et al. 2019. Extract the
@@ -300,7 +314,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[50]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -315,27 +329,29 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[51]:
+   # Out[6]:
    : (54, 5778)
    :END:
 
    Fit the sparse regression model.
 
    #+BEGIN_SRC ipython :async t
-     torch.manual_seed(1)
+     torch.manual_seed(2)
+     # TODO: This doesn't get faster on the GPU. Utilization problem?
+     device = 'cpu:0'
      data = td.DataLoader(
        td.TensorDataset(
-         torch.tensor(L.values, dtype=torch.float),
-         torch.tensor(y[:,y.var['name'] == 'SKP1'].X.A, dtype=torch.float),
-         torch.tensor(y.obs['mol_hs'].values, dtype=torch.float)),
-       batch_size=128, shuffle=True)
+         torch.tensor(L.values, dtype=torch.float, device=device),
+         torch.tensor(y[:,y.var['name'] == 'SKP1'].X.A, dtype=torch.float, device=device),
+         torch.tensor(y.obs['mol_hs'].values, dtype=torch.float, device=device)),
+       batch_size=256, shuffle=True)
      fit = (txpred.models.susie.PoisGamRegression(m=L.shape[1], p=x.shape[0])
-            .fit(torch.tensor(x.values.T, dtype=torch.float), data, n_epochs=80, trace=False))
+            .fit(torch.tensor(x.values.T, dtype=torch.float, device=device), data, n_epochs=480, trace=True))
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[55]:
+   # Out[30]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/scqtl.org/pois-gam-skp1.png
@@ -368,8 +384,31 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[57]:
+   # Out[31]:
    [[file:figure/scqtl.org/pois-gam-skp1.png]]
+   :END:
+
+   Look at the Pearson correlation between the SNPs with \(\mathrm{PIP}_{\mu}
+   \triangleq p(b_{\mu j} \neq 0 \mid \cdot) > 0.5\) and those with
+   \(\mathrm{PIP}_{\phi} > 0.5\).
+
+   #+BEGIN_SRC ipython :ipyfile figure/scqtl.org/pois-gam-skp1-ld.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     r = np.corrcoef(x[torch.sigmoid(fit.inv_disp_prior.logits.detach()).numpy().ravel() > 0.5],
+                 x[torch.sigmoid(fit.mean_prior.logits.detach()).numpy().ravel() > 0.5])
+     plt.imshow(r, cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
+     cb = plt.colorbar(shrink=0.5)
+     cb.set_label('Pearson $r$')
+     plt.xlabel('SNP')
+     plt.ylabel('SNP')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[52]:
+   [[file:figure/scqtl.org/pois-gam-skp1-ld.png]]
    :END:
 
    Fit a model for each gene, and output genes for which some mean effect or

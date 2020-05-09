@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-08 Fri 12:49 -->
+<!-- 2020-05-09 Sat 18:30 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -300,8 +300,12 @@ likelihood. In our prior work
 used this approach to estimate the mean and variance of gene expression from
 scRNA-seq data collected on a homogeneous sample of cells from each of a
 number of donor individuals, where we assumed \(\mathcal{G}\) was the family
-of point-Gamma distributions. In total, we solved 537,678 EBPM problems in
-parallel by formulating them as a single factor model
+of point-Gamma distributions. This procedure removes the effect of variation
+introduced by the measurement process, leaving the variation in true gene
+expression levels which are of interest
+(<a href="http://dx.doi.org/10.1101/2020.04.07.030007">Sarkar and Stephens
+2020</a>). In total, we solved 537,678 EBPM problems in parallel by formulating
+them as a single factor model
 </p>
 
 \begin{align*}
@@ -1249,7 +1253,7 @@ Fit just this gene.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-08 Fri 12:49</p>
+<p class="date">Created: 2020-05-09 Sat 18:30</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

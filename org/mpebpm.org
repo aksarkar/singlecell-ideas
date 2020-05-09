@@ -28,8 +28,12 @@
   used this approach to estimate the mean and variance of gene expression from
   scRNA-seq data collected on a homogeneous sample of cells from each of a
   number of donor individuals, where we assumed \(\mathcal{G}\) was the family
-  of point-Gamma distributions. In total, we solved 537,678 EBPM problems in
-  parallel by formulating them as a single factor model
+  of point-Gamma distributions. This procedure removes the effect of variation
+  introduced by the measurement process, leaving the variation in true gene
+  expression levels which are of interest
+  ([[http://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens
+  2020]]). In total, we solved 537,678 EBPM problems in parallel by formulating
+  them as a single factor model
 
   \begin{align*}
     x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\

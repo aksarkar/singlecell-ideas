@@ -75,15 +75,19 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="32G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+
+  #+RESULTS:
+  : Submitted batch job 1134881
 
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 1131251
+  : Submitted batch job 1134311
 
   #+BEGIN_SRC ipython
     import anndata
+    import loompy
     import mpebpm
     import numpy as np
     import pandas as pd
@@ -811,9 +815,11 @@
    types/subtypes/states within each donor.
 
    #+BEGIN_SRC ipython :results output html verbatim
-     import loompy
      with loompy.connect('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/human-cell-atlas/immune-cell-census.loom') as con:
-       print(pd.DataFrame(np.hstack([con.ca['derived_organ_parts_label','donor_organism.human_specific.ethnicity.ontology_label'], con.ca['donor_organism.provenance.document_id', 'donor_organism.sex',]])).groupby([0,3,1,2]).agg(len).to_frame().to_html(classes='table'))
+       metadata = pd.DataFrame(np.hstack([
+         con.ca['derived_organ_parts_label', 'donor_organism.human_specific.ethnicity.ontology_label'],
+         con.ca['donor_organism.provenance.document_id', 'donor_organism.sex']]))
+       print(metadata.groupby([0,3,1,2]).agg(len).to_frame().to_html(classes='table'))
    #+END_SRC
 
    #+RESULTS:
@@ -926,23 +932,35 @@
 
    #+BEGIN_SRC ipython :async t
      y_csr = ss.load_npz('/scratch/midway2/aksarkar/modes/immune-cell-census.npz')
-     y_csc = y_csr.tocsc()
-     # keep = (((onehot.T @ y_csc) > 0).sum(axis=0) == len(donor.categories)).A.ravel()
-     # y_csc = y_csc[keep]
-     # y_csr = y_csc.tocsr()
-     s = y_csr.sum(axis=1).A.ravel()
      genes = pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-genes.txt.gz', sep='\t', index_col=0)
-     donor = pd.Categorical(pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz', sep='\t', index_col=0)['0'])
-     onehot = ss.coo_matrix((np.ones(donor.shape[0]).astype(np.float32), (np.arange(donor.shape[0]), donor.codes))).tocsr()
+     donor = pd.read_csv('/scratch/midway2/aksarkar/modes/immune-cell-census-samples.txt.gz', sep='\t', index_col=0)['0']
+     onehot = ss.csr_matrix(pd.get_dummies(donor).values)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   Remove genes which only have zero observations in some donor.
+
+   #+BEGIN_SRC ipython :async t
+     # Important: CSC needed to subset on columns (genes)
+     y_csc = y_csr.tocsc()
+     keep = (((y_csc.T @ onehot) > 0).sum(axis=1) == onehot.shape[1]).A.ravel()
+     genes = genes.loc[keep]
+     y_csc = y_csc[:,keep]
+     y_csr = y_csc.tocsr()
+     s = y_csr.sum(axis=1).A.ravel()
      y_csr
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[7]:
    #+BEGIN_EXAMPLE
-     <593844x16002 sparse matrix of type '<class 'numpy.int32'>'
-     with 551836788 stored elements in Compressed Sparse Row format>
+     <593844x15902 sparse matrix of type '<class 'numpy.int32'>'
+     with 550918891 stored elements in Compressed Sparse Row format>
    #+END_EXAMPLE
    :END:
 
@@ -950,29 +968,36 @@
 
    #+BEGIN_SRC ipython :async t
      start = time.time()
-     log_mu, neg_log_phi = mpebpm.sgd.ebpm_gamma(y_csr, onehot=onehot, batch_size=64, lr=1e-2, max_epochs=10, shuffle=True, verbose=True)
+     log_mu, neg_log_phi = mpebpm.sgd.ebpm_gamma(y_csr, onehot=onehot, batch_size=64, lr=5e-2, max_epochs=10, shuffle=True)
      elapsed = time.time() - start
-     pd.DataFrame(log_mu, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz', sep='\t')
-     pd.DataFrame(neg_log_phi, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-neg-log-phi.txt.gz', sep='\t')
-     pd.DataFrame(logodds, index=donor.categories, columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/immune-census-logodds.txt.gz', sep='\t')
      elapsed / 60
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
+   : 58.272460337479906
+   :END:
+
+   #+BEGIN_SRC ipython
+     pd.DataFrame(log_mu, index=donor.unique(), columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-log-mu.txt.gz', sep='\t')
+     pd.DataFrame(neg_log_phi, index=donor.unique(), columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-neg-log-phi.txt.gz', sep='\t')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[17]:
    :END:
 
    Read the estimated parameters.
 
    #+BEGIN_SRC ipython
-     log_mu = pd.read_csv('/scratch/midway2/aksarkar/ideas/immune-census-log-mu.txt.gz', sep='\t', index_col=0)
-     neg_log_phi = pd.read_csv('/scratch/midway2/aksarkar/ideas/immune-census-neg-log-phi.txt.gz', sep='\t', index_col=0)
-     logodds = pd.read_csv('/scratch/midway2/aksarkar/ideas/immune-census-logodds.txt.gz', sep='\t', index_col=0)
+     log_mu = pd.read_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-log-mu.txt.gz', sep='\t', index_col=0)
+     neg_log_phi = pd.read_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-neg-log-phi.txt.gz', sep='\t', index_col=0)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[14]:
+   # Out[20]:
    :END:
 
    Test each donor-gene combination for goodness-of-fit to the
@@ -982,16 +1007,14 @@
      result = dict()
      for j in range(y_csr.shape[1]):
        query = y_csc[:,j].tocsr()
-       for k, name in enumerate(donor.categories):
+       for k, name in enumerate(donor.unique()):
          idx = onehot[:,k].tocsc().indices
          N = idx.shape[0]
          x = query[idx].A.ravel()
          n = np.exp(-neg_log_phi.iloc[k,j])
          p = 1 / (1 + s[idx] * np.exp(log_mu.iloc[k,j] - neg_log_phi.iloc[k,j]))         
-         pi0 = sp.expit(-logodds.iloc[k,j])
          F = st.nbinom(n=n, p=p)
          Fx_1 = F.cdf(x - 1)
-         Fx_1 = np.where(x > 0, pi0 + (1 - pi0) * Fx_1, Fx_1)
          fx = F.pmf(x)
          u = np.random.uniform(size=N)
          d, p = st.kstest(Fx_1 + u * fx, 'uniform')
@@ -1005,7 +1028,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   0 - f7b0b12b-5d22-40a0-9aa3-e088b9762317
    :END:
 
    Plot the histogram of GOF \(p\)-values.

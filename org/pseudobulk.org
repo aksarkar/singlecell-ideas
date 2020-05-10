@@ -2,6 +2,9 @@
 #+SETUPFILE: setup.org
 
 * Introduction
+  :PROPERTIES:
+  :CUSTOM_ID: introduction
+  :END:
 
   One strategy for simplifying the analysis of scRNA-seq data is to construct
   /pseudo-bulk data/. If we have molecule counts generated using scRNA-seq for
@@ -32,7 +35,7 @@
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 934980
+  : Submitted batch job 1142220
 
   #+BEGIN_SRC ipython
     import anndata
@@ -45,7 +48,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[55]:
+  # Out[6]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -70,6 +73,9 @@
   :END:
 
 * Method
+  :PROPERTIES:
+  :CUSTOM_ID: method
+  :END:
 
   We assume ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
    al. 2019]]) \(
@@ -110,8 +116,10 @@
   We fit the model by maximizing the likelihood using
   [[file:mpebpm.org][stochastic gradient descent]].
 
-* Results
-** iPSC data
+* Data
+  :PROPERTIES:
+  :CUSTOM_ID: data
+  :END:
 
    Read the iPSC data
    ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
@@ -154,6 +162,124 @@
    :RESULTS:
    # Out[54]:
    [[file:figure/pseudobulk.org/size.png]]
+   :END:
+
+   /SKP1/ was the top eQTL in this data (refer to the
+   [[http://shiny.stephenslab.uchicago.edu:5007/qtls][browser]]). Extract the
+   genotypes at the top cis-SNP for this gene.
+
+   #+BEGIN_SRC ipython
+     with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as con:
+       query = pd.read_sql('select ind, value from mean_qtl_geno, qtls where mean_qtl_geno.gene == qtls.gene and qtls.name == "SKP1";', con=con)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   :END:
+
+* Results
+** Existing approach
+   :PROPERTIES:
+   :CUSTOM_ID: pseudobulk
+   :END:
+
+   Simulate a random Gaussian covariate, and fit a linear model regressing
+   \(\ln(y_{kj} / y_{k+} + 1)\) against the (null) covariate.
+
+   #+BEGIN_SRC ipython :async t
+     rng = np.random.default_rng(1)
+     log1p_y = np.log1p(y / y.sum(axis=1, keepdims=True))
+     m = log1p_y.mean(axis=0)
+     log1p_y -= m
+     log1p_y /= log1p_y.std(axis=0)
+     n, p = log1p_y.shape
+     x = rng.normal(size=n)
+     x -= x.mean()
+     x /= x.std()
+     bhat = []
+     for j in range(p):
+       b = x @ log1p_y[:,j] / (x.T @ x)
+       bhat.append(b)
+     bhat = np.array(bhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[35]:
+   :END:
+
+   Plot the distribution of regression coefficients for equal-sized bins of
+   genes, ranked by mean log pseudobulk gene expression.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/null-covariate-effect-by-pseudobulk-mean-equal-bins.png
+     n_bins = 15
+     temp = bhat[np.argsort(m)]
+     plt.clf()
+     plt.gcf().set_size_inches(4, 3)
+     plt.boxplot(np.array_split(temp, 15), positions=range(15), widths=.5, flierprops={'markersize': 1}, medianprops={'color': 'k'})
+     plt.axhline(y=0, lw=1, ls='--', c='k')
+     plt.xticks(np.arange(n_bins))
+     plt.xlabel('Mean log pseudobulk gene expression bin')
+     plt.ylabel('Estimated effect size')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[37]:
+   [[file:figure/pseudobulk.org/null-covariate-effect-by-pseudobulk-mean-equal-bins.png]]
+   :END:
+
+   Repeat the analysis for the top /cis/-eQTL for /SKP1/.
+
+   #+BEGIN_SRC ipython :async t
+     design = query['value'] - query['value'].mean()
+     design /= design.std()
+     design.index = query['ind']
+     response = pd.DataFrame(log1p_y, index=dat.obs['chip_id'].unique(), columns=dat.var['name'])
+     design, response = design.align(response, join='inner')
+     bhat = []
+     for j in range(p):
+       b = design @ response.iloc[:,j] / (design.T @ design)
+       bhat.append(b)
+     bhat = np.array(bhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[39]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/eqtl-effect-by-pseudobulk-mean-equal-bins.png
+     n_bins = 15
+     temp = bhat[np.argsort(m)]
+     plt.clf()
+     plt.gcf().set_size_inches(4, 3)
+     plt.boxplot(np.array_split(temp, 15), positions=range(15), widths=.5, flierprops={'markersize': 1}, medianprops={'color': 'k'})
+     plt.axhline(y=0, lw=1, ls='--', c='k')
+     plt.xticks(np.arange(n_bins))
+     plt.xlabel('Mean log pseudobulk gene expression bin')
+     plt.ylabel('Estimated effect size')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[41]:
+   [[file:figure/pseudobulk.org/eqtl-effect-by-pseudobulk-mean-equal-bins.png]]
+   :END:
+
+   One potential explanation for these results is that \(\ln(y_{kj} / y_{k+} +
+   1)\) is a biased estimator of \(\ln(\lambda_{kj} + 1)\), and the magnitude
+   of the bias depends on the true gene expression \(\lambda_{kj}\)
+   ([[https://www.biorxiv.org/content/early/2018/08/31/404962][Lun 2018]])
+
+   \[ E[\ln(y_{kj} / y_{k+} + 1)] \approx E[\ln(\lambda_{kj} + 1)] - \frac{V[y_{kj} / y_{k+}]}{2 (\lambda_{kj} + 1)^2}. \]
+
+** Alternative approach
+   :PROPERTIES:
+   :CUSTOM_ID: ebpm
    :END:
 
    Read the [[file:mpebpm.org::#ipsc][estimated model parameters]].
@@ -222,7 +348,7 @@
 
    it is straightforward to show
 
-   \[ \hat{\mu_j} = \frac{\sum_i x_{ij}}{\sum_i x_{i+}} \]
+   \[ \hat{\mu_j} = \frac{\sum_i x_{ij}}{\sum_i x_{i+}}. \]
 
    #+BEGIN_SRC ipython :async t
      global_log_mean = np.log(dat.X.sum(axis=0) / dat.X.sum()).ravel()
@@ -277,20 +403,6 @@
    :RESULTS:
    # Out[144]:
    [[file:figure/pseudobulk.org/null-covariate-effect-by-mean-equal-bins.png]]
-   :END:
-
-   /SKP1/ was the top eQTL in this data (refer to the
-   [[http://shiny.stephenslab.uchicago.edu:5007/qtls][browser]]). Extract the
-   genotypes at the top cis-SNP for this gene.
-
-   #+BEGIN_SRC ipython
-     with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as con:
-       query = pd.read_sql('select ind, value from mean_qtl_geno, qtls where mean_qtl_geno.gene == qtls.gene and qtls.name == "SKP1";', con=con)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[104]:
    :END:
 
    For each gene, fit a linear model regressing mean latent gene expression on

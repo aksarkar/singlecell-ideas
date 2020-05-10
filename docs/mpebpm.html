@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-09 Sat 18:30 -->
+<!-- 2020-05-10 Sun 13:05 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -347,7 +347,7 @@ evaluate the method on simulations and large biological data sets.
 <h2 id="setup"><a id="org9626900"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <pre class="example">
-Submitted batch job 1040050
+Submitted batch job 1131251
 
 </pre>
 
@@ -1081,13 +1081,123 @@ plt.tight_layout()
 The
 <a href="https://data.humancellatlas.org/explore/projects/cc95ff89-2e68-4a08-a234-480eca21ce79">Census
 of Immune Cells</a> is part of the Human Cell Atlas. Currently, it comprises
-scRNA-seq data of 593,844 cells from 16 donors. To demonstrate the scalability of
-<code>mpebpm</code>, fit a Gamma distribution to each gene in each donor.
+scRNA-seq data of 593,844 cells from 16 donors. The cells vary in donor sex,
+donor ancestry, tissue of origin, as well as (latent) cell
+types/subtypes/states within each donor.
 </p>
 
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> loompy
+<span class="org-keyword">with</span> loompy.connect(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/human-cell-atlas/immune-cell-census.loom'</span>) <span class="org-keyword">as</span> con:
+  <span class="org-keyword">print</span>(pd.DataFrame(np.hstack([con.ca[<span class="org-string">'derived_organ_parts_label'</span>,<span class="org-string">'donor_organism.human_specific.ethnicity.ontology_label'</span>], con.ca[<span class="org-string">'donor_organism.provenance.document_id'</span>, <span class="org-string">'donor_organism.sex'</span>,]])).groupby([0,3,1,2]).agg(<span class="org-builtin">len</span>).to_frame().to_html(classes=<span class="org-string">'table'</span>))
+</pre>
+</div>
+
+<table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th>0</th>
+    </tr>
+    <tr>
+      <th>0</th>
+      <th>3</th>
+      <th>1</th>
+      <th>2</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th rowspan="8" valign="top">bone marrow</th>
+      <th rowspan="4" valign="top">female</th>
+      <th rowspan="4" valign="top">European</th>
+      <th>085e737d-adb5-4597-bd54-5ebeda170038</th>
+      <td>49716</td>
+    </tr>
+    <tr>
+      <th>af7fe7a6-7d7e-4cdf-9799-909680fa9a3f</th>
+      <td>44584</td>
+    </tr>
+    <tr>
+      <th>cf514c66-88b2-45e4-a397-7fb362ae9950</th>
+      <td>48630</td>
+    </tr>
+    <tr>
+      <th>fb30bb83-0278-4117-bd42-e2e8dddfedfe</th>
+      <td>49839</td>
+    </tr>
+    <tr>
+      <th rowspan="4" valign="top">male</th>
+      <th rowspan="2" valign="top">African American</th>
+      <th>d23515a7-e182-4bc6-89e2-b1635885c0ec</th>
+      <td>51239</td>
+    </tr>
+    <tr>
+      <th>eb8fb36b-6e02-41c4-8760-3eabbde6bacb</th>
+      <td>51024</td>
+    </tr>
+    <tr>
+      <th rowspan="2" valign="top">European</th>
+      <th>0a6c46dd-0905-4581-95eb-d89eef8a7213</th>
+      <td>47167</td>
+    </tr>
+    <tr>
+      <th>9aaf8a07-924f-456c-86dc-82f5da718246</th>
+      <td>48784</td>
+    </tr>
+    <tr>
+      <th rowspan="8" valign="top">umbilical cord blood</th>
+      <th rowspan="3" valign="top">female</th>
+      <th>Asian</th>
+      <th>e4b5115d-3a0d-4c50-aba4-04b5f76810da</th>
+      <td>57893</td>
+    </tr>
+    <tr>
+      <th rowspan="2" valign="top">European</th>
+      <th>4a404c91-0dbf-4246-bc23-d13aff961ba7</th>
+      <td>45078</td>
+    </tr>
+    <tr>
+      <th>509c507c-4759-452f-994e-d134d90329fd</th>
+      <td>39584</td>
+    </tr>
+    <tr>
+      <th rowspan="5" valign="top">male</th>
+      <th>African American</th>
+      <th>0b91cb1f-e2a8-413a-836c-1d38e7af3f2d</th>
+      <td>54544</td>
+    </tr>
+    <tr>
+      <th rowspan="2" valign="top">European</th>
+      <th>53af872d-b838-44d6-ae1b-25b56405483c</th>
+      <td>62609</td>
+    </tr>
+    <tr>
+      <th>6072d1f5-aa0c-4ab1-a8a6-a00ab479a1ba</th>
+      <td>52142</td>
+    </tr>
+    <tr>
+      <th rowspan="2" valign="top">nan</th>
+      <th>31f89559-2682-4bbc-84c6-826dfe4a4e39</th>
+      <td>29455</td>
+    </tr>
+    <tr>
+      <th>4e98f612-15ec-44ab-b5f9-39787f92b01a</th>
+      <td>50571</td>
+    </tr>
+  </tbody>
+</table>
+
 <p>
-Read the sparse data, filter out genes which are all 0 in some individual,
-and report its dimensions. This is much faster than reading <code>h5ad</code>.
+To demonstrate the scalability of <code>mpebpm</code>, fit a Gamma distribution to each
+gene in each donor. We
+<a href="https://aksarkar.github.io/singlecell-modes/immune-census.html#orgc2a066a">previously
+pre-processed the data</a> to <code>npz</code> format, which is much faster to read than
+<code>h5ad</code> or <code>loom</code>.
 </p>
 
 <div class="org-src-container">
@@ -1253,7 +1363,7 @@ Fit just this gene.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-09 Sat 18:30</p>
+<p class="date">Created: 2020-05-10 Sun 13:05</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

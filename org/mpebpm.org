@@ -78,18 +78,19 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="32G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 1134881
+  : Submitted batch job 1165578
 
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 1134311
+  : Submitted batch job 1162416
 
   #+BEGIN_SRC ipython
     import anndata
     import loompy
     import mpebpm
     import numpy as np
+    import os
     import pandas as pd
     import scipy.sparse as ss
     import scipy.special as sp
@@ -924,8 +925,8 @@
    </table>
    #+END_EXPORT
 
-   To demonstrate the scalability of ~mpebpm~, fit a Gamma distribution to each
-   gene in each donor. We
+   To demonstrate the scalability of ~mpebpm~, fit a point-Gamma distribution
+   to each gene in each donor, resulting in 254,432 EBPM problems. We
    [[https://aksarkar.github.io/singlecell-modes/immune-census.html#orgc2a066a][previously
    pre-processed the data]] to ~npz~ format, which is much faster to read than
    ~h5ad~ or ~loom~.
@@ -957,35 +958,41 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[6]:
    #+BEGIN_EXAMPLE
      <593844x15902 sparse matrix of type '<class 'numpy.int32'>'
      with 550918891 stored elements in Compressed Sparse Row format>
    #+END_EXAMPLE
    :END:
 
-   Fit ~mpebpm~, and report the time elapsed in minutes.
+   Fit ~mpebpm~ (6 minutes/epoch).
 
    #+BEGIN_SRC ipython :async t
-     start = time.time()
-     log_mu, neg_log_phi = mpebpm.sgd.ebpm_gamma(y_csr, onehot=onehot, batch_size=64, lr=5e-2, max_epochs=10, shuffle=True)
-     elapsed = time.time() - start
-     elapsed / 60
+     # This converges quickly
+     init = mpebpm.sgd.ebpm_gamma(
+       y_csr, onehot=onehot, batch_size=128, lr=1e-2,
+       max_epochs=1, shuffle=True)
+     logdir = 'runs/mpebpm6'
+     os.mkdir(logdir)
+     log_mu, neg_log_phi, logodds = mpebpm.sgd.ebpm_point_gamma(
+       y_csr, onehot=onehot, init=init, batch_size=128, lr=1e-2,
+       max_epochs=5, shuffle=True, logdir=logdir)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   : 58.272460337479906
+   # Out[39]:
    :END:
 
    #+BEGIN_SRC ipython
      pd.DataFrame(log_mu, index=donor.unique(), columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-log-mu.txt.gz', sep='\t')
      pd.DataFrame(neg_log_phi, index=donor.unique(), columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-neg-log-phi.txt.gz', sep='\t')
+     pd.DataFrame(logodds, index=donor.unique(), columns=genes['featurekey']).to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-logodds.txt.gz', sep='\t')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[17]:
+   # Out[40]:
    :END:
 
    Read the estimated parameters.
@@ -993,11 +1000,12 @@
    #+BEGIN_SRC ipython
      log_mu = pd.read_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-log-mu.txt.gz', sep='\t', index_col=0)
      neg_log_phi = pd.read_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-neg-log-phi.txt.gz', sep='\t', index_col=0)
+     logodds = pd.read_csv('/scratch/midway2/aksarkar/ideas/mpebpm-immune-census-logodds.txt.gz', sep='\t', index_col=0)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[20]:
+   # Out[41]:
    :END:
 
    Test each donor-gene combination for goodness-of-fit to the
@@ -1008,18 +1016,17 @@
      for j in range(y_csr.shape[1]):
        query = y_csc[:,j].tocsr()
        for k, name in enumerate(donor.unique()):
+         # Important: scqtl.diagnostic blows up memory for some reason
          idx = onehot[:,k].tocsc().indices
-         N = idx.shape[0]
-         x = query[idx].A.ravel()
-         n = np.exp(-neg_log_phi.iloc[k,j])
-         p = 1 / (1 + s[idx] * np.exp(log_mu.iloc[k,j] - neg_log_phi.iloc[k,j]))         
-         F = st.nbinom(n=n, p=p)
-         Fx_1 = F.cdf(x - 1)
-         fx = F.pmf(x)
-         u = np.random.uniform(size=N)
-         d, p = st.kstest(Fx_1 + u * fx, 'uniform')
+         d, p = scmodes.benchmark.gof._gof(
+            query[idx].A.ravel(),
+            cdf=scmodes.benchmark.gof._zig_cdf,
+            pmf=scmodes.benchmark.gof._zig_pmf,
+            size=s[idx],
+            log_mu=log_mu.iloc[k,j],
+            log_phi=-neg_log_phi.iloc[k,j],
+            logodds=logodds.iloc[k,j])
          result[(name, genes.iloc[j]['Gene'])] = pd.Series({'stat': d, 'p': p})
-
      result = pd.DataFrame.from_dict(result, orient='index')
      result.index.names = ['donor', 'gene']
      result = result.reset_index()
@@ -1028,12 +1035,12 @@
 
    #+RESULTS:
    :RESULTS:
-   0 - f7b0b12b-5d22-40a0-9aa3-e088b9762317
+   # Out[16]:
    :END:
 
    Plot the histogram of GOF \(p\)-values.
 
-   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/immune-census-gof.png
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-immune-census-gof.png
      plt.clf()
      plt.gcf().set_size_inches(2, 2)
      plt.hist(result['p'], bins=np.linspace(0, 1, 11), color='0.7', density=True)
@@ -1045,65 +1052,118 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
-   [[file:figure/mpebpm.org/immune-census-gof.png]]
+   # Out[17]:
+   [[file:figure/mpebpm.org/mpebpm-immune-census-gof.png]]
    :END:
 
    Look at an example.
 
-   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/ic-dpm1.png
-     plt.clf()
-     fig, ax = plt.subplots(2, 1)
-
+   #+BEGIN_SRC ipython
      j = 1
      k = 0
      query = y_csc[:,k].tocsr()
      idx = onehot[:,j].tocsc().indices
      x = query[idx].A.ravel()
-     ax[0].hist(x, bins=np.arange(x.max() + 2), color='k')
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :async t
+     scmodes.benchmark.gof._gof(
+       x, 
+       cdf=scmodes.benchmark.gof._zig_cdf,
+       pmf=scmodes.benchmark.gof._zig_pmf,
+       size=s[idx],
+       log_mu=init[0][k,j],
+       log_phi=-init[1][k,j],)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   : KstestResult(statistic=0.14346460385738558, pvalue=0.0)
+   :END:
+
+
+   #+BEGIN_SRC ipython :async t
+     scmodes.benchmark.gof._gof(
+       x, 
+       cdf=scmodes.benchmark.gof._zig_cdf,
+       pmf=scmodes.benchmark.gof._zig_pmf,
+       size=s[idx],
+       log_mu=log_mu.iloc[k,j],
+       log_phi=-neg_log_phi.iloc[k,j],
+       logodds=logodds.iloc[k,j])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[42]:
+   : KstestResult(statistic=0.13278115317033756, pvalue=0.0)
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     res1 = scmodes.ebpm.ebpm_point_gamma(x, s[idx].ravel())
+     scmodes.benchmark.gof._gof(
+       x, 
+       cdf=scmodes.benchmark.gof._zig_cdf,
+       pmf=scmodes.benchmark.gof._zig_pmf,
+       size=s[idx],
+       log_mu=res1[0],
+       log_phi=-res1[1],
+       logodds=res1[2])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[9]:
+   : KstestResult(statistic=0.006399062002559908, pvalue=0.1017356159621166)
+   :END:
+
+   Compare the negative log likelihood for this gene in this individual.
+
+   #+BEGIN_SRC ipython
+     pd.Series({'scmodes': scmodes.ebpm.wrappers._zinb_obj(res1[:-1], x, s[idx]),
+                'mpebpm': scmodes.ebpm.wrappers._zinb_obj([log_mu.iloc[k,j], neg_log_phi.iloc[k,j], logodds.iloc[k,j]], x, s[idx])})
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[45]:
+   #+BEGIN_EXAMPLE
+     scmodes     858.372281
+     mpebpm     7139.640261
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/ic-dpm1.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(5, 3.5)
+
+     grid = np.arange(x.max() + 2)
+     ax[0].hist(x, bins=grid, color='k')
+     ax[0].set_xticks(grid)
      ax[0].set_xlabel('Number of molecules')
      ax[0].set_ylabel('Number of cells')
      ax[0].set_title(genes.iloc[1]['Gene'])
 
      grid = np.linspace(0, 1e-5, 1000)
-     pi0 = sp.expit(-logodds.iloc[k,j])
+     pi0 = sp.expit(logodds.iloc[k,j])
      F = pi0 + (1 - pi0) * st.gamma(a=np.exp(-neg_log_phi.iloc[k,j]), scale=np.exp(log_mu.iloc[k,j] - neg_log_phi.iloc[k,j])).cdf(grid)
-     ax[1].plot(grid, F, c='k', lw=1)
+     ax[1].plot(grid, F, c=cm(0), lw=1, label='mpebpm')
+
+     pi0 = sp.expit(res1[2])
+     F = pi0 + (1 - pi0) * st.gamma(a=np.exp(-res1[1]), scale=np.exp(res1[0] - res1[1])).cdf(grid)
+     ax[1].plot(grid, F, c=cm(1), lw=1, label='scmodes')
      ax[1].set_xlabel('Latent gene expression')
      ax[1].set_ylabel('CDF')
+     ax[1].legend(frameon=False)
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[51]:
+   # Out[46]:
    [[file:figure/mpebpm.org/ic-dpm1.png]]
-   :END:
-
-   Fit just this gene.
-
-   #+BEGIN_SRC ipython :async t
-     scmodes.ebpm.ebpm_point_gamma(x, s[idx].ravel())
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[55]:
-   #+BEGIN_EXAMPLE
-     (-12.289583305728296,
-     14.014278232411597,
-     0.9672324267648861,
-     -857.9082245516674)
-   #+END_EXAMPLE
-   :END:
-
-
-   #+BEGIN_SRC ipython
-     log_mu.iloc[k,j], neg_log_phi.iloc[k,j], logodds.iloc[k,j]
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[56]:
-   : (-9.686181, 1.9767971999999998, -1.9064716)
    :END:

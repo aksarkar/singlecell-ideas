@@ -133,7 +133,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[47]:
    :END:
 
    Construct pseudobulk data.
@@ -144,7 +144,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[48]:
    :END:
 
    Plot the distribution of size factors for the pseudobulk data.
@@ -206,7 +206,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[35]:
+   # Out[49]:
    :END:
 
    Plot the distribution of regression coefficients for equal-sized bins of
@@ -229,6 +229,53 @@
    :RESULTS:
    # Out[37]:
    [[file:figure/pseudobulk.org/null-covariate-effect-by-pseudobulk-mean-equal-bins.png]]
+   :END:
+
+   Downsample the pseudobulk data to get more size factor variation. Generate a
+   null covariate which is correlated with the size factor, and regress each
+   gene against it.
+
+   #+BEGIN_SRC ipython :async t
+     rng = np.random.default_rng(1)
+     prob = rng.beta(a=.2, b=.2, size=(n, 1))
+     ysub = rng.binomial(n=y.astype(int), p=prob).astype(float)
+     log1p_ysub = np.log1p(ysub / ysub.sum(axis=1, keepdims=True))
+     m = log1p_ysub.mean(axis=0)
+     log1p_ysub -= m
+     log1p_ysub /= log1p_ysub.std(axis=0)
+     x = prob.copy().ravel()
+     x -= x.mean()
+     x /= x.std()
+     x += rng.normal(size=n)
+     bhat = []
+     for j in range(log1p_ysub.shape[1]):
+       b = x @ log1p_ysub[:,j] / (x.T @ x)
+       bhat.append(b)
+     bhat = np.array(bhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[125]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/size-covariate-effect-by-pseudobulk-mean-equal-bins.png
+     n_bins = 15
+     temp = bhat[np.argsort(m)]
+     plt.clf()
+     plt.gcf().set_size_inches(4, 3)
+     plt.boxplot(np.array_split(temp, 15), positions=range(15), widths=.5, flierprops={'markersize': 1}, medianprops={'color': 'k'})
+     plt.axhline(y=0, lw=1, ls='--', c='k')
+     plt.xticks(np.arange(n_bins))
+     plt.xlabel('Mean log pseudobulk gene expression bin')
+     plt.ylabel('Estimated effect size')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[126]:
+   [[file:figure/pseudobulk.org/size-covariate-effect-by-pseudobulk-mean-equal-bins.png]]
    :END:
 
    Repeat the analysis for the top /cis/-eQTL for /SKP1/.

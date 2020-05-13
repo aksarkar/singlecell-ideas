@@ -78,7 +78,7 @@
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="32G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+RESULTS:
-  : Submitted batch job 1165578
+  : Submitted batch job 1211797
 
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
@@ -125,6 +125,12 @@
   :RESULTS:
   # Out[3]:
   :END:
+
+  #+BEGIN_SRC sh :results none :session tensorboard :dir /scratch/midway2/aksarkar/singlecell/
+    srun --pty --partition=mstephens bash
+    source activate singlecell
+    tensorboard --host=$(hostname -i) --logdir=runs &
+  #+END_SRC
 
 * Results
   :PROPERTIES:
@@ -324,19 +330,21 @@
 
    We previously generated scRNA-seq of 5,597 cells from 54 donors
    ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
-   al. 2019]]). Read the data.
+   al. 2019]]). Read the data, and remove the donor with evidence of
+   contamination.
 
    #+BEGIN_SRC ipython
      x = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+     x = x[x.obs.chip_id != 'NA18498']
      x.X
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[4]:
    #+BEGIN_EXAMPLE
-     <5597x9957 sparse matrix of type '<class 'numpy.float32'>'
-     with 39654337 stored elements in Compressed Sparse Row format>
+     <5578x9957 sparse matrix of type '<class 'numpy.float32'>'
+     with 39529537 stored elements in Compressed Sparse Row format>
    #+END_EXAMPLE
    :END:
 
@@ -346,6 +354,8 @@
      # Important: the dense data will fit on the GPU
      y = x.X.A
      s = x.obs['mol_hs'].values.reshape(-1, 1)
+     # Important: constructing this as a dense matrix will blow up memory for larger
+     # data sets
      onehot = ss.coo_matrix((np.ones(x.shape[0]), (np.arange(x.shape[0]), pd.Categorical(x.obs['chip_id']).codes))).tocsr()
      # Important: center the matrix of dummy variables (batch), because there is no
      # baseline
@@ -355,136 +365,104 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[94]:
+   # Out[323]:
    :END:
 
-   Fit ~mpebpm~, and report the time elapsed in minutes.
+   Fit ~mpebpm~.
 
    #+BEGIN_SRC ipython :async t
-     start = time.time()
-     log_mu, neg_log_phi, logodds = mpebpm.ebpm_point_gamma(
+     trial = 5
+     num_epochs = 40
+     batch_size = 64
+     lr = 1e-2
+     res1 = mpebpm.sgd.ebpm_gamma(
        y,
        s=s,
        onehot=onehot,
-       batch_size=64,
-       lr=1e-2,
-       max_epochs=80,
-       verbose=True)
-     elapsed = time.time() - start
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu', log_mu)
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi', neg_log_phi)
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds', logodds)
-     elapsed / 60
+       batch_size=batch_size,
+       shuffle=True,
+       lr=lr,
+       num_epochs=num_epochs,
+       log_dir=f'runs/mpebpm/ipsc{trial}/init/')
+     log_mu, neg_log_phi, logodds = mpebpm.sgd.ebpm_point_gamma(
+       y,
+       s=s,
+       onehot=onehot,
+       init=res1,
+       batch_size=batch_size,
+       shuffle=True,
+       lr=lr,
+       num_epochs=num_epochs,
+       log_dir=f'runs/mpebpm/ipsc{trial}/fit/')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
-   : 4.786360724767049
+   # Out[342]:
    :END:
 
-   For comparison, this analysis previously required 395 minutes using
-   ~scqtl~. Estimate the full data log likelihood.
-
-   #+BEGIN_SRC ipython
-     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-log-mu.npy')
-     neg_log_phi = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-neg-log-phi.npy')
-     logodds = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-logodds.npy')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[36]:
-   :END:
+   Estimate log likelihood for each observation under Gamma and point-Gamma
+   expression models.
 
    #+BEGIN_SRC ipython :async t
-     mean = s.ravel() * onehot @ np.exp(log_mu)
-     inv_disp = onehot @ np.exp(neg_log_phi)
+     mean = s.ravel() * onehot @ np.exp(res1[0])
+     inv_disp = onehot @ np.exp(res1[1])
      nb_llik = (y * np.log(mean / inv_disp)
                 - y * np.log(1 + mean / inv_disp)
                 - inv_disp * np.log(1 + mean / inv_disp)
-                # Important: these terms are why we use inverse dispersion
                 + sp.gammaln(y + inv_disp)
                 - sp.gammaln(inv_disp)
                 - sp.gammaln(y + 1))
-     case_zero = -np.log1p(np.exp(onehot @ -logodds)) + np.log1p(np.exp(nb_llik - (onehot @ logodds)))
-     case_non_zero = -np.log1p(np.exp(onehot @ logodds)) + nb_llik
-     np.where(y < 1, case_zero, case_non_zero).mean()
+
+     mean = s.ravel() * onehot @ np.exp(log_mu)
+     inv_disp = onehot @ np.exp(neg_log_phi)
+     temp = (y * np.log(mean / inv_disp)
+                - y * np.log(1 + mean / inv_disp)
+                - inv_disp * np.log(1 + mean / inv_disp)
+                + sp.gammaln(y + inv_disp)
+                - sp.gammaln(inv_disp)
+                - sp.gammaln(y + 1))
+     case_zero = -np.log1p(np.exp(onehot @ -logodds)) + np.log1p(np.exp(temp - (onehot @ logodds)))
+     case_non_zero = -np.log1p(np.exp(onehot @ logodds)) + temp
+     zinb_llik = np.where(y < 1, case_zero, case_non_zero)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[17]:
-   : -128.0825405344857
+   # Out[343]:
    :END:
 
-   Read the previously estimated parameters, and estimate the full data log
-   likelihood.
+   Take the best model for each donor/gene combination, then evaluate the full
+   data log likelihood.
 
    #+BEGIN_SRC ipython
-     log_mu0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-mu.txt.gz", index_col=0, sep=' ')
-     log_phi0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-phi.txt.gz", index_col=0, sep=' ')
-     logodds0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-logodds.txt.gz", index_col=0, sep=' ')
+     L = np.tensordot(onehot.T.A, np.stack([nb_llik, zinb_llik], axis=-1), 1)
+     L.max(axis=-1).sum() / np.prod(y.shape)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[18]:
+   # Out[344]:
+   : -51.14861191512254
    :END:
 
-   #+BEGIN_SRC ipython :async t
-     mean0 = s.ravel() * onehot @ np.exp(log_mu0.values.T)
-     inv_disp0 = onehot @ np.exp(-log_phi0.values.T)
-     nb_llik = (y * np.log(mean0 / inv_disp0)
-                - y * np.log(1 + mean0 / inv_disp0)
-                - inv_disp0 * np.log(1 + mean0 / inv_disp0)
-                # Important: these terms are why we use inverse disp0ersion
-                     + sp.gammaln(y + inv_disp0)
-                - sp.gammaln(inv_disp0)
-                - sp.gammaln(y + 1))
-     case_zero = -np.log1p(np.exp(onehot @ -logodds0.values.T)) + np.log1p(np.exp(nb_llik - (onehot @ logodds0.values.T)))
-     case_non_zero = -np.log1p(np.exp(onehot @ logodds0.values.T)) + nb_llik
-     np.where(y < 1, case_zero, case_non_zero).mean()
+   Evaluate the proportion of times each model was the best fit for donor/gene
+   combinations.
+
+   #+BEGIN_SRC ipython
+     pd.Series({k: v for k, v in zip(
+       ['gamma', 'point_gamma'],
+       np.histogram(L.argmax(axis=-1), bins=np.arange(3))[0])}) / np.prod(L.shape[:2])
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[22]:
-   : -248.24867762696132
-   :END:
-
-   Plot the fitted values of the two methods against each other.
-
-   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-ipsc.png
-     plt.clf()
-     fig, ax = plt.subplots(1, 3)
-     fig.set_size_inches(7, 2.5)
-
-     ax[0].scatter(log_mu.ravel(order='F'), log_mu0.values.ravel(), s=1, c='k', alpha=0.1)
-     ax[0].set_xlim(ax[0].get_ylim())
-     ax[0].plot(ax[0].get_xlim(), ax[0].get_ylim(), lw=1, ls=':', c='r')
-     ax[0].set_xlabel('MPEBPM est $\log(\mu)$')
-     ax[0].set_ylabel('scqtl est $\log(\mu)$')
-
-     ax[1].scatter(-neg_log_phi.ravel(order='F'), log_phi0.values.ravel(), s=1, c='k', alpha=0.1)
-     ax[1].set_xlim(ax[1].get_ylim())
-     ax[1].plot(ax[1].get_xlim(), ax[1].get_ylim(), lw=1, ls=':', c='r')
-     ax[1].set_xlabel('MPEBPM est $\log(\phi)$')
-     ax[1].set_ylabel('scqtl est $\log(\phi)$')
-
-     ax[2].scatter(logodds.ravel(order='F'), logodds0.values.ravel(), s=1, c='k', alpha=0.1)
-     ax[2].set_xlim(ax[2].get_ylim())
-     ax[2].plot(ax[2].get_xlim(), ax[2].get_ylim(), lw=1, ls=':', c='r')
-     ax[2].set_xlabel('MPEBPM est $\mathrm{logit}(\pi)$')
-     ax[2].set_ylabel('scqtl est $\mathrm{logit}(\pi)$')
-
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[19]:
-   [[file:figure/mpebpm.org/mpebpm-ipsc.png]]
+   # Out[345]:
+   #+BEGIN_EXAMPLE
+     gamma          0.311343
+     point_gamma    0.688657
+     dtype: float64
+   #+END_EXAMPLE
    :END:
 
    Test each individual-gene combination for goodness-of-fit to the
@@ -495,14 +473,24 @@
      for j in range(x.shape[1]):
        for k, donor in enumerate(pd.Categorical(x.obs['chip_id']).categories):
          idx = onehot[:,k].A.ravel().astype(bool)
-         d, p = scqtl.diagnostic.diagnostic_test(
-           x.X[idx,j].A,
-           log_mu[k,j],
-           -neg_log_phi[k,j],
-           -logodds[k,j],
-           s[idx],
-           np.ones((int(idx.sum()), 1)),
-           n_samples=1)
+         size = s[idx].ravel()
+         if L[k,j,0] > L[k,j,1]:
+           d, p = scmodes.benchmark.gof._gof(
+             y[idx,j],
+             cdf=scmodes.benchmark.gof._zig_cdf,
+             pmf=scmodes.benchmark.gof._zig_pmf,
+             size=size,
+             log_mu=res1[0][k,j],
+             log_phi=-res1[1][k,j])
+         else:
+           d, p = scmodes.benchmark.gof._gof(
+             y[idx,j],
+             cdf=scmodes.benchmark.gof._zig_cdf,
+             pmf=scmodes.benchmark.gof._zig_pmf,
+             size=size,
+             log_mu=log_mu[k,j],
+             log_phi=-neg_log_phi[k,j],
+             logodds=logodds[k,j])
          result[(donor, x.var.iloc[j].name)] = pd.Series({'stat': d, 'p': p})
      result = pd.DataFrame.from_dict(result, orient='index')
      result.index.names = ['donor', 'gene']
@@ -511,7 +499,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[35]:
+   # Out[346]:
    :END:
 
    Write out the GOF tests.
@@ -522,7 +510,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[38]:
+   # Out[337]:
    :END:
 
    Plot the histogram of GOF \(p\)-values.
@@ -540,7 +528,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[76]:
+   # Out[347]:
    [[file:figure/mpebpm.org/mpebpm-ipsc-gof.png]]
    :END:
 
@@ -554,8 +542,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[43]:
-   : (64, 0.00011903034901930151)
+   # Out[348]:
+   : (65, 0.000123171145359006)
    :END:
 
    Look at one of the examples where the data depart from the estimated
@@ -583,7 +571,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[75]:
+   # Out[349]:
    [[file:figure/mpebpm.org/mpebpm-ipsc-ex.png]]
    :END:
 
@@ -596,10 +584,10 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[82]:
+   # Out[350]:
    #+BEGIN_EXAMPLE
-     array(['NUP98', 'ANXA5', 'RPL27A', 'RHOG', 'MT-CO2', 'MT-ND4', 'MT-CO3',
-     'MT-ND4L', 'MT-ATP8'], dtype=object)
+     array(['NUP98', 'B4GALT5', 'ANXA5', 'RHOG', 'MT-CO2', 'MT-CYB', 'MT-ND2',
+     'MT-ND4', 'MT-ATP6', 'MT-CO3', 'MT-ND4L'], dtype=object)
    #+END_EXAMPLE
    :END:
 
@@ -801,6 +789,46 @@
    :RESULTS:
    # Out[10]:
    [[file:figure/mpebpm.org/mpebpm-scqtl-ipsc-latent-mean.png]]
+   :END:
+
+** Comparison to previous approach
+
+   For comparison, this analysis previously required 395 minutes using
+   ~scqtl~. Read the previously estimated parameters, and estimate the full
+   data log likelihood.
+
+   #+BEGIN_SRC ipython
+     log_mu0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-mu.txt.gz", index_col=0, sep=' ')
+     log_phi0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-phi.txt.gz", index_col=0, sep=' ')
+     logodds0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-logodds.txt.gz", index_col=0, sep=' ')
+     del log_mu0['NA18498']
+     del log_phi0['NA18498']
+     del logodds0['NA18498']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[113]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     mean0 = s.ravel() * onehot @ np.exp(log_mu0.values.T)
+     inv_disp0 = onehot @ np.exp(-log_phi0.values.T)
+     nb_llik = (y * np.log(mean0 / inv_disp0)
+                - y * np.log(1 + mean0 / inv_disp0)
+                - inv_disp0 * np.log(1 + mean0 / inv_disp0)
+                + sp.gammaln(y + inv_disp0)
+                - sp.gammaln(inv_disp0)
+                - sp.gammaln(y + 1))
+     case_zero = -np.log1p(np.exp(onehot @ -logodds0.values.T)) + np.log1p(np.exp(nb_llik - (onehot @ logodds0.values.T)))
+     case_non_zero = -np.log1p(np.exp(onehot @ logodds0.values.T)) + nb_llik
+     np.where(y < 1, case_zero, case_non_zero).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[92]:
+   : -244.56285324910596
    :END:
 
 ** Application to Census of Immune Cells

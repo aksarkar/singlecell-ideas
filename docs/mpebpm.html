@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-12 Tue 20:46 -->
+<!-- 2020-05-12 Tue 21:31 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -624,7 +624,7 @@ Prepare the data.
 </div>
 
 <p>
-Fit <code>mpebpm</code>.
+Fit <code>mpebpm</code> (41 s to initialize; 39 s to fit).
 </p>
 
 <div class="org-src-container">
@@ -852,34 +852,37 @@ array(['NUP98', 'B4GALT5', 'ANXA5', 'RHOG', 'MT-CO2', 'MT-CYB', 'MT-ND2',
 <h3 id="confounders"><a id="org1a9953a"></a>Confounder correction in iPSC data</h3>
 <div class="outline-text-3" id="text-confounders">
 <p>
-Repeat the analysis, including C1 chip as a covariate. Report the wall clock
-time for the analysis, in minutes.
+Repeat the analysis, including C1 chip as a covariate (1.4 minutes init,
+1.35 minutes fit).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-variable-name">log_mu1</span>, <span class="org-variable-name">neg_log_phi1</span>, <span class="org-variable-name">logodds1</span>, <span class="org-variable-name">bhat1</span> = mpebpm.sgd.ebpm_point_gamma(
+<pre class="src src-ipython"><span class="org-variable-name">num_epochs</span> = 80
+<span class="org-variable-name">init</span> = mpebpm.sgd.ebpm_gamma(
   y,
   s=s,
   onehot=onehot,
   design=design,
   batch_size=64,
   lr=1e-2,
-  max_epochs=100,
-  verbose=<span class="org-constant">True</span>)
-<span class="org-variable-name">elapsed</span> = time.time() - start
-np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-log-mu'</span>, log_mu)
-np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-neg-log-phi'</span>, neg_log_phi)
-np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-logodds'</span>, logodds)
-np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-bhat'</span>, bhat)
-elapsed / 60
+  num_epochs=num_epochs,
+  log_dir=<span class="org-string">'runs/mpebpm/ipsc/design2/init'</span>)
+<span class="org-variable-name">log_mu1</span>, <span class="org-variable-name">neg_log_phi1</span>, <span class="org-variable-name">logodds1</span>, <span class="org-variable-name">bhat1</span> = mpebpm.sgd.ebpm_point_gamma(
+  y,
+  s=s,
+  init=init[:-1],
+  onehot=onehot,
+  design=design,
+  batch_size=64,
+  lr=1e-2,
+  num_epochs=num_epochs,
+  log_dir=<span class="org-string">'runs/mpebpm/ipsc/design2/fit'</span>)
+np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-log-mu'</span>, log_mu1)
+np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-neg-log-phi'</span>, neg_log_phi1)
+np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-logodds'</span>, logodds1)
+np.save(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-bhat'</span>, bhat1)
 </pre>
 </div>
-
-<pre class="example">
-3.198907784620921
-
-</pre>
 
 <p>
 Read the <code>mpebpm</code> and <code>scqtl</code> estimates.
@@ -897,56 +900,6 @@ Read the <code>mpebpm</code> and <code>scqtl</code> estimates.
 <span class="org-variable-name">bhat2</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/beta.txt.gz'</span>, index_col=0, sep=<span class="org-string">' '</span>)
 </pre>
 </div>
-
-<p>
-Compute the full data log likelihood at the <code>mpebpm</code> solution.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">mean</span> = s.ravel() * onehot @ np.exp(log_mu1) * np.exp(design @ bhat1)
-<span class="org-variable-name">inv_disp</span> = onehot @ np.exp(neg_log_phi1)
-<span class="org-variable-name">nb_llik</span> = (y * np.log(mean / inv_disp)
-           - y * np.log(1 + mean / inv_disp)
-           - inv_disp * np.log(1 + mean / inv_disp)
-           <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these terms are why we use inverse dispersion</span>
-           + sp.gammaln(y + inv_disp)
-           - sp.gammaln(inv_disp)
-           - sp.gammaln(y + 1))
-<span class="org-variable-name">case_zero</span> = -np.log1p(np.exp(onehot @ -logodds1)) + np.log1p(np.exp(nb_llik - (onehot @ logodds1)))
-<span class="org-variable-name">case_non_zero</span> = -np.log1p(np.exp(onehot @ logodds1)) + nb_llik
-np.where(y &lt; 1, case_zero, case_non_zero).mean()
-</pre>
-</div>
-
-<pre class="example">
--222.59761148808386
-
-</pre>
-
-<p>
-Compute the full data log likelihood at the <code>scqtl</code> solution.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">mean</span> = s.ravel() * onehot @ np.exp(log_mu2.values.T) * np.exp(design @ bhat2.values.T)
-<span class="org-variable-name">inv_disp</span> = onehot @ np.exp(-log_phi2.values.T)
-<span class="org-variable-name">nb_llik</span> = (y * np.log(mean / inv_disp)
-           - y * np.log(1 + mean / inv_disp)
-           - inv_disp * np.log(1 + mean / inv_disp)
-           <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these terms are why we use inverse dispersion</span>
-           + sp.gammaln(y + inv_disp)
-           - sp.gammaln(inv_disp)
-           - sp.gammaln(y + 1))
-<span class="org-variable-name">case_zero</span> = -np.log1p(np.exp(onehot @ -logodds2.values.T)) + np.log1p(np.exp(nb_llik - (onehot @ logodds2.values.T)))
-<span class="org-variable-name">case_non_zero</span> = -np.log1p(np.exp(onehot @ logodds2.values.T)) + nb_llik
-np.where(y &lt; 1, case_zero, case_non_zero).mean()
-</pre>
-</div>
-
-<pre class="example">
--349.2031033227098
-
-</pre>
 
 <p>
 Compare the <code>mpebpm</code> estimates with and without correcting for batch.
@@ -986,52 +939,6 @@ fig.tight_layout()
 </div>
 
 <p>
-Compare the <code>mpebpm</code> estimate against the <code>scqtl</code> estimate (with confounder
-correction).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 2)
-fig.set_size_inches(5, 5)
-
-ax[0,0].scatter(log_mu2.values.ravel(order=<span class="org-string">'F'</span>), log_mu1.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
-ax[0,0].set_xlim(ax[0,0].get_ylim())
-ax[0,0].plot(ax[0,0].get_xlim(), ax[0,0].get_ylim(), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
-ax[0,0].set_xlabel(<span class="org-string">'scqtl $\log(\mu)$'</span>)
-ax[0,0].set_ylabel(<span class="org-string">'mpebpm est $\log(\mu)$'</span>)
-
-ax[0,1].scatter(log_phi2.values.ravel(order=<span class="org-string">'F'</span>), -neg_log_phi1.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
-ax[0,1].set_xlim(ax[0,1].get_ylim())
-ax[0,1].plot(ax[0,1].get_xlim(), ax[0,1].get_ylim(), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
-ax[0,1].set_xlabel(<span class="org-string">'scqtl est $\log(\phi)$'</span>)
-ax[0,1].set_ylabel(<span class="org-string">'mpebpm est $\log(\phi)$'</span>)
-
-ax[1,0].scatter(logodds2.values.ravel(order=<span class="org-string">'F'</span>), logodds1.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
-ax[1,0].set_xlim(ax[1,0].get_ylim())
-ax[1,0].plot(ax[1,0].get_xlim(), ax[1,0].get_ylim(), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
-ax[1,0].set_xlabel(<span class="org-string">'scqtl est $\mathrm{logit}(\pi)$'</span>)
-ax[1,0].set_ylabel(<span class="org-string">'mpebpm est $\mathrm{logit}(\pi)$'</span>)
-
-ax[1,1].scatter(bhat2.values.ravel(order=<span class="org-string">'F'</span>), bhat1.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
-ax[1,1].set_xlim(ax[1,1].get_ylim())
-ax[1,1].plot(ax[1,1].get_xlim(), ax[1,1].get_ylim(), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
-ax[1,1].set_xlabel(r<span class="org-string">'scqtl est $\beta$'</span>)
-ax[1,1].set_ylabel(r<span class="org-string">'mpebpm est $\beta$'</span>)
-
-<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.ravel():
-  a.set_aspect(<span class="org-string">'equal'</span>)
-fig.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/mpebpm.org/scqtl-mpebpm-design.png" alt="scqtl-mpebpm-design.png">
-</p>
-</div>
-
-<p>
 Compare the <code>mpebpm</code> estimated mean latent gene expression against the
 <code>scqtl</code> estimate.
 </p>
@@ -1039,6 +946,7 @@ Compare the <code>mpebpm</code> estimated mean latent gene expression against th
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">mean1</span> = -np.log1p(np.exp(logodds1)) + log_mu1
 <span class="org-variable-name">mean2</span> = -np.log1p(np.exp(logodds2)) + log_mu2
+<span class="org-keyword">del</span> mean2[<span class="org-string">'NA18498'</span>]
 </pre>
 </div>
 
@@ -1100,6 +1008,102 @@ np.where(y &lt; 1, case_zero, case_non_zero).mean()
 -244.56285324910596
 
 </pre>
+
+<p>
+Compute the full data log likelihood at the <code>mpebpm</code> solution.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mean</span> = s.ravel() * onehot @ np.exp(log_mu1) * np.exp(design @ bhat1)
+<span class="org-variable-name">inv_disp</span> = onehot @ np.exp(neg_log_phi1)
+<span class="org-variable-name">nb_llik</span> = (y * np.log(mean / inv_disp)
+           - y * np.log(1 + mean / inv_disp)
+           - inv_disp * np.log(1 + mean / inv_disp)
+           <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these terms are why we use inverse dispersion</span>
+           + sp.gammaln(y + inv_disp)
+           - sp.gammaln(inv_disp)
+           - sp.gammaln(y + 1))
+<span class="org-variable-name">case_zero</span> = -np.log1p(np.exp(onehot @ -logodds1)) + np.log1p(np.exp(nb_llik - (onehot @ logodds1)))
+<span class="org-variable-name">case_non_zero</span> = -np.log1p(np.exp(onehot @ logodds1)) + nb_llik
+np.where(y &lt; 1, case_zero, case_non_zero).mean()
+</pre>
+</div>
+
+<pre class="example">
+-222.59761148808386
+
+</pre>
+
+<p>
+Compute the full data log likelihood at the <code>scqtl</code> solution.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mean</span> = s.ravel() * onehot @ np.exp(log_mu2.values.T) * np.exp(design @ bhat2.values.T)
+<span class="org-variable-name">inv_disp</span> = onehot @ np.exp(-log_phi2.values.T)
+<span class="org-variable-name">nb_llik</span> = (y * np.log(mean / inv_disp)
+           - y * np.log(1 + mean / inv_disp)
+           - inv_disp * np.log(1 + mean / inv_disp)
+           <span class="org-comment-delimiter"># </span><span class="org-comment">Important: these terms are why we use inverse dispersion</span>
+           + sp.gammaln(y + inv_disp)
+           - sp.gammaln(inv_disp)
+           - sp.gammaln(y + 1))
+<span class="org-variable-name">case_zero</span> = -np.log1p(np.exp(onehot @ -logodds2.values.T)) + np.log1p(np.exp(nb_llik - (onehot @ logodds2.values.T)))
+<span class="org-variable-name">case_non_zero</span> = -np.log1p(np.exp(onehot @ logodds2.values.T)) + nb_llik
+np.where(y &lt; 1, case_zero, case_non_zero).mean()
+</pre>
+</div>
+
+<pre class="example">
+-349.2031033227098
+
+</pre>
+
+<p>
+Compare the <code>mpebpm</code> estimate against the <code>scqtl</code> estimate (with confounder
+correction).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 2)
+fig.set_size_inches(5, 5)
+
+ax[0,0].scatter(log_mu2.values.ravel(order=<span class="org-string">'F'</span>), log_mu1.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+ax[0,0].set_xlim(ax[0,0].get_ylim())
+ax[0,0].plot(ax[0,0].get_xlim(), ax[0,0].get_ylim(), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[0,0].set_xlabel(<span class="org-string">'scqtl $\log(\mu)$'</span>)
+ax[0,0].set_ylabel(<span class="org-string">'mpebpm est $\log(\mu)$'</span>)
+
+ax[0,1].scatter(log_phi2.values.ravel(order=<span class="org-string">'F'</span>), -neg_log_phi1.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+ax[0,1].set_xlim(ax[0,1].get_ylim())
+ax[0,1].plot(ax[0,1].get_xlim(), ax[0,1].get_ylim(), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[0,1].set_xlabel(<span class="org-string">'scqtl est $\log(\phi)$'</span>)
+ax[0,1].set_ylabel(<span class="org-string">'mpebpm est $\log(\phi)$'</span>)
+
+ax[1,0].scatter(logodds2.values.ravel(order=<span class="org-string">'F'</span>), logodds1.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+ax[1,0].set_xlim(ax[1,0].get_ylim())
+ax[1,0].plot(ax[1,0].get_xlim(), ax[1,0].get_ylim(), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[1,0].set_xlabel(<span class="org-string">'scqtl est $\mathrm{logit}(\pi)$'</span>)
+ax[1,0].set_ylabel(<span class="org-string">'mpebpm est $\mathrm{logit}(\pi)$'</span>)
+
+ax[1,1].scatter(bhat2.values.ravel(order=<span class="org-string">'F'</span>), bhat1.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+ax[1,1].set_xlim(ax[1,1].get_ylim())
+ax[1,1].plot(ax[1,1].get_xlim(), ax[1,1].get_ylim(), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[1,1].set_xlabel(r<span class="org-string">'scqtl est $\beta$'</span>)
+ax[1,1].set_ylabel(r<span class="org-string">'mpebpm est $\beta$'</span>)
+
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.ravel():
+  a.set_aspect(<span class="org-string">'equal'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mpebpm.org/scqtl-mpebpm-design.png" alt="scqtl-mpebpm-design.png">
+</p>
+</div>
 </div>
 </div>
 
@@ -1464,7 +1468,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-12 Tue 20:46</p>
+<p class="date">Created: 2020-05-12 Tue 21:31</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

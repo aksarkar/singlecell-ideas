@@ -368,7 +368,7 @@
    # Out[323]:
    :END:
 
-   Fit ~mpebpm~.
+   Fit ~mpebpm~ (41 s to initialize; 39 s to fit).
 
    #+BEGIN_SRC ipython :async t
      trial = 5
@@ -596,32 +596,39 @@
    :CUSTOM_ID: confounders
    :END:
 
-   Repeat the analysis, including C1 chip as a covariate. Report the wall clock
-   time for the analysis, in minutes.
+   Repeat the analysis, including C1 chip as a covariate (1.4 minutes init,
+   1.35 minutes fit).
 
    #+BEGIN_SRC ipython :async t
-     start = time.time()
-     log_mu1, neg_log_phi1, logodds1, bhat1 = mpebpm.sgd.ebpm_point_gamma(
+     num_epochs = 80
+     init = mpebpm.sgd.ebpm_gamma(
        y,
        s=s,
        onehot=onehot,
        design=design,
        batch_size=64,
        lr=1e-2,
-       max_epochs=100,
-       verbose=True)
-     elapsed = time.time() - start
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-log-mu', log_mu)
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-neg-log-phi', neg_log_phi)
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-logodds', logodds)
-     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-bhat', bhat)
-     elapsed / 60
+       num_epochs=num_epochs,
+       log_dir='runs/mpebpm/ipsc/design2/init')
+     log_mu1, neg_log_phi1, logodds1, bhat1 = mpebpm.sgd.ebpm_point_gamma(
+       y,
+       s=s,
+       init=init[:-1],
+       onehot=onehot,
+       design=design,
+       batch_size=64,
+       lr=1e-2,
+       num_epochs=num_epochs,
+       log_dir='runs/mpebpm/ipsc/design2/fit')
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-log-mu', log_mu1)
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-neg-log-phi', neg_log_phi1)
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-logodds', logodds1)
+     np.save('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-bhat', bhat1)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[34]:
-   : 3.198907784620921
+   # Out[369]:
    :END:
 
    Read the ~mpebpm~ and ~scqtl~ estimates.
@@ -640,7 +647,112 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[370]:
+   :END:
+
+   Compare the ~mpebpm~ estimates with and without correcting for batch.
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-ipsc-design.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7, 2.5)
+
+     ax[0].scatter(log_mu.ravel(), log_mu1.ravel(), s=1, c='k', alpha=0.1)
+     ax[0].set_xlim(ax[0].get_ylim())
+     ax[0].plot(ax[0].get_xlim(), ax[0].get_ylim(), lw=1, ls=':', c='r')
+     ax[0].set_xlabel('Est $\log(\mu)$')
+     ax[0].set_ylabel('Corrected est $\log(\mu)$')
+
+     ax[1].scatter(-neg_log_phi.ravel(), -neg_log_phi1.ravel(), s=1, c='k', alpha=0.1)
+     ax[1].set_xlim(ax[1].get_ylim())
+     ax[1].plot(ax[1].get_xlim(), ax[1].get_ylim(), lw=1, ls=':', c='r')
+     ax[1].set_xlabel('Est $\log(\phi)$')
+     ax[1].set_ylabel('Corrected est $\log(\phi)$')
+
+     ax[2].scatter(logodds.ravel(), logodds1.ravel(), s=1, c='k', alpha=0.1)
+     ax[2].set_xlim(ax[2].get_ylim())
+     ax[2].plot(ax[2].get_xlim(), ax[2].get_ylim(), lw=1, ls=':', c='r')
+     ax[2].set_xlabel('Est $\mathrm{logit}(\pi)$')
+     ax[2].set_ylabel('Corrected est $\mathrm{logit}(\pi)$')
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[371]:
+   [[file:figure/mpebpm.org/mpebpm-ipsc-design.png]]
+   :END:
+
+   Compare the ~mpebpm~ estimated mean latent gene expression against the
+   ~scqtl~ estimate.
+
+   #+BEGIN_SRC ipython
+     mean1 = -np.log1p(np.exp(logodds1)) + log_mu1
+     mean2 = -np.log1p(np.exp(logodds2)) + log_mu2
+     del mean2['NA18498']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[372]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-scqtl-ipsc-latent-mean.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.scatter(mean1.ravel(), mean2.values.ravel(order='F'), c='k', s=1, alpha=0.1)
+     plt.xlim(plt.ylim())
+     plt.plot(plt.xlim(), plt.ylim(), lw=1, ls=':', c='r')
+     plt.xlabel('mpebpm log latent mean')
+     plt.ylabel('scqtl log latent mean')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[373]:
+   [[file:figure/mpebpm.org/mpebpm-scqtl-ipsc-latent-mean.png]]
+   :END:
+
+** Comparison to previous approach
+
+   For comparison, this analysis previously required 395 minutes using
+   ~scqtl~. Read the previously estimated parameters, and estimate the full
+   data log likelihood.
+
+   #+BEGIN_SRC ipython
+     log_mu0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-mu.txt.gz", index_col=0, sep=' ')
+     log_phi0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-phi.txt.gz", index_col=0, sep=' ')
+     logodds0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-logodds.txt.gz", index_col=0, sep=' ')
+     del log_mu0['NA18498']
+     del log_phi0['NA18498']
+     del logodds0['NA18498']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[113]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     mean0 = s.ravel() * onehot @ np.exp(log_mu0.values.T)
+     inv_disp0 = onehot @ np.exp(-log_phi0.values.T)
+     nb_llik = (y * np.log(mean0 / inv_disp0)
+                - y * np.log(1 + mean0 / inv_disp0)
+                - inv_disp0 * np.log(1 + mean0 / inv_disp0)
+                + sp.gammaln(y + inv_disp0)
+                - sp.gammaln(inv_disp0)
+                - sp.gammaln(y + 1))
+     case_zero = -np.log1p(np.exp(onehot @ -logodds0.values.T)) + np.log1p(np.exp(nb_llik - (onehot @ logodds0.values.T)))
+     case_non_zero = -np.log1p(np.exp(onehot @ logodds0.values.T)) + nb_llik
+     np.where(y < 1, case_zero, case_non_zero).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[92]:
+   : -244.56285324910596
    :END:
 
    Compute the full data log likelihood at the ~mpebpm~ solution.
@@ -689,40 +801,6 @@
    : -349.2031033227098
    :END:
 
-   Compare the ~mpebpm~ estimates with and without correcting for batch.
-
-   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-ipsc-design.png
-     plt.clf()
-     fig, ax = plt.subplots(1, 3)
-     fig.set_size_inches(7, 2.5)
-
-     ax[0].scatter(log_mu.ravel(), log_mu1.ravel(), s=1, c='k', alpha=0.1)
-     ax[0].set_xlim(ax[0].get_ylim())
-     ax[0].plot(ax[0].get_xlim(), ax[0].get_ylim(), lw=1, ls=':', c='r')
-     ax[0].set_xlabel('Est $\log(\mu)$')
-     ax[0].set_ylabel('Corrected est $\log(\mu)$')
-
-     ax[1].scatter(-neg_log_phi.ravel(), -neg_log_phi1.ravel(), s=1, c='k', alpha=0.1)
-     ax[1].set_xlim(ax[1].get_ylim())
-     ax[1].plot(ax[1].get_xlim(), ax[1].get_ylim(), lw=1, ls=':', c='r')
-     ax[1].set_xlabel('Est $\log(\phi)$')
-     ax[1].set_ylabel('Corrected est $\log(\phi)$')
-
-     ax[2].scatter(logodds.ravel(), logodds1.ravel(), s=1, c='k', alpha=0.1)
-     ax[2].set_xlim(ax[2].get_ylim())
-     ax[2].plot(ax[2].get_xlim(), ax[2].get_ylim(), lw=1, ls=':', c='r')
-     ax[2].set_xlabel('Est $\mathrm{logit}(\pi)$')
-     ax[2].set_ylabel('Corrected est $\mathrm{logit}(\pi)$')
-
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[37]:
-   [[file:figure/mpebpm.org/mpebpm-ipsc-design.png]]
-   :END:
-
    Compare the ~mpebpm~ estimate against the ~scqtl~ estimate (with confounder
    correction).
 
@@ -764,71 +842,6 @@
    :RESULTS:
    # Out[112]:
    [[file:figure/mpebpm.org/scqtl-mpebpm-design.png]]
-   :END:
-
-   Compare the ~mpebpm~ estimated mean latent gene expression against the
-   ~scqtl~ estimate.
-
-   #+BEGIN_SRC ipython
-     mean1 = -np.log1p(np.exp(logodds1)) + log_mu1
-     mean2 = -np.log1p(np.exp(logodds2)) + log_mu2
-   #+END_SRC
-
-   #+BEGIN_SRC ipython :ipyfile figure/mpebpm.org/mpebpm-scqtl-ipsc-latent-mean.png
-     plt.clf()
-     plt.gcf().set_size_inches(2.5, 2.5)
-     plt.scatter(mean1.ravel(), mean2.values.ravel(order='F'), c='k', s=1, alpha=0.1)
-     plt.xlim(plt.ylim())
-     plt.plot(plt.xlim(), plt.ylim(), lw=1, ls=':', c='r')
-     plt.xlabel('mpebpm log latent mean')
-     plt.ylabel('scqtl log latent mean')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[10]:
-   [[file:figure/mpebpm.org/mpebpm-scqtl-ipsc-latent-mean.png]]
-   :END:
-
-** Comparison to previous approach
-
-   For comparison, this analysis previously required 395 minutes using
-   ~scqtl~. Read the previously estimated parameters, and estimate the full
-   data log likelihood.
-
-   #+BEGIN_SRC ipython
-     log_mu0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-mu.txt.gz", index_col=0, sep=' ')
-     log_phi0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-log-phi.txt.gz", index_col=0, sep=' ')
-     logodds0 = pd.read_table("/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design0/zi2-logodds.txt.gz", index_col=0, sep=' ')
-     del log_mu0['NA18498']
-     del log_phi0['NA18498']
-     del logodds0['NA18498']
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[113]:
-   :END:
-
-   #+BEGIN_SRC ipython :async t
-     mean0 = s.ravel() * onehot @ np.exp(log_mu0.values.T)
-     inv_disp0 = onehot @ np.exp(-log_phi0.values.T)
-     nb_llik = (y * np.log(mean0 / inv_disp0)
-                - y * np.log(1 + mean0 / inv_disp0)
-                - inv_disp0 * np.log(1 + mean0 / inv_disp0)
-                + sp.gammaln(y + inv_disp0)
-                - sp.gammaln(inv_disp0)
-                - sp.gammaln(y + 1))
-     case_zero = -np.log1p(np.exp(onehot @ -logodds0.values.T)) + np.log1p(np.exp(nb_llik - (onehot @ logodds0.values.T)))
-     case_non_zero = -np.log1p(np.exp(onehot @ logodds0.values.T)) + nb_llik
-     np.where(y < 1, case_zero, case_non_zero).mean()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[92]:
-   : -244.56285324910596
    :END:
 
 ** Application to Census of Immune Cells

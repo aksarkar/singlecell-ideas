@@ -4,6 +4,7 @@
 A collection of various (often incomplete or broken) ideas for single cell
 analysis plus some related topics.
 
+- [[file:nbmix.org][Model-based clustering of scRNA-seq data]]
 - [[file:pseudobulk.org][Alternative approaches to scRNA-seq pseudobulk models]]
 - [[file:scqtl.org][Single cell QTL mapping via sparse multiple regression]]
 - [[file:rpp.org][Parallel computation of randomized quantiles]]

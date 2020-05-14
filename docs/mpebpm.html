@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-13 Wed 12:25 -->
+<!-- 2020-05-14 Thu 13:29 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massively Parallel Empirical Bayes Poisson Means</title>
@@ -265,6 +265,7 @@ for the JavaScript code in this tag.
 <li><a href="#gof">Goodness of fit</a></li>
 <li><a href="#ipsc">Application to iPSCs</a></li>
 <li><a href="#confounders">Confounder correction in iPSC data</a></li>
+<li><a href="#org49570ac">Variance within versus between individuals in iPSC data</a></li>
 <li><a href="#immune-census">Application to Census of Immune Cells</a></li>
 </ul>
 </li>
@@ -347,7 +348,7 @@ evaluate the method on simulations and large biological data sets.
 <h2 id="setup"><a id="org9626900"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <pre class="example">
-Submitted batch job 1162416
+Submitted batch job 1331143
 
 </pre>
 
@@ -1121,6 +1122,308 @@ plt.tight_layout()
 </div>
 </div>
 
+<div id="outline-container-org49570ac" class="outline-3">
+<h3 id="org49570ac">Variance within versus between individuals in iPSC data</h3>
+<div class="outline-text-3" id="text-org49570ac">
+<p>
+Read the estimated parameters.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mu1</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-log-mu.npy'</span>)
+<span class="org-variable-name">neg_log_phi1</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-neg-log-phi.npy'</span>)
+<span class="org-variable-name">logodds1</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-logodds.npy'</span>)
+<span class="org-variable-name">bhat1</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-bhat.npy'</span>)
+</pre>
+</div>
+
+<p>
+Estimate the latent mean and variance of gene expression for each
+individual, for each gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mean</span> = -np.log1p(np.exp(-logodds1)) + log_mu1
+<span class="org-comment-delimiter"># </span><span class="org-comment">V[lam] = (1 - pi) mu^2 phi + pi (1 - pi) mu^2</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">log(x + y) = log(x) + softplus(log y - log x)</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">log(sigmoid(x)) = -softplus(-x)</span>
+<span class="org-variable-name">a</span> = -np.log1p(np.exp(-logodds1)) + 2 * log_mu1 - neg_log_phi1
+<span class="org-variable-name">b</span> = -np.log1p(np.exp(-logodds1)) - np.log1p(np.exp(logodds1)) + 2 * log_mu1
+<span class="org-variable-name">log_var</span> = a + np.log1p(np.exp(b - a))
+</pre>
+</div>
+
+<p>
+Plot the relationship between variance between individuals (sample variance
+of latent mean gene expression values), and: (1) average gene expression,
+and (2) average variance of latent gene expression within an individual.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(4.5, 2.5)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.ravel():
+  a.set_xscale(<span class="org-string">'log'</span>)
+  a.set_yscale(<span class="org-string">'log'</span>)
+  a.set_aspect(<span class="org-string">'equal'</span>, adjustable=<span class="org-string">'datalim'</span>)
+ax[0].scatter(np.exp(log_mean).mean(axis=0), np.exp(log_mean).var(axis=0), c=<span class="org-string">'k'</span>, s=1,alpha=0.2)
+ax[0].set_xlabel(<span class="org-string">'Mean latent gene expression'</span>)
+ax[0].set_ylabel(<span class="org-string">'Between individual variance\nlatent gene expression'</span>)
+ax[1].scatter(np.exp(log_var).mean(axis=0), np.exp(log_mean).var(axis=0), c=<span class="org-string">'k'</span>, s=1,alpha=0.2)
+ax[1].set_xlabel(<span class="org-string">'Within individual variance\nlatent gene expression'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/mpebpm.org/ipsc-var-between-var-within.png" alt="ipsc-var-between-var-within.png">
+</p>
+</div>
+
+<p>
+The distribution of variance between individuals appears to be bimodal. Look
+at the genes in the lower mode.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = np.exp(log_mean).var(axis=0) &lt; 1e-20
+<span class="org-variable-name">temp</span> = x.var.loc[query].copy()
+<span class="org-variable-name">temp</span>[<span class="org-string">'mean'</span>] = np.exp(log_mean).mean(axis=0)[query]
+<span class="org-keyword">print</span>(temp.sort_values(<span class="org-string">'mean'</span>, ascending=<span class="org-constant">False</span>).head(n=20).to_html(classes=<span class="org-string">'table'</span>))
+</pre>
+</div>
+
+<table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>chr</th>
+      <th>start</th>
+      <th>end</th>
+      <th>name</th>
+      <th>strand</th>
+      <th>source</th>
+      <th>mean</th>
+    </tr>
+    <tr>
+      <th>index</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>ENSG00000198886</th>
+      <td>hsMT</td>
+      <td>10760</td>
+      <td>12137</td>
+      <td>MT-ND4</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>2.657278e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000198727</th>
+      <td>hsMT</td>
+      <td>14747</td>
+      <td>15887</td>
+      <td>MT-CYB</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>2.137406e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000198899</th>
+      <td>hsMT</td>
+      <td>8527</td>
+      <td>9207</td>
+      <td>MT-ATP6</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.966070e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000198938</th>
+      <td>hsMT</td>
+      <td>9207</td>
+      <td>9990</td>
+      <td>MT-CO3</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.633298e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000198712</th>
+      <td>hsMT</td>
+      <td>7586</td>
+      <td>8269</td>
+      <td>MT-CO2</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.565673e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000087086</th>
+      <td>hs19</td>
+      <td>49468558</td>
+      <td>49470135</td>
+      <td>FTL</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.232170e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000111640</th>
+      <td>hs12</td>
+      <td>6643093</td>
+      <td>6647537</td>
+      <td>GAPDH</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.212971e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000198763</th>
+      <td>hsMT</td>
+      <td>4470</td>
+      <td>5511</td>
+      <td>MT-ND2</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.182991e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000075624</th>
+      <td>hs7</td>
+      <td>5566782</td>
+      <td>5603415</td>
+      <td>ACTB</td>
+      <td>-</td>
+      <td>H. sapiens</td>
+      <td>1.138831e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000164587</th>
+      <td>hs5</td>
+      <td>149822753</td>
+      <td>149829319</td>
+      <td>RPS14</td>
+      <td>-</td>
+      <td>H. sapiens</td>
+      <td>1.133044e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000084207</th>
+      <td>hs11</td>
+      <td>67351066</td>
+      <td>67354131</td>
+      <td>GSTP1</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.117254e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000181163</th>
+      <td>hs5</td>
+      <td>170814120</td>
+      <td>170838141</td>
+      <td>NPM1</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.109008e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000228253</th>
+      <td>hsMT</td>
+      <td>8366</td>
+      <td>8572</td>
+      <td>MT-ATP8</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.093323e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000137818</th>
+      <td>hs15</td>
+      <td>69745123</td>
+      <td>69748255</td>
+      <td>RPLP1</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.091205e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000231500</th>
+      <td>hs6</td>
+      <td>33239787</td>
+      <td>33244287</td>
+      <td>RPS18</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.037726e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000198804</th>
+      <td>hsMT</td>
+      <td>5904</td>
+      <td>7445</td>
+      <td>MT-CO1</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.030106e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000105372</th>
+      <td>hs19</td>
+      <td>42363988</td>
+      <td>42376994</td>
+      <td>RPS19</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>1.018074e-10</td>
+    </tr>
+    <tr>
+      <th>ENSG00000149273</th>
+      <td>hs11</td>
+      <td>75110530</td>
+      <td>75133324</td>
+      <td>RPS3</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>9.832752e-11</td>
+    </tr>
+    <tr>
+      <th>ENSG00000197061</th>
+      <td>hs6</td>
+      <td>26104104</td>
+      <td>26104518</td>
+      <td>HIST1H4C</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>9.703387e-11</td>
+    </tr>
+    <tr>
+      <th>ENSG00000177954</th>
+      <td>hs1</td>
+      <td>153963235</td>
+      <td>153964626</td>
+      <td>RPS27</td>
+      <td>+</td>
+      <td>H. sapiens</td>
+      <td>9.048103e-11</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+</div>
+
 <div id="outline-container-org450128b" class="outline-3">
 <h3 id="immune-census"><a id="org450128b"></a>Application to Census of Immune Cells</h3>
 <div class="outline-text-3" id="text-immune-census">
@@ -1484,7 +1787,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-13 Wed 12:25</p>
+<p class="date">Created: 2020-05-14 Thu 13:29</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

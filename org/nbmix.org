@@ -36,10 +36,7 @@
   #+RESULTS:
   : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell
-
-  #+RESULTS:
-  : Submitted batch job 1359667
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1 -w midway2-gpu02",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+BEGIN_SRC ipython
     import anndata
@@ -55,7 +52,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[7]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -135,7 +132,7 @@
   \end{equation}
 
 * Results
-** Example
+** Example (EM)
 
    Read sorted immune cell scRNA-seq data
    ([[https://dx.doi.org/10.1038/ncomms14049][Zheng et al. 2017]]).
@@ -163,16 +160,21 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[10]:
    :END:
 
    Plot a UMAP embedding of the data.
 
-   #+BEGIN_SRC ipython
+   #+BEGIN_SRC ipython :async t
      sc.pp.pca(temp)
      sc.pp.neighbors(temp)
      sc.tl.umap(temp)
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/sim-ex.png
      cm = plt.get_cmap('Dark2')
@@ -196,18 +198,17 @@
    expression models.
 
    #+BEGIN_SRC ipython :async t
-     fit = mpebpm.sgd.ebpm_gamma(
+     fit0 = mpebpm.sgd.ebpm_gamma(
        temp.X,
        onehot=pd.get_dummies(temp.obs['cell_type']).values,
        batch_size=32,
        num_epochs=320,
-       shuffle=True,
-       log_dir='runs/nbmix/ex4')
+       shuffle=True)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[13]:
+   # Out[52]:
    :END:
 
    Estimate the cluster weights.
@@ -216,8 +217,8 @@
      L = mpebpm.gam_mix._nb_mix_llik(
        x=torch.tensor(temp.X.A, dtype=torch.float), 
        s=torch.tensor(temp.X.sum(axis=1), dtype=torch.float),
-       log_mean=torch.tensor(fit[0], dtype=torch.float),
-       log_inv_disp=torch.tensor(fit[1], dtype=torch.float)).sum(dim=-1)
+       log_mean=torch.tensor(fit0[0], dtype=torch.float),
+       log_inv_disp=torch.tensor(fit0[1], dtype=torch.float)).sum(dim=-1)
      zhat = torch.nn.functional.softmax(L, dim=1)
    #+END_SRC
 
@@ -261,7 +262,7 @@
    #+BEGIN_SRC ipython :async t
      import imp; imp.reload(mpebpm.gam_mix)
      torch.manual_seed(1)
-     fit = mpebpm.gam_mix.ebpm_gam_mix(
+     fit = mpebpm.gam_mix.ebpm_gam_mix_em(
        x=temp.X.A,
        s=temp.X.sum(axis=1),
        y=torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float).cuda(),
@@ -311,6 +312,34 @@
    :RESULTS:
    # Out[26]:
    [[file:figure/nbmix.org/sim-ex-fit.png]]
+   :END:
+
+** Example (amortized inference)
+
+   Fit the amortized inference model, initializing \(\vmu, \vphi\) from the MLE
+   starting from the ground-truth labels.
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     torch.manual_seed(1)
+     fit = mpebpm.gam_mix.EBPMGammaMix(
+       p=temp.shape[1],
+       k=2,
+       log_mean=fit0[0],
+       log_inv_disp=fit0[1]).fit(
+         x=temp.X.A,
+         s=temp.X.sum(axis=1),
+         y=pd.get_dummies(temp.obs['cell_type']).values,
+         batch_size=32,
+         shuffle=False,
+         num_pretrain=10,
+         num_epochs=10,
+         log_dir='runs/nbmix/test')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[73]:
    :END:
 
 * Related work

@@ -84,9 +84,11 @@
 * Method
 
   We assume \(
-  \DeclareMathOperator\Pois{Poisson}
   \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Mult{Multinomial}
   \DeclareMathOperator\N{\mathcal{N}}
+  \DeclareMathOperator\Pois{Poisson}
+  \newcommand\mi{\mathbf{I}}
   \newcommand\vmu{\boldsymbol{\mu}}
   \newcommand\vphi{\boldsymbol{\phi}}
   \newcommand\vpi{\boldsymbol{\pi}}
@@ -94,7 +96,7 @@
 
   \begin{align}
     x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Pois(x_{i+} \lambda_{ij})\\
-    \lambda_{ij} \mid \vpi_i, \vmu_k, \vphi_k &\sim \sum_{k=1}^{K} \pi_{ik} \Gam(\phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1}),
+    \lambda_{ij} \mid \vpi, \vmu, \vphi &\sim \sum_{k=1}^{K} \pi_{ik} \Gam(\phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1}),
   \end{align}
 
   where
@@ -103,15 +105,18 @@
   - \(x_{i+} \triangleq \sum_j x_{ij}\) denotes the total number of molecules
     observed in cell \(i\)
   - \(\vpi_i\) denotes cluster assignment probabilities for cell \(i\)
-  - \(\vmu_k, \vphi_k\) denote the cluster "centroid" for cluster \(k\)
+  - \(\vmu_k\) denotes the cluster "centroid" for cluster \(k\), and
+    \(\vphi_k\) describes stochastic perturbations within each cluster
 
   The intuition behind this model is that each cluster \(k\) is defined by a
   collection of independent Gamma distributions, one per gene \(j\). These
   Gamma distributions describe the distribution of true gene expression for
   each gene in each cluster
   ([[https://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens 2020]]).
-  This model admits a simple EM algorithm. Letting \(z_{ik} \in \{0, 1\}\)
-  indicate whether cell \(i\) is assigned to cluster \(k\), in the E step
+  
+  We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
+  EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
+  assigned to cluster \(k\), in the E step
 
   \begin{equation}
     E[z_{ik}] \propto \sum_j \int_0^{\infty} \Pois(x_{ij}; x_{i+}\lambda) \Gam(\lambda; \phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1})\, d\lambda.
@@ -121,8 +126,13 @@
   likelihood by [[file:mepbpm.org][(batch) gradient descent]], implemented in
   the Python package ~mpebpm~. To make the model more amenable to stochastic
   gradient descent, we can amortize inference by learning a neural network
-  mapping \(x_{i\cdot} \rightarrow z_{i\cdot}\)
-  ([[https://arxiv.org/abs/1805.08913][Shu et al. 2018]]).
+  mapping \(x_{i\cdot} \rightarrow z_{i\cdot}\).
+
+  The posterior distribution of true gene expression given the data is
+
+  \begin{equation}
+    \lambda_{ij} \mid x_{ij}, x_{i+}, \vpi, \vmu, \vphi \sim \sum_{k=1}^{K} \pi_{ik} \Gam(x_{ij} + \phi_{kj}^{-1}, x_{i+} + \phi_{kj}^{-1}\mu_{kj}^{-1}).
+  \end{equation}
 
 * Results
 ** Example
@@ -305,11 +315,48 @@
 
 * Related work
 
-  scVI (Lopez et al. 2018) implements a deep unsupervised (more precisely,
-  semi-supervised) clustering algorithm (Kingma and Welling 2014)
+  scVI ([[https://dx.doi.org/10.1038/s41592-018-0229-2][Lopez et al. 2018]],
+  [[https://www.biorxiv.org/content/10.1101/532895v2][Xu et al. 2020]])
+  implements a related deep unsupervised (more precisely, semi-supervised)
+  clustering model ([[https://arxiv.org/abs/1406.5298][Kingma et al. 2014]],
+  [[https://arxiv.org/abs/1611.02648][Dilokthanakul et al. 2016]]).
 
   \begin{align}
     x_{i\cdot} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
-    \lambda_{i\cdot} \mid z_{i\cdot} &\sim \Gam(f(z_{i\cdot}))\\
-    z_{i\cdot} \mid y_i &\sim \N(\cdot).
+    \ln s_i &\sim \N(\cdot)\\
+    \lambda_{ij} \mid z_{i\cdot} &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}^{-1}(z_{i\cdot}))_j \phi_j^{-1})\\
+    z_{i\cdot} \mid y_i, u_i &\sim \N(\mu_i(u_i, y_i), \sigma^2(u_i, y_i))\\
+    y_i &\sim \Mult(1, \vpi)\\
+    u_i &\sim \N(0, \mi).
+  \end{align}
+
+  where
+
+  - \(y_i\) denotes the cluster assignment for cell \(i\)
+  - \(\mu_i(\cdot), \sigma^2(\cdot)\) are neural networks mapping the latent
+    cluster variable \(y_i\) and Gaussian noise \(u_i\) to the latent variable
+    \(z_i\)
+  - \(\mu_{\lambda}(\cdot)\) is a neural network mapping latent variable \(z_i\) to
+    latent gene expression \(\lambda_{ij}\)
+
+  The intuition behind this model is that the prior \(p(z_i)\) (marginalizing
+  over \(y_i\)) is a mixture of Gaussians, and therefore the model embeds
+  examples in a space which makes clustering easy, and maps examples to those
+  clusters simultaneously. To perform variational inference in this model,
+  Lopez et al. introduce inference networks
+
+  \begin{align}
+    q(y_i, z_{i\cdot} \mid x_{i\cdot}) = q(z_{i\cdot} \mid x_{i\cdot})\, q(y_i \mid z_{i\cdot})
+  \end{align}
+
+  Rui Shu [[http://ruishu.io/2016/12/25/gmvae/][proposed an alternative
+  generative model]], which has some practical benefits and can be adapted to
+  this problem
+
+  \begin{align}
+    x_{i\cdot} \mid x_{i+}, \lambda_{ij} &\sim \Pois(x_{i+} \lambda_{ij})\\
+    \lambda_{ij} \mid z_{i\cdot} &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}^{-1}(z_{i\cdot}))_j \phi_j^{-1})\\
+    z_{i\cdot} \mid y_i &\sim \N(\mu_i(y_i), \sigma^2(y_i))\\
+    y_i &\sim \Mult(1, \vpi)\\
+    q(y_i, z_{i\cdot} \mid x_{i\cdot}) &= q(y_i \mid x_{i\cdot})\, q(z_i \mid y_i, x_{i\cdot})
   \end{align}

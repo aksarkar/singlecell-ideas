@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2018-11-19 Mon 21:05 -->
+<!-- 2020-05-14 Thu 23:52 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Single cell alignment</title>
@@ -178,9 +178,9 @@
   .org-svg { width: 90%; }
   /*]]>*/-->
 </style>
-<link href="https://maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cosmo/bootstrap.min.css" rel="stylesheet" />
-<link rel="stylesheet" type="text/css" href="https://www.pirilampo.org/styles/readtheorg/css/htmlize.css"/>
-<style type="text/css">body {width: 60em; margin:auto} pre.src {overflow:auto}</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
 <script type="text/javascript">
 /*
 @licstart  The following is the entire license notice for the
@@ -479,7 +479,7 @@ al. 2009</a>, <a href="https://arxiv.org/pdf/1706.05148">Dai et al 2017</a>).
 We want to enforce the constraint that data which reflect the same
 underlying biological state are not distinguishable on the basis of which
 data set they came from. This means the model must simultaneously learn the
-underlying biological state as well as "forget" systematic differences
+underlying biological state as well as &ldquo;forget&rdquo; systematic differences
 between different data sets.
 </p>
 
@@ -545,7 +545,7 @@ this was done by training each component alternately.</li>
 <p>
 One further challenge is how to update the model with new data (e.g., a new
 experimental data set). After successfully fooling the adversary, the
-resulting low dimensional representation is "one dataset", reducing the
+resulting low dimensional representation is &ldquo;one dataset&rdquo;, reducing the
 problem into aligning two data sets. However, all of the original data would
 be required to train the model from scratch.
 </p>
@@ -1072,7 +1072,7 @@ y[:cd8.shape[1]] = 1
 </div>
 
 <p>
-To make the problem harder, correlate the "batch" label with cell type.
+To make the problem harder, correlate the &ldquo;batch&rdquo; label with cell type.
 </p>
 
 <div class="org-src-container">
@@ -1402,7 +1402,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2018-11-19 Mon 21:05</p>
+<p class="date">Created: 2020-05-14 Thu 23:52</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

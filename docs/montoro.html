@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2019-05-06 Mon 20:43 -->
+<!-- 2020-05-14 Thu 23:52 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deconvolution of Montoro et al.</title>
@@ -262,12 +262,12 @@ for the JavaScript code in this tag.
 <li><a href="#org5991d21">Methods</a>
 <ul>
 <li><a href="#orgb7a7316">Data</a></li>
-<li><a href="#orga38ddff">Distribution deconvolution</a></li>
+<li><a href="#orga37dc64">Distribution deconvolution</a></li>
 </ul>
 </li>
 <li><a href="#org89f4a94">Results</a>
 <ul>
-<li><a href="#orga37dc64">Distribution deconvolution</a></li>
+<li><a href="#orgd25753a">Distribution deconvolution</a></li>
 <li><a href="#org61c1d9f">Highly variable genes</a></li>
 <li><a href="#org36f985c">Comparison against count-based approach</a></li>
 <li><a href="#org0f143eb">Comparison against log-transformed data approach</a></li>
@@ -373,9 +373,9 @@ s.to_csv(<span class="org-string">'/scratch/midway2/aksarkar/ideas/montoro-size.
 </div>
 </div>
 
-<div id="outline-container-orga38ddff" class="outline-3">
-<h3 id="orga38ddff">Distribution deconvolution</h3>
-<div class="outline-text-3" id="text-orga38ddff">
+<div id="outline-container-orga37dc64" class="outline-3">
+<h3 id="orga37dc64">Distribution deconvolution</h3>
+<div class="outline-text-3" id="text-orga37dc64">
 <p>
 Fit the model:
 </p>
@@ -428,8 +428,8 @@ pd.DataFrame(logodds, index=onehot.columns, columns=x.columns).to_csv(f<span cla
 <span class="org-builtin">source</span> activate singlecell
 python &lt;&lt;EOF
 <span class="org-sh-heredoc">&lt;&lt;imports&gt;&gt;</span>
-&lt;&lt;deconvolve&gt;&gt;
-EOF
+<span class="org-sh-heredoc">&lt;&lt;deconvolve&gt;&gt;</span>
+<span class="org-sh-heredoc">EOF</span>
 </pre>
 </div>
 
@@ -445,9 +445,9 @@ Submitted batch job 60148824
 <h2 id="org89f4a94">Results</h2>
 <div class="outline-text-2" id="text-org89f4a94">
 </div>
-<div id="outline-container-orga37dc64" class="outline-3">
-<h3 id="orga37dc64">Distribution deconvolution</h3>
-<div class="outline-text-3" id="text-orga37dc64">
+<div id="outline-container-orgd25753a" class="outline-3">
+<h3 id="orgd25753a">Distribution deconvolution</h3>
+<div class="outline-text-3" id="text-orgd25753a">
 <p>
 Read the results.
 </p>
@@ -758,7 +758,7 @@ Clearly, this approach is flawed for pseudocount \(< 1\).
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2019-05-06 Mon 20:43</p>
+<p class="date">Created: 2020-05-14 Thu 23:52</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

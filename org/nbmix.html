@@ -4,7 +4,7 @@
 <!-- 2020-05-14 Thu 23:52 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Parallel computation of randomized quantiles</title>
+<title>Model-based clustering of scRNA-seq data</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -252,47 +252,68 @@ for the JavaScript code in this tag.
 </head>
 <body>
 <div id="content">
-<h1 class="title">Parallel computation of randomized quantiles</h1>
+<h1 class="title">Model-based clustering of scRNA-seq data</h1>
 <div id="table-of-contents">
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org16cdd6a">Introduction</a></li>
+<li><a href="#org8c1d26f">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#org5b445ad">Implementation</a></li>
+<li><a href="#org91a8e54">Method</a></li>
+<li><a href="#org464246b">Results</a>
+<ul>
+<li><a href="#org7258fe7">Example</a></li>
+</ul>
+</li>
+<li><a href="#org1f82299">Related work</a></li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org16cdd6a" class="outline-2">
-<h2 id="org16cdd6a">Introduction</h2>
-<div class="outline-text-2" id="text-org16cdd6a">
+<div id="outline-container-org8c1d26f" class="outline-2">
+<h2 id="org8c1d26f">Introduction</h2>
+<div class="outline-text-2" id="text-org8c1d26f">
 <p>
-A simple idea to test goodness of fit is to use the fact that if \(x_i \sim
-  F\), \(i = 1, \ldots, n\), then \(F(x_i) \sim \operatorname{Uniform}(0,
-  1)\). However, this idea breaks down for discontinuous \(F\), as arises from
-discrete data. Randomized quantiles
-(<a href="https://www.jstor.org/stable/1390802">Dunn and Smyth 1996</a>,
-<a href="https://arxiv.org/pdf/1708.08527">Feng et al. 2017</a>) can be used to
-side-step this issue. For count data, randomized quantiles are generated as
+Two major strategies for clustering scRNA-seq data are:
 </p>
 
-\begin{align}
-  q_i \mid x_i, u_i &\sim F(x_i - 1) + u_i f(x_i)\\
-  u_i &\sim \operatorname{Uniform}(0, 1).
-\end{align}
+<ol class="org-ol">
+<li>Building a \(k\)-nearest neighbor graph on the data, and applying a
+community detection algorithm (e.g.,
+<a href="https://doi.org/10.1088/1742-5468/2008/10/P10008">Blondel et al. 2008</a>,
+<a href="https://arxiv.org/abs/1810.08473">Traag et al. 2018</a>)</li>
+<li>Fitting a topic model to the data
+(e.g., <a href="https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1006599">Dey
+et al. 2017</a>,
+<a href="https://www.nature.com/articles/s41592-019-0367-1">Gonzáles-Blas et
+al. 2019</a>)</li>
+</ol>
+
+<p>
+The main disadvantage of strategy (1) is that, as commonly applied to
+transformed counts, it does not separate measurement error and biological
+variation of interest. The main disadvantage of strategy (2) is that it does
+not account for transcriptional noise
+(<a href="https://doi.org/10.1016/j.cell.2008.09.050">Raj 2008</a>). Here, we develop
+a simple model-based clustering algorithm which addresses both of these
+issues.
+</p>
 </div>
 </div>
 
-<div id="outline-container-orge3a26b3" class="outline-2">
-<h2 id="setup"><a id="orge3a26b3"></a>Setup</h2>
+<div id="outline-container-orgad42279" class="outline-2">
+<h2 id="setup"><a id="orgad42279"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
-<span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
+<pre class="src src-ipython"><span class="org-keyword">import</span> anndata
+<span class="org-keyword">import</span> mpebpm.gam_mix
+<span class="org-keyword">import</span> mpebpm.sgd
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
-<span class="org-keyword">import</span> sys
-<span class="org-keyword">import</span> time
+<span class="org-keyword">import</span> torch
+<span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 </pre>
 </div>
 
@@ -311,158 +332,264 @@ side-step this issue. For count data, randomized quantiles are generated as
 </div>
 </div>
 
-<div id="outline-container-org5b445ad" class="outline-2">
-<h2 id="org5b445ad">Implementation</h2>
-<div class="outline-text-2" id="text-org5b445ad">
+<div id="outline-container-org91a8e54" class="outline-2">
+<h2 id="org91a8e54">Method</h2>
+<div class="outline-text-2" id="text-org91a8e54">
 <p>
-Time evaluation of the Poisson CDF for 15,000 elements.
+We assume \(
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\N{\mathcal{N}}
+  \newcommand\vmu{\boldsymbol{\mu}}
+  \newcommand\vphi{\boldsymbol{\phi}}
+  \newcommand\vpi{\boldsymbol{\pi}}
+  \)
+</p>
+
+\begin{align}
+  x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Pois(x_{i+} \lambda_{ij})\\
+  \lambda_{ij} \mid \vpi_i, \vmu_k, \vphi_k &\sim \sum_{k=1}^{K} \pi_{ik} \Gam(\phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1}),
+\end{align}
+
+<p>
+where
+</p>
+
+<ul class="org-ul">
+<li>\(x_{ij}\) denotes the number of molecules of gene \(j\) observed in cell \(i\)</li>
+<li>\(x_{i+} \triangleq \sum_j x_{ij}\) denotes the total number of molecules
+observed in cell \(i\)</li>
+<li>\(\vpi_i\) denotes cluster assignment probabilities for cell \(i\)</li>
+<li>\(\vmu_k, \vphi_k\) denote the cluster &ldquo;centroid&rdquo; for cluster \(k\)</li>
+</ul>
+
+<p>
+The intuition behind this model is that each cluster \(k\) is defined by a
+collection of independent Gamma distributions, one per gene \(j\). These
+Gamma distributions describe the distribution of true gene expression for
+each gene in each cluster
+(<a href="https://dx.doi.org/10.1101/2020.04.07.030007">Sarkar and Stephens 2020</a>).
+This model admits a simple EM algorithm. Letting \(z_{ik} \in \{0, 1\}\)
+indicate whether cell \(i\) is assigned to cluster \(k\), in the E step
+</p>
+
+\begin{equation}
+  E[z_{ik}] \propto \sum_j \int_0^{\infty} \Pois(x_{ij}; x_{i+}\lambda) \Gam(\lambda; \phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1})\, d\lambda.
+\end{equation}
+
+<p>
+In the M step, we improve the weighted mixture of negative binomials
+likelihood by <a href="mepbpm.html">(batch) gradient descent</a>, implemented in
+the Python package <code>mpebpm</code>. To make the model more amenable to stochastic
+gradient descent, we can amortize inference by learning a neural network
+mapping \(x_{i\cdot} \rightarrow z_{i\cdot}\)
+(<a href="https://arxiv.org/abs/1805.08913">Shu et al. 2018</a>).
+</p>
+</div>
+</div>
+
+<div id="outline-container-org464246b" class="outline-2">
+<h2 id="org464246b">Results</h2>
+<div class="outline-text-2" id="text-org464246b">
+</div>
+<div id="outline-container-org7258fe7" class="outline-3">
+<h3 id="org7258fe7">Example</h3>
+<div class="outline-text-3" id="text-org7258fe7">
+<p>
+Read sorted immune cell scRNA-seq data
+(<a href="https://dx.doi.org/10.1038/ncomms14049">Zheng et al. 2017</a>).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">p</span> = 15000
-<span class="org-variable-name">x</span> = np.ones(p)
-%timeit st.poisson(x).cdf(x)
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
+</pre>
+</div>
+
+<p>
+Get 256 B cells and 256 cytotoxic T cells.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">b_cells</span> = dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>]
+<span class="org-comment-delimiter"># </span><span class="org-comment">Important: this has a set seed</span>
+sc.pp.subsample(b_cells, n_obs=256)
+<span class="org-variable-name">t_cells</span> = dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'cytotoxic_t'</span>]
+sc.pp.subsample(t_cells, n_obs=256)
+<span class="org-variable-name">temp</span> = b_cells.concatenate(t_cells)
+sc.pp.filter_genes(temp, min_counts=1)
+</pre>
+</div>
+
+<p>
+Plot a UMAP embedding of the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">sc.pp.pca(temp)
+sc.pp.neighbors(temp)
+sc.tl.umap(temp)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(temp.obs[<span class="org-string">'cell_type'</span>].unique()):
+  plt.plot(*temp[temp.obs[<span class="org-string">'cell_type'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=2, lw=0, label=f<span class="org-string">'{c}'</span>)
+plt.legend(frameon=<span class="org-constant">False</span>, markerscale=4, handletextpad=0)
+plt.xlabel(<span class="org-string">'UMAP 1'</span>)
+plt.ylabel(<span class="org-string">'UMAP 2'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/sim-ex.png" alt="sim-ex.png">
+</p>
+</div>
+
+<p>
+First, start from the ground truth \(z\) (labels), and estimate the Gamma
+expression models.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = mpebpm.sgd.ebpm_gamma(
+  temp.X,
+  onehot=pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values,
+  batch_size=32,
+  num_epochs=320,
+  shuffle=<span class="org-constant">True</span>,
+  log_dir=<span class="org-string">'runs/nbmix/ex4'</span>)
+</pre>
+</div>
+
+<p>
+Estimate the cluster weights.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">L</span> = mpebpm.gam_mix._nb_mix_llik(
+  x=torch.tensor(temp.X.A, dtype=torch.<span class="org-builtin">float</span>), 
+  s=torch.tensor(temp.X.<span class="org-builtin">sum</span>(axis=1), dtype=torch.<span class="org-builtin">float</span>),
+  log_mean=torch.tensor(fit[0], dtype=torch.<span class="org-builtin">float</span>),
+  log_inv_disp=torch.tensor(fit[1], dtype=torch.<span class="org-builtin">float</span>)).<span class="org-builtin">sum</span>(dim=-1)
+<span class="org-variable-name">zhat</span> = torch.nn.functional.softmax(L, dim=1)
+</pre>
+</div>
+
+<p>
+Compute the cross entropy between the estimated \(\hat{z}\) and the ground
+truth.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">torch.nn.functional.binary_cross_entropy(
+  zhat,
+  torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>))
 </pre>
 </div>
 
 <pre class="example">
-2.47 ms ± 25.4 µs per loop (mean ± std. dev. of 7 runs, 100 loops each)
+tensor(0.)
 
 </pre>
 
 <p>
-For comparison, do the same in R.
+Compute a weighted log likelihood.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-sh">module load R
-srun --partition=mstephens R --quiet --no-save &lt;&lt;EOF
-<span class="org-sh-heredoc">p &lt;- 15000</span>
-<span class="org-sh-heredoc">x &lt;- rep(1, p)</span>
-<span class="org-sh-heredoc">system.time(ppois(x, x))</span>
-<span class="org-sh-heredoc">EOF</span>
+<pre class="src src-ipython"><span class="org-variable-name">w</span> = torch.rand([512, 2])
+<span class="org-variable-name">w</span> /= w.<span class="org-builtin">sum</span>(dim=1).unsqueeze(-1)
+<span class="org-variable-name">m</span>, <span class="org-variable-name">_</span> = L.<span class="org-builtin">max</span>(dim=1, keepdim=<span class="org-constant">True</span>)
+(m + torch.log(w * torch.exp(L - m) + 1e-8)).mean()
 </pre>
 </div>
 
 <pre class="example">
-&gt; p &lt;- 15000
-&gt; x &lt;- rep(1, p)
-&gt; system.time(ppois(x, x))
-   user  system elapsed 
-  0.003   0.001   0.003 
-&gt; 
+tensor(-1872.6364)
 
 </pre>
 
 <p>
-The
-<a href="https://data.humancellatlas.org/explore/projects/cc95ff89-2e68-4a08-a234-480eca21ce79">Census
-of Immune Cells</a> is part of the Human Cell Atlas. Currently, it comprises
-scRNA-seq data of 593,844 cells from 16 donors. Read the sparse data and take
-150,000 cells.
+Try fitting the model from a random initialization.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">n</span> = 150000
-<span class="org-variable-name">x_csr</span> = ss.load_npz(<span class="org-string">'/scratch/midway2/aksarkar/modes/immune-cell-census.npz'</span>)
-<span class="org-variable-name">x_csc</span> = x_csr[:150000].tocsc()
-x_csc
+<pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
+torch.manual_seed(1)
+<span class="org-variable-name">fit</span> = mpebpm.gam_mix.ebpm_gam_mix(
+  x=temp.X.A,
+  s=temp.X.<span class="org-builtin">sum</span>(axis=1),
+  y=torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>).cuda(),
+  k=2,
+  batch_size=512,
+  num_epochs=400,
+  max_em_iters=100,
+  tol=0.1,
+  log_dir=<span class="org-string">'runs/nbmix/test11'</span>)
+</pre>
+</div>
+
+<p>
+Compute the cross entropy between the estimated \(\hat{z}\) and the ground
+truth.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">torch.nn.functional.binary_cross_entropy(
+  torch.tensor(1 - fit[-1], dtype=torch.<span class="org-builtin">float</span>),
+  torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>))
 </pre>
 </div>
 
 <pre class="example">
-&lt;150000x16002 sparse matrix of type '&lt;class 'numpy.int32'&gt;'
-with 139419510 stored elements in Compressed Sparse Column format&gt;
+tensor(0.)
+
 </pre>
 
 <p>
-Compute the sparsity of \([x_{ij}]\).
+Plot the UMAP, colored by the fitted clusters.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">1 - x_csc.nnz / np.prod(x_csc.shape)
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(fit[-1].shape[1]):
+  plt.plot(*temp[fit[-1][:,i].astype(<span class="org-builtin">bool</span>)].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=2, lw=0, label=f<span class="org-string">'Cluster {i}'</span>)
+plt.legend(frameon=<span class="org-constant">False</span>, markerscale=4, handletextpad=0)
+plt.xlabel(<span class="org-string">'UMAP 1'</span>)
+plt.ylabel(<span class="org-string">'UMAP 2'</span>)
+plt.tight_layout()
 </pre>
 </div>
 
-<pre class="example">
-0.9419157980252468
 
-</pre>
-
-<p>
-Compute how many GB are used to store \([x_{ij}]\).
+<div class="figure">
+<p><img src="figure/nbmix.org/sim-ex-fit.png" alt="sim-ex-fit.png">
 </p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">4 * (x_csc.data.shape[0] + x_csc.indptr.shape[0] + x_csc.indices.shape[0]) / (2 ** 32)
-</pre>
+</div>
+</div>
+</div>
 </div>
 
-<pre class="example">
-0.2597039779648185
-
-</pre>
-
+<div id="outline-container-org1f82299" class="outline-2">
+<h2 id="org1f82299">Related work</h2>
+<div class="outline-text-2" id="text-org1f82299">
 <p>
-Under the assumption \(x_{ij} \sim \operatorname{Pois}(\lambda_{ij})\),
-compute how many GB would be required to store \(\lambda_{ij}\). This will be
-much larger than storing \(x_{ij}\) because \(\lambda_{ij}\) is not sparse.
+scVI (Lopez et al. 2018) implements a deep unsupervised (more precisely,
+semi-supervised) clustering algorithm (Kingma and Welling 2014)
 </p>
 
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x_csc.shape
-(n * p * 4) / (2 ** 32)
-</pre>
-</div>
-
-<pre class="example">
-2.235453575849533
-
-</pre>
-
-<p>
-Generate some
-<a href="https://github.com/scikit-learn/scikit-learn/blob/bac89c2/sklearn/decomposition/nmf.py#L315">random
-non-negative loadings and factors</a>.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">rank</span> = 2
-<span class="org-variable-name">scale</span> = np.sqrt(x_csc.mean() / rank)
-<span class="org-variable-name">l</span> = np.random.uniform(1e-8, scale, size=(n, rank))
-<span class="org-variable-name">f</span> = np.random.uniform(1e-8, scale, size=(p, rank))
-<span class="org-variable-name">lam</span> = l @ f.T
-</pre>
-</div>
-
-<p>
-Draw one randomized quantile for each element \(x_{ij}\). Report how many
-minutes elapsed.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">start</span> = time.time()
-<span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(x_csc.shape[1]):
-  <span class="org-variable-name">F</span> = st.poisson(lam[:,j])
-  <span class="org-variable-name">u</span> = np.random.uniform(size=n)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Convert sparse to dense, because scipy.stats does not support sparse</span>
-  <span class="org-comment-delimiter"># </span><span class="org-comment">arguments</span>
-  <span class="org-variable-name">query</span> = x_csc[:,j].A.ravel()
-  <span class="org-variable-name">rpp</span> = F.cdf(query - 1) + u * F.pmf(query)
-<span class="org-variable-name">elapsed</span> = time.time() - start
-elapsed / 60
-</pre>
-</div>
-
-<pre class="example">
-7.754513065020244
-
-</pre>
-
-<p>
-This problem is embarassingly parallel, because each iteration of the loop is
-independent (up to collecting the results).
-</p>
+\begin{align}
+  x_{i\cdot} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+  \lambda_{i\cdot} \mid z_{i\cdot} &\sim \Gam(f(z_{i\cdot}))\\
+  z_{i\cdot} \mid y_i &\sim \N(\cdot).
+\end{align}
 </div>
 </div>
 </div>

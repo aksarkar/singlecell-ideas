@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-16 Sat 19:08 -->
+<!-- 2020-05-16 Sat 21:06 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -263,6 +263,10 @@ for the JavaScript code in this tag.
 <li><a href="#orgdca968c">Results</a>
 <ul>
 <li><a href="#org56f4812">Example</a></li>
+<li><a href="#orgca14b7d">Leiden algorithm</a></li>
+<li><a href="#orgebb4a14">EM</a></li>
+<li><a href="#org97f5a8f">MPEBPM</a></li>
+<li><a href="#orge0613b0">Amortized inference</a></li>
 </ul>
 </li>
 <li><a href="#org089f29e">Related work</a></li>
@@ -326,7 +330,8 @@ issues.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
 </pre>
@@ -389,18 +394,28 @@ assigned to cluster \(k\), in the E step
 <p>
 In the M step, we improve the weighted mixture of negative binomials
 likelihood by <a href="mepbpm.html">(batch) gradient descent</a>, implemented in
-the Python package <code>mpebpm</code>. To make the model more amenable to stochastic
-gradient descent, we can amortize inference by learning a neural network
-mapping \(x_{i\cdot} \rightarrow z_{i\cdot}\).
-</p>
-
-<p>
-The posterior distribution of true gene expression given the data is
+the Python package <code>mpebpm</code>. the posterior distribution of true
+gene expression given the data is
 </p>
 
 \begin{equation}
   \lambda_{ij} \mid x_{ij}, x_{i+}, \vpi, \vmu, \vphi \sim \sum_{k=1}^{K} \pi_{ik} \Gam(x_{ij} + \phi_{kj}^{-1}, x_{i+} + \phi_{kj}^{-1}\mu_{kj}^{-1}).
 \end{equation}
+
+<p>
+To make the model more amenable to stochastic gradient descent, we can
+amortize inference by learning a neural network \(f_p\) mapping \(x_{i\cdot}
+  \rightarrow z_{i\cdot}\)
+</p>
+
+\begin{align}
+  p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
+  q(z_{i1}, \ldots, z_{iK} \mid x_{i\cdot}) &= \Mult(1, f_p(x_{i\cdot})),
+\end{align}
+
+<p>
+by maximizing the ELBO. 
+</p>
 </div>
 </div>
 
@@ -467,10 +482,11 @@ plt.tight_layout()
 </p>
 </div>
 </div>
+</div>
 
-<div id="outline-container-orgca14b7d" class="outline-4">
-<h4 id="orgca14b7d">Leiden algorithm</h4>
-<div class="outline-text-4" id="text-orgca14b7d">
+<div id="outline-container-orgca14b7d" class="outline-3">
+<h3 id="orgca14b7d">Leiden algorithm</h3>
+<div class="outline-text-3" id="text-orgca14b7d">
 <p>
 Apply the Leiden algorithm (<a href="https://arxiv.org/abs/1810.08473">Traag et
 al. 2018</a>) to the data (~1 s).
@@ -502,9 +518,9 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orgebb4a14" class="outline-4">
-<h4 id="orgebb4a14">EM</h4>
-<div class="outline-text-4" id="text-orgebb4a14">
+<div id="outline-container-orgebb4a14" class="outline-3">
+<h3 id="orgebb4a14">EM</h3>
+<div class="outline-text-3" id="text-orgebb4a14">
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">_nb_mix_llik</span>(theta, x, s):
   <span class="org-doc">"""Return log likelihood matrix</span>
@@ -574,9 +590,9 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org97f5a8f" class="outline-4">
-<h4 id="org97f5a8f">MPEBPM</h4>
-<div class="outline-text-4" id="text-org97f5a8f">
+<div id="outline-container-org97f5a8f" class="outline-3">
+<h3 id="org97f5a8f">MPEBPM</h3>
+<div class="outline-text-3" id="text-org97f5a8f">
 <p>
 First, start from the ground truth \(z\) (labels), and estimate the Gamma
 expression models.
@@ -702,18 +718,73 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orge0613b0" class="outline-4">
-<h4 id="orge0613b0">Amortized inference</h4>
-<div class="outline-text-4" id="text-orge0613b0">
+<div id="outline-container-orge0613b0" class="outline-3">
+<h3 id="orge0613b0">Amortized inference</h3>
+<div class="outline-text-3" id="text-orge0613b0">
 <p>
 Fit the amortized inference model, initializing \(\vmu, \vphi\) from the MLE
 starting from the ground-truth labels.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
-torch.manual_seed(1)
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = torch.tensor(temp.X.A)
+<span class="org-variable-name">s</span> = torch.tensor(temp.X.<span class="org-builtin">sum</span>(axis=1))
 <span class="org-variable-name">fit</span> = mpebpm.gam_mix.EBPMGammaMix(
+  p=temp.shape[1],
+  k=2,
+  log_mean=fit0[0],
+  log_inv_disp=fit0[1])
+</pre>
+</div>
+
+<p>
+Look at the initial loss.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">(
+  mpebpm.gam_mix._nb_mix_loss(
+    fit.encoder.forward(query),
+    query,
+    s,
+    fit.log_mean,
+    fit.log_inv_disp),
+  mpebpm.gam_mix._nb_mix_loss(
+    torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values),
+    query,
+    s,
+    fit.log_mean,
+    fit.log_inv_disp)
+)
+</pre>
+</div>
+
+<pre class="example">
+(tensor(1927253.3750, grad_fn=&lt;NegBackward&gt;),
+tensor(1926631.7500, grad_fn=&lt;NegBackward&gt;))
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">temp_loss</span> = mpebpm.gam_mix._nb_mix_loss(
+  fit.encoder.forward(query),
+  query,
+  torch.tensor(temp.X.<span class="org-builtin">sum</span>(axis=1)),
+  fit.log_mean,
+  fit.log_inv_disp)
+temp_loss.retain_grad()
+temp_loss.backward()
+torch.norm(fit.encoder[0].weight.grad)
+</pre>
+</div>
+
+<pre class="example">
+tensor(31154.1895)
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">torch.manual_seed(1)
+<span class="org-variable-name">fit1</span> = mpebpm.gam_mix.EBPMGammaMix(
   p=temp.shape[1],
   k=2,
   log_mean=fit0[0],
@@ -721,13 +792,96 @@ torch.manual_seed(1)
     x=temp.X.A,
     s=temp.X.<span class="org-builtin">sum</span>(axis=1),
     y=pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values,
-    batch_size=32,
-    shuffle=<span class="org-constant">False</span>,
-    num_pretrain=10,
-    num_epochs=10,
+    lr=1e-3,
+    batch_size=64,
+    shuffle=<span class="org-constant">True</span>,
+    num_pretrain=20,
+    num_epochs=20,
     log_dir=<span class="org-string">'runs/nbmix/test'</span>)
 </pre>
 </div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">zhat</span> = fit1.forward(query.cuda()).detach().cpu().numpy()
+torch.nn.functional.binary_cross_entropy(
+  torch.tensor(zhat, dtype=torch.<span class="org-builtin">float</span>),
+  torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>))
+</pre>
+</div>
+
+<pre class="example">
+tensor(0.1846)
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+<span class="org-keyword">for</span> i, m <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>((<span class="org-string">'+'</span>, <span class="org-string">'x'</span>)):
+  plt.scatter(*temp.obsm[<span class="org-string">"X_umap"</span>].T, s=2, c=np.hstack((np.tile(np.array(cm(i)[:3]), zhat.shape[0]).reshape(-1, 3), zhat[:,i].reshape(-1, 1))), marker=m, label=f<span class="org-string">'Cluster {i}'</span>)
+<span class="org-variable-name">leg</span> = plt.legend(frameon=<span class="org-constant">False</span>, markerscale=4, handletextpad=0)
+<span class="org-keyword">for</span> h <span class="org-keyword">in</span> leg.legendHandles:
+  h.set_alpha(1)
+plt.xlabel(<span class="org-string">'UMAP 1'</span>)
+plt.ylabel(<span class="org-string">'UMAP 2'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/am-inf-ex.png" alt="am-inf-ex.png">
+</p>
+</div>
+
+<p>
+Now, fit the model starting from a random initialization.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
+torch.manual_seed(1)
+<span class="org-variable-name">fit2</span> = mpebpm.gam_mix.EBPMGammaMix(
+  p=temp.shape[1],
+  k=2).fit(
+    x=temp.X.A,
+    s=temp.X.<span class="org-builtin">sum</span>(axis=1),
+    y=pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values,
+    lr=1e-2,
+    batch_size=64,
+    shuffle=<span class="org-constant">True</span>,
+    num_pretrain=0,
+    num_epochs=120,
+    log_dir=<span class="org-string">'runs/nbmix/test2'</span>)
+</pre>
+</div>
+
+<p>
+Compare the estimated \(\ln\mu\) from the clustering model to the estimates
+using the ground truth labels.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">lim</span> = [-10, 10]
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(4.5, 2.5)
+<span class="org-keyword">for</span> i, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax):
+  a.scatter(fit1.log_mean[i].detach().cpu().numpy(), fit2.log_mean[i].detach().cpu().numpy(), s=1, c=<span class="org-string">'k'</span>, alpha=0.2)
+  a.plot(lim, lim, c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
+  a.set_title(f<span class="org-string">'Cluster {i}'</span>)
+  a.set_ylim(lim)
+  a.set_xlabel(<span class="org-string">'Ground truth initialization'</span>)
+ax[0].set_ylabel(<span class="org-string">'Random initialization'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/am-inf-vs-mpebpm.png" alt="am-inf-vs-mpebpm.png">
+</p>
 </div>
 </div>
 </div>
@@ -796,7 +950,7 @@ this problem
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-16 Sat 19:08</p>
+<p class="date">Created: 2020-05-16 Sat 21:06</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

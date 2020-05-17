@@ -41,6 +41,7 @@
     git+https://github.com/aksarkar/scaa.git#egg=scaa
     git+https://github.com/aksarkar/wlra.git#egg=wlra
     h5py==2.10.0
+    leidenalg
     rpy2==3.2.4
     scanpy
     scvi

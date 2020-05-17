@@ -36,7 +36,7 @@
   #+RESULTS:
   : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1 -w midway2-gpu02",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+BEGIN_SRC ipython
     import anndata
@@ -45,6 +45,8 @@
     import numpy as np
     import pandas as pd
     import scanpy as sc
+    import scipy.optimize as so
+    import scipy.special as sp
     import scipy.stats as st
     import torch
     import torch.utils.data as td
@@ -52,7 +54,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[12]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -132,7 +134,7 @@
   \end{equation}
 
 * Results
-** Example (EM)
+** Example
 
    Read sorted immune cell scRNA-seq data
    ([[https://dx.doi.org/10.1038/ncomms14049][Zheng et al. 2017]]).
@@ -160,10 +162,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
+   # Out[5]:
    :END:
 
-   Plot a UMAP embedding of the data.
+   Plot a UMAP embedding of the data, coloring points by the ground truth
+   labels.
 
    #+BEGIN_SRC ipython :async t
      sc.pp.pca(temp)
@@ -173,7 +176,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
+   # Out[6]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/sim-ex.png
@@ -190,9 +193,116 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[10]:
    [[file:figure/nbmix.org/sim-ex.png]]
    :END:
+
+*** Leiden algorithm
+
+    Apply the Leiden algorithm ([[https://arxiv.org/abs/1810.08473][Traag et
+    al. 2018]]) to the data (~1 s).
+
+    #+BEGIN_SRC ipython :async t
+      sc.tl.leiden(temp)
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[7]:
+    :END:
+
+    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/leiden-ex.png
+      cm = plt.get_cmap('Dark2')
+      plt.clf()
+      plt.gcf().set_size_inches(3, 3)
+      for i, c in enumerate(temp.obs['leiden'].unique()):
+        plt.plot(*temp[temp.obs['leiden'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'Cluster {i}')
+      plt.legend(frameon=False, markerscale=4, handletextpad=0)
+      plt.xlabel('UMAP 1')
+      plt.ylabel('UMAP 2')
+      plt.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[9]:
+    [[file:figure/nbmix.org/leiden-ex.png]]
+    :END:
+
+*** EM
+
+   #+BEGIN_SRC ipython
+     def _nb_mix_llik(theta, x, s):
+       """Return log likelihood matrix
+
+       theta - array-like [2, k]
+       x - array-like [n, 1]
+       s - array-like [n, 1]
+
+       """
+       # Important: so.minimize flattens theta
+       theta = theta.reshape(2, -1)
+       mean = np.exp(theta[0]).reshape(1, -1)
+       # Important: this can blow up
+       inv_disp = np.exp(np.clip(theta[1], -15, 15)).reshape(1, -1)
+       # [n, k]
+       L = st.nbinom(n=inv_disp, p=1 / (1 + s * mean / inv_disp)).logpmf(x.reshape(-1, 1))
+       assert L.shape == (x.shape[0], theta.shape[1])
+       assert np.isfinite(L).all()
+       return L
+
+     def _nb_mix_obj(theta, x, z, s):
+       """Return negative log likelihood
+
+       theta - array-like [2, k]
+       x - array-like [n, 1]
+       z - array-like [n, k]
+       s - array-like [n, 1]
+
+       """
+       L = _nb_mix_llik(theta, x, s)
+       m = L.max(axis=1, keepdims=True)
+       return -(np.log(z) + L).mean()
+
+     def ebpm_gamma_mix(x, s, k, max_iters=100, tol=1e-3, verbose=False, seed=1):
+       assert x.ndim == 2
+       n, p = x.shape
+       assert s.shape == (n, 1)
+       assert k > 1
+       rng = np.random.default_rng(seed)
+       log_mean = rng.normal(size=(p, k))
+       log_inv_disp = rng.normal(size=(p, k))
+       z = np.ones((n, k)) / k
+       loss = np.array([_nb_mix_obj(np.vstack([log_mean[j], log_inv_disp[j]]), x[:,j], z, s) for j in range(p)]).sum()
+       if verbose:
+         print(f'epoch 0: {loss:.4g}')
+       for t in range(max_iters):
+         for j in range(p):
+           opt = so.minimize(_nb_mix_obj, x0=np.vstack([log_mean[j], log_inv_disp[j]]), args=(x[:,j], z, s), method='nelder-mead', options={'maxiter':1000})
+           if not opt.success:
+             raise RuntimeError(f'M step failed to converge: {opt.message}')
+           log_mean[j] = opt.x[0]
+           log_inv_disp[j] = opt.x[1]
+         L = np.array([_nb_mix_llik(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], s) for j in range(p)]).sum(axis=0)
+         z = sp.softmax(L, axis=1)
+         update = np.array([_nb_mix_obj(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], z, s) for j in range(p)]).sum()
+         if update > loss:
+           raise RuntimeError('objective increased')
+         elif loss - update < tol:
+           return z, log_mean, log_inv_disp
+         else:
+           if verbose:
+             print(f'epoch {t + 1}: {loss:.4g}')
+           loss = update
+       raise RuntimeError('failed to converge in max_iters')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[78]:
+   :END:
+
+*** MPEBPM
 
    First, start from the ground truth \(z\) (labels), and estimate the Gamma
    expression models.
@@ -314,7 +424,7 @@
    [[file:figure/nbmix.org/sim-ex-fit.png]]
    :END:
 
-** Example (amortized inference)
+*** Amortized inference
 
    Fit the amortized inference model, initializing \(\vmu, \vphi\) from the MLE
    starting from the ground-truth labels.

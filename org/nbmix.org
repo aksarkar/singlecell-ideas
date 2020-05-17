@@ -645,14 +645,14 @@
          lr=1e-2,
          batch_size=64,
          shuffle=True,
-         num_pretrain=0,
+         num_pretrain=1,
          num_epochs=120,
-         log_dir='runs/nbmix/test2')
+         log_dir='runs/nbmix/ai-init1-pretrain1')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[177]:
+   # Out[95]:
    :END:
 
    Compare the estimated \(\ln\mu\) from the clustering model to the estimates
@@ -675,8 +675,36 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[196]:
+   # Out[84]:
    [[file:figure/nbmix.org/am-inf-vs-mpebpm.png]]
+   :END:
+
+** scVI
+
+   #+BEGIN_SRC ipython :async t
+     import scvi.dataset
+     import scvi.inference
+     import scvi.models
+
+     expr = scvi.dataset.AnnDatasetFromAnnData(temp)
+     m = scvi.models.VAEC(expr.nb_genes, n_batch=0, n_labels=2)
+     train = scvi.inference.UnsupervisedTrainer(m, expr, train_size=1, batch_size=32, show_progbar=False, n_epochs_kl_warmup=100)
+     train.train(n_epochs=1000, lr=1e-2)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[125]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     post = train.create_posterior(train.model, expr)
+     _, _, label = post.get_latent()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[118]:
    :END:
 
 * Related work

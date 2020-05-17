@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-17 Sun 13:12 -->
+<!-- 2020-05-17 Sun 13:48 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -267,6 +267,7 @@ for the JavaScript code in this tag.
 <li><a href="#mpebpm">MPEBPM</a></li>
 <li><a href="#em">EM</a></li>
 <li><a href="#amortized">Amortized inference</a></li>
+<li><a href="#org8be11a0">scVI</a></li>
 </ul>
 </li>
 <li><a href="#related-work">Related work</a></li>
@@ -911,9 +912,9 @@ torch.manual_seed(1)
     lr=1e-2,
     batch_size=64,
     shuffle=<span class="org-constant">True</span>,
-    num_pretrain=0,
+    num_pretrain=1,
     num_epochs=120,
-    log_dir=<span class="org-string">'runs/nbmix/test2'</span>)
+    log_dir=<span class="org-string">'runs/nbmix/ai-init1-pretrain1'</span>)
 </pre>
 </div>
 
@@ -942,6 +943,29 @@ fig.tight_layout()
 <div class="figure">
 <p><img src="figure/nbmix.org/am-inf-vs-mpebpm.png" alt="am-inf-vs-mpebpm.png">
 </p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org8be11a0" class="outline-3">
+<h3 id="org8be11a0">scVI</h3>
+<div class="outline-text-3" id="text-org8be11a0">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> scvi.dataset
+<span class="org-keyword">import</span> scvi.inference
+<span class="org-keyword">import</span> scvi.models
+
+<span class="org-variable-name">expr</span> = scvi.dataset.AnnDatasetFromAnnData(temp)
+<span class="org-variable-name">m</span> = scvi.models.VAEC(expr.nb_genes, n_batch=0, n_labels=2)
+<span class="org-variable-name">train</span> = scvi.inference.UnsupervisedTrainer(m, expr, train_size=1, batch_size=32, show_progbar=<span class="org-constant">False</span>, n_epochs_kl_warmup=100)
+train.train(n_epochs=1000, lr=1e-2)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">post</span> = train.create_posterior(train.model, expr)
+<span class="org-variable-name">_</span>, <span class="org-variable-name">_</span>, <span class="org-variable-name">label</span> = post.get_latent()
+</pre>
 </div>
 </div>
 </div>
@@ -1024,7 +1048,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-17 Sun 13:12</p>
+<p class="date">Created: 2020-05-17 Sun 13:48</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

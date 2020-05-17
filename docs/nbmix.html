@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-17 Sun 13:48 -->
+<!-- 2020-05-17 Sun 15:19 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -267,7 +267,6 @@ for the JavaScript code in this tag.
 <li><a href="#mpebpm">MPEBPM</a></li>
 <li><a href="#em">EM</a></li>
 <li><a href="#amortized">Amortized inference</a></li>
-<li><a href="#org8be11a0">scVI</a></li>
 </ul>
 </li>
 <li><a href="#related-work">Related work</a></li>
@@ -350,7 +349,13 @@ We assume \(
   \DeclareMathOperator\Mult{Multinomial}
   \DeclareMathOperator\N{\mathcal{N}}
   \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\diag{diag}
+  \newcommand\xiplus{x_{i+}}
   \newcommand\mi{\mathbf{I}}
+  \newcommand\vu{\mathbf{u}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vz{\mathbf{z}}
+  \newcommand\vlambda{\boldsymbol{\lambda}}
   \newcommand\vmu{\boldsymbol{\mu}}
   \newcommand\vphi{\boldsymbol{\phi}}
   \newcommand\vpi{\boldsymbol{\pi}}
@@ -358,8 +363,8 @@ We assume \(
 </p>
 
 \begin{align}
-  x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Pois(x_{i+} \lambda_{ij})\\
-  \lambda_{ij} \mid \vpi, \vmu, \vphi &\sim \sum_{k=1}^{K} \pi_{ik} \Gam(\phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1}),
+  x_{ij} \mid \xiplus, \lambda_{ij} &\sim \Pois(\xiplus \lambda_{ij})\\
+  \lambda_{ij} \mid \vpi_i, \vmu_k, \vphi_k &\sim \sum_{k=1}^{K} \pi_{ik} \Gam(\phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1}),
 \end{align}
 
 <p>
@@ -368,7 +373,7 @@ where
 
 <ul class="org-ul">
 <li>\(x_{ij}\) denotes the number of molecules of gene \(j\) observed in cell \(i\)</li>
-<li>\(x_{i+} \triangleq \sum_j x_{ij}\) denotes the total number of molecules
+<li>\(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of molecules
 observed in cell \(i\)</li>
 <li>\(\vpi_i\) denotes cluster assignment probabilities for cell \(i\)</li>
 <li>\(\vmu_k\) denotes the cluster &ldquo;centroid&rdquo; for cluster \(k\), and
@@ -393,24 +398,23 @@ using an EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell
 </p>
 
 \begin{equation}
-  E[z_{ik}] \propto \sum_j \int_0^{\infty} \Pois(x_{ij}; x_{i+}\lambda) \Gam(\lambda; \phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1})\, d\lambda.
+  E[z_{ik} \mid \vx_i, \xiplus, \vpi_i, \vmu_k, \vphi_k] \propto \sum_j \int_0^{\infty} \Pois(x_{ij}; \xiplus\lambda) \Gam(\lambda; \phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1})\, d\lambda.
 \end{equation}
 
 <p>
-In the M step, we improve the mixture of negative binomials likelihood by
-<a href="mepbpm.html">(batch) gradient descent</a>, implemented in the Python
-package <code>mpebpm</code>. To make the model amenable to stochastic gradient descent,
-we can instead maximize the evidence lower bound and amortize inference
+In the M step, we improve the likelihood by <a href="mepbpm.html">(batch)
+gradient descent</a>, implemented in the Python package <code>mpebpm</code>. To make the
+model amenable to stochastic gradient descent, we can instead maximize the
+evidence lower bound and amortize inference
 (<a href="https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf">Gershman and
 Goodman 2014</a>, <a href="https://arxiv.org/abs/1312.6114">Kingma and Welling 2014</a>,
 <a href="http://proceedings.mlr.press/v32/rezende14.html">Rezende et al. 2014</a>),
-learning a neural network \(f_p\) mapping \(x_{i\cdot} \rightarrow
-  z_{i\cdot}\)
+learning a neural network \(f_z\) mapping \(\vx_i \rightarrow \vz_i\)
 </p>
 
 \begin{align}
   p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
-  q(z_{i1}, \ldots, z_{iK} \mid x_{i\cdot}) &= \Mult(1, f_p(x_{i\cdot})).
+  q(z_{i1}, \ldots, z_{iK} \mid \vx_i) &= \Mult(1, f_z(\vx_i)).
 \end{align}
 </div>
 </div>
@@ -760,8 +764,8 @@ plt.tight_layout()
 <h3 id="amortized"><a id="orge0613b0"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
-Fit the amortized inference model, initializing \(\vmu, \vphi\) from the MLE
-starting from the ground-truth labels.
+Fit the amortized inference model, initializing \(\vmu_k, \vphi_k\) from the
+MLE starting from the ground-truth labels.
 </p>
 
 <div class="org-src-container">
@@ -802,6 +806,10 @@ Look at the initial loss.
 tensor(1926631.7500, grad_fn=&lt;NegBackward&gt;))
 </pre>
 
+<p>
+Look at the gradients with respect to the encoder network weights.
+</p>
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">temp_loss</span> = mpebpm.gam_mix._nb_mix_loss(
   fit.encoder.forward(query),
@@ -821,7 +829,8 @@ tensor(31154.1895)
 </pre>
 
 <p>
-Perform amortized inference.
+Perform amortized inference, initializing \(\vmu_k, \vphi_k\) from the MLE
+starting from the ground-truth labels.
 </p>
 
 <div class="org-src-container">
@@ -842,6 +851,10 @@ Perform amortized inference.
     log_dir=<span class="org-string">'runs/nbmix/ai-inittruth-epoch80'</span>)
 </pre>
 </div>
+
+<p>
+Compute the cross entropy loss over the posterior mean cluster assignments.
+</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">zhat</span> = fit1.forward(query.cuda()).detach().cpu().numpy()
@@ -946,10 +959,54 @@ fig.tight_layout()
 </div>
 </div>
 </div>
+</div>
 
-<div id="outline-container-org8be11a0" class="outline-3">
-<h3 id="org8be11a0">scVI</h3>
-<div class="outline-text-3" id="text-org8be11a0">
+<div id="outline-container-org089f29e" class="outline-2">
+<h2 id="related-work"><a id="org089f29e"></a>Related work</h2>
+<div class="outline-text-2" id="text-related-work">
+<p>
+scVI (<a href="https://dx.doi.org/10.1038/s41592-018-0229-2">Lopez et al. 2018</a>,
+<a href="https://www.biorxiv.org/content/10.1101/532895v2">Xu et al. 2020</a>)
+implements a related deep unsupervised (more precisely, semi-supervised)
+clustering model (<a href="https://arxiv.org/abs/1406.5298">Kingma et al. 2014</a>,
+<a href="https://arxiv.org/abs/1611.02648">Dilokthanakul et al. 2016</a>).
+</p>
+
+\begin{align}
+  x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+  \ln s_i &\sim \N(\cdot)\\
+  \lambda_{ij} \mid \vz_i &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}(\vz_i))_j^{-1} \phi_j^{-1})\\
+  \vz_i \mid y_i, \vu_i &\sim \N(\mu_z(\vu_i, y_i), \diag(\sigma^2(\vu_i, y_i)))\\
+  y_i \mid \vpi &\sim \Mult(1, \vpi)\\
+  \vu_i &\sim \N(0, \mi).
+\end{align}
+
+<p>
+where
+</p>
+
+<ul class="org-ul">
+<li>\(y_i\) denotes the cluster assignment for cell \(i\)</li>
+<li>\(\mu_z(\cdot), \sigma^2(\cdot)\) are neural networks mapping the latent
+cluster variable \(y_i\) and Gaussian noise \(\vu_i\) to the latent variable
+\(\vz_i\)</li>
+<li>\(\mu_{\lambda}(\cdot)\) is a neural network mapping latent variable \(\vz_i\) to
+latent gene expression \(\vlambda_{i}\)</li>
+</ul>
+
+<p>
+The intuition behind this model is that, marginalizing over \(y_i\), the
+prior \(p(z_i)\) is a mixture of Gaussians, and therefore the model embeds
+examples in a space which makes clustering easy, and maps examples to those
+clusters simultaneously. To perform variational inference in this model,
+Lopez et al. introduce inference networks
+</p>
+
+\begin{align}
+  q(\vz_i \mid \vx_i) &= \N(\cdot)\\
+  q(y_i \mid \vz_i) &= \Mult(1, \cdot).
+\end{align}
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> scvi.dataset
 <span class="org-keyword">import</span> scvi.inference
@@ -967,55 +1024,6 @@ train.train(n_epochs=1000, lr=1e-2)
 <span class="org-variable-name">_</span>, <span class="org-variable-name">_</span>, <span class="org-variable-name">label</span> = post.get_latent()
 </pre>
 </div>
-</div>
-</div>
-</div>
-
-<div id="outline-container-org089f29e" class="outline-2">
-<h2 id="related-work"><a id="org089f29e"></a>Related work</h2>
-<div class="outline-text-2" id="text-related-work">
-<p>
-scVI (<a href="https://dx.doi.org/10.1038/s41592-018-0229-2">Lopez et al. 2018</a>,
-<a href="https://www.biorxiv.org/content/10.1101/532895v2">Xu et al. 2020</a>)
-implements a related deep unsupervised (more precisely, semi-supervised)
-clustering model (<a href="https://arxiv.org/abs/1406.5298">Kingma et al. 2014</a>,
-<a href="https://arxiv.org/abs/1611.02648">Dilokthanakul et al. 2016</a>).
-</p>
-
-\begin{align}
-  x_{i\cdot} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
-  \ln s_i &\sim \N(\cdot)\\
-  \lambda_{ij} \mid z_{i\cdot} &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}^{-1}(z_{i\cdot}))_j \phi_j^{-1})\\
-  z_{i\cdot} \mid y_i, u_i &\sim \N(\mu_i(u_i, y_i), \sigma^2(u_i, y_i))\\
-  y_i &\sim \Mult(1, \vpi)\\
-  u_i &\sim \N(0, \mi).
-\end{align}
-
-<p>
-where
-</p>
-
-<ul class="org-ul">
-<li>\(y_i\) denotes the cluster assignment for cell \(i\)</li>
-<li>\(\mu_i(\cdot), \sigma^2(\cdot)\) are neural networks mapping the latent
-cluster variable \(y_i\) and Gaussian noise \(u_i\) to the latent variable
-\(z_i\)</li>
-<li>\(\mu_{\lambda}(\cdot)\) is a neural network mapping latent variable \(z_i\) to
-latent gene expression \(\lambda_{ij}\)</li>
-</ul>
-
-<p>
-The intuition behind this model is that the prior \(p(z_i)\) (marginalizing
-over \(y_i\)) is a mixture of Gaussians, and therefore the model embeds
-examples in a space which makes clustering easy, and maps examples to those
-clusters simultaneously. To perform variational inference in this model,
-Lopez et al. introduce inference networks
-</p>
-
-\begin{align}
-  q(z_{i\cdot} \mid x_{i\cdot}) &= \N(\cdot)\\
-  q(y_i \mid z_{i\cdot}) &= \Mult(1, \cdot)
-\end{align}
 
 <p>
 The fundamental difference between scVI and our approach is that scVI
@@ -1031,11 +1039,11 @@ this problem
 </p>
 
 \begin{align}
-  x_{i\cdot} \mid x_{i+}, \lambda_{ij} &\sim \Pois(x_{i+} \lambda_{ij})\\
-  \lambda_{ij} \mid z_{i\cdot} &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}^{-1}(z_{i\cdot}))_j \phi_j^{-1})\\
-  z_{i\cdot} \mid y_i &\sim \N(\mu_i(y_i), \sigma^2(y_i))\\
-  y_i &\sim \Mult(1, \vpi)\\
-  q(y_i, z_{i\cdot} \mid x_{i\cdot}) &= q(y_i \mid x_{i\cdot})\, q(z_i \mid y_i, x_{i\cdot})
+  x_{ij} \mid \xiplus, \lambda_{ij} &\sim \Pois(\xiplus \lambda_{ij})\\
+  \lambda_{ij} \mid \vz_i &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}(\vz_i))_j^{-1} \phi_j^{-1})\\
+  \vz_i \mid y_i &\sim \N(\mu_z(y_i), \sigma^2(y_i))\\
+  y_i \mid \vpi &\sim \Mult(1, \vpi)\\
+  q(y_i, \vz_i \mid \vx_i) &= q(y_i \mid \vx_i)\, q(\vz_i \mid y_i, \vx_i).
 \end{align}
 
 <p>
@@ -1048,7 +1056,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-17 Sun 13:48</p>
+<p class="date">Created: 2020-05-17 Sun 15:19</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -51,13 +51,14 @@
     import scipy.optimize as so
     import scipy.special as sp
     import scipy.stats as st
+    import scmodes
     import torch
     import torch.utils.data as td
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[27]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -67,7 +68,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[131]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -79,7 +80,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[135]:
+  # Out[3]:
   :END:
 
   #+CALL: tensorboard(venv="singlecell") :session tensorboard :dir /scratch/midway2/aksarkar/singlecell/
@@ -164,15 +165,14 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[4]:
    :END:
 
    Get 256 B cells and 256 cytotoxic T cells.
 
    #+BEGIN_SRC ipython :async t
      b_cells = dat[dat.obs['cell_type'] == 'b_cells']
-     # Important: this has a set seed
-     sc.pp.subsample(b_cells, n_obs=256)
+     sc.pp.subsample(b_cells, n_obs=256, random_state=0)
      t_cells = dat[dat.obs['cell_type'] == 'cytotoxic_t']
      sc.pp.subsample(t_cells, n_obs=256)
      temp = b_cells.concatenate(t_cells)
@@ -181,7 +181,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[19]:
+   # Out[5]:
    :END:
 
    Plot a UMAP embedding of the data, coloring points by the ground truth
@@ -195,6 +195,7 @@
 
    #+RESULTS:
    :RESULTS:
+   # Out[6]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/sim-ex.png
@@ -211,7 +212,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
+   # Out[7]:
    [[file:figure/nbmix.org/sim-ex.png]]
    :END:
 
@@ -221,15 +222,15 @@
    :END:
 
     Apply the Leiden algorithm ([[https://arxiv.org/abs/1810.08473][Traag et
-    al. 2018]]) to the data (~1 s).
+    al. 2018]]) to the data (<1 s).
 
     #+BEGIN_SRC ipython :async t
-      sc.tl.leiden(temp)
+      sc.tl.leiden(temp, random_state=0)
     #+END_SRC
 
     #+RESULTS:
     :RESULTS:
-    # Out[7]:
+    # Out[8]:
     :END:
 
     #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/leiden-ex.png
@@ -249,6 +250,168 @@
     # Out[9]:
     [[file:figure/nbmix.org/leiden-ex.png]]
     :END:
+
+** MPEBPM
+   :PROPERTIES:
+   :CUSTOM_ID: mpebpm
+   :END:
+
+   First, start from the ground truth \(z\) (labels), and estimate the Gamma
+   expression models.
+
+   #+BEGIN_SRC ipython :async t
+     fit0 = mpebpm.sgd.ebpm_gamma(
+       temp.X,
+       onehot=pd.get_dummies(temp.obs['cell_type']).values,
+       batch_size=32,
+       num_epochs=320,
+       shuffle=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   :END:
+
+   Look at the differences in the estimated mean parameter for each gene, to
+   see how many genes are informative about the labels.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mepbpm-log-mu.png
+     query = np.sort(np.diff(fit0[0], axis=0).ravel())
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(query, lw=1, c='k')
+     plt.axhline(y=0, lw=1, ls=':', c='k')
+     plt.xlabel('Gene')
+     plt.ylabel(r'Diff $\ln(\mu_j)$')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[29]:
+   [[file:figure/nbmix.org/mepbpm-log-mu.png]]
+   :END:
+
+   Estimate the cluster weights.
+
+   #+BEGIN_SRC ipython
+     L = mpebpm.gam_mix._nb_mix_llik(
+       x=torch.tensor(temp.X.A, dtype=torch.float), 
+       s=torch.tensor(temp.X.sum(axis=1), dtype=torch.float),
+       log_mean=torch.tensor(fit0[0], dtype=torch.float),
+       log_inv_disp=torch.tensor(fit0[1], dtype=torch.float))
+     zhat = torch.nn.functional.softmax(L, dim=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[33]:
+   :END:
+
+   Plot the log likelihood difference between the two components for each data
+   point.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mpebpm-llik-diff.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(np.diff(L).ravel(), lw=0, marker='.', c='k', ms=2)
+     plt.axhline(y=0, lw=1, ls=':', c='k')
+     plt.xlabel('Cell')
+     plt.ylabel('Diff log lik')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[42]:
+   [[file:figure/nbmix.org/mpebpm-llik-diff.png]]
+   :END:
+
+   Compute the cross entropy between the estimated \(\hat{z}\) and the ground
+   truth.
+
+   #+BEGIN_SRC ipython
+     torch.nn.functional.binary_cross_entropy(
+       zhat,
+       torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[108]:
+   : tensor(0.)
+   :END:
+
+   Compute a weighted log likelihood.
+
+   #+BEGIN_SRC ipython
+     w = torch.rand([512, 2])
+     w /= w.sum(dim=1).unsqueeze(-1)
+     m, _ = L.max(dim=1, keepdim=True)
+     (m + torch.log(w * torch.exp(L - m) + 1e-8)).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[43]:
+   : tensor(-1872.5645)
+   :END:
+
+   Try fitting the model from a random initialization (49 s).
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     torch.manual_seed(0)
+     fit = mpebpm.gam_mix.ebpm_gam_mix_em(
+       x=temp.X.A,
+       s=temp.X.sum(axis=1),
+       y=torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float).cuda(),
+       k=2,
+       num_epochs=400,
+       max_em_iters=10,
+       log_dir='runs/nbmix/mpebpm-random-init0-iter10')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
+   :END:
+
+   Compute the cross entropy between the estimated \(\hat{z}\) and the ground
+   truth.
+
+   #+BEGIN_SRC ipython
+     torch.nn.functional.binary_cross_entropy(
+       torch.tensor(fit[-1], dtype=torch.float),
+       torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[55]:
+   : tensor(0.)
+   :END:
+
+   Plot the UMAP, colored by the fitted clusters.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/sim-ex-fit.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     for i in range(fit[-1].shape[1]):
+       plt.plot(*temp[fit[-1][:,i].astype(bool)].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'Cluster {i}')
+     plt.legend(frameon=False, markerscale=4, handletextpad=0)
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[56]:
+   [[file:figure/nbmix.org/sim-ex-fit.png]]
+   :END:
 
 ** EM
    :PROPERTIES:
@@ -326,131 +489,6 @@
    # Out[78]:
    :END:
 
-** MPEBPM
-   :PROPERTIES:
-   :CUSTOM_ID: mpebpm
-   :END:
-
-    First, start from the ground truth \(z\) (labels), and estimate the Gamma
-    expression models.
-
-    #+BEGIN_SRC ipython :async t
-     fit0 = mpebpm.sgd.ebpm_gamma(
-       temp.X,
-       onehot=pd.get_dummies(temp.obs['cell_type']).values,
-       batch_size=32,
-       num_epochs=320,
-       shuffle=True)
-    #+END_SRC
-
-    #+RESULTS:
-    :RESULTS:
-    # Out[7]:
-    :END:
-
-    Estimate the cluster weights.
-
-    #+BEGIN_SRC ipython
-     L = mpebpm.gam_mix._nb_mix_llik(
-       x=torch.tensor(temp.X.A, dtype=torch.float), 
-       s=torch.tensor(temp.X.sum(axis=1), dtype=torch.float),
-       log_mean=torch.tensor(fit0[0], dtype=torch.float),
-       log_inv_disp=torch.tensor(fit0[1], dtype=torch.float)).sum(dim=-1)
-     zhat = torch.nn.functional.softmax(L, dim=1)
-    #+END_SRC
-
-    #+RESULTS:
-    :RESULTS:
-    # Out[114]:
-    :END:
-
-    Compute the cross entropy between the estimated \(\hat{z}\) and the ground
-    truth.
-
-    #+BEGIN_SRC ipython
-     torch.nn.functional.binary_cross_entropy(
-       zhat,
-       torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float))
-    #+END_SRC
-
-    #+RESULTS:
-    :RESULTS:
-    # Out[108]:
-    : tensor(0.)
-    :END:
-
-    Compute a weighted log likelihood.
-
-    #+BEGIN_SRC ipython
-     w = torch.rand([512, 2])
-     w /= w.sum(dim=1).unsqueeze(-1)
-     m, _ = L.max(dim=1, keepdim=True)
-     (m + torch.log(w * torch.exp(L - m) + 1e-8)).mean()
-    #+END_SRC
-
-    #+RESULTS:
-    :RESULTS:
-    # Out[159]:
-    : tensor(-1872.6364)
-    :END:
-
-    Try fitting the model from a random initialization.
-
-    #+BEGIN_SRC ipython :async t
-     import imp; imp.reload(mpebpm.gam_mix)
-     torch.manual_seed(1)
-     fit = mpebpm.gam_mix.ebpm_gam_mix_em(
-       x=temp.X.A,
-       s=temp.X.sum(axis=1),
-       y=torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float).cuda(),
-       k=2,
-       batch_size=512,
-       num_epochs=400,
-       max_em_iters=100,
-       tol=0.1,
-       log_dir='runs/nbmix/test11')
-    #+END_SRC
-
-    #+RESULTS:
-    :RESULTS:
-    # Out[21]:
-    :END:
-
-    Compute the cross entropy between the estimated \(\hat{z}\) and the ground
-    truth.
-
-    #+BEGIN_SRC ipython
-     torch.nn.functional.binary_cross_entropy(
-       torch.tensor(1 - fit[-1], dtype=torch.float),
-       torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float))
-    #+END_SRC
-
-    #+RESULTS:
-    :RESULTS:
-    # Out[24]:
-    : tensor(0.)
-    :END:
-
-    Plot the UMAP, colored by the fitted clusters.
-
-    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/sim-ex-fit.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(3, 3)
-     for i in range(fit[-1].shape[1]):
-       plt.plot(*temp[fit[-1][:,i].astype(bool)].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'Cluster {i}')
-     plt.legend(frameon=False, markerscale=4, handletextpad=0)
-     plt.xlabel('UMAP 1')
-     plt.ylabel('UMAP 2')
-     plt.tight_layout()
-    #+END_SRC
-
-    #+RESULTS:
-    :RESULTS:
-    # Out[26]:
-    [[file:figure/nbmix.org/sim-ex-fit.png]]
-    :END:
-
 ** Amortized inference
    :PROPERTIES:
    :CUSTOM_ID: amortized
@@ -471,7 +509,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[93]:
+   # Out[57]:
    :END:
 
    Look at the initial loss.
@@ -520,6 +558,8 @@
    : tensor(31154.1895)
    :END:
 
+   Perform amortized inference.
+
    #+BEGIN_SRC ipython :async t
      torch.manual_seed(1)
      fit1 = mpebpm.gam_mix.EBPMGammaMix(
@@ -533,14 +573,14 @@
          lr=1e-3,
          batch_size=64,
          shuffle=True,
-         num_pretrain=20,
-         num_epochs=20,
-         log_dir='runs/nbmix/test')
+         num_pretrain=80,
+         num_epochs=80,
+         log_dir='runs/nbmix/ai-inittruth-epoch80')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[155]:
+   # Out[62]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -552,28 +592,43 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[157]:
-   : tensor(0.1846)
+   # Out[63]:
+   : tensor(0.2482)
    :END:
+
+   Plot the approximate posterior over cluster assignments for each point.
 
    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/am-inf-ex.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
-     plt.gcf().set_size_inches(3, 3)
-     for i, m in enumerate(('+', 'x')):
-       plt.scatter(*temp.obsm["X_umap"].T, s=2, c=np.hstack((np.tile(np.array(cm(i)[:3]), zhat.shape[0]).reshape(-1, 3), zhat[:,i].reshape(-1, 1))), marker=m, label=f'Cluster {i}')
-     leg = plt.legend(frameon=False, markerscale=4, handletextpad=0)
-     for h in leg.legendHandles:
-       h.set_alpha(1)
-     plt.xlabel('UMAP 1')
-     plt.ylabel('UMAP 2')
-     plt.tight_layout()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     fig.set_size_inches(4.5, 2.5)
+     for i, a in enumerate(ax):
+       a.scatter(*temp.obsm["X_umap"].T, s=4, c=np.hstack((np.tile(np.array(cm(i)[:3]), zhat.shape[0]).reshape(-1, 3), zhat[:,i].reshape(-1, 1))))
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[159]:
+   # Out[82]:
    [[file:figure/nbmix.org/am-inf-ex.png]]
+   :END:
+
+   Threshold cluster assignments, and compute the cross entropy loss.
+
+   #+BEGIN_SRC ipython
+     zhat_thresh = pd.get_dummies(np.argmax(zhat, axis=1))
+     torch.nn.functional.binary_cross_entropy(
+       torch.tensor(zhat_thresh.values, dtype=torch.float),
+       torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[81]:
+   : tensor(0.)
    :END:
 
    Now, fit the model starting from a random initialization.

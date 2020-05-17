@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-16 Sat 21:06 -->
+<!-- 2020-05-17 Sun 12:08 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -257,26 +257,26 @@ for the JavaScript code in this tag.
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org34e8d5e">Introduction</a></li>
+<li><a href="#introdcution">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#org5ee032a">Method</a></li>
-<li><a href="#orgdca968c">Results</a>
+<li><a href="#method">Method</a></li>
+<li><a href="#results">Results</a>
 <ul>
-<li><a href="#org56f4812">Example</a></li>
-<li><a href="#orgca14b7d">Leiden algorithm</a></li>
-<li><a href="#orgebb4a14">EM</a></li>
-<li><a href="#org97f5a8f">MPEBPM</a></li>
-<li><a href="#orge0613b0">Amortized inference</a></li>
+<li><a href="#example">Example</a></li>
+<li><a href="#leiden">Leiden algorithm</a></li>
+<li><a href="#em">EM</a></li>
+<li><a href="#mpebpm">MPEBPM</a></li>
+<li><a href="#amortized">Amortized inference</a></li>
 </ul>
 </li>
-<li><a href="#org089f29e">Related work</a></li>
+<li><a href="#related-work">Related work</a></li>
 </ul>
 </div>
 </div>
 
 <div id="outline-container-org34e8d5e" class="outline-2">
-<h2 id="org34e8d5e">Introduction</h2>
-<div class="outline-text-2" id="text-org34e8d5e">
+<h2 id="introdcution"><a id="org34e8d5e"></a>Introduction</h2>
+<div class="outline-text-2" id="text-introdcution">
 <p>
 Two major strategies for clustering scRNA-seq data are:
 </p>
@@ -340,8 +340,8 @@ issues.
 </div>
 
 <div id="outline-container-org5ee032a" class="outline-2">
-<h2 id="org5ee032a">Method</h2>
-<div class="outline-text-2" id="text-org5ee032a">
+<h2 id="method"><a id="org5ee032a"></a>Method</h2>
+<div class="outline-text-2" id="text-method">
 <p>
 We assume \(
   \DeclareMathOperator\Gam{Gamma}
@@ -378,13 +378,16 @@ The intuition behind this model is that each cluster \(k\) is defined by a
 collection of independent Gamma distributions, one per gene \(j\). These
 Gamma distributions describe the distribution of true gene expression for
 each gene in each cluster
-(<a href="https://dx.doi.org/10.1101/2020.04.07.030007">Sarkar and Stephens 2020</a>).
+(<a href="https://dx.doi.org/10.1101/2020.04.07.030007">Sarkar and Stephens
+2020</a>). (In this parameterization, each has mean \(\mu_{kj}\) and variance
+\(\mu_{kj}^2\phi_{kj}\).)
 </p>
 
 <p>
-We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
-EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
-assigned to cluster \(k\), in the E step
+Under this model, the marginal likelihood is a mixture of negative
+binomials. We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood
+using an EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell
+\(i\) is assigned to cluster \(k\), in the E step
 </p>
 
 \begin{equation}
@@ -392,40 +395,31 @@ assigned to cluster \(k\), in the E step
 \end{equation}
 
 <p>
-In the M step, we improve the weighted mixture of negative binomials
-likelihood by <a href="mepbpm.html">(batch) gradient descent</a>, implemented in
-the Python package <code>mpebpm</code>. the posterior distribution of true
-gene expression given the data is
-</p>
-
-\begin{equation}
-  \lambda_{ij} \mid x_{ij}, x_{i+}, \vpi, \vmu, \vphi \sim \sum_{k=1}^{K} \pi_{ik} \Gam(x_{ij} + \phi_{kj}^{-1}, x_{i+} + \phi_{kj}^{-1}\mu_{kj}^{-1}).
-\end{equation}
-
-<p>
-To make the model more amenable to stochastic gradient descent, we can
-amortize inference by learning a neural network \(f_p\) mapping \(x_{i\cdot}
-  \rightarrow z_{i\cdot}\)
+In the M step, we improve the mixture of negative binomials likelihood by
+<a href="mepbpm.html">(batch) gradient descent</a>, implemented in the Python
+package <code>mpebpm</code>. To make the model amenable to stochastic gradient descent,
+we can instead maximize the evidence lower bound and amortize inference
+(<a href="https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf">Gershman and
+Goodman 2014</a>, <a href="https://arxiv.org/abs/1312.6114">Kingma and Welling 2014</a>,
+<a href="http://proceedings.mlr.press/v32/rezende14.html">Rezende et al. 2014</a>),
+learning a neural network \(f_p\) mapping \(x_{i\cdot} \rightarrow
+  z_{i\cdot}\)
 </p>
 
 \begin{align}
   p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
-  q(z_{i1}, \ldots, z_{iK} \mid x_{i\cdot}) &= \Mult(1, f_p(x_{i\cdot})),
+  q(z_{i1}, \ldots, z_{iK} \mid x_{i\cdot}) &= \Mult(1, f_p(x_{i\cdot})).
 \end{align}
-
-<p>
-by maximizing the ELBO. 
-</p>
 </div>
 </div>
 
 <div id="outline-container-orgdca968c" class="outline-2">
-<h2 id="orgdca968c">Results</h2>
-<div class="outline-text-2" id="text-orgdca968c">
+<h2 id="results"><a id="orgdca968c"></a>Results</h2>
+<div class="outline-text-2" id="text-results">
 </div>
 <div id="outline-container-org56f4812" class="outline-3">
-<h3 id="org56f4812">Example</h3>
-<div class="outline-text-3" id="text-org56f4812">
+<h3 id="example"><a id="org56f4812"></a>Example</h3>
+<div class="outline-text-3" id="text-example">
 <p>
 Read sorted immune cell scRNA-seq data
 (<a href="https://dx.doi.org/10.1038/ncomms14049">Zheng et al. 2017</a>).
@@ -485,8 +479,8 @@ plt.tight_layout()
 </div>
 
 <div id="outline-container-orgca14b7d" class="outline-3">
-<h3 id="orgca14b7d">Leiden algorithm</h3>
-<div class="outline-text-3" id="text-orgca14b7d">
+<h3 id="leiden"><a id="orgca14b7d"></a>Leiden algorithm</h3>
+<div class="outline-text-3" id="text-leiden">
 <p>
 Apply the Leiden algorithm (<a href="https://arxiv.org/abs/1810.08473">Traag et
 al. 2018</a>) to the data (~1 s).
@@ -519,8 +513,8 @@ plt.tight_layout()
 </div>
 
 <div id="outline-container-orgebb4a14" class="outline-3">
-<h3 id="orgebb4a14">EM</h3>
-<div class="outline-text-3" id="text-orgebb4a14">
+<h3 id="em"><a id="orgebb4a14"></a>EM</h3>
+<div class="outline-text-3" id="text-em">
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">_nb_mix_llik</span>(theta, x, s):
   <span class="org-doc">"""Return log likelihood matrix</span>
@@ -591,8 +585,8 @@ plt.tight_layout()
 </div>
 
 <div id="outline-container-org97f5a8f" class="outline-3">
-<h3 id="org97f5a8f">MPEBPM</h3>
-<div class="outline-text-3" id="text-org97f5a8f">
+<h3 id="mpebpm"><a id="org97f5a8f"></a>MPEBPM</h3>
+<div class="outline-text-3" id="text-mpebpm">
 <p>
 First, start from the ground truth \(z\) (labels), and estimate the Gamma
 expression models.
@@ -719,8 +713,8 @@ plt.tight_layout()
 </div>
 
 <div id="outline-container-orge0613b0" class="outline-3">
-<h3 id="orge0613b0">Amortized inference</h3>
-<div class="outline-text-3" id="text-orge0613b0">
+<h3 id="amortized"><a id="orge0613b0"></a>Amortized inference</h3>
+<div class="outline-text-3" id="text-amortized">
 <p>
 Fit the amortized inference model, initializing \(\vmu, \vphi\) from the MLE
 starting from the ground-truth labels.
@@ -888,8 +882,8 @@ fig.tight_layout()
 </div>
 
 <div id="outline-container-org089f29e" class="outline-2">
-<h2 id="org089f29e">Related work</h2>
-<div class="outline-text-2" id="text-org089f29e">
+<h2 id="related-work"><a id="org089f29e"></a>Related work</h2>
+<div class="outline-text-2" id="text-related-work">
 <p>
 scVI (<a href="https://dx.doi.org/10.1038/s41592-018-0229-2">Lopez et al. 2018</a>,
 <a href="https://www.biorxiv.org/content/10.1101/532895v2">Xu et al. 2020</a>)
@@ -929,8 +923,16 @@ Lopez et al. introduce inference networks
 </p>
 
 \begin{align}
-  q(y_i, z_{i\cdot} \mid x_{i\cdot}) = q(z_{i\cdot} \mid x_{i\cdot})\, q(y_i \mid z_{i\cdot})
+  q(z_{i\cdot} \mid x_{i\cdot}) &= \N(\cdot)\\
+  q(y_i \mid z_{i\cdot}) &= \Mult(1, \cdot)
 \end{align}
+
+<p>
+The fundamental difference between scVI and our approach is that scVI
+clusters points in the low-dimensional latent space, and we cluster points in
+the space of latent gene expression (which has equal dimension to the
+observations).
+</p>
 
 <p>
 Rui Shu <a href="http://ruishu.io/2016/12/25/gmvae/">proposed an alternative
@@ -945,12 +947,18 @@ this problem
   y_i &\sim \Mult(1, \vpi)\\
   q(y_i, z_{i\cdot} \mid x_{i\cdot}) &= q(y_i \mid x_{i\cdot})\, q(z_i \mid y_i, x_{i\cdot})
 \end{align}
+
+<p>
+There are additional deep unsupervised learning methods, which could
+potentially be adapted to this setting (reviewed in
+<a href="https://dx.doi.org/10.1109/ACCESS.2018.2855437">Min et al. 2018</a>).
+</p>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-16 Sat 21:06</p>
+<p class="date">Created: 2020-05-17 Sun 12:08</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -2,6 +2,9 @@
 #+SETUPFILE: setup.org
 
 * Introduction
+  :PROPERTIES:
+  :CUSTOM_ID: introdcution
+  :END:
 
   Two major strategies for clustering scRNA-seq data are:
 
@@ -82,6 +85,9 @@
   #+CALL: tensorboard(venv="singlecell") :session tensorboard :dir /scratch/midway2/aksarkar/singlecell/
 
 * Method
+  :PROPERTIES:
+  :CUSTOM_ID: method
+  :END:
 
   We assume \(
   \DeclareMathOperator\Gam{Gamma}
@@ -112,38 +118,42 @@
   collection of independent Gamma distributions, one per gene \(j\). These
   Gamma distributions describe the distribution of true gene expression for
   each gene in each cluster
-  ([[https://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens 2020]]).
-  
-  We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
-  EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
-  assigned to cluster \(k\), in the E step
+  ([[https://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens
+  2020]]). (In this parameterization, each has mean \(\mu_{kj}\) and variance
+  \(\mu_{kj}^2\phi_{kj}\).)
+
+  Under this model, the marginal likelihood is a mixture of negative
+  binomials. We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood
+  using an EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell
+  \(i\) is assigned to cluster \(k\), in the E step
 
   \begin{equation}
     E[z_{ik}] \propto \sum_j \int_0^{\infty} \Pois(x_{ij}; x_{i+}\lambda) \Gam(\lambda; \phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1})\, d\lambda.
   \end{equation}
 
-  In the M step, we improve the weighted mixture of negative binomials
-  likelihood by [[file:mepbpm.org][(batch) gradient descent]], implemented in
-  the Python package ~mpebpm~. the posterior distribution of true
-  gene expression given the data is
-
-  \begin{equation}
-    \lambda_{ij} \mid x_{ij}, x_{i+}, \vpi, \vmu, \vphi \sim \sum_{k=1}^{K} \pi_{ik} \Gam(x_{ij} + \phi_{kj}^{-1}, x_{i+} + \phi_{kj}^{-1}\mu_{kj}^{-1}).
-  \end{equation}
-
-  To make the model more amenable to stochastic gradient descent, we can
-  amortize inference by learning a neural network \(f_p\) mapping \(x_{i\cdot}
-  \rightarrow z_{i\cdot}\)
+  In the M step, we improve the mixture of negative binomials likelihood by
+  [[file:mepbpm.org][(batch) gradient descent]], implemented in the Python
+  package ~mpebpm~. To make the model amenable to stochastic gradient descent,
+  we can instead maximize the evidence lower bound and amortize inference
+  ([[https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf][Gershman and
+  Goodman 2014]], [[https://arxiv.org/abs/1312.6114][Kingma and Welling 2014]],
+  [[http://proceedings.mlr.press/v32/rezende14.html][Rezende et al. 2014]]),
+  learning a neural network \(f_p\) mapping \(x_{i\cdot} \rightarrow
+  z_{i\cdot}\)
 
   \begin{align}
     p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
-    q(z_{i1}, \ldots, z_{iK} \mid x_{i\cdot}) &= \Mult(1, f_p(x_{i\cdot})),
+    q(z_{i1}, \ldots, z_{iK} \mid x_{i\cdot}) &= \Mult(1, f_p(x_{i\cdot})).
   \end{align}
 
-  by maximizing the ELBO. 
-
 * Results
+  :PROPERTIES:
+  :CUSTOM_ID: results
+  :END:
 ** Example
+   :PROPERTIES:
+   :CUSTOM_ID: example
+   :END:
 
    Read sorted immune cell scRNA-seq data
    ([[https://dx.doi.org/10.1038/ncomms14049][Zheng et al. 2017]]).
@@ -206,6 +216,9 @@
    :END:
 
 ** Leiden algorithm
+   :PROPERTIES:
+   :CUSTOM_ID: leiden
+   :END:
 
     Apply the Leiden algorithm ([[https://arxiv.org/abs/1810.08473][Traag et
     al. 2018]]) to the data (~1 s).
@@ -238,6 +251,9 @@
     :END:
 
 ** EM
+   :PROPERTIES:
+   :CUSTOM_ID: em
+   :END:
 
    #+BEGIN_SRC ipython
      def _nb_mix_llik(theta, x, s):
@@ -311,6 +327,9 @@
    :END:
 
 ** MPEBPM
+   :PROPERTIES:
+   :CUSTOM_ID: mpebpm
+   :END:
 
     First, start from the ground truth \(z\) (labels), and estimate the Gamma
     expression models.
@@ -433,6 +452,9 @@
     :END:
 
 ** Amortized inference
+   :PROPERTIES:
+   :CUSTOM_ID: amortized
+   :END:
 
    Fit the amortized inference model, initializing \(\vmu, \vphi\) from the MLE
    starting from the ground-truth labels.
@@ -603,6 +625,9 @@
    :END:
 
 * Related work
+  :PROPERTIES:
+  :CUSTOM_ID: related-work
+  :END:
 
   scVI ([[https://dx.doi.org/10.1038/s41592-018-0229-2][Lopez et al. 2018]],
   [[https://www.biorxiv.org/content/10.1101/532895v2][Xu et al. 2020]])
@@ -635,8 +660,14 @@
   Lopez et al. introduce inference networks
 
   \begin{align}
-    q(y_i, z_{i\cdot} \mid x_{i\cdot}) = q(z_{i\cdot} \mid x_{i\cdot})\, q(y_i \mid z_{i\cdot})
+    q(z_{i\cdot} \mid x_{i\cdot}) &= \N(\cdot)\\
+    q(y_i \mid z_{i\cdot}) &= \Mult(1, \cdot)
   \end{align}
+
+  The fundamental difference between scVI and our approach is that scVI
+  clusters points in the low-dimensional latent space, and we cluster points in
+  the space of latent gene expression (which has equal dimension to the
+  observations).
 
   Rui Shu [[http://ruishu.io/2016/12/25/gmvae/][proposed an alternative
   generative model]], which has some practical benefits and can be adapted to
@@ -649,3 +680,7 @@
     y_i &\sim \Mult(1, \vpi)\\
     q(y_i, z_{i\cdot} \mid x_{i\cdot}) &= q(y_i \mid x_{i\cdot})\, q(z_i \mid y_i, x_{i\cdot})
   \end{align}
+
+  There are additional deep unsupervised learning methods, which could
+  potentially be adapted to this setting (reviewed in
+  [[https://dx.doi.org/10.1109/ACCESS.2018.2855437][Min et al. 2018]]).

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-19 Tue 13:34 -->
+<!-- 2020-05-19 Tue 16:57 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -262,10 +262,11 @@ for the JavaScript code in this tag.
 <li><a href="#method">Method</a></li>
 <li><a href="#results">Results</a>
 <ul>
+<li><a href="#em-nbmix">EM for negative binomial</a></li>
+<li><a href="#em-nbmix">EM for negative binomial mixture</a></li>
 <li><a href="#example">Example</a></li>
 <li><a href="#leiden">Leiden algorithm</a></li>
 <li><a href="#mpebpm">MPEBPM</a></li>
-<li><a href="#em">EM</a></li>
 <li><a href="#amortized">Amortized inference</a></li>
 </ul>
 </li>
@@ -319,6 +320,7 @@ issues.
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> scmodes
+<span class="org-keyword">import</span> time
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 </pre>
@@ -396,7 +398,7 @@ binomials
 </p>
 
 \begin{equation}
-  p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma{x_{ij} + 1}}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
+  p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
 \end{equation}
 
 <p>
@@ -410,9 +412,8 @@ assigned to cluster \(k\), in the E step
 \end{equation}
 
 <p>
-In the M step, we can improve the likelihood by <a href="mepbpm.html">(batch)
-gradient descent</a>, implemented in the Python package
-<code>mpebpm</code>. Alternatively, we can use an EM algorithm to solve this subproblem
+In the M step, we can improve the likelihood by <a href="mepbpm.html">(batch) gradient
+descent</a>. Alternatively, we can use an EM algorithm to solve this subproblem
 (Huang et al. 2019), which introduces auxiliary variables (Adamidis 1999,
 Karlis 2005).
 </p>
@@ -424,7 +425,7 @@ use the fact that EM can be viewed as maximizing the evidence lower bound
 </p>
 
 \begin{equation}
-  \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta))
+  \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta))
 \end{equation}
 
 <p>
@@ -447,6 +448,256 @@ learning a neural network \(f_z\) mapping \(\vx_i \rightarrow \vz_i\)
 <h2 id="results"><a id="orgdca968c"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
+<div id="outline-container-orgb70f60a" class="outline-3">
+<h3 id="em-nbmix"><a id="orgb70f60a"></a>EM for negative binomial</h3>
+<div class="outline-text-3" id="text-em-nbmix">
+<p>
+Karlis 2005 gives an EM algorithm for fitting a Gamma mixture of Poissons
+</p>
+
+\begin{align}
+  x_i \mid \xiplus, \lambda_i &\sim \Pois(\xiplus \lambda_i)\\
+  \lambda_i \mid \alpha, \beta &\sim \Gam(\alpha, \beta)\\
+  \lambda_i \mid x_i, \xiplus, \alpha, \beta &\sim q \triangleq \Gam(x_i + \alpha, \xiplus + \beta)\\
+  E_q[\lambda_i] &= \frac{x_i + \alpha}{\xiplus + \beta}\\
+  E_q[\ln \lambda_i] &= \psi(x + \alpha) - \log(\xiplus + \beta)\\
+  E_q[\ln p(x_i, \lambda_i \mid \xiplus, \alpha, \beta)] &= \ell_i \triangleq x_i E_q[\ln \lambda_i] - E_q[\lambda_i] - \ln\Gamma(x_i + 1) + \alpha \ln\beta - \ln\Gamma(\alpha) + (\alpha - 1) E_q[\lambda_i] - \beta E_q[\lambda_i]\\
+  \ell &= \sum_i \ell_i\\
+  \frac{\partial\ell}{\partial\beta} &= \sum_i \frac{\alpha}{\beta} - E_q[\lambda_i] = 0\\
+  \beta &= \frac{\bar{\lambda}}{\alpha}\\
+  \frac{\partial\ell}{\partial\alpha} &= \sum_i \ln \beta - \psi(\alpha) + E_q[\ln x_i]\\
+  \frac{\partial^2\ell}{\partial\alpha^2} &= -n \psi^{(1)}(\alpha)
+\end{align}
+
+<p>
+where \(\psi\) denotes the digamma function and \(\psi^{(1)}\) denotes the
+trigamma function. The algorithm uses a partial M step (single
+Newton-Raphson update) for \(\alpha\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">ebpm_gamma_em</span>(x, s, max_iters=100, tol=1e-3):
+  <span class="org-doc">"""Return fitted parameters assuming g is a Gamma distribution</span>
+
+<span class="org-doc">  Returns log mu and -log phi</span>
+
+<span class="org-doc">  x - array-like [n,]</span>
+<span class="org-doc">  s - array-like [n,]</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">n</span> = x.shape[0]
+  <span class="org-keyword">assert</span> x.shape == (n,)
+  <span class="org-keyword">assert</span> x.shape == s.shape
+  <span class="org-comment-delimiter"># </span><span class="org-comment">a = 1 / phi; b = 1 / (mu phi)</span>
+  <span class="org-variable-name">a</span> = 1
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Initialize at the Poisson MLE</span>
+  <span class="org-variable-name">b</span> = s.<span class="org-builtin">sum</span>() / x.<span class="org-builtin">sum</span>()
+  <span class="org-variable-name">obj</span> = []
+  obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).<span class="org-builtin">sum</span>())
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">E[lam | x]</span>
+    <span class="org-variable-name">pm</span> = (x + a) / (s + b)
+    <span class="org-keyword">assert</span> (pm &gt; 0).<span class="org-builtin">all</span>()
+    <span class="org-comment-delimiter"># </span><span class="org-comment">E[ln lam | x]</span>
+    <span class="org-variable-name">plm</span> = sp.digamma(x + a) - np.log(s + b)
+    <span class="org-variable-name">b</span> = a / pm.mean()
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this appears to be incorrect in Karlis 2005</span>
+    <span class="org-variable-name">a</span> += (np.log(b) - sp.digamma(a) + plm.mean()) / sp.polygamma(1, a)
+    <span class="org-keyword">assert</span> a &gt; 0
+    <span class="org-keyword">assert</span> b &gt; 0
+    obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).<span class="org-builtin">sum</span>())
+    <span class="org-keyword">if</span> obj[-1] &lt; obj[-2]:
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'llik decreased'</span>)
+    <span class="org-keyword">elif</span> obj[-1] - obj[-2] &lt; tol:
+      <span class="org-variable-name">log_inv_disp</span> = np.log(a)
+      <span class="org-variable-name">log_mean</span> = -np.log(b) + np.log(a)
+      <span class="org-keyword">return</span> log_mean, log_inv_disp, obj
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge in max_iters'</span>)
+</pre>
+</div>
+
+<p>
+Try EM for a simple example.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 100
+<span class="org-variable-name">log_mean</span> = -10
+<span class="org-variable-name">log_inv_disp</span> = 0
+<span class="org-variable-name">s</span> = np.repeat(1e5, n)
+<span class="org-variable-name">lam</span> = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+<span class="org-variable-name">x</span> = rng.poisson(s * lam)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">trace</span> = ebpm_gamma_em(x, s)
+</pre>
+</div>
+
+<p>
+Plot the simulated data, the ground truth marginal distribution on counts,
+and the NB MLE.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(4.5, 2.5)
+<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
+plt.hist(x, bins=grid, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+plt.plot(grid + .5, st.nbinom(n=np.exp(-log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, color=cm(0), label=<span class="org-string">'Ground truth'</span>)
+plt.plot(grid + .5, st.nbinom(n=np.exp(neg_log_phi), p=1 / (1 + s[0] * np.exp(log_mu - neg_log_phi))).pmf(grid), lw=1, color=cm(1), label=<span class="org-string">'NB MLE'</span>)
+plt.legend(frameon=<span class="org-constant">False</span>)
+plt.xlabel(<span class="org-string">'Number of molecules'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/nb-em.png" alt="nb-em.png">
+</p>
+</div>
+
+<p>
+Try a more extensive evaluation of the method.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n</span> = 100
+<span class="org-variable-name">s</span> = np.repeat(1e5, n)
+<span class="org-variable-name">result</span> = <span class="org-builtin">dict</span>()
+<span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(5):
+  <span class="org-keyword">for</span> log_mean <span class="org-keyword">in</span> np.linspace(-12, -6, 7):
+    <span class="org-keyword">for</span> log_inv_disp <span class="org-keyword">in</span> np.linspace(0, 4, 5):
+      <span class="org-variable-name">rng</span> = np.random.default_rng(trial)
+      <span class="org-variable-name">lam</span> = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+      <span class="org-variable-name">x</span> = rng.poisson(s * lam)
+      <span class="org-variable-name">start</span> = time.time()
+      <span class="org-variable-name">log_mean_hat</span>, <span class="org-variable-name">log_inv_disp_hat</span>, <span class="org-variable-name">trace</span> = ebpm_gamma_em(x, s, max_iters=1000)
+      <span class="org-variable-name">elapsed</span> = time.time() - start
+      <span class="org-variable-name">result</span>[(log_mean, log_inv_disp, trial)] = pd.Series([log_mean_hat, log_inv_disp_hat, <span class="org-builtin">len</span>(trace), elapsed])
+<span class="org-variable-name">result</span> = (pd.DataFrame.from_dict(result, orient=<span class="org-string">'index'</span>)
+          .reset_index()
+          .rename({f<span class="org-string">'level_{i}'</span>: k <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>([<span class="org-string">'log_mean'</span>, <span class="org-string">'log_inv_disp'</span>, <span class="org-string">'trial'</span>])}, axis=1)
+          .rename({i: k <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>([<span class="org-string">'log_mean_hat'</span>, <span class="org-string">'log_inv_disp_hat'</span>, <span class="org-string">'num_iters'</span>, <span class="org-string">'elapsed'</span>])}, axis=1))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
+fig.set_size_inches(4.5, 2.5)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_aspect(<span class="org-string">'equal'</span>, adjustable=<span class="org-string">'datalim'</span>)
+ax[0].scatter(result[<span class="org-string">'log_mean'</span>], result[<span class="org-string">'log_mean_hat'</span>], c=<span class="org-string">'k'</span>, s=1)
+ax[0].set_xlabel(<span class="org-string">'Ground truth $\ln(\mu)$'</span>)
+ax[0].set_ylabel(<span class="org-string">'Estimated $\ln(\mu)$'</span>)
+ax[1].scatter(-result[<span class="org-string">'log_inv_disp'</span>], -result[<span class="org-string">'log_inv_disp_hat'</span>], c=<span class="org-string">'k'</span>, s=1)
+ax[1].set_xlabel(<span class="org-string">'Ground truth $\ln(\phi)$'</span>)
+ax[1].set_ylabel(<span class="org-string">'Estimated $\ln(\phi)$'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/nb-em-sim.png" alt="nb-em-sim.png">
+</p>
+</div>
+
+<p>
+Estimate the average time (seconds) taken to fit each trial.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">result[<span class="org-string">'elapsed'</span>].mean(), result[<span class="org-string">'elapsed'</span>].std()
+</pre>
+</div>
+
+<pre class="example">
+(0.18343861034938266, 0.18248113994496618)
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgb6a7c0c" class="outline-3">
+<h3 id="em-nbmix"><a id="orgb6a7c0c"></a>EM for negative binomial mixture</h3>
+<div class="outline-text-3" id="text-em-nbmix">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">_nb_mix_llik</span>(theta, x, s):
+  <span class="org-doc">"""Return log likelihood matrix</span>
+
+<span class="org-doc">  theta - array-like [2, k]</span>
+<span class="org-doc">  x - array-like [n, 1]</span>
+<span class="org-doc">  s - array-like [n, 1]</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: so.minimize flattens theta</span>
+  <span class="org-variable-name">theta</span> = theta.reshape(2, -1)
+  <span class="org-variable-name">mean</span> = np.exp(theta[0]).reshape(1, -1)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this can blow up</span>
+  <span class="org-variable-name">inv_disp</span> = np.exp(np.clip(theta[1], -15, 15)).reshape(1, -1)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">[n, k]</span>
+  <span class="org-variable-name">L</span> = st.nbinom(n=inv_disp, p=1 / (1 + s * mean / inv_disp)).logpmf(x.reshape(-1, 1))
+  <span class="org-keyword">assert</span> L.shape == (x.shape[0], theta.shape[1])
+  <span class="org-keyword">assert</span> np.isfinite(L).<span class="org-builtin">all</span>()
+  <span class="org-keyword">return</span> L
+
+<span class="org-keyword">def</span> <span class="org-function-name">_nb_mix_obj</span>(theta, x, z, s):
+  <span class="org-doc">"""Return negative log likelihood</span>
+
+<span class="org-doc">  theta - array-like [2, k]</span>
+<span class="org-doc">  x - array-like [n, 1]</span>
+<span class="org-doc">  z - array-like [n, k]</span>
+<span class="org-doc">  s - array-like [n, 1]</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">L</span> = _nb_mix_llik(theta, x, s)
+  <span class="org-variable-name">m</span> = L.<span class="org-builtin">max</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+  <span class="org-keyword">return</span> -(np.log(z) + L).mean()
+
+<span class="org-keyword">def</span> <span class="org-function-name">ebpm_gamma_mix</span>(x, s, k, max_iters=100, tol=1e-3, verbose=<span class="org-constant">False</span>, seed=1):
+  <span class="org-keyword">assert</span> x.ndim == 2
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
+  <span class="org-keyword">assert</span> s.shape == (n, 1)
+  <span class="org-keyword">assert</span> k &gt; 1
+  <span class="org-variable-name">rng</span> = np.random.default_rng(seed)
+  <span class="org-variable-name">log_mean</span> = rng.normal(size=(p, k))
+  <span class="org-variable-name">log_inv_disp</span> = rng.normal(size=(p, k))
+  <span class="org-variable-name">z</span> = np.ones((n, k)) / k
+  <span class="org-variable-name">loss</span> = np.array([_nb_mix_obj(np.vstack([log_mean[j], log_inv_disp[j]]), x[:,j], z, s) <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p)]).<span class="org-builtin">sum</span>()
+  <span class="org-keyword">if</span> verbose:
+    <span class="org-keyword">print</span>(f<span class="org-string">'epoch 0: {loss:.4g}'</span>)
+  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
+    <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p):
+      <span class="org-variable-name">opt</span> = so.minimize(_nb_mix_obj, x0=np.vstack([log_mean[j], log_inv_disp[j]]), args=(x[:,j], z, s), method=<span class="org-string">'nelder-mead'</span>, options={<span class="org-string">'maxiter'</span>:1000})
+      <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt.success:
+        <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'M step failed to converge: {opt.message}'</span>)
+      <span class="org-variable-name">log_mean</span>[j] = opt.x[0]
+      <span class="org-variable-name">log_inv_disp</span>[j] = opt.x[1]
+    <span class="org-variable-name">L</span> = np.array([_nb_mix_llik(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], s) <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p)]).<span class="org-builtin">sum</span>(axis=0)
+    <span class="org-variable-name">z</span> = sp.softmax(L, axis=1)
+    <span class="org-variable-name">update</span> = np.array([_nb_mix_obj(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], z, s) <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p)]).<span class="org-builtin">sum</span>()
+    <span class="org-keyword">if</span> update &gt; loss:
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'objective increased'</span>)
+    <span class="org-keyword">elif</span> loss - update &lt; tol:
+      <span class="org-keyword">return</span> z, log_mean, log_inv_disp
+    <span class="org-keyword">else</span>:
+      <span class="org-keyword">if</span> verbose:
+        <span class="org-keyword">print</span>(f<span class="org-string">'epoch {t + 1}: {loss:.4g}'</span>)
+      <span class="org-variable-name">loss</span> = update
+  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge in max_iters'</span>)
+</pre>
+</div>
+</div>
+</div>
+
 <div id="outline-container-org56f4812" class="outline-3">
 <h3 id="example"><a id="org56f4812"></a>Example</h3>
 <div class="outline-text-3" id="text-example">
@@ -761,78 +1012,6 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orgebb4a14" class="outline-3">
-<h3 id="em"><a id="orgebb4a14"></a>EM</h3>
-<div class="outline-text-3" id="text-em">
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">_nb_mix_llik</span>(theta, x, s):
-  <span class="org-doc">"""Return log likelihood matrix</span>
-
-<span class="org-doc">  theta - array-like [2, k]</span>
-<span class="org-doc">  x - array-like [n, 1]</span>
-<span class="org-doc">  s - array-like [n, 1]</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: so.minimize flattens theta</span>
-  <span class="org-variable-name">theta</span> = theta.reshape(2, -1)
-  <span class="org-variable-name">mean</span> = np.exp(theta[0]).reshape(1, -1)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this can blow up</span>
-  <span class="org-variable-name">inv_disp</span> = np.exp(np.clip(theta[1], -15, 15)).reshape(1, -1)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">[n, k]</span>
-  <span class="org-variable-name">L</span> = st.nbinom(n=inv_disp, p=1 / (1 + s * mean / inv_disp)).logpmf(x.reshape(-1, 1))
-  <span class="org-keyword">assert</span> L.shape == (x.shape[0], theta.shape[1])
-  <span class="org-keyword">assert</span> np.isfinite(L).<span class="org-builtin">all</span>()
-  <span class="org-keyword">return</span> L
-
-<span class="org-keyword">def</span> <span class="org-function-name">_nb_mix_obj</span>(theta, x, z, s):
-  <span class="org-doc">"""Return negative log likelihood</span>
-
-<span class="org-doc">  theta - array-like [2, k]</span>
-<span class="org-doc">  x - array-like [n, 1]</span>
-<span class="org-doc">  z - array-like [n, k]</span>
-<span class="org-doc">  s - array-like [n, 1]</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-variable-name">L</span> = _nb_mix_llik(theta, x, s)
-  <span class="org-variable-name">m</span> = L.<span class="org-builtin">max</span>(axis=1, keepdims=<span class="org-constant">True</span>)
-  <span class="org-keyword">return</span> -(np.log(z) + L).mean()
-
-<span class="org-keyword">def</span> <span class="org-function-name">ebpm_gamma_mix</span>(x, s, k, max_iters=100, tol=1e-3, verbose=<span class="org-constant">False</span>, seed=1):
-  <span class="org-keyword">assert</span> x.ndim == 2
-  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
-  <span class="org-keyword">assert</span> s.shape == (n, 1)
-  <span class="org-keyword">assert</span> k &gt; 1
-  <span class="org-variable-name">rng</span> = np.random.default_rng(seed)
-  <span class="org-variable-name">log_mean</span> = rng.normal(size=(p, k))
-  <span class="org-variable-name">log_inv_disp</span> = rng.normal(size=(p, k))
-  <span class="org-variable-name">z</span> = np.ones((n, k)) / k
-  <span class="org-variable-name">loss</span> = np.array([_nb_mix_obj(np.vstack([log_mean[j], log_inv_disp[j]]), x[:,j], z, s) <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p)]).<span class="org-builtin">sum</span>()
-  <span class="org-keyword">if</span> verbose:
-    <span class="org-keyword">print</span>(f<span class="org-string">'epoch 0: {loss:.4g}'</span>)
-  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
-    <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p):
-      <span class="org-variable-name">opt</span> = so.minimize(_nb_mix_obj, x0=np.vstack([log_mean[j], log_inv_disp[j]]), args=(x[:,j], z, s), method=<span class="org-string">'nelder-mead'</span>, options={<span class="org-string">'maxiter'</span>:1000})
-      <span class="org-keyword">if</span> <span class="org-keyword">not</span> opt.success:
-        <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'M step failed to converge: {opt.message}'</span>)
-      <span class="org-variable-name">log_mean</span>[j] = opt.x[0]
-      <span class="org-variable-name">log_inv_disp</span>[j] = opt.x[1]
-    <span class="org-variable-name">L</span> = np.array([_nb_mix_llik(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], s) <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p)]).<span class="org-builtin">sum</span>(axis=0)
-    <span class="org-variable-name">z</span> = sp.softmax(L, axis=1)
-    <span class="org-variable-name">update</span> = np.array([_nb_mix_obj(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], z, s) <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(p)]).<span class="org-builtin">sum</span>()
-    <span class="org-keyword">if</span> update &gt; loss:
-      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'objective increased'</span>)
-    <span class="org-keyword">elif</span> loss - update &lt; tol:
-      <span class="org-keyword">return</span> z, log_mean, log_inv_disp
-    <span class="org-keyword">else</span>:
-      <span class="org-keyword">if</span> verbose:
-        <span class="org-keyword">print</span>(f<span class="org-string">'epoch {t + 1}: {loss:.4g}'</span>)
-      <span class="org-variable-name">loss</span> = update
-  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge in max_iters'</span>)
-</pre>
-</div>
-</div>
-</div>
-
 <div id="outline-container-orge0613b0" class="outline-3">
 <h3 id="amortized"><a id="orge0613b0"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
@@ -1129,7 +1308,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-19 Tue 13:34</p>
+<p class="date">Created: 2020-05-19 Tue 16:57</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

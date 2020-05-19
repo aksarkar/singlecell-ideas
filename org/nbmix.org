@@ -52,13 +52,14 @@
     import scipy.special as sp
     import scipy.stats as st
     import scmodes
+    import time
     import torch
     import torch.utils.data as td
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[91]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -133,7 +134,7 @@
   binomials
 
   \begin{equation}
-    p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma{x_{ij} + 1}}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
+    p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
   \end{equation}
 
   We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
@@ -144,9 +145,8 @@
     E[z_{ik} \mid \vx_i, \xiplus, \vpi_i, \vmu_k, \vphi_k] \propto \sum_j \int_0^{\infty} \Pois(x_{ij}; \xiplus\lambda) \Gam(\lambda; \phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1})\, d\lambda.
   \end{equation}
 
-  In the M step, we can improve the likelihood by [[file:mepbpm.org][(batch)
-  gradient descent]], implemented in the Python package
-  ~mpebpm~. Alternatively, we can use an EM algorithm to solve this subproblem
+  In the M step, we can improve the likelihood by [[file:mepbpm.org][(batch) gradient
+  descent]]. Alternatively, we can use an EM algorithm to solve this subproblem
   (Huang et al. 2019), which introduces auxiliary variables (Adamidis 1999,
   Karlis 2005).
 
@@ -155,7 +155,7 @@
   (Neal and Hinton 1998)
 
   \begin{equation}
-    \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta))
+    \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta))
   \end{equation}
 
   Exact EM corresponds to (fully) alternately optimizing \(q\) and \(\theta\);
@@ -174,6 +174,262 @@
   :PROPERTIES:
   :CUSTOM_ID: results
   :END:
+** EM for negative binomial
+   :PROPERTIES:
+   :CUSTOM_ID: em-nbmix
+   :END:
+
+   Karlis 2005 gives an EM algorithm for fitting a Gamma mixture of Poissons
+
+   \begin{align}
+     x_i \mid \xiplus, \lambda_i &\sim \Pois(\xiplus \lambda_i)\\
+     \lambda_i \mid \alpha, \beta &\sim \Gam(\alpha, \beta)\\
+     \lambda_i \mid x_i, \xiplus, \alpha, \beta &\sim q \triangleq \Gam(x_i + \alpha, \xiplus + \beta)\\
+     E_q[\lambda_i] &= \frac{x_i + \alpha}{\xiplus + \beta}\\
+     E_q[\ln \lambda_i] &= \psi(x + \alpha) - \log(\xiplus + \beta)\\
+     E_q[\ln p(x_i, \lambda_i \mid \xiplus, \alpha, \beta)] &= \ell_i \triangleq x_i E_q[\ln \lambda_i] - E_q[\lambda_i] - \ln\Gamma(x_i + 1) + \alpha \ln\beta - \ln\Gamma(\alpha) + (\alpha - 1) E_q[\lambda_i] - \beta E_q[\lambda_i]\\
+     \ell &= \sum_i \ell_i\\
+     \frac{\partial\ell}{\partial\beta} &= \sum_i \frac{\alpha}{\beta} - E_q[\lambda_i] = 0\\
+     \beta &= \frac{\bar{\lambda}}{\alpha}\\
+     \frac{\partial\ell}{\partial\alpha} &= \sum_i \ln \beta - \psi(\alpha) + E_q[\ln x_i]\\
+     \frac{\partial^2\ell}{\partial\alpha^2} &= -n \psi^{(1)}(\alpha)
+   \end{align}
+
+   where \(\psi\) denotes the digamma function and \(\psi^{(1)}\) denotes the
+   trigamma function. The algorithm uses a partial M step (single
+   Newton-Raphson update) for \(\alpha\).
+
+   #+BEGIN_SRC ipython
+     def ebpm_gamma_em(x, s, max_iters=100, tol=1e-3):
+       """Return fitted parameters assuming g is a Gamma distribution
+
+       Returns log mu and -log phi
+
+       x - array-like [n,]
+       s - array-like [n,]
+
+       """
+       n = x.shape[0]
+       assert x.shape == (n,)
+       assert x.shape == s.shape
+       # a = 1 / phi; b = 1 / (mu phi)
+       a = 1
+       # Initialize at the Poisson MLE
+       b = s.sum() / x.sum()
+       obj = []
+       obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).sum())
+       for i in range(max_iters):
+         # E[lam | x]
+         pm = (x + a) / (s + b)
+         assert (pm > 0).all()
+         # E[ln lam | x]
+         plm = sp.digamma(x + a) - np.log(s + b)
+         b = a / pm.mean()
+         # Important: this appears to be incorrect in Karlis 2005
+         a += (np.log(b) - sp.digamma(a) + plm.mean()) / sp.polygamma(1, a)
+         assert a > 0
+         assert b > 0
+         obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).sum())
+         if obj[-1] < obj[-2]:
+           raise RuntimeError('llik decreased')
+         elif obj[-1] - obj[-2] < tol:
+           log_inv_disp = np.log(a)
+           log_mean = -np.log(b) + np.log(a)
+           return log_mean, log_inv_disp, obj
+       else:
+         raise RuntimeError('failed to converge in max_iters')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[101]:
+   :END:
+
+   Try EM for a simple example.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 100
+     log_mean = -10
+     log_inv_disp = 0
+     s = np.repeat(1e5, n)
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+     x = rng.poisson(s * lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[104]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     log_mu, neg_log_phi, trace = ebpm_gamma_em(x, s)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[105]:
+   :END:
+
+   Plot the simulated data, the ground truth marginal distribution on counts,
+   and the NB MLE.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/nb-em.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4.5, 2.5)
+     grid = np.arange(x.max() + 1)
+     plt.hist(x, bins=grid, color='0.7', density=True)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(-log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, color=cm(0), label='Ground truth')
+     plt.plot(grid + .5, st.nbinom(n=np.exp(neg_log_phi), p=1 / (1 + s[0] * np.exp(log_mu - neg_log_phi))).pmf(grid), lw=1, color=cm(1), label='NB MLE')
+     plt.legend(frameon=False)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[106]:
+   [[file:figure/nbmix.org/nb-em.png]]
+   :END:
+
+   Try a more extensive evaluation of the method.
+
+   #+BEGIN_SRC ipython :async t
+     n = 100
+     s = np.repeat(1e5, n)
+     result = dict()
+     for trial in range(5):
+       for log_mean in np.linspace(-12, -6, 7):
+         for log_inv_disp in np.linspace(0, 4, 5):
+           rng = np.random.default_rng(trial)
+           lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+           x = rng.poisson(s * lam)
+           start = time.time()
+           log_mean_hat, log_inv_disp_hat, trace = ebpm_gamma_em(x, s, max_iters=1000)
+           elapsed = time.time() - start
+           result[(log_mean, log_inv_disp, trial)] = pd.Series([log_mean_hat, log_inv_disp_hat, len(trace), elapsed])
+     result = (pd.DataFrame.from_dict(result, orient='index')
+               .reset_index()
+               .rename({f'level_{i}': k for i, k in enumerate(['log_mean', 'log_inv_disp', 'trial'])}, axis=1)
+               .rename({i: k for i, k in enumerate(['log_mean_hat', 'log_inv_disp_hat', 'num_iters', 'elapsed'])}, axis=1))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[138]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/nb-em-sim.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(4.5, 2.5)
+     for a in ax:
+       a.set_aspect('equal', adjustable='datalim')
+     ax[0].scatter(result['log_mean'], result['log_mean_hat'], c='k', s=1)
+     ax[0].set_xlabel('Ground truth $\ln(\mu)$')
+     ax[0].set_ylabel('Estimated $\ln(\mu)$')
+     ax[1].scatter(-result['log_inv_disp'], -result['log_inv_disp_hat'], c='k', s=1)
+     ax[1].set_xlabel('Ground truth $\ln(\phi)$')
+     ax[1].set_ylabel('Estimated $\ln(\phi)$')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[139]:
+   [[file:figure/nbmix.org/nb-em-sim.png]]
+   :END:
+
+   Estimate the average time (seconds) taken to fit each trial.
+
+   #+BEGIN_SRC ipython
+     result['elapsed'].mean(), result['elapsed'].std()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[140]:
+   : (0.18343861034938266, 0.18248113994496618)
+   :END:
+
+** EM for negative binomial mixture
+   :PROPERTIES:
+   :CUSTOM_ID: em-nbmix
+   :END:
+
+   #+BEGIN_SRC ipython
+     def _nb_mix_llik(theta, x, s):
+       """Return log likelihood matrix
+
+       theta - array-like [2, k]
+       x - array-like [n, 1]
+       s - array-like [n, 1]
+
+       """
+       # Important: so.minimize flattens theta
+       theta = theta.reshape(2, -1)
+       mean = np.exp(theta[0]).reshape(1, -1)
+       # Important: this can blow up
+       inv_disp = np.exp(np.clip(theta[1], -15, 15)).reshape(1, -1)
+       # [n, k]
+       L = st.nbinom(n=inv_disp, p=1 / (1 + s * mean / inv_disp)).logpmf(x.reshape(-1, 1))
+       assert L.shape == (x.shape[0], theta.shape[1])
+       assert np.isfinite(L).all()
+       return L
+
+     def _nb_mix_obj(theta, x, z, s):
+       """Return negative log likelihood
+
+       theta - array-like [2, k]
+       x - array-like [n, 1]
+       z - array-like [n, k]
+       s - array-like [n, 1]
+
+       """
+       L = _nb_mix_llik(theta, x, s)
+       m = L.max(axis=1, keepdims=True)
+       return -(np.log(z) + L).mean()
+
+     def ebpm_gamma_mix(x, s, k, max_iters=100, tol=1e-3, verbose=False, seed=1):
+       assert x.ndim == 2
+       n, p = x.shape
+       assert s.shape == (n, 1)
+       assert k > 1
+       rng = np.random.default_rng(seed)
+       log_mean = rng.normal(size=(p, k))
+       log_inv_disp = rng.normal(size=(p, k))
+       z = np.ones((n, k)) / k
+       loss = np.array([_nb_mix_obj(np.vstack([log_mean[j], log_inv_disp[j]]), x[:,j], z, s) for j in range(p)]).sum()
+       if verbose:
+         print(f'epoch 0: {loss:.4g}')
+       for t in range(max_iters):
+         for j in range(p):
+           opt = so.minimize(_nb_mix_obj, x0=np.vstack([log_mean[j], log_inv_disp[j]]), args=(x[:,j], z, s), method='nelder-mead', options={'maxiter':1000})
+           if not opt.success:
+             raise RuntimeError(f'M step failed to converge: {opt.message}')
+           log_mean[j] = opt.x[0]
+           log_inv_disp[j] = opt.x[1]
+         L = np.array([_nb_mix_llik(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], s) for j in range(p)]).sum(axis=0)
+         z = sp.softmax(L, axis=1)
+         update = np.array([_nb_mix_obj(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], z, s) for j in range(p)]).sum()
+         if update > loss:
+           raise RuntimeError('objective increased')
+         elif loss - update < tol:
+           return z, log_mean, log_inv_disp
+         else:
+           if verbose:
+             print(f'epoch {t + 1}: {loss:.4g}')
+           loss = update
+       raise RuntimeError('failed to converge in max_iters')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[78]:
+   :END:
+
 ** Example
    :PROPERTIES:
    :CUSTOM_ID: example
@@ -486,82 +742,6 @@
    :RESULTS:
    # Out[56]:
    [[file:figure/nbmix.org/sim-ex-fit.png]]
-   :END:
-
-** EM
-   :PROPERTIES:
-   :CUSTOM_ID: em
-   :END:
-
-   #+BEGIN_SRC ipython
-     def _nb_mix_llik(theta, x, s):
-       """Return log likelihood matrix
-
-       theta - array-like [2, k]
-       x - array-like [n, 1]
-       s - array-like [n, 1]
-
-       """
-       # Important: so.minimize flattens theta
-       theta = theta.reshape(2, -1)
-       mean = np.exp(theta[0]).reshape(1, -1)
-       # Important: this can blow up
-       inv_disp = np.exp(np.clip(theta[1], -15, 15)).reshape(1, -1)
-       # [n, k]
-       L = st.nbinom(n=inv_disp, p=1 / (1 + s * mean / inv_disp)).logpmf(x.reshape(-1, 1))
-       assert L.shape == (x.shape[0], theta.shape[1])
-       assert np.isfinite(L).all()
-       return L
-
-     def _nb_mix_obj(theta, x, z, s):
-       """Return negative log likelihood
-
-       theta - array-like [2, k]
-       x - array-like [n, 1]
-       z - array-like [n, k]
-       s - array-like [n, 1]
-
-       """
-       L = _nb_mix_llik(theta, x, s)
-       m = L.max(axis=1, keepdims=True)
-       return -(np.log(z) + L).mean()
-
-     def ebpm_gamma_mix(x, s, k, max_iters=100, tol=1e-3, verbose=False, seed=1):
-       assert x.ndim == 2
-       n, p = x.shape
-       assert s.shape == (n, 1)
-       assert k > 1
-       rng = np.random.default_rng(seed)
-       log_mean = rng.normal(size=(p, k))
-       log_inv_disp = rng.normal(size=(p, k))
-       z = np.ones((n, k)) / k
-       loss = np.array([_nb_mix_obj(np.vstack([log_mean[j], log_inv_disp[j]]), x[:,j], z, s) for j in range(p)]).sum()
-       if verbose:
-         print(f'epoch 0: {loss:.4g}')
-       for t in range(max_iters):
-         for j in range(p):
-           opt = so.minimize(_nb_mix_obj, x0=np.vstack([log_mean[j], log_inv_disp[j]]), args=(x[:,j], z, s), method='nelder-mead', options={'maxiter':1000})
-           if not opt.success:
-             raise RuntimeError(f'M step failed to converge: {opt.message}')
-           log_mean[j] = opt.x[0]
-           log_inv_disp[j] = opt.x[1]
-         L = np.array([_nb_mix_llik(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], s) for j in range(p)]).sum(axis=0)
-         z = sp.softmax(L, axis=1)
-         update = np.array([_nb_mix_obj(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], z, s) for j in range(p)]).sum()
-         if update > loss:
-           raise RuntimeError('objective increased')
-         elif loss - update < tol:
-           return z, log_mean, log_inv_disp
-         else:
-           if verbose:
-             print(f'epoch {t + 1}: {loss:.4g}')
-           loss = update
-       raise RuntimeError('failed to converge in max_iters')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[78]:
    :END:
 
 ** Amortized inference

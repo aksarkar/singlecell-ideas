@@ -58,7 +58,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[27]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -126,22 +126,40 @@
   Gamma distributions describe the distribution of true gene expression for
   each gene in each cluster
   ([[https://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens
-  2020]]). (In this parameterization, each has mean \(\mu_{kj}\) and variance
-  \(\mu_{kj}^2\phi_{kj}\).)
+  2020]]). (Each Gamma distribution is parameterized by shape and rate, and has
+  mean \(\mu_{kj}\) and variance \(\mu_{kj}^2\phi_{kj}\).)
 
   Under this model, the marginal likelihood is a mixture of negative
-  binomials. We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood
-  using an EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell
-  \(i\) is assigned to cluster \(k\), in the E step
+  binomials
+
+  \begin{equation}
+    p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma{x_{ij} + 1}}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
+  \end{equation}
+
+  We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
+  EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
+  assigned to cluster \(k\), in the E step
 
   \begin{equation}
     E[z_{ik} \mid \vx_i, \xiplus, \vpi_i, \vmu_k, \vphi_k] \propto \sum_j \int_0^{\infty} \Pois(x_{ij}; \xiplus\lambda) \Gam(\lambda; \phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1})\, d\lambda.
   \end{equation}
 
-  In the M step, we improve the likelihood by [[file:mepbpm.org][(batch)
-  gradient descent]], implemented in the Python package ~mpebpm~. To make the
-  model amenable to stochastic gradient descent, we can instead maximize the
-  evidence lower bound and amortize inference
+  In the M step, we can improve the likelihood by [[file:mepbpm.org][(batch)
+  gradient descent]], implemented in the Python package
+  ~mpebpm~. Alternatively, we can use an EM algorithm to solve this subproblem
+  (Huang et al. 2019), which introduces auxiliary variables (Adamidis 1999,
+  Karlis 2005).
+
+  Another alternative, which is amenable to stochastic gradient descent, is to
+  use the fact that EM can be viewed as maximizing the evidence lower bound
+  (Neal and Hinton 1998)
+
+  \begin{equation}
+    \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta))
+  \end{equation}
+
+  Exact EM corresponds to (fully) alternately optimizing \(q\) and \(\theta\);
+  however, we can instead amortize inference
   ([[https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf][Gershman and
   Goodman 2014]], [[https://arxiv.org/abs/1312.6114][Kingma and Welling 2014]],
   [[http://proceedings.mlr.press/v32/rezende14.html][Rezende et al. 2014]]),
@@ -170,7 +188,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[6]:
    :END:
 
    Get 256 B cells and 256 cytotoxic T cells.
@@ -186,7 +204,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[7]:
    :END:
 
    Plot a UMAP embedding of the data, coloring points by the ground truth
@@ -270,12 +288,64 @@
        onehot=pd.get_dummies(temp.obs['cell_type']).values,
        batch_size=32,
        num_epochs=320,
-       shuffle=True)
+       shuffle=True,
+       log_dir='runs/nbmix/pretrain/')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
+   # Out[49]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     y = pd.get_dummies(temp.obs['cell_type']).values
+     s = temp.X.sum(axis=1)
+     nb_llik = y.T @ st.nbinom(n=np.exp(y @ fit0[1]), p=1 / (1 + s.A * (y @ np.exp(fit0[0] - fit0[1])))).logpmf(temp.X.A)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[63]:
+   :END:
+
+   For comparison, estimate a point mass expression model for each gene, for
+   each cluster.
+
+   #+BEGIN_SRC ipython
+     y = pd.get_dummies(temp.obs['cell_type']).values
+     s = temp.X.sum(axis=1)
+     fit_pois = (y.T @ temp.X) / (y.T @ s)
+     pois_llik = y.T @ st.poisson(mu=s.A * (y @ fit_pois).A).logpmf(temp.X.A)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[65]:
+   :END:
+
+   For each gene, for each cluster, plot the log likelihood under the point
+   mass and Gamma expression models.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/ex-pois-nb-llik.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharey=True)
+     fig.set_size_inches(4.5, 2.5)
+     lim = [-1500, 0]
+     for i, (a, t) in enumerate(zip(ax, ['B cell', 'Cytotoxic T'])):
+       a.scatter(pois_llik[i], nb_llik[i], c='k', s=1, alpha=0.2)
+       a.plot(lim, lim, c='r', lw=1, ls=':')
+       a.set_xlim(lim)
+       a.set_ylim(lim)
+       a.set_title(t)
+       a.set_xlabel('Poisson log lik')
+     ax[0].set_ylabel('NB log lik')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[71]:
+   [[file:figure/nbmix.org/ex-pois-nb-llik.png]]
    :END:
 
    Look at the differences in the estimated mean parameter for each gene, to
@@ -744,6 +814,9 @@
   :RESULTS:
   # Out[125]:
   :END:
+
+  # https://scvi.readthedocs.io/en/stable/scvi.models.html#scvi.models.SCANVI
+  # https://scvi.readthedocs.io/en/stable/tutorials/scanvi.html?highlight=scanvi#EVF-/-not-EVF
 
   #+BEGIN_SRC ipython
     post = train.create_posterior(train.model, expr)

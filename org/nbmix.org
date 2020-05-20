@@ -137,27 +137,27 @@
 
   We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
   EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
-  assigned to cluster \(k\), the exact posterior \(q \triangleq
-  p(z_{ik} \mid \cdot)\) is available
+  assigned to cluster \(k\), the exact posterior
 
   \begin{align}
-    q(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
-    \alpha_{ik} &\propto \sum_j \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}
+    q(z_{i1}, \ldots, z_{iK}) &\triangleq p(z_{ik} \mid \cdot) = \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
+    \alpha_{ik} &\propto \sum_j \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
   \end{align}
 
-  The expected log joint with respect to \(q\) is
+  The expected log joint with respect to \(q\)
 
   \begin{multline}
     E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = \sum_k E_q[z_{ik}] \left[x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
-      \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right]
+      \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right].
   \end{multline}
 
   In the E step, the necessary expectations are analytic. In the M step, we can
   improve the likelihood by [[file:mepbpm.org][(batch) gradient descent]], or
   by mixed analytic and Newton-Raphson updates (Karlis 2005). Alternatively, we
-  can write the NB distribution as a Poisson sum of logarithmic series
-  distributed random variables (Quenouille 1949), which admits an EM algorithm
-  with fully analytic M step
+  can write the NB distribution as a Poisson sum of
+  [[https://en.wikipedia.org/wiki/Logarithmic_distribution][log-series
+  distributed random variables]] (Quenouille 1949), which admits an EM
+  algorithm with fully analytic M step
   ([[https://doi.org/10.1111/1467-842X.00075][Adamidis 1999]], Huang et
   al. 2019). Another alternative, which is amenable to stochastic gradient
   descent and online learning, is to use the fact that EM can be viewed as
@@ -165,7 +165,7 @@
   ([[https://doi.org/10.1007/978-94-011-5014-9_12][Neal and Hinton 1998]])
 
   \begin{equation}
-    \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta))
+    \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta)).
   \end{equation}
 
   Exact EM corresponds to (fully) alternately optimizing \(q\) and \(\theta\);
@@ -370,10 +370,12 @@
    : (0.18343861034938266, 0.18248113994496618)
    :END:
 
-** EM for negative binomial mixture
+** EM for Poisson-Gamma mixture
    :PROPERTIES:
    :CUSTOM_ID: em-nbmix
    :END:
+
+   We can use numerical methods to perform the M step.
 
    #+BEGIN_SRC ipython
      def _nb_mix_llik(theta, x, s):
@@ -448,21 +450,119 @@
 
 ** EM for Poisson-Log compound distribution
 
-   Adamidis 1999 uses the fact that the NB distribution can be derived as a
-   Poisson sum of
+   The NB distribution can be derived as a
+   [[https://en.wikipedia.org/wiki/Negative_binomial_distribution#Representation_as_compound_Poisson_distribution][Poisson-distributed
+   sum]] of
    [[https://en.wikipedia.org/wiki/Logarithmic_distribution][Log-distributed
    random variables]] (Quenouille 1949)
 
    \begin{align}
-     x_i \mid y_1, \ldots, y_{m_i} &= \sum_{t=1}^{m_i} y_t
-     m_i &\sim \Pois(\xiplus \lambda_i)
-     p(y_{it} \mid \phi) &= -\frac{\phi^{y_t}}{t \ln(1 - \phi)}, \quad t = 1, \ldots, x_i
+     x_i \mid y_1, \ldots, y_{m_i}, m_i &= \sum_{t=1}^{m_i} y_t\\
+     m_i &\sim \Pois(-n \ln(1 - p))\\
+     p(y_t \mid p) &= -\frac{p^{y_t}}{y_t \ln(1 - p)}, \quad t = 1, \ldots\\
+     p(x_i \mid n, p) &\propto p^n (1 - p)^{x_i}
    \end{align}
 
-   The key idea is that the parameters of the augmented model admit an analytic
-   M step.
+   To connect this parameterization to our parameterization, we have \(n =
+   1/\phi\) and \(p = 1 / (1 + \xiplus\mu\phi)\). Adamidis 1999 uses this fact to
+   derive a new auxiliary variable representation of the NB distribution
 
-** Example
+   \begin{equation}
+     p(y_t, z_t \mid p) = \frac{(1 - p)^{z_t} p^{y_t - 1}}{y_t}, z_t \in (0, 1)
+   \end{equation}
+
+   Letting \(q \triangleq p(m_i, y_1, \ldots, z_1, \ldots \mid x_i, n, p)\),
+
+   \begin{align}
+     E_q[\ln p(x_i \mid m_i, y_1, \ldots, z_1, \ldots, n, p)] &= E_q[m_i] \ln(-n \ln(1 - p)) - n \ln(1 - p) + E_q[\ln\Gamma(m_i + 1)]\\
+     &\quad + E_q[\textstyle\sum_{t=1}^{m_i} z_t] \ln(1 - p) + (\textstyle\sum_{t=1}^{m_i} E_q[y_t] - E_q[m_i]) \ln p + \mathrm{const}\\
+     &= E_q[m_i] \ln(-n \ln(1 - p)) - n \ln(1 - p) + E_q[\ln\Gamma(m_i + 1)]\\
+     E_q[\textstyle\sum_t z_t] &= E_q[m_i] E_q[z_t]\\
+     E_q[m_i] &= 
+   \end{align}
+
+   #+BEGIN_SRC ipython
+     def pois_log_series_em(x, s, max_iters=100, tol=1e-3):
+       n = x.shape[0]
+       assert x.shape == (n,)
+       assert x.shape == s.shape
+       z = .5
+       m = .5 * x
+       p = (x - m).sum() / (x + m * z - m)
+       n = m.mean()
+       obj = [st.nbinom(n=n, p=p).logpmf(x).sum()]
+       for i in range(max_iters):
+         z = -((1 - p) / p - 1 / np.log(1 - p))
+         assert 0 < z < 1
+         alpha = n / np.log(1 - p)
+         assert alpha > 0
+         m = alpha * (sp.digamma(alpha + x) - sp.digamma(alpha))
+         assert m > 0
+         p = (x - m).sum() / (x + m * z - m)
+         assert p > 0
+         n = m.mean()
+         assert n > 0
+         obj.append(st.nbinom(n=n, p=p).logpmf(x).sum())
+         if obj[-1] < obj[-2]:
+           raise RuntimeError('llik decreased')
+         elif obj[-1] - obj[-2] < tol:
+           log_inv_disp = -np.log(n)
+           log_mean = np.log(1 / p - 1) - np.log(s) - np.log(n)
+           return log_mean, log_inv_disp, obj
+       else:
+         raise RuntimeError('failed to converge in max_iters')
+   #+END_SRC
+
+   Try EM for a simple example.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 100
+     log_mean = -10
+     log_inv_disp = 0
+     s = np.repeat(1e5, n)
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+     x = rng.poisson(s * lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[104]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     log_mu, neg_log_phi, trace = ebpm_gamma_em(x, s)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[105]:
+   :END:
+
+   Plot the simulated data, the ground truth marginal distribution on counts,
+   and the NB MLE.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/nb-em.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4.5, 2.5)
+     grid = np.arange(x.max() + 1)
+     plt.hist(x, bins=grid, color='0.7', density=True)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(-log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, color=cm(0), label='Ground truth')
+     plt.plot(grid + .5, st.nbinom(n=np.exp(neg_log_phi), p=1 / (1 + s[0] * np.exp(log_mu - neg_log_phi))).pmf(grid), lw=1, color=cm(1), label='NB MLE')
+     plt.legend(frameon=False)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[106]:
+   [[file:figure/nbmix.org/nb-em.png]]
+   :END:
+
+** Real data example
    :PROPERTIES:
    :CUSTOM_ID: example
    :END:

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-19 Tue 16:57 -->
+<!-- 2020-05-19 Tue 21:18 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -262,8 +262,9 @@ for the JavaScript code in this tag.
 <li><a href="#method">Method</a></li>
 <li><a href="#results">Results</a>
 <ul>
-<li><a href="#em-nbmix">EM for negative binomial</a></li>
+<li><a href="#em-nbmix">EM for Poisson-Gamma compound distribution</a></li>
 <li><a href="#em-nbmix">EM for negative binomial mixture</a></li>
+<li><a href="#org23cddea">EM for Poisson-Log compound distribution</a></li>
 <li><a href="#example">Example</a></li>
 <li><a href="#leiden">Leiden algorithm</a></li>
 <li><a href="#mpebpm">MPEBPM</a></li>
@@ -384,17 +385,13 @@ observed in cell \(i\)</li>
 
 <p>
 The intuition behind this model is that each cluster \(k\) is defined by a
-collection of independent Gamma distributions, one per gene \(j\). These
-Gamma distributions describe the distribution of true gene expression for
-each gene in each cluster
+collection of independent Gamma distributions (parameterized by shape and
+rate), one per gene \(j\), which describe the distribution of true gene
+expression for each gene in each cluster
 (<a href="https://dx.doi.org/10.1101/2020.04.07.030007">Sarkar and Stephens
-2020</a>). (Each Gamma distribution is parameterized by shape and rate, and has
-mean \(\mu_{kj}\) and variance \(\mu_{kj}^2\phi_{kj}\).)
-</p>
-
-<p>
-Under this model, the marginal likelihood is a mixture of negative
-binomials
+2020</a>). In this parameterization, each Gamma distribution has mean
+\(\mu_{kj}\) and variance \(\mu_{kj}^2\phi_{kj}\). Under this model, the
+marginal likelihood is a mixture of negative binomials
 </p>
 
 \begin{equation}
@@ -404,24 +401,36 @@ binomials
 <p>
 We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
 EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
-assigned to cluster \(k\), in the E step
+assigned to cluster \(k\), the exact posterior \(q \triangleq
+  p(z_{ik} \mid \cdot)\) is available
 </p>
 
-\begin{equation}
-  E[z_{ik} \mid \vx_i, \xiplus, \vpi_i, \vmu_k, \vphi_k] \propto \sum_j \int_0^{\infty} \Pois(x_{ij}; \xiplus\lambda) \Gam(\lambda; \phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1})\, d\lambda.
-\end{equation}
+\begin{align}
+  q(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
+  \alpha_{ik} &\propto \sum_j \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}
+\end{align}
 
 <p>
-In the M step, we can improve the likelihood by <a href="mepbpm.html">(batch) gradient
-descent</a>. Alternatively, we can use an EM algorithm to solve this subproblem
-(Huang et al. 2019), which introduces auxiliary variables (Adamidis 1999,
-Karlis 2005).
+The expected log joint with respect to \(q\) is
 </p>
 
+\begin{multline}
+  E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = \sum_k E_q[z_{ik}] \left[x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
+    \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right]
+\end{multline}
+
 <p>
-Another alternative, which is amenable to stochastic gradient descent, is to
-use the fact that EM can be viewed as maximizing the evidence lower bound
-(Neal and Hinton 1998)
+In the E step, the necessary expectations are analytic. In the M step, we can
+improve the likelihood by <a href="mepbpm.html">(batch) gradient descent</a>, or
+by mixed analytic and Newton-Raphson updates (Karlis 2005). Alternatively, we
+can write the NB distribution as a Poisson sum of logarithmic series
+distributed random variables (Quenouille 1949), which admits an EM algorithm
+with fully analytic M step
+(<a href="https://doi.org/10.1111/1467-842X.00075">Adamidis 1999</a>, Huang et
+al. 2019). Another alternative, which is amenable to stochastic gradient
+descent and online learning, is to use the fact that EM can be viewed as
+maximizing the evidence lower bound
+(<a href="https://doi.org/10.1007/978-94-011-5014-9_12">Neal and Hinton 1998</a>)
 </p>
 
 \begin{equation}
@@ -448,11 +457,15 @@ learning a neural network \(f_z\) mapping \(\vx_i \rightarrow \vz_i\)
 <h2 id="results"><a id="orgdca968c"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
-<div id="outline-container-orgb70f60a" class="outline-3">
-<h3 id="em-nbmix"><a id="orgb70f60a"></a>EM for negative binomial</h3>
+<div id="outline-container-orga0d3d31" class="outline-3">
+<h3 id="em-nbmix"><a id="orga0d3d31"></a>EM for Poisson-Gamma compound distribution</h3>
 <div class="outline-text-3" id="text-em-nbmix">
 <p>
-Karlis 2005 gives an EM algorithm for fitting a Gamma mixture of Poissons
+<a href="https://doi.org/10.1017/S0515036100014033">Karlis 2005</a> gives an EM
+algorithm for fitting a Gamma mixture of Poissons. The key idea is that, due
+to Poisson-Gamma conjugacy, the exact posterior is available, as are the
+necessary posterior moments. The main disadvantage of this approach is that
+it requires (one-dimensional) numerical optimization in the M step.
 </p>
 
 \begin{align}
@@ -588,6 +601,10 @@ Try a more extensive evaluation of the method.
 </pre>
 </div>
 
+<p>
+Plot the estimates against the ground truth values.
+</p>
+
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
 <span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
@@ -695,6 +712,29 @@ Estimate the average time (seconds) taken to fit each trial.
   <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge in max_iters'</span>)
 </pre>
 </div>
+</div>
+</div>
+
+<div id="outline-container-org23cddea" class="outline-3">
+<h3 id="org23cddea">EM for Poisson-Log compound distribution</h3>
+<div class="outline-text-3" id="text-org23cddea">
+<p>
+Adamidis 1999 uses the fact that the NB distribution can be derived as a
+Poisson sum of
+<a href="https://en.wikipedia.org/wiki/Logarithmic_distribution">Log-distributed
+random variables</a> (Quenouille 1949)
+</p>
+
+\begin{align}
+  x_i \mid y_1, \ldots, y_{m_i} &= \sum_{t=1}^{m_i} y_t
+  m_i &\sim \Pois(\xiplus \lambda_i)
+  p(y_{it} \mid \phi) &= -\frac{\phi^{y_t}}{t \ln(1 - \phi)}, \quad t = 1, \ldots, x_i
+\end{align}
+
+<p>
+The key idea is that the parameters of the augmented model admit an analytic
+M step.
+</p>
 </div>
 </div>
 
@@ -1308,7 +1348,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-19 Tue 16:57</p>
+<p class="date">Created: 2020-05-19 Tue 21:18</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

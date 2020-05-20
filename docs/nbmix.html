@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-20 Wed 13:42 -->
+<!-- 2020-05-20 Wed 21:58 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -262,10 +262,10 @@ for the JavaScript code in this tag.
 <li><a href="#method">Methods</a>
 <ul>
 <li><a href="#org0e14e11">Model specification</a></li>
-<li><a href="#em-nbmix">EM for Poisson-Gamma compound distribution</a></li>
-<li><a href="#em-nbmix">EM for Poisson-Gamma mixture</a></li>
+<li><a href="#em-nb">EM for Poisson-Gamma</a></li>
+<li><a href="#em-nbmix">EM for Poisson&#x2013;Gamma-mixture</a></li>
 <li><a href="#org23cddea">EM for Poisson-Log compound distribution</a></li>
-<li><a href="#org88cf7bf">Amortized inference</a></li>
+<li><a href="#orga2c4239">Amortized inference</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
@@ -362,6 +362,8 @@ We assume \(
    \DeclareMathOperator\N{\mathcal{N}}
    \DeclareMathOperator\Pois{Poisson}
    \DeclareMathOperator\diag{diag}
+   \DeclareMathOperator\KL{\mathcal{KL}}
+   \newcommand\kl[2]{\KL(#1\;\Vert\;#2)}
    \newcommand\xiplus{x_{i+}}
    \newcommand\mi{\mathbf{I}}
    \newcommand\vu{\mathbf{u}}
@@ -410,16 +412,16 @@ marginal likelihood is a mixture of negative binomials
 </div>
 </div>
 
-<div id="outline-container-orga0d3d31" class="outline-3">
-<h3 id="em-nbmix"><a id="orga0d3d31"></a>EM for Poisson-Gamma compound distribution</h3>
-<div class="outline-text-3" id="text-em-nbmix">
+<div id="outline-container-org8c17c81" class="outline-3">
+<h3 id="em-nb"><a id="org8c17c81"></a>EM for Poisson-Gamma</h3>
+<div class="outline-text-3" id="text-em-nb">
 <p>
 Considering just a simple Gamma prior,
 <a href="https://doi.org/10.1017/S0515036100014033">Karlis 2005</a> gives an EM
-algorithm for fitting the resulting Gamma mixture of Poissons. The key idea
-is that, due to Poisson-Gamma conjugacy, the exact posterior is analytic, as
-are the necessary posterior moments. The main disadvantage of this approach
-is that it requires (one-dimensional) numerical optimization in the M step.
+algorithm for maximizing the marginal likelihood. The key idea is that, due
+to Poisson-Gamma conjugacy, the exact posterior is analytic, as are the
+necessary posterior moments. The main disadvantage of this approach is that
+it requires (one-dimensional) numerical optimization in the M step.
 </p>
 
 \begin{align}
@@ -597,14 +599,14 @@ Estimate the average time (seconds) taken to fit each trial.
 </div>
 </div>
 
-<div id="outline-container-orgecb1e60" class="outline-3">
-<h3 id="em-nbmix"><a id="orgecb1e60"></a>EM for Poisson-Gamma mixture</h3>
+<div id="outline-container-org839b8c3" class="outline-3">
+<h3 id="em-nbmix"><a id="org839b8c3"></a>EM for Poisson&#x2013;Gamma-mixture</h3>
 <div class="outline-text-3" id="text-em-nbmix">
 <p>
-Considering the Gamma mixture prior, we can estimate \(\vpi, \vmu, \vphi\) by
-maximizing the likelihood using an EM algorithm. Letting \(z_{ik} \in \{0,
-   1\}\) indicate whether cell \(i\) is assigned to cluster \(k\), the exact
-posterior
+Considering the Gamma mixture prior, we can estimate \(\vpi, \vmu, \vphi\)
+by maximizing the likelihood using an EM algorithm. Letting \(z_{ik} \in
+   \{0, 1\}\) indicate whether cell \(i\) is assigned to cluster \(k\), the
+exact posterior
 </p>
 
 \begin{align}
@@ -613,18 +615,18 @@ posterior
 \end{align}
 
 <p>
-The expected log joint with respect to \(q\)
+The expected log joint probability with respect to \(q\)
 </p>
 
 \begin{multline}
-  E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = \sum_k E_q[z_{ik}] \left[x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
+  E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = E_q[z_{ik}] \left[\ln \pi_{ik} + x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
     \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right].
 \end{multline}
 
 <p>
 In the E step, the necessary expectations are analytic. In the M step, we
-can improve the likelihood, e.g. by <a href="mepbpm.html">(batch) gradient
-descent</a>.
+can improve the expected log joint probability, e.g. by
+<a href="mepbpm.html">(batch) gradient descent</a>.
 </p>
 </div>
 </div>
@@ -731,9 +733,9 @@ Try EM for a simple example.
 </div>
 </div>
 
-<div id="outline-container-org88cf7bf" class="outline-3">
-<h3 id="org88cf7bf">Amortized inference</h3>
-<div class="outline-text-3" id="text-org88cf7bf">
+<div id="outline-container-orga2c4239" class="outline-3">
+<h3 id="orga2c4239">Amortized inference</h3>
+<div class="outline-text-3" id="text-orga2c4239">
 <p>
 Another alternative algorithm, which is amenable to stochastic gradient
 descent and online learning, is to use the fact that EM can be viewed as
@@ -741,24 +743,38 @@ maximizing the evidence lower bound
 (<a href="https://doi.org/10.1007/978-94-011-5014-9_12">Neal and Hinton 1998</a>)
 </p>
 
-\begin{equation}
-  \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta)).
-\end{equation}
+\begin{align}
+  \max_{\theta} \ln p(x \mid \theta) &= \max_{q, \theta} \ln p(x \mid \theta) - \kl{q(z)}{p(z \mid x, \theta)}\\
+  &= \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \kl{q(z)}{p(z \mid \theta)}.
+\end{align}
 
 <p>
-Exact EM corresponds to (fully) alternately optimizing \(q = p(z \mid x,
+Exact EM corresponds to (fully) alternately optimizing \(q^* = p(z \mid x,
    \theta)\) and \(\theta\); however, we can instead amortize inference
 (<a href="https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf">Gershman and
 Goodman 2014</a>, <a href="https://arxiv.org/abs/1312.6114">Kingma and Welling
 2014</a>, <a href="http://proceedings.mlr.press/v32/rezende14.html">Rezende et
-al. 2014</a>), learning a neural network \(f_z\) mapping \(\vx_i \rightarrow
-   \vz_i\)
+al. 2014</a>), estimating a variational approximation parameterized by a
+neural network \(f_z\), mapping \(\vx_i \rightarrow \vz_i\)
 </p>
 
 \begin{align}
-  p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
+  p(z_{i1}, \ldots, z_{iK} \mid \vpi) &= \Mult(1, \vpi)\\
   q(z_{i1}, \ldots, z_{iK} \mid \vx_i) &= \Mult(1, f_z(\vx_i)).
 \end{align}
+
+<p>
+The evidence lower bound is analytic
+</p>
+
+\begin{multline}
+  F = \sum_{i, j, k} f_z(\vx_i)_k \left[\ln \pi_{ik} - \ln f_z(\vx_i)_k + x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
+    \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right],
+\end{multline}
+
+<p>
+and can be optimized using SGD.
+</p>
 </div>
 </div>
 </div>
@@ -1017,7 +1033,7 @@ Compute a weighted log likelihood.
 </div>
 
 <pre class="example">
-tensor(-1872.5645)
+tensor(-1872.7723)
 
 </pre>
 
@@ -1027,17 +1043,35 @@ Try fitting the model from a random initialization (49 s).
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
-torch.manual_seed(0)
+torch.manual_seed(2)
 <span class="org-variable-name">fit</span> = mpebpm.gam_mix.ebpm_gam_mix_em(
   x=temp.X.A,
   s=temp.X.<span class="org-builtin">sum</span>(axis=1),
   y=torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>).cuda(),
   k=2,
-  num_epochs=400,
+  lr=1e-3,
+  num_epochs=100,
   max_em_iters=10,
-  log_dir=<span class="org-string">'runs/nbmix/mpebpm-random-init0-iter10'</span>)
+  log_dir=<span class="org-string">'runs/nbmix/mpebpm-random-init2-pois1-iter10'</span>)
 </pre>
 </div>
+
+<p>
+Compare the log likelihood using the ground truth labels to the log
+likelihood using the estimated cluster weights.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series({<span class="org-string">'ground_truth'</span>: nb_llik.mean(),
+           <span class="org-string">'est'</span>: (fit[2].T @ st.nbinom(n=np.exp(fit[2] @ fit[1]), p=1 / (1 + s.A * (fit[2] @ np.exp(fit[0] - fit[1])))).logpmf(temp.X.A)).mean()})
+</pre>
+</div>
+
+<pre class="example">
+ground_truth   -41.151709
+est            -41.544491
+dtype: float64
+</pre>
 
 <p>
 Compute the cross entropy between the estimated \(\hat{z}\) and the ground
@@ -1045,9 +1079,13 @@ truth.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">torch.nn.functional.binary_cross_entropy(
-  torch.tensor(fit[-1], dtype=torch.<span class="org-builtin">float</span>),
-  torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>))
+<pre class="src src-ipython">torch.<span class="org-builtin">min</span>(
+  torch.nn.functional.binary_cross_entropy(
+    torch.tensor(fit[-1], dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>)),
+  torch.nn.functional.binary_cross_entropy(
+    torch.tensor(1 - fit[-1], dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>)))
 </pre>
 </div>
 
@@ -1081,8 +1119,8 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orgf9b004c" class="outline-3">
-<h3 id="amortized"><a id="orgf9b004c"></a>Amortized inference</h3>
+<div id="outline-container-org94cfe33" class="outline-3">
+<h3 id="amortized"><a id="org94cfe33"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
 Fit the amortized inference model, initializing \(\vmu_k, \vphi_k\) from the
@@ -1155,7 +1193,7 @@ starting from the ground-truth labels.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">torch.manual_seed(1)
+<pre class="src src-ipython">torch.manual_seed(0)
 <span class="org-variable-name">fit1</span> = mpebpm.gam_mix.EBPMGammaMix(
   p=temp.shape[1],
   k=2,
@@ -1186,7 +1224,7 @@ torch.nn.functional.binary_cross_entropy(
 </div>
 
 <pre class="example">
-tensor(0.2482)
+tensor(15.2364)
 
 </pre>
 
@@ -1377,7 +1415,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-20 Wed 13:42</p>
+<p class="date">Created: 2020-05-20 Wed 21:58</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

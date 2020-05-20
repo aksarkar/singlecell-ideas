@@ -100,6 +100,8 @@
    \DeclareMathOperator\N{\mathcal{N}}
    \DeclareMathOperator\Pois{Poisson}
    \DeclareMathOperator\diag{diag}
+   \DeclareMathOperator\KL{\mathcal{KL}}
+   \newcommand\kl[2]{\KL(#1\;\Vert\;#2)}
    \newcommand\xiplus{x_{i+}}
    \newcommand\mi{\mathbf{I}}
    \newcommand\vu{\mathbf{u}}
@@ -139,17 +141,17 @@
      p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
    \end{equation}
 
-** EM for Poisson-Gamma compound distribution
+** EM for Poisson-Gamma
    :PROPERTIES:
-   :CUSTOM_ID: em-nbmix
+   :CUSTOM_ID: em-nb
    :END:
 
    Considering just a simple Gamma prior,
    [[https://doi.org/10.1017/S0515036100014033][Karlis 2005]] gives an EM
-   algorithm for fitting the resulting Gamma mixture of Poissons. The key idea
-   is that, due to Poisson-Gamma conjugacy, the exact posterior is analytic, as
-   are the necessary posterior moments. The main disadvantage of this approach
-   is that it requires (one-dimensional) numerical optimization in the M step.
+   algorithm for maximizing the marginal likelihood. The key idea is that, due
+   to Poisson-Gamma conjugacy, the exact posterior is analytic, as are the
+   necessary posterior moments. The main disadvantage of this approach is that
+   it requires (one-dimensional) numerical optimization in the M step.
 
    \begin{align}
      x_i \mid \xiplus, \lambda_i &\sim \Pois(\xiplus \lambda_i)\\
@@ -326,31 +328,31 @@
    : (0.18343861034938266, 0.18248113994496618)
    :END:
 
-** EM for Poisson-Gamma mixture
+** EM for Poisson--Gamma-mixture
    :PROPERTIES:
    :CUSTOM_ID: em-nbmix
    :END:
 
-   Considering the Gamma mixture prior, we can estimate \(\vpi, \vmu, \vphi\) by
-   maximizing the likelihood using an EM algorithm. Letting \(z_{ik} \in \{0,
-   1\}\) indicate whether cell \(i\) is assigned to cluster \(k\), the exact
-   posterior
+   Considering the Gamma mixture prior, we can estimate \(\vpi, \vmu, \vphi\)
+   by maximizing the likelihood using an EM algorithm. Letting \(z_{ik} \in
+   \{0, 1\}\) indicate whether cell \(i\) is assigned to cluster \(k\), the
+   exact posterior
 
    \begin{align}
      q(z_{i1}, \ldots, z_{iK}) &\triangleq p(z_{ik} \mid \cdot) = \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
      \alpha_{ik} &\propto \sum_j \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
    \end{align}
 
-   The expected log joint with respect to \(q\)
+   The expected log joint probability with respect to \(q\)
 
    \begin{multline}
-     E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = \sum_k E_q[z_{ik}] \left[x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
+     E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = E_q[z_{ik}] \left[\ln \pi_{ik} + x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
        \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right].
    \end{multline}
 
    In the E step, the necessary expectations are analytic. In the M step, we
-   can improve the likelihood, e.g. by [[file:mepbpm.org][(batch) gradient
-   descent]].
+   can improve the expected log joint probability, e.g. by
+   [[file:mepbpm.org][(batch) gradient descent]].
 
 ** EM for Poisson-Log compound distribution
 
@@ -459,22 +461,32 @@
    maximizing the evidence lower bound
    ([[https://doi.org/10.1007/978-94-011-5014-9_12][Neal and Hinton 1998]])
 
-   \begin{equation}
-     \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta)).
-   \end{equation}
+   \begin{align}
+     \max_{\theta} \ln p(x \mid \theta) &= \max_{q, \theta} \ln p(x \mid \theta) - \kl{q(z)}{p(z \mid x, \theta)}\\
+     &= \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \kl{q(z)}{p(z \mid \theta)}.
+   \end{align}
 
-   Exact EM corresponds to (fully) alternately optimizing \(q = p(z \mid x,
+   Exact EM corresponds to (fully) alternately optimizing \(q^* = p(z \mid x,
    \theta)\) and \(\theta\); however, we can instead amortize inference
    ([[https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf][Gershman and
    Goodman 2014]], [[https://arxiv.org/abs/1312.6114][Kingma and Welling
    2014]], [[http://proceedings.mlr.press/v32/rezende14.html][Rezende et
-   al. 2014]]), learning a neural network \(f_z\) mapping \(\vx_i \rightarrow
-   \vz_i\)
+   al. 2014]]), estimating a variational approximation parameterized by a
+   neural network \(f_z\), mapping \(\vx_i \rightarrow \vz_i\)
 
    \begin{align}
-     p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
+     p(z_{i1}, \ldots, z_{iK} \mid \vpi) &= \Mult(1, \vpi)\\
      q(z_{i1}, \ldots, z_{iK} \mid \vx_i) &= \Mult(1, f_z(\vx_i)).
    \end{align}
+
+   The evidence lower bound is analytic
+
+   \begin{multline}
+     F = \sum_{i, j, k} f_z(\vx_i)_k \left[\ln \pi_{ik} - \ln f_z(\vx_i)_k + x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
+       \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right],
+   \end{multline}
+
+   and can be optimized using SGD.
 
 * Results
   :PROPERTIES:
@@ -494,7 +506,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[4]:
    :END:
 
    Get 256 B cells and 256 cytotoxic T cells.
@@ -510,7 +522,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[5]:
    :END:
 
    Plot a UMAP embedding of the data, coloring points by the ground truth
@@ -600,7 +612,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[49]:
+   # Out[7]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -611,7 +623,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[63]:
+   # Out[61]:
    :END:
 
    For comparison, estimate a point mass expression model for each gene, for
@@ -687,7 +699,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[33]:
+   # Out[19]:
    :END:
 
    Plot the log likelihood difference between the two components for each data
@@ -720,7 +732,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[108]:
+   # Out[21]:
    : tensor(0.)
    :END:
 
@@ -735,42 +747,65 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[43]:
-   : tensor(-1872.5645)
+   # Out[22]:
+   : tensor(-1872.7723)
    :END:
 
    Try fitting the model from a random initialization (49 s).
 
    #+BEGIN_SRC ipython :async t
      import imp; imp.reload(mpebpm.gam_mix)
-     torch.manual_seed(0)
+     torch.manual_seed(2)
      fit = mpebpm.gam_mix.ebpm_gam_mix_em(
        x=temp.X.A,
        s=temp.X.sum(axis=1),
        y=torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float).cuda(),
        k=2,
-       num_epochs=400,
+       lr=1e-3,
+       num_epochs=100,
        max_em_iters=10,
-       log_dir='runs/nbmix/mpebpm-random-init0-iter10')
+       log_dir='runs/nbmix/mpebpm-random-init2-pois1-iter10')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[53]:
+   # Out[121]:
+   :END:
+
+   Compare the log likelihood using the ground truth labels to the log
+   likelihood using the estimated cluster weights.
+
+   #+BEGIN_SRC ipython
+     pd.Series({'ground_truth': nb_llik.mean(),
+                'est': (fit[2].T @ st.nbinom(n=np.exp(fit[2] @ fit[1]), p=1 / (1 + s.A * (fit[2] @ np.exp(fit[0] - fit[1])))).logpmf(temp.X.A)).mean()})
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[128]:
+   #+BEGIN_EXAMPLE
+     ground_truth   -41.151709
+     est            -41.544491
+     dtype: float64
+   #+END_EXAMPLE
    :END:
 
    Compute the cross entropy between the estimated \(\hat{z}\) and the ground
    truth.
 
    #+BEGIN_SRC ipython
-     torch.nn.functional.binary_cross_entropy(
-       torch.tensor(fit[-1], dtype=torch.float),
-       torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float))
+     torch.min(
+       torch.nn.functional.binary_cross_entropy(
+         torch.tensor(fit[-1], dtype=torch.float),
+         torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float)),
+       torch.nn.functional.binary_cross_entropy(
+         torch.tensor(1 - fit[-1], dtype=torch.float),
+         torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float)))
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[55]:
+   # Out[132]:
    : tensor(0.)
    :END:
 
@@ -790,7 +825,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[56]:
+   # Out[133]:
    [[file:figure/nbmix.org/sim-ex-fit.png]]
    :END:
 
@@ -814,7 +849,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[57]:
+   # Out[10]:
    :END:
 
    Look at the initial loss.
@@ -869,7 +904,7 @@
    starting from the ground-truth labels.
 
    #+BEGIN_SRC ipython :async t
-     torch.manual_seed(1)
+     torch.manual_seed(0)
      fit1 = mpebpm.gam_mix.EBPMGammaMix(
        p=temp.shape[1],
        k=2,
@@ -888,7 +923,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[62]:
+   # Out[14]:
    :END:
 
    Compute the cross entropy loss over the posterior mean cluster assignments.
@@ -902,8 +937,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[63]:
-   : tensor(0.2482)
+   # Out[11]:
+   : tensor(15.2364)
    :END:
 
    Plot the approximate posterior over cluster assignments for each point.

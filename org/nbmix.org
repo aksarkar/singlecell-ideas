@@ -86,114 +86,68 @@
 
   #+CALL: tensorboard(venv="singlecell") :session tensorboard :dir /scratch/midway2/aksarkar/singlecell/
 
-* Method
+* Methods
   :PROPERTIES:
   :CUSTOM_ID: method
   :END:
+** Model specification
 
-  We assume \(
-  \DeclareMathOperator\Gam{Gamma}
-  \DeclareMathOperator\Mult{Multinomial}
-  \DeclareMathOperator\N{\mathcal{N}}
-  \DeclareMathOperator\Pois{Poisson}
-  \DeclareMathOperator\diag{diag}
-  \newcommand\xiplus{x_{i+}}
-  \newcommand\mi{\mathbf{I}}
-  \newcommand\vu{\mathbf{u}}
-  \newcommand\vx{\mathbf{x}}
-  \newcommand\vz{\mathbf{z}}
-  \newcommand\vlambda{\boldsymbol{\lambda}}
-  \newcommand\vmu{\boldsymbol{\mu}}
-  \newcommand\vphi{\boldsymbol{\phi}}
-  \newcommand\vpi{\boldsymbol{\pi}}
-  \)
+   We assume \(
+   \DeclareMathOperator\Gam{Gamma}
+   \DeclareMathOperator\Mult{Multinomial}
+   \DeclareMathOperator\N{\mathcal{N}}
+   \DeclareMathOperator\Pois{Poisson}
+   \DeclareMathOperator\diag{diag}
+   \newcommand\xiplus{x_{i+}}
+   \newcommand\mi{\mathbf{I}}
+   \newcommand\vu{\mathbf{u}}
+   \newcommand\vx{\mathbf{x}}
+   \newcommand\vz{\mathbf{z}}
+   \newcommand\vlambda{\boldsymbol{\lambda}}
+   \newcommand\vmu{\boldsymbol{\mu}}
+   \newcommand\vphi{\boldsymbol{\phi}}
+   \newcommand\vpi{\boldsymbol{\pi}}
+   \)
 
-  \begin{align}
-    x_{ij} \mid \xiplus, \lambda_{ij} &\sim \Pois(\xiplus \lambda_{ij})\\
-    \lambda_{ij} \mid \vpi_i, \vmu_k, \vphi_k &\sim \sum_{k=1}^{K} \pi_{ik} \Gam(\phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1}),
-  \end{align}
+   \begin{align}
+     x_{ij} \mid \xiplus, \lambda_{ij} &\sim \Pois(\xiplus \lambda_{ij})\\
+     \lambda_{ij} \mid \vpi_i, \vmu_k, \vphi_k &\sim \sum_{k=1}^{K} \pi_{ik} \Gam(\phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1}),
+   \end{align}
 
-  where
+   where
 
-  - \(x_{ij}\) denotes the number of molecules of gene \(j\) observed in cell \(i\)
-  - \(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of molecules
-    observed in cell \(i\)
-  - \(\vpi_i\) denotes cluster assignment probabilities for cell \(i\)
-  - \(\vmu_k\) denotes the cluster "centroid" for cluster \(k\), and
-    \(\vphi_k\) describes stochastic perturbations within each cluster
+   - \(x_{ij}\) denotes the number of molecules of gene \(j\) observed in cell \(i\)
+   - \(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of molecules
+     observed in cell \(i\)
+   - \(\vpi_i\) denotes cluster assignment probabilities for cell \(i\)
+   - \(\vmu_k\) denotes the cluster "centroid" for cluster \(k\), and
+     \(\vphi_k\) describes stochastic perturbations within each cluster
 
-  The intuition behind this model is that each cluster \(k\) is defined by a
-  collection of independent Gamma distributions (parameterized by shape and
-  rate), one per gene \(j\), which describe the distribution of true gene
-  expression for each gene in each cluster
-  ([[https://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens
-  2020]]). In this parameterization, each Gamma distribution has mean
-  \(\mu_{kj}\) and variance \(\mu_{kj}^2\phi_{kj}\). Under this model, the
-  marginal likelihood is a mixture of negative binomials
+   The intuition behind this model is that each cluster \(k\) is defined by a
+   collection of independent Gamma distributions (parameterized by shape and
+   rate), one per gene \(j\), which describe the distribution of true gene
+   expression for each gene in each cluster
+   ([[https://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens
+   2020]]). In this parameterization, each Gamma distribution has mean
+   \(\mu_{kj}\) and variance \(\mu_{kj}^2\phi_{kj}\). Under this model, the
+   marginal likelihood is a mixture of negative binomials
 
-  \begin{equation}
-    p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
-  \end{equation}
+   \begin{equation}
+     p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
+   \end{equation}
 
-  We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
-  EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
-  assigned to cluster \(k\), the exact posterior
-
-  \begin{align}
-    q(z_{i1}, \ldots, z_{iK}) &\triangleq p(z_{ik} \mid \cdot) = \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
-    \alpha_{ik} &\propto \sum_j \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
-  \end{align}
-
-  The expected log joint with respect to \(q\)
-
-  \begin{multline}
-    E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = \sum_k E_q[z_{ik}] \left[x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
-      \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right].
-  \end{multline}
-
-  In the E step, the necessary expectations are analytic. In the M step, we can
-  improve the likelihood by [[file:mepbpm.org][(batch) gradient descent]], or
-  by mixed analytic and Newton-Raphson updates (Karlis 2005). Alternatively, we
-  can write the NB distribution as a Poisson sum of
-  [[https://en.wikipedia.org/wiki/Logarithmic_distribution][log-series
-  distributed random variables]] (Quenouille 1949), which admits an EM
-  algorithm with fully analytic M step
-  ([[https://doi.org/10.1111/1467-842X.00075][Adamidis 1999]], Huang et
-  al. 2019). Another alternative, which is amenable to stochastic gradient
-  descent and online learning, is to use the fact that EM can be viewed as
-  maximizing the evidence lower bound
-  ([[https://doi.org/10.1007/978-94-011-5014-9_12][Neal and Hinton 1998]])
-
-  \begin{equation}
-    \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta)).
-  \end{equation}
-
-  Exact EM corresponds to (fully) alternately optimizing \(q\) and \(\theta\);
-  however, we can instead amortize inference
-  ([[https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf][Gershman and
-  Goodman 2014]], [[https://arxiv.org/abs/1312.6114][Kingma and Welling 2014]],
-  [[http://proceedings.mlr.press/v32/rezende14.html][Rezende et al. 2014]]),
-  learning a neural network \(f_z\) mapping \(\vx_i \rightarrow \vz_i\)
-
-  \begin{align}
-    p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
-    q(z_{i1}, \ldots, z_{iK} \mid \vx_i) &= \Mult(1, f_z(\vx_i)).
-  \end{align}
-
-* Results
-  :PROPERTIES:
-  :CUSTOM_ID: results
-  :END:
 ** EM for Poisson-Gamma compound distribution
    :PROPERTIES:
    :CUSTOM_ID: em-nbmix
    :END:
 
+   Considering just a simple Gamma prior,
    [[https://doi.org/10.1017/S0515036100014033][Karlis 2005]] gives an EM
-   algorithm for fitting a Gamma mixture of Poissons. The key idea is that, due
-   to Poisson-Gamma conjugacy, the exact posterior is available, as are the
-   necessary posterior moments. The main disadvantage of this approach is that
-   it requires (one-dimensional) numerical optimization in the M step.
+   algorithm for fitting the resulting Gamma mixture of Poissons. The key idea
+   is that, due to Poisson-Gamma conjugacy, the exact posterior is available,
+   as are the necessary posterior moments. The main disadvantage of this
+   approach is that it requires (one-dimensional) numerical optimization in the
+   M step.
 
    \begin{align}
      x_i \mid \xiplus, \lambda_i &\sim \Pois(\xiplus \lambda_i)\\
@@ -375,7 +329,26 @@
    :CUSTOM_ID: em-nbmix
    :END:
 
-   We can use numerical methods to perform the M step.
+   Considering the Gamma mixture prior, we can estimate \(\vpi, \vmu, \vphi\) by
+   maximizing the likelihood using an EM algorithm. Letting \(z_{ik} \in \{0,
+   1\}\) indicate whether cell \(i\) is assigned to cluster \(k\), the exact
+   posterior
+
+   \begin{align}
+     q(z_{i1}, \ldots, z_{iK}) &\triangleq p(z_{ik} \mid \cdot) = \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
+     \alpha_{ik} &\propto \sum_j \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
+   \end{align}
+
+   The expected log joint with respect to \(q\)
+
+   \begin{multline}
+     E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = \sum_k E_q[z_{ik}] \left[x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
+       \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right].
+   \end{multline}
+
+   In the E step, the necessary expectations are analytic. In the M step, we
+   can improve the likelihood by [[file:mepbpm.org][(batch) gradient descent]],
+   or generic numerical methods.
 
    #+BEGIN_SRC ipython
      def _nb_mix_llik(theta, x, s):
@@ -468,10 +441,11 @@
    derive a new auxiliary variable representation of the NB distribution
 
    \begin{equation}
-     p(y_t, z_t \mid p) = \frac{(1 - p)^{z_t} p^{y_t - 1}}{y_t}, z_t \in (0, 1)
+     p(y_t, z_t \mid p) = \frac{(1 - p)^{z_t} p^{y_t - 1}}{y_t}, z_t \in (0, 1),
    \end{equation}
 
-   Letting \(q \triangleq p(m_i, y_1, \ldots, z_1, \ldots \mid x_i, n, p)\),
+   which admits an EM algorithm with analytic M step. Letting \(q \triangleq
+   p(m_i, y_1, \ldots, z_1, \ldots \mid x_i, n, p)\),
 
    \begin{align}
      E_q[\ln p(x_i \mid m_i, y_1, \ldots, z_1, \ldots, n, p)] &= E_q[m_i] \ln(-n \ln(1 - p)) - n \ln(1 - p) + E_q[\ln\Gamma(m_i + 1)]\\
@@ -531,7 +505,7 @@
    :END:
 
    #+BEGIN_SRC ipython :async t
-     log_mu, neg_log_phi, trace = ebpm_gamma_em(x, s)
+     log_mu, neg_log_phi, trace = pois_log_series_em(x, s)
    #+END_SRC
 
    #+RESULTS:
@@ -539,29 +513,34 @@
    # Out[105]:
    :END:
 
-   Plot the simulated data, the ground truth marginal distribution on counts,
-   and the NB MLE.
+** Amortized inference
 
-   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/nb-em.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(4.5, 2.5)
-     grid = np.arange(x.max() + 1)
-     plt.hist(x, bins=grid, color='0.7', density=True)
-     plt.plot(grid + .5, st.nbinom(n=np.exp(-log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, color=cm(0), label='Ground truth')
-     plt.plot(grid + .5, st.nbinom(n=np.exp(neg_log_phi), p=1 / (1 + s[0] * np.exp(log_mu - neg_log_phi))).pmf(grid), lw=1, color=cm(1), label='NB MLE')
-     plt.legend(frameon=False)
-     plt.xlabel('Number of molecules')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
+   Another alternative algorithm, which is amenable to stochastic gradient
+   descent and online learning, is to use the fact that EM can be viewed as
+   maximizing the evidence lower bound
+   ([[https://doi.org/10.1007/978-94-011-5014-9_12][Neal and Hinton 1998]])
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[106]:
-   [[file:figure/nbmix.org/nb-em.png]]
-   :END:
+   \begin{equation}
+     \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta)).
+   \end{equation}
 
+   Exact EM corresponds to (fully) alternately optimizing \(q = p(z \mid x,
+   \theta)\) and \(\theta\); however, we can instead amortize inference
+   ([[https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf][Gershman and
+   Goodman 2014]], [[https://arxiv.org/abs/1312.6114][Kingma and Welling
+   2014]], [[http://proceedings.mlr.press/v32/rezende14.html][Rezende et
+   al. 2014]]), learning a neural network \(f_z\) mapping \(\vx_i \rightarrow
+   \vz_i\)
+
+   \begin{align}
+     p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
+     q(z_{i1}, \ldots, z_{iK} \mid \vx_i) &= \Mult(1, f_z(\vx_i)).
+   \end{align}
+
+* Results
+  :PROPERTIES:
+  :CUSTOM_ID: results
+  :END:
 ** Real data example
    :PROPERTIES:
    :CUSTOM_ID: example

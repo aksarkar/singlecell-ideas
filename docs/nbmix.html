@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-19 Tue 22:56 -->
+<!-- 2020-05-19 Tue 23:08 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -259,12 +259,17 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#introdcution">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#method">Method</a></li>
-<li><a href="#results">Results</a>
+<li><a href="#method">Methods</a>
 <ul>
+<li><a href="#org0e14e11">Model specification</a></li>
 <li><a href="#em-nbmix">EM for Poisson-Gamma compound distribution</a></li>
 <li><a href="#em-nbmix">EM for Poisson-Gamma mixture</a></li>
 <li><a href="#org23cddea">EM for Poisson-Log compound distribution</a></li>
+<li><a href="#orgb545a46">Amortized inference</a></li>
+</ul>
+</li>
+<li><a href="#results">Results</a>
+<ul>
 <li><a href="#example">Real data example</a></li>
 <li><a href="#leiden">Leiden algorithm</a></li>
 <li><a href="#mpebpm">MPEBPM</a></li>
@@ -343,26 +348,30 @@ issues.
 </div>
 </div>
 
-<div id="outline-container-org5ee032a" class="outline-2">
-<h2 id="method"><a id="org5ee032a"></a>Method</h2>
+<div id="outline-container-orgd252789" class="outline-2">
+<h2 id="method"><a id="orgd252789"></a>Methods</h2>
 <div class="outline-text-2" id="text-method">
+</div>
+<div id="outline-container-org0e14e11" class="outline-3">
+<h3 id="org0e14e11">Model specification</h3>
+<div class="outline-text-3" id="text-org0e14e11">
 <p>
 We assume \(
-  \DeclareMathOperator\Gam{Gamma}
-  \DeclareMathOperator\Mult{Multinomial}
-  \DeclareMathOperator\N{\mathcal{N}}
-  \DeclareMathOperator\Pois{Poisson}
-  \DeclareMathOperator\diag{diag}
-  \newcommand\xiplus{x_{i+}}
-  \newcommand\mi{\mathbf{I}}
-  \newcommand\vu{\mathbf{u}}
-  \newcommand\vx{\mathbf{x}}
-  \newcommand\vz{\mathbf{z}}
-  \newcommand\vlambda{\boldsymbol{\lambda}}
-  \newcommand\vmu{\boldsymbol{\mu}}
-  \newcommand\vphi{\boldsymbol{\phi}}
-  \newcommand\vpi{\boldsymbol{\pi}}
-  \)
+   \DeclareMathOperator\Gam{Gamma}
+   \DeclareMathOperator\Mult{Multinomial}
+   \DeclareMathOperator\N{\mathcal{N}}
+   \DeclareMathOperator\Pois{Poisson}
+   \DeclareMathOperator\diag{diag}
+   \newcommand\xiplus{x_{i+}}
+   \newcommand\mi{\mathbf{I}}
+   \newcommand\vu{\mathbf{u}}
+   \newcommand\vx{\mathbf{x}}
+   \newcommand\vz{\mathbf{z}}
+   \newcommand\vlambda{\boldsymbol{\lambda}}
+   \newcommand\vmu{\boldsymbol{\mu}}
+   \newcommand\vphi{\boldsymbol{\phi}}
+   \newcommand\vpi{\boldsymbol{\pi}}
+   \)
 </p>
 
 \begin{align}
@@ -397,75 +406,20 @@ marginal likelihood is a mixture of negative binomials
 \begin{equation}
   p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
 \end{equation}
-
-<p>
-We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
-EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
-assigned to cluster \(k\), the exact posterior
-</p>
-
-\begin{align}
-  q(z_{i1}, \ldots, z_{iK}) &\triangleq p(z_{ik} \mid \cdot) = \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
-  \alpha_{ik} &\propto \sum_j \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
-\end{align}
-
-<p>
-The expected log joint with respect to \(q\)
-</p>
-
-\begin{multline}
-  E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = \sum_k E_q[z_{ik}] \left[x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
-    \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right].
-\end{multline}
-
-<p>
-In the E step, the necessary expectations are analytic. In the M step, we can
-improve the likelihood by <a href="mepbpm.html">(batch) gradient descent</a>, or
-by mixed analytic and Newton-Raphson updates (Karlis 2005). Alternatively, we
-can write the NB distribution as a Poisson sum of
-<a href="https://en.wikipedia.org/wiki/Logarithmic_distribution">log-series
-distributed random variables</a> (Quenouille 1949), which admits an EM
-algorithm with fully analytic M step
-(<a href="https://doi.org/10.1111/1467-842X.00075">Adamidis 1999</a>, Huang et
-al. 2019). Another alternative, which is amenable to stochastic gradient
-descent and online learning, is to use the fact that EM can be viewed as
-maximizing the evidence lower bound
-(<a href="https://doi.org/10.1007/978-94-011-5014-9_12">Neal and Hinton 1998</a>)
-</p>
-
-\begin{equation}
-  \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta)).
-\end{equation}
-
-<p>
-Exact EM corresponds to (fully) alternately optimizing \(q\) and \(\theta\);
-however, we can instead amortize inference
-(<a href="https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf">Gershman and
-Goodman 2014</a>, <a href="https://arxiv.org/abs/1312.6114">Kingma and Welling 2014</a>,
-<a href="http://proceedings.mlr.press/v32/rezende14.html">Rezende et al. 2014</a>),
-learning a neural network \(f_z\) mapping \(\vx_i \rightarrow \vz_i\)
-</p>
-
-\begin{align}
-  p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
-  q(z_{i1}, \ldots, z_{iK} \mid \vx_i) &= \Mult(1, f_z(\vx_i)).
-\end{align}
 </div>
 </div>
 
-<div id="outline-container-orgdca968c" class="outline-2">
-<h2 id="results"><a id="orgdca968c"></a>Results</h2>
-<div class="outline-text-2" id="text-results">
-</div>
 <div id="outline-container-orga0d3d31" class="outline-3">
 <h3 id="em-nbmix"><a id="orga0d3d31"></a>EM for Poisson-Gamma compound distribution</h3>
 <div class="outline-text-3" id="text-em-nbmix">
 <p>
+Considering just a simple Gamma prior,
 <a href="https://doi.org/10.1017/S0515036100014033">Karlis 2005</a> gives an EM
-algorithm for fitting a Gamma mixture of Poissons. The key idea is that, due
-to Poisson-Gamma conjugacy, the exact posterior is available, as are the
-necessary posterior moments. The main disadvantage of this approach is that
-it requires (one-dimensional) numerical optimization in the M step.
+algorithm for fitting the resulting Gamma mixture of Poissons. The key idea
+is that, due to Poisson-Gamma conjugacy, the exact posterior is available,
+as are the necessary posterior moments. The main disadvantage of this
+approach is that it requires (one-dimensional) numerical optimization in the
+M step.
 </p>
 
 \begin{align}
@@ -647,7 +601,30 @@ Estimate the average time (seconds) taken to fit each trial.
 <h3 id="em-nbmix"><a id="orgecb1e60"></a>EM for Poisson-Gamma mixture</h3>
 <div class="outline-text-3" id="text-em-nbmix">
 <p>
-We can use numerical methods to perform the M step.
+Considering the Gamma mixture prior, we can estimate \(\vpi, \vmu, \vphi\) by
+maximizing the likelihood using an EM algorithm. Letting \(z_{ik} \in \{0,
+   1\}\) indicate whether cell \(i\) is assigned to cluster \(k\), the exact
+posterior
+</p>
+
+\begin{align}
+  q(z_{i1}, \ldots, z_{iK}) &\triangleq p(z_{ik} \mid \cdot) = \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
+  \alpha_{ik} &\propto \sum_j \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
+\end{align}
+
+<p>
+The expected log joint with respect to \(q\)
+</p>
+
+\begin{multline}
+  E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = \sum_k E_q[z_{ik}] \left[x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
+    \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right].
+\end{multline}
+
+<p>
+In the E step, the necessary expectations are analytic. In the M step, we
+can improve the likelihood by <a href="mepbpm.html">(batch) gradient descent</a>,
+or generic numerical methods.
 </p>
 
 <div class="org-src-container">
@@ -744,11 +721,12 @@ derive a new auxiliary variable representation of the NB distribution
 </p>
 
 \begin{equation}
-  p(y_t, z_t \mid p) = \frac{(1 - p)^{z_t} p^{y_t - 1}}{y_t}, z_t \in (0, 1)
+  p(y_t, z_t \mid p) = \frac{(1 - p)^{z_t} p^{y_t - 1}}{y_t}, z_t \in (0, 1),
 \end{equation}
 
 <p>
-Letting \(q \triangleq p(m_i, y_1, \ldots, z_1, \ldots \mid x_i, n, p)\),
+which admits an EM algorithm with analytic M step. Letting \(q \triangleq
+   p(m_i, y_1, \ldots, z_1, \ldots \mid x_i, n, p)\),
 </p>
 
 \begin{align}
@@ -808,38 +786,48 @@ Try EM for a simple example.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">trace</span> = ebpm_gamma_em(x, s)
+<pre class="src src-ipython"><span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">trace</span> = pois_log_series_em(x, s)
 </pre>
 </div>
+</div>
+</div>
+
+<div id="outline-container-orgb545a46" class="outline-3">
+<h3 id="orgb545a46">Amortized inference</h3>
+<div class="outline-text-3" id="text-orgb545a46">
+<p>
+Another alternative algorithm, which is amenable to stochastic gradient
+descent and online learning, is to use the fact that EM can be viewed as
+maximizing the evidence lower bound
+(<a href="https://doi.org/10.1007/978-94-011-5014-9_12">Neal and Hinton 1998</a>)
+</p>
+
+\begin{equation}
+  \max_{q, \theta} \ln p(x \mid \theta) - \mathcal{KL}(q(z) \Vert p(z \mid x, \theta)) = \max_{q, \theta} E_q[\ln p(x \mid z, \theta)] - \mathcal{KL}(q(z) \Vert p(z \mid \theta)).
+\end{equation}
 
 <p>
-Plot the simulated data, the ground truth marginal distribution on counts,
-and the NB MLE.
+Exact EM corresponds to (fully) alternately optimizing \(q = p(z \mid x,
+   \theta)\) and \(\theta\); however, we can instead amortize inference
+(<a href="https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf">Gershman and
+Goodman 2014</a>, <a href="https://arxiv.org/abs/1312.6114">Kingma and Welling
+2014</a>, <a href="http://proceedings.mlr.press/v32/rezende14.html">Rezende et
+al. 2014</a>), learning a neural network \(f_z\) mapping \(\vx_i \rightarrow
+   \vz_i\)
 </p>
 
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
-plt.clf()
-plt.gcf().set_size_inches(4.5, 2.5)
-<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
-plt.hist(x, bins=grid, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
-plt.plot(grid + .5, st.nbinom(n=np.exp(-log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, color=cm(0), label=<span class="org-string">'Ground truth'</span>)
-plt.plot(grid + .5, st.nbinom(n=np.exp(neg_log_phi), p=1 / (1 + s[0] * np.exp(log_mu - neg_log_phi))).pmf(grid), lw=1, color=cm(1), label=<span class="org-string">'NB MLE'</span>)
-plt.legend(frameon=<span class="org-constant">False</span>)
-plt.xlabel(<span class="org-string">'Number of molecules'</span>)
-plt.ylabel(<span class="org-string">'Density'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/nbmix.org/nb-em.png" alt="nb-em.png">
-</p>
+\begin{align}
+  p(z_{i1}, \ldots, z_{iK}) &= \Mult(1, \vpi)\\
+  q(z_{i1}, \ldots, z_{iK} \mid \vx_i) &= \Mult(1, f_z(\vx_i)).
+\end{align}
 </div>
 </div>
 </div>
 
+<div id="outline-container-orgdca968c" class="outline-2">
+<h2 id="results"><a id="orgdca968c"></a>Results</h2>
+<div class="outline-text-2" id="text-results">
+</div>
 <div id="outline-container-org2ab3024" class="outline-3">
 <h3 id="example"><a id="org2ab3024"></a>Real data example</h3>
 <div class="outline-text-3" id="text-example">
@@ -1154,8 +1142,8 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orge0613b0" class="outline-3">
-<h3 id="amortized"><a id="orge0613b0"></a>Amortized inference</h3>
+<div id="outline-container-org9db4176" class="outline-3">
+<h3 id="amortized"><a id="org9db4176"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
 Fit the amortized inference model, initializing \(\vmu_k, \vphi_k\) from the
@@ -1450,7 +1438,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-19 Tue 22:56</p>
+<p class="date">Created: 2020-05-19 Tue 23:08</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

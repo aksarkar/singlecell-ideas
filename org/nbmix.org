@@ -39,6 +39,8 @@
   #+RESULTS:
   : 2
 
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="4G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+BEGIN_SRC ipython
@@ -59,7 +61,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[91]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -116,7 +118,8 @@
 
    where
 
-   - \(x_{ij}\) denotes the number of molecules of gene \(j\) observed in cell \(i\)
+   - \(x_{ij}\) denotes the number of molecules of gene \(j = 1, \ldots, p\)
+     observed in cell \(i = 1, \ldots, n\)
    - \(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of molecules
      observed in cell \(i\)
    - \(\vpi_i\) denotes cluster assignment probabilities for cell \(i\)
@@ -144,10 +147,9 @@
    Considering just a simple Gamma prior,
    [[https://doi.org/10.1017/S0515036100014033][Karlis 2005]] gives an EM
    algorithm for fitting the resulting Gamma mixture of Poissons. The key idea
-   is that, due to Poisson-Gamma conjugacy, the exact posterior is available,
-   as are the necessary posterior moments. The main disadvantage of this
-   approach is that it requires (one-dimensional) numerical optimization in the
-   M step.
+   is that, due to Poisson-Gamma conjugacy, the exact posterior is analytic, as
+   are the necessary posterior moments. The main disadvantage of this approach
+   is that it requires (one-dimensional) numerical optimization in the M step.
 
    \begin{align}
      x_i \mid \xiplus, \lambda_i &\sim \Pois(\xiplus \lambda_i)\\
@@ -347,79 +349,8 @@
    \end{multline}
 
    In the E step, the necessary expectations are analytic. In the M step, we
-   can improve the likelihood by [[file:mepbpm.org][(batch) gradient descent]],
-   or generic numerical methods.
-
-   #+BEGIN_SRC ipython
-     def _nb_mix_llik(theta, x, s):
-       """Return log likelihood matrix
-
-       theta - array-like [2, k]
-       x - array-like [n, 1]
-       s - array-like [n, 1]
-
-       """
-       # Important: so.minimize flattens theta
-       theta = theta.reshape(2, -1)
-       mean = np.exp(theta[0]).reshape(1, -1)
-       # Important: this can blow up
-       inv_disp = np.exp(np.clip(theta[1], -15, 15)).reshape(1, -1)
-       # [n, k]
-       L = st.nbinom(n=inv_disp, p=1 / (1 + s * mean / inv_disp)).logpmf(x.reshape(-1, 1))
-       assert L.shape == (x.shape[0], theta.shape[1])
-       assert np.isfinite(L).all()
-       return L
-
-     def _nb_mix_obj(theta, x, z, s):
-       """Return negative log likelihood
-
-       theta - array-like [2, k]
-       x - array-like [n, 1]
-       z - array-like [n, k]
-       s - array-like [n, 1]
-
-       """
-       L = _nb_mix_llik(theta, x, s)
-       m = L.max(axis=1, keepdims=True)
-       return -(np.log(z) + L).mean()
-
-     def ebpm_gamma_mix(x, s, k, max_iters=100, tol=1e-3, verbose=False, seed=1):
-       assert x.ndim == 2
-       n, p = x.shape
-       assert s.shape == (n, 1)
-       assert k > 1
-       rng = np.random.default_rng(seed)
-       log_mean = rng.normal(size=(p, k))
-       log_inv_disp = rng.normal(size=(p, k))
-       z = np.ones((n, k)) / k
-       loss = np.array([_nb_mix_obj(np.vstack([log_mean[j], log_inv_disp[j]]), x[:,j], z, s) for j in range(p)]).sum()
-       if verbose:
-         print(f'epoch 0: {loss:.4g}')
-       for t in range(max_iters):
-         for j in range(p):
-           opt = so.minimize(_nb_mix_obj, x0=np.vstack([log_mean[j], log_inv_disp[j]]), args=(x[:,j], z, s), method='nelder-mead', options={'maxiter':1000})
-           if not opt.success:
-             raise RuntimeError(f'M step failed to converge: {opt.message}')
-           log_mean[j] = opt.x[0]
-           log_inv_disp[j] = opt.x[1]
-         L = np.array([_nb_mix_llik(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], s) for j in range(p)]).sum(axis=0)
-         z = sp.softmax(L, axis=1)
-         update = np.array([_nb_mix_obj(np.vstack(log_mean[j], log_inv_disp[j]), x[:,j], z, s) for j in range(p)]).sum()
-         if update > loss:
-           raise RuntimeError('objective increased')
-         elif loss - update < tol:
-           return z, log_mean, log_inv_disp
-         else:
-           if verbose:
-             print(f'epoch {t + 1}: {loss:.4g}')
-           loss = update
-       raise RuntimeError('failed to converge in max_iters')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[78]:
-   :END:
+   can improve the likelihood, e.g. by [[file:mepbpm.org][(batch) gradient
+   descent]].
 
 ** EM for Poisson-Log compound distribution
 
@@ -431,9 +362,9 @@
 
    \begin{align}
      x_i \mid y_1, \ldots, y_{m_i}, m_i &= \sum_{t=1}^{m_i} y_t\\
-     m_i &\sim \Pois(-n \ln(1 - p))\\
-     p(y_t \mid p) &= -\frac{p^{y_t}}{y_t \ln(1 - p)}, \quad t = 1, \ldots\\
-     p(x_i \mid n, p) &\propto p^n (1 - p)^{x_i}
+     m_i \mid \lambda &\sim \Pois(\lambda)\\
+     p(y_t \mid \theta) &= -\frac{\theta^{y_t}}{y_t \ln(1 - \theta)}, \quad t = 1, 2, \ldots\\
+     p(x_i \mid \lambda, \theta) &\propto p^n (1 - p)^{x_i}, \quad n = -\lambda / \log(1 - \theta), p = 1 - \theta
    \end{align}
 
    To connect this parameterization to our parameterization, we have \(n =
@@ -441,19 +372,20 @@
    derive a new auxiliary variable representation of the NB distribution
 
    \begin{equation}
-     p(y_t, z_t \mid p) = \frac{(1 - p)^{z_t} p^{y_t - 1}}{y_t}, z_t \in (0, 1),
+     p(y_t, z_t \mid \theta) = \frac{(1 - \theta)^{z_t} \theta^{y_t - 1}}{y_t}, z_t \in (0, 1), y_t \in \mathbb{N}
    \end{equation}
 
-   which admits an EM algorithm with analytic M step. Letting \(q \triangleq
-   p(m_i, y_1, \ldots, z_1, \ldots \mid x_i, n, p)\),
+   which they claim admits an EM algorithm with analytic M step. Letting \(q
+   \triangleq p(m_i, y_1, \ldots, z_1, \ldots \mid x_i, n, p)\),
 
-   \begin{align}
-     E_q[\ln p(x_i \mid m_i, y_1, \ldots, z_1, \ldots, n, p)] &= E_q[m_i] \ln(-n \ln(1 - p)) - n \ln(1 - p) + E_q[\ln\Gamma(m_i + 1)]\\
-     &\quad + E_q[\textstyle\sum_{t=1}^{m_i} z_t] \ln(1 - p) + (\textstyle\sum_{t=1}^{m_i} E_q[y_t] - E_q[m_i]) \ln p + \mathrm{const}\\
-     &= E_q[m_i] \ln(-n \ln(1 - p)) - n \ln(1 - p) + E_q[\ln\Gamma(m_i + 1)]\\
-     E_q[\textstyle\sum_t z_t] &= E_q[m_i] E_q[z_t]\\
-     E_q[m_i] &= 
-   \end{align}
+   \begin{multline}
+     E_q[\ln p(x_i \mid m_i, y_1, \ldots, z_1, \ldots, \lambda, \theta)] = E_q[m_i] \ln\lambda - \lambda - E_q[\ln\Gamma(m_i + 1)]\\
+     + E_q[\textstyle\sum_{t=1}^{m_i} z_t] \ln(1 - \theta) + (\textstyle\sum_{t=1}^{m_i} E_q[y_t] - E_q[m_i]) \ln \theta + \mathrm{const}
+   \end{multline}
+
+   However, it appears they neglect the intractable term \(E_q[\ln\Gamma(m_i +
+   1)]\) in their derivation, and the algorithm as given does not appear to
+   improve the expected log joint probability.
 
    #+BEGIN_SRC ipython
      def pois_log_series_em(x, s, max_iters=100, tol=1e-3):
@@ -462,30 +394,38 @@
        assert x.shape == s.shape
        z = .5
        m = .5 * x
-       p = (x - m).sum() / (x + m * z - m)
-       n = m.mean()
-       obj = [st.nbinom(n=n, p=p).logpmf(x).sum()]
+       theta = (x - m).sum() / (x + m * z - m).sum()
+       lam = m.mean()
+       obj = [st.nbinom(n=-lam / np.log(1 - theta), p=1 - theta).logpmf(x).sum()]
+       assert np.isfinite(obj[-1]) and obj[-1] < 0
        for i in range(max_iters):
-         z = -((1 - p) / p - 1 / np.log(1 - p))
+         alpha = -1 / np.log(1 - theta)
+         z = -((1 - theta) / theta - alpha)
+         assert np.ndim(z) == 0
          assert 0 < z < 1
-         alpha = n / np.log(1 - p)
-         assert alpha > 0
-         m = alpha * (sp.digamma(alpha + x) - sp.digamma(alpha))
-         assert m > 0
-         p = (x - m).sum() / (x + m * z - m)
-         assert p > 0
-         n = m.mean()
-         assert n > 0
-         obj.append(st.nbinom(n=n, p=p).logpmf(x).sum())
+         n = lam * alpha
+         m = n * (sp.digamma(n + x) - sp.digamma(n))
+         assert m.shape == x.shape
+         theta = (x - m).sum() / (x + m * z - m).sum()
+         assert 0 < theta < 1
+         lam = m.mean()
+         assert lam > 0
+         obj.append(st.nbinom(n=n, p=1 - theta).logpmf(x).sum())
+         assert np.isfinite(obj[-1]) and obj[-1] < 0
          if obj[-1] < obj[-2]:
            raise RuntimeError('llik decreased')
          elif obj[-1] - obj[-2] < tol:
            log_inv_disp = -np.log(n)
-           log_mean = np.log(1 / p - 1) - np.log(s) - np.log(n)
+           log_mean = np.log(theta) - np.log(1 - theta) - np.log(s) - log_inv_disp
            return log_mean, log_inv_disp, obj
        else:
          raise RuntimeError('failed to converge in max_iters')
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[41]:
+   :END:
 
    Try EM for a simple example.
 
@@ -501,7 +441,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[104]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython :async t
@@ -510,7 +450,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[105]:
    :END:
 
 ** Amortized inference

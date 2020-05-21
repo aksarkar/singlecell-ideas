@@ -93,6 +93,9 @@
   :CUSTOM_ID: method
   :END:
 ** Model specification
+   :PROPERTIES:
+   :CUSTOM_ID: model
+   :END:
 
    We assume \(
    \DeclareMathOperator\Gam{Gamma}
@@ -141,193 +144,6 @@
      p(x_{ij} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k) = \sum_{k=1}^{K} \pi_{ik} \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
    \end{equation}
 
-** EM for Poisson-Gamma
-   :PROPERTIES:
-   :CUSTOM_ID: em-nb
-   :END:
-
-   Considering just a simple Gamma prior,
-   [[https://doi.org/10.1017/S0515036100014033][Karlis 2005]] gives an EM
-   algorithm for maximizing the marginal likelihood. The key idea is that, due
-   to Poisson-Gamma conjugacy, the exact posterior is analytic, as are the
-   necessary posterior moments. The main disadvantage of this approach is that
-   it requires (one-dimensional) numerical optimization in the M step.
-
-   \begin{align}
-     x_i \mid \xiplus, \lambda_i &\sim \Pois(\xiplus \lambda_i)\\
-     \lambda_i \mid \alpha, \beta &\sim \Gam(\alpha, \beta)\\
-     \lambda_i \mid x_i, \xiplus, \alpha, \beta &\sim q \triangleq \Gam(x_i + \alpha, \xiplus + \beta)\\
-     E_q[\lambda_i] &= \frac{x_i + \alpha}{\xiplus + \beta}\\
-     E_q[\ln \lambda_i] &= \psi(x + \alpha) - \log(\xiplus + \beta)\\
-     E_q[\ln p(x_i, \lambda_i \mid \xiplus, \alpha, \beta)] &= \ell_i \triangleq x_i E_q[\ln \lambda_i] - E_q[\lambda_i] - \ln\Gamma(x_i + 1) + \alpha \ln\beta - \ln\Gamma(\alpha) + (\alpha - 1) E_q[\lambda_i] - \beta E_q[\lambda_i]\\
-     \ell &= \sum_i \ell_i\\
-     \frac{\partial\ell}{\partial\beta} &= \sum_i \frac{\alpha}{\beta} - E_q[\lambda_i] = 0\\
-     \beta &= \frac{\bar{\lambda}}{\alpha}\\
-     \frac{\partial\ell}{\partial\alpha} &= \sum_i \ln \beta - \psi(\alpha) + E_q[\ln x_i]\\
-     \frac{\partial^2\ell}{\partial\alpha^2} &= -n \psi^{(1)}(\alpha)
-   \end{align}
-
-   where \(\psi\) denotes the digamma function and \(\psi^{(1)}\) denotes the
-   trigamma function. The algorithm uses a partial M step (single
-   Newton-Raphson update) for \(\alpha\).
-
-   #+BEGIN_SRC ipython
-     def ebpm_gamma_em(x, s, max_iters=100, tol=1e-3):
-       """Return fitted parameters assuming g is a Gamma distribution
-
-       Returns log mu and -log phi
-
-       x - array-like [n,]
-       s - array-like [n,]
-
-       """
-       n = x.shape[0]
-       assert x.shape == (n,)
-       assert x.shape == s.shape
-       # a = 1 / phi; b = 1 / (mu phi)
-       a = 1
-       # Initialize at the Poisson MLE
-       b = s.sum() / x.sum()
-       obj = []
-       obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).sum())
-       for i in range(max_iters):
-         # E[lam | x]
-         pm = (x + a) / (s + b)
-         assert (pm > 0).all()
-         # E[ln lam | x]
-         plm = sp.digamma(x + a) - np.log(s + b)
-         b = a / pm.mean()
-         # Important: this appears to be incorrect in Karlis 2005
-         a += (np.log(b) - sp.digamma(a) + plm.mean()) / sp.polygamma(1, a)
-         assert a > 0
-         assert b > 0
-         obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).sum())
-         if obj[-1] < obj[-2]:
-           raise RuntimeError('llik decreased')
-         elif obj[-1] - obj[-2] < tol:
-           log_inv_disp = np.log(a)
-           log_mean = -np.log(b) + np.log(a)
-           return log_mean, log_inv_disp, obj
-       else:
-         raise RuntimeError('failed to converge in max_iters')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[101]:
-   :END:
-
-   Try EM for a simple example.
-
-   #+BEGIN_SRC ipython
-     rng = np.random.default_rng(1)
-     n = 100
-     log_mean = -10
-     log_inv_disp = 0
-     s = np.repeat(1e5, n)
-     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
-     x = rng.poisson(s * lam)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[104]:
-   :END:
-
-   #+BEGIN_SRC ipython :async t
-     log_mu, neg_log_phi, trace = ebpm_gamma_em(x, s)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[105]:
-   :END:
-
-   Plot the simulated data, the ground truth marginal distribution on counts,
-   and the NB MLE.
-
-   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/nb-em.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(4.5, 2.5)
-     grid = np.arange(x.max() + 1)
-     plt.hist(x, bins=grid, color='0.7', density=True)
-     plt.plot(grid + .5, st.nbinom(n=np.exp(-log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, color=cm(0), label='Ground truth')
-     plt.plot(grid + .5, st.nbinom(n=np.exp(neg_log_phi), p=1 / (1 + s[0] * np.exp(log_mu - neg_log_phi))).pmf(grid), lw=1, color=cm(1), label='NB MLE')
-     plt.legend(frameon=False)
-     plt.xlabel('Number of molecules')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[106]:
-   [[file:figure/nbmix.org/nb-em.png]]
-   :END:
-
-   Try a more extensive evaluation of the method.
-
-   #+BEGIN_SRC ipython :async t
-     n = 100
-     s = np.repeat(1e5, n)
-     result = dict()
-     for trial in range(5):
-       for log_mean in np.linspace(-12, -6, 7):
-         for log_inv_disp in np.linspace(0, 4, 5):
-           rng = np.random.default_rng(trial)
-           lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
-           x = rng.poisson(s * lam)
-           start = time.time()
-           log_mean_hat, log_inv_disp_hat, trace = ebpm_gamma_em(x, s, max_iters=1000)
-           elapsed = time.time() - start
-           result[(log_mean, log_inv_disp, trial)] = pd.Series([log_mean_hat, log_inv_disp_hat, len(trace), elapsed])
-     result = (pd.DataFrame.from_dict(result, orient='index')
-               .reset_index()
-               .rename({f'level_{i}': k for i, k in enumerate(['log_mean', 'log_inv_disp', 'trial'])}, axis=1)
-               .rename({i: k for i, k in enumerate(['log_mean_hat', 'log_inv_disp_hat', 'num_iters', 'elapsed'])}, axis=1))
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[138]:
-   :END:
-
-   Plot the estimates against the ground truth values.
-
-   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/nb-em-sim.png
-     plt.clf()
-     fig, ax = plt.subplots(1, 2)
-     fig.set_size_inches(4.5, 2.5)
-     for a in ax:
-       a.set_aspect('equal', adjustable='datalim')
-     ax[0].scatter(result['log_mean'], result['log_mean_hat'], c='k', s=1)
-     ax[0].set_xlabel('Ground truth $\ln(\mu)$')
-     ax[0].set_ylabel('Estimated $\ln(\mu)$')
-     ax[1].scatter(-result['log_inv_disp'], -result['log_inv_disp_hat'], c='k', s=1)
-     ax[1].set_xlabel('Ground truth $\ln(\phi)$')
-     ax[1].set_ylabel('Estimated $\ln(\phi)$')
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[139]:
-   [[file:figure/nbmix.org/nb-em-sim.png]]
-   :END:
-
-   Estimate the average time (seconds) taken to fit each trial.
-
-   #+BEGIN_SRC ipython
-     result['elapsed'].mean(), result['elapsed'].std()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[140]:
-   : (0.18343861034938266, 0.18248113994496618)
-   :END:
-
 ** EM for Poisson--Gamma-mixture
    :PROPERTIES:
    :CUSTOM_ID: em-nbmix
@@ -354,107 +170,10 @@
    can improve the expected log joint probability, e.g. by
    [[file:mepbpm.org][(batch) gradient descent]].
 
-** EM for Poisson-Log compound distribution
-
-   The NB distribution can be derived as a
-   [[https://en.wikipedia.org/wiki/Negative_binomial_distribution#Representation_as_compound_Poisson_distribution][Poisson-distributed
-   sum]] of
-   [[https://en.wikipedia.org/wiki/Logarithmic_distribution][Log-distributed
-   random variables]] (Quenouille 1949)
-
-   \begin{align}
-     x_i \mid y_1, \ldots, y_{m_i}, m_i &= \sum_{t=1}^{m_i} y_t\\
-     m_i \mid \lambda &\sim \Pois(\lambda)\\
-     p(y_t \mid \theta) &= -\frac{\theta^{y_t}}{y_t \ln(1 - \theta)}, \quad t = 1, 2, \ldots\\
-     p(x_i \mid \lambda, \theta) &\propto p^n (1 - p)^{x_i}, \quad n = -\lambda / \log(1 - \theta), p = 1 - \theta
-   \end{align}
-
-   To connect this parameterization to our parameterization, we have \(n =
-   1/\phi\) and \(p = 1 / (1 + \xiplus\mu\phi)\). Adamidis 1999 uses this fact to
-   derive a new auxiliary variable representation of the NB distribution
-
-   \begin{equation}
-     p(y_t, z_t \mid \theta) = \frac{(1 - \theta)^{z_t} \theta^{y_t - 1}}{y_t}, z_t \in (0, 1), y_t \in \mathbb{N}
-   \end{equation}
-
-   which they claim admits an EM algorithm with analytic M step. Letting \(q
-   \triangleq p(m_i, y_1, \ldots, z_1, \ldots \mid x_i, n, p)\),
-
-   \begin{multline}
-     E_q[\ln p(x_i \mid m_i, y_1, \ldots, z_1, \ldots, \lambda, \theta)] = E_q[m_i] \ln\lambda - \lambda - E_q[\ln\Gamma(m_i + 1)]\\
-     + E_q[\textstyle\sum_{t=1}^{m_i} z_t] \ln(1 - \theta) + (\textstyle\sum_{t=1}^{m_i} E_q[y_t] - E_q[m_i]) \ln \theta + \mathrm{const}
-   \end{multline}
-
-   However, it appears they neglect the intractable term \(E_q[\ln\Gamma(m_i +
-   1)]\) in their derivation, and the algorithm as given does not appear to
-   improve the expected log joint probability.
-
-   #+BEGIN_SRC ipython
-     def pois_log_series_em(x, s, max_iters=100, tol=1e-3):
-       n = x.shape[0]
-       assert x.shape == (n,)
-       assert x.shape == s.shape
-       z = .5
-       m = .5 * x
-       theta = (x - m).sum() / (x + m * z - m).sum()
-       lam = m.mean()
-       obj = [st.nbinom(n=-lam / np.log(1 - theta), p=1 - theta).logpmf(x).sum()]
-       assert np.isfinite(obj[-1]) and obj[-1] < 0
-       for i in range(max_iters):
-         alpha = -1 / np.log(1 - theta)
-         z = -((1 - theta) / theta - alpha)
-         assert np.ndim(z) == 0
-         assert 0 < z < 1
-         n = lam * alpha
-         m = n * (sp.digamma(n + x) - sp.digamma(n))
-         assert m.shape == x.shape
-         theta = (x - m).sum() / (x + m * z - m).sum()
-         assert 0 < theta < 1
-         lam = m.mean()
-         assert lam > 0
-         obj.append(st.nbinom(n=n, p=1 - theta).logpmf(x).sum())
-         assert np.isfinite(obj[-1]) and obj[-1] < 0
-         if obj[-1] < obj[-2]:
-           raise RuntimeError('llik decreased')
-         elif obj[-1] - obj[-2] < tol:
-           log_inv_disp = -np.log(n)
-           log_mean = np.log(theta) - np.log(1 - theta) - np.log(s) - log_inv_disp
-           return log_mean, log_inv_disp, obj
-       else:
-         raise RuntimeError('failed to converge in max_iters')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[41]:
-   :END:
-
-   Try EM for a simple example.
-
-   #+BEGIN_SRC ipython
-     rng = np.random.default_rng(1)
-     n = 100
-     log_mean = -10
-     log_inv_disp = 0
-     s = np.repeat(1e5, n)
-     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
-     x = rng.poisson(s * lam)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[5]:
-   :END:
-
-   #+BEGIN_SRC ipython :async t
-     log_mu, neg_log_phi, trace = pois_log_series_em(x, s)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   :END:
-
 ** Amortized inference
+   :PROPERTIES:
+   :CUSTOM_ID: ai
+   :END:
 
    Another alternative algorithm, which is amenable to stochastic gradient
    descent and online learning, is to use the fact that EM can be viewed as
@@ -482,8 +201,8 @@
    The evidence lower bound is analytic
 
    \begin{multline}
-     F = \sum_{i, j, k} f_z(\vx_i)_k \left[\ln \pi_{ik} - \ln f_z(\vx_i)_k + x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
-       \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right],
+     \mathcal{L} = \sum_{i, k} (f_z(\vx_i))_k \Biggl[\ln \pi_{ik} - \ln\bigl((f_z(\vx_i))_k\bigr)\\
+       + \sum_j x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right) - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\Biggr],
    \end{multline}
 
    and can be optimized using SGD.
@@ -1028,88 +747,376 @@
   :PROPERTIES:
   :CUSTOM_ID: related-work
   :END:
+** EM for Poisson-Gamma
+   :PROPERTIES:
+   :CUSTOM_ID: em-nb
+   :END:
 
-  scVI ([[https://dx.doi.org/10.1038/s41592-018-0229-2][Lopez et al. 2018]],
-  [[https://www.biorxiv.org/content/10.1101/532895v2][Xu et al. 2020]])
-  implements a related deep unsupervised (more precisely, semi-supervised)
-  clustering model ([[https://arxiv.org/abs/1406.5298][Kingma et al. 2014]],
-  [[https://arxiv.org/abs/1611.02648][Dilokthanakul et al. 2016]]).
+   Considering just a simple Gamma prior,
+   [[https://doi.org/10.1017/S0515036100014033][Karlis 2005]] gives an EM
+   algorithm for maximizing the marginal likelihood. The key idea is that, due
+   to Poisson-Gamma conjugacy, the exact posterior is analytic, as are the
+   necessary posterior moments. The main disadvantage of this approach is that
+   it requires (one-dimensional) numerical optimization in the M step.
 
-  \begin{align}
-    x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
-    \ln s_i &\sim \N(\cdot)\\
-    \lambda_{ij} \mid \vz_i &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}(\vz_i))_j^{-1} \phi_j^{-1})\\
-    \vz_i \mid y_i, \vu_i &\sim \N(\mu_z(\vu_i, y_i), \diag(\sigma^2(\vu_i, y_i)))\\
-    y_i \mid \vpi &\sim \Mult(1, \vpi)\\
-    \vu_i &\sim \N(0, \mi).
-  \end{align}
+   \begin{align}
+     x_i \mid \xiplus, \lambda_i &\sim \Pois(\xiplus \lambda_i)\\
+     \lambda_i \mid \alpha, \beta &\sim \Gam(\alpha, \beta)\\
+     \lambda_i \mid x_i, \xiplus, \alpha, \beta &\sim q \triangleq \Gam(x_i + \alpha, \xiplus + \beta)\\
+     E_q[\lambda_i] &= \frac{x_i + \alpha}{\xiplus + \beta}\\
+     E_q[\ln \lambda_i] &= \psi(x + \alpha) - \log(\xiplus + \beta)\\
+     E_q[\ln p(x_i, \lambda_i \mid \xiplus, \alpha, \beta)] &= \ell_i \triangleq x_i E_q[\ln \lambda_i] - E_q[\lambda_i] - \ln\Gamma(x_i + 1) + \alpha \ln\beta - \ln\Gamma(\alpha) + (\alpha - 1) E_q[\lambda_i] - \beta E_q[\lambda_i]\\
+     \ell &= \sum_i \ell_i\\
+     \frac{\partial\ell}{\partial\beta} &= \sum_i \frac{\alpha}{\beta} - E_q[\lambda_i] = 0\\
+     \beta &= \frac{\bar{\lambda}}{\alpha}\\
+     \frac{\partial\ell}{\partial\alpha} &= \sum_i \ln \beta - \psi(\alpha) + E_q[\ln x_i]\\
+     \frac{\partial^2\ell}{\partial\alpha^2} &= -n \psi^{(1)}(\alpha)
+   \end{align}
 
-  where
+   where \(\psi\) denotes the digamma function and \(\psi^{(1)}\) denotes the
+   trigamma function. The algorithm uses a partial M step (single
+   Newton-Raphson update) for \(\alpha\).
 
-  - \(y_i\) denotes the cluster assignment for cell \(i\)
-  - \(\mu_z(\cdot), \sigma^2(\cdot)\) are neural networks mapping the latent
-    cluster variable \(y_i\) and Gaussian noise \(\vu_i\) to the latent variable
-    \(\vz_i\)
-  - \(\mu_{\lambda}(\cdot)\) is a neural network mapping latent variable \(\vz_i\) to
-    latent gene expression \(\vlambda_{i}\)
+   #+BEGIN_SRC ipython
+     def ebpm_gamma_em(x, s, max_iters=100, tol=1e-3):
+       """Return fitted parameters assuming g is a Gamma distribution
 
-  The intuition behind this model is that, marginalizing over \(y_i\), the
-  prior \(p(z_i)\) is a mixture of Gaussians, and therefore the model embeds
-  examples in a space which makes clustering easy, and maps examples to those
-  clusters simultaneously. To perform variational inference in this model,
-  Lopez et al. introduce inference networks
+       Returns log mu and -log phi
 
-  \begin{align}
-    q(\vz_i \mid \vx_i) &= \N(\cdot)\\
-    q(y_i \mid \vz_i) &= \Mult(1, \cdot).
-  \end{align}
+       x - array-like [n,]
+       s - array-like [n,]
 
-  #+BEGIN_SRC ipython :async t
-    import scvi.dataset
-    import scvi.inference
-    import scvi.models
+       """
+       n = x.shape[0]
+       assert x.shape == (n,)
+       assert x.shape == s.shape
+       # a = 1 / phi; b = 1 / (mu phi)
+       a = 1
+       # Initialize at the Poisson MLE
+       b = s.sum() / x.sum()
+       obj = []
+       obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).sum())
+       for i in range(max_iters):
+         # E[lam | x]
+         pm = (x + a) / (s + b)
+         assert (pm > 0).all()
+         # E[ln lam | x]
+         plm = sp.digamma(x + a) - np.log(s + b)
+         b = a / pm.mean()
+         # Important: this appears to be incorrect in Karlis 2005
+         a += (np.log(b) - sp.digamma(a) + plm.mean()) / sp.polygamma(1, a)
+         assert a > 0
+         assert b > 0
+         obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).sum())
+         if obj[-1] < obj[-2]:
+           raise RuntimeError('llik decreased')
+         elif obj[-1] - obj[-2] < tol:
+           log_inv_disp = np.log(a)
+           log_mean = -np.log(b) + np.log(a)
+           return log_mean, log_inv_disp, obj
+       else:
+         raise RuntimeError('failed to converge in max_iters')
+   #+END_SRC
 
-    expr = scvi.dataset.AnnDatasetFromAnnData(temp)
-    m = scvi.models.VAEC(expr.nb_genes, n_batch=0, n_labels=2)
-    train = scvi.inference.UnsupervisedTrainer(m, expr, train_size=1, batch_size=32, show_progbar=False, n_epochs_kl_warmup=100)
-    train.train(n_epochs=1000, lr=1e-2)
-  #+END_SRC
+   #+RESULTS:
+   :RESULTS:
+   # Out[101]:
+   :END:
 
-  #+RESULTS:
-  :RESULTS:
-  # Out[125]:
-  :END:
+   Try EM for a simple example.
 
-  # https://scvi.readthedocs.io/en/stable/scvi.models.html#scvi.models.SCANVI
-  # https://scvi.readthedocs.io/en/stable/tutorials/scanvi.html?highlight=scanvi#EVF-/-not-EVF
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 100
+     log_mean = -10
+     log_inv_disp = 0
+     s = np.repeat(1e5, n)
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+     x = rng.poisson(s * lam)
+   #+END_SRC
 
-  #+BEGIN_SRC ipython
-    post = train.create_posterior(train.model, expr)
-    _, _, label = post.get_latent()
-  #+END_SRC
+   #+RESULTS:
+   :RESULTS:
+   # Out[104]:
+   :END:
 
-  #+RESULTS:
-  :RESULTS:
-  # Out[118]:
-  :END:
+   #+BEGIN_SRC ipython :async t
+     log_mu, neg_log_phi, trace = ebpm_gamma_em(x, s)
+   #+END_SRC
 
-  The fundamental difference between scVI and our approach is that scVI
-  clusters points in the low-dimensional latent space, and we cluster points in
-  the space of latent gene expression (which has equal dimension to the
-  observations).
+   #+RESULTS:
+   :RESULTS:
+   # Out[105]:
+   :END:
 
-  Rui Shu [[http://ruishu.io/2016/12/25/gmvae/][proposed an alternative
-  generative model]], which has some practical benefits and can be adapted to
-  this problem
+   Plot the simulated data, the ground truth marginal distribution on counts,
+   and the NB MLE.
 
-  \begin{align}
-    x_{ij} \mid \xiplus, \lambda_{ij} &\sim \Pois(\xiplus \lambda_{ij})\\
-    \lambda_{ij} \mid \vz_i &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}(\vz_i))_j^{-1} \phi_j^{-1})\\
-    \vz_i \mid y_i &\sim \N(\mu_z(y_i), \sigma^2(y_i))\\
-    y_i \mid \vpi &\sim \Mult(1, \vpi)\\
-    q(y_i, \vz_i \mid \vx_i) &= q(y_i \mid \vx_i)\, q(\vz_i \mid y_i, \vx_i).
-  \end{align}
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/nb-em.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4.5, 2.5)
+     grid = np.arange(x.max() + 1)
+     plt.hist(x, bins=grid, color='0.7', density=True)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(-log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, color=cm(0), label='Ground truth')
+     plt.plot(grid + .5, st.nbinom(n=np.exp(neg_log_phi), p=1 / (1 + s[0] * np.exp(log_mu - neg_log_phi))).pmf(grid), lw=1, color=cm(1), label='NB MLE')
+     plt.legend(frameon=False)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
 
-  There are additional deep unsupervised learning methods, which could
-  potentially be adapted to this setting (reviewed in
-  [[https://dx.doi.org/10.1109/ACCESS.2018.2855437][Min et al. 2018]]).
+   #+RESULTS:
+   :RESULTS:
+   # Out[106]:
+   [[file:figure/nbmix.org/nb-em.png]]
+   :END:
+
+   Try a more extensive evaluation of the method.
+
+   #+BEGIN_SRC ipython :async t
+     n = 100
+     s = np.repeat(1e5, n)
+     result = dict()
+     for trial in range(5):
+       for log_mean in np.linspace(-12, -6, 7):
+         for log_inv_disp in np.linspace(0, 4, 5):
+           rng = np.random.default_rng(trial)
+           lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+           x = rng.poisson(s * lam)
+           start = time.time()
+           log_mean_hat, log_inv_disp_hat, trace = ebpm_gamma_em(x, s, max_iters=1000)
+           elapsed = time.time() - start
+           result[(log_mean, log_inv_disp, trial)] = pd.Series([log_mean_hat, log_inv_disp_hat, len(trace), elapsed])
+     result = (pd.DataFrame.from_dict(result, orient='index')
+               .reset_index()
+               .rename({f'level_{i}': k for i, k in enumerate(['log_mean', 'log_inv_disp', 'trial'])}, axis=1)
+               .rename({i: k for i, k in enumerate(['log_mean_hat', 'log_inv_disp_hat', 'num_iters', 'elapsed'])}, axis=1))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[138]:
+   :END:
+
+   Plot the estimates against the ground truth values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/nb-em-sim.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(4.5, 2.5)
+     for a in ax:
+       a.set_aspect('equal', adjustable='datalim')
+     ax[0].scatter(result['log_mean'], result['log_mean_hat'], c='k', s=1)
+     ax[0].set_xlabel('Ground truth $\ln(\mu)$')
+     ax[0].set_ylabel('Estimated $\ln(\mu)$')
+     ax[1].scatter(-result['log_inv_disp'], -result['log_inv_disp_hat'], c='k', s=1)
+     ax[1].set_xlabel('Ground truth $\ln(\phi)$')
+     ax[1].set_ylabel('Estimated $\ln(\phi)$')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[139]:
+   [[file:figure/nbmix.org/nb-em-sim.png]]
+   :END:
+
+   Estimate the average time (seconds) taken to fit each trial.
+
+   #+BEGIN_SRC ipython
+     result['elapsed'].mean(), result['elapsed'].std()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[140]:
+   : (0.18343861034938266, 0.18248113994496618)
+   :END:
+
+** EM for Poisson-Log compound distribution
+
+   The NB distribution can be derived as a
+   [[https://en.wikipedia.org/wiki/Negative_binomial_distribution#Representation_as_compound_Poisson_distribution][Poisson-distributed
+   sum]] of
+   [[https://en.wikipedia.org/wiki/Logarithmic_distribution][Log-distributed
+   random variables]] (Quenouille 1949)
+
+   \begin{align}
+     x_i \mid y_1, \ldots, y_{m_i}, m_i &= \sum_{t=1}^{m_i} y_t\\
+     m_i \mid \lambda &\sim \Pois(\lambda)\\
+     p(y_t \mid \theta) &= -\frac{\theta^{y_t}}{y_t \ln(1 - \theta)}, \quad t = 1, 2, \ldots\\
+     p(x_i \mid \lambda, \theta) &\propto p^n (1 - p)^{x_i}, \quad n = -\lambda / \log(1 - \theta), p = 1 - \theta
+   \end{align}
+
+   To connect this parameterization to our parameterization, we have \(n =
+   1/\phi\) and \(p = 1 / (1 + \xiplus\mu\phi)\). Adamidis 1999 uses this fact to
+   derive a new auxiliary variable representation of the NB distribution
+
+   \begin{equation}
+     p(y_t, z_t \mid \theta) = \frac{(1 - \theta)^{z_t} \theta^{y_t - 1}}{y_t}, z_t \in (0, 1), y_t \in \mathbb{N}
+   \end{equation}
+
+   which they claim admits an EM algorithm with analytic M step. Letting \(q
+   \triangleq p(m_i, y_1, \ldots, z_1, \ldots \mid x_i, n, p)\),
+
+   \begin{multline}
+     E_q[\ln p(x_i \mid m_i, y_1, \ldots, z_1, \ldots, \lambda, \theta)] = E_q[m_i] \ln\lambda - \lambda - E_q[\ln\Gamma(m_i + 1)]\\
+     + E_q[\textstyle\sum_{t=1}^{m_i} z_t] \ln(1 - \theta) + (\textstyle\sum_{t=1}^{m_i} E_q[y_t] - E_q[m_i]) \ln \theta + \mathrm{const}
+   \end{multline}
+
+   However, it appears they neglect the intractable term \(E_q[\ln\Gamma(m_i +
+   1)]\) in their derivation, and the algorithm as given does not appear to
+   improve the expected log joint probability.
+
+   #+BEGIN_SRC ipython
+     def pois_log_series_em(x, s, max_iters=100, tol=1e-3):
+       n = x.shape[0]
+       assert x.shape == (n,)
+       assert x.shape == s.shape
+       z = .5
+       m = .5 * x
+       theta = (x - m).sum() / (x + m * z - m).sum()
+       lam = m.mean()
+       obj = [st.nbinom(n=-lam / np.log(1 - theta), p=1 - theta).logpmf(x).sum()]
+       assert np.isfinite(obj[-1]) and obj[-1] < 0
+       for i in range(max_iters):
+         alpha = -1 / np.log(1 - theta)
+         z = -((1 - theta) / theta - alpha)
+         assert np.ndim(z) == 0
+         assert 0 < z < 1
+         n = lam * alpha
+         m = n * (sp.digamma(n + x) - sp.digamma(n))
+         assert m.shape == x.shape
+         theta = (x - m).sum() / (x + m * z - m).sum()
+         assert 0 < theta < 1
+         lam = m.mean()
+         assert lam > 0
+         obj.append(st.nbinom(n=n, p=1 - theta).logpmf(x).sum())
+         assert np.isfinite(obj[-1]) and obj[-1] < 0
+         if obj[-1] < obj[-2]:
+           raise RuntimeError('llik decreased')
+         elif obj[-1] - obj[-2] < tol:
+           log_inv_disp = -np.log(n)
+           log_mean = np.log(theta) - np.log(1 - theta) - np.log(s) - log_inv_disp
+           return log_mean, log_inv_disp, obj
+       else:
+         raise RuntimeError('failed to converge in max_iters')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[41]:
+   :END:
+
+   Try EM for a simple example.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 100
+     log_mean = -10
+     log_inv_disp = 0
+     s = np.repeat(1e5, n)
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+     x = rng.poisson(s * lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     log_mu, neg_log_phi, trace = pois_log_series_em(x, s)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   :END:
+
+** Deep unsupervised learning
+
+   scVI ([[https://dx.doi.org/10.1038/s41592-018-0229-2][Lopez et al. 2018]],
+   [[https://www.biorxiv.org/content/10.1101/532895v2][Xu et al. 2020]])
+   implements a related deep unsupervised (more precisely, semi-supervised)
+   clustering model ([[https://arxiv.org/abs/1406.5298][Kingma et al. 2014]],
+   [[https://arxiv.org/abs/1611.02648][Dilokthanakul et al. 2016]]).
+
+   \begin{align}
+     x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+     \ln s_i &\sim \N(\cdot)\\
+     \lambda_{ij} \mid \vz_i &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}(\vz_i))_j^{-1} \phi_j^{-1})\\
+     \vz_i \mid y_i, \vu_i &\sim \N(\mu_z(\vu_i, y_i), \diag(\sigma^2(\vu_i, y_i)))\\
+     y_i \mid \vpi &\sim \Mult(1, \vpi)\\
+     \vu_i &\sim \N(0, \mi).
+   \end{align}
+
+   where
+
+   - \(y_i\) denotes the cluster assignment for cell \(i\)
+   - \(\mu_z(\cdot), \sigma^2(\cdot)\) are neural networks mapping the latent
+     cluster variable \(y_i\) and Gaussian noise \(\vu_i\) to the latent variable
+     \(\vz_i\)
+   - \(\mu_{\lambda}(\cdot)\) is a neural network mapping latent variable \(\vz_i\) to
+     latent gene expression \(\vlambda_{i}\)
+
+   The intuition behind this model is that, marginalizing over \(y_i\), the
+   prior \(p(z_i)\) is a mixture of Gaussians, and therefore the model embeds
+   examples in a space which makes clustering easy, and maps examples to those
+   clusters simultaneously. To perform variational inference in this model,
+   Lopez et al. introduce inference networks
+
+   \begin{align}
+     q(\vz_i \mid \vx_i) &= \N(\cdot)\\
+     q(y_i \mid \vz_i) &= \Mult(1, \cdot).
+   \end{align}
+
+   #+BEGIN_SRC ipython :async t
+     import scvi.dataset
+     import scvi.inference
+     import scvi.models
+
+     expr = scvi.dataset.AnnDatasetFromAnnData(temp)
+     m = scvi.models.VAEC(expr.nb_genes, n_batch=0, n_labels=2)
+     train = scvi.inference.UnsupervisedTrainer(m, expr, train_size=1, batch_size=32, show_progbar=False, n_epochs_kl_warmup=100)
+     train.train(n_epochs=1000, lr=1e-2)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[125]:
+   :END:
+
+   # https://scvi.readthedocs.io/en/stable/scvi.models.html#scvi.models.SCANVI
+   # https://scvi.readthedocs.io/en/stable/tutorials/scanvi.html?highlight=scanvi#EVF-/-not-EVF
+
+   #+BEGIN_SRC ipython
+     post = train.create_posterior(train.model, expr)
+     _, _, label = post.get_latent()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[118]:
+   :END:
+
+   The fundamental difference between scVI and our approach is that scVI
+   clusters points in the low-dimensional latent space, and we cluster points in
+   the space of latent gene expression (which has equal dimension to the
+   observations).
+
+   Rui Shu [[http://ruishu.io/2016/12/25/gmvae/][proposed an alternative
+   generative model]], which has some practical benefits and can be adapted to
+   this problem
+
+   \begin{align}
+     x_{ij} \mid \xiplus, \lambda_{ij} &\sim \Pois(\xiplus \lambda_{ij})\\
+     \lambda_{ij} \mid \vz_i &\sim \Gam(\phi_j^{-1}, (\mu_{\lambda}(\vz_i))_j^{-1} \phi_j^{-1})\\
+     \vz_i \mid y_i &\sim \N(\mu_z(y_i), \sigma^2(y_i))\\
+     y_i \mid \vpi &\sim \Mult(1, \vpi)\\
+     q(y_i, \vz_i \mid \vx_i) &= q(y_i \mid \vx_i)\, q(\vz_i \mid y_i, \vx_i).
+   \end{align}
+
+   There are additional deep unsupervised learning methods, which could
+   potentially be adapted to this setting (reviewed in
+   [[https://dx.doi.org/10.1109/ACCESS.2018.2855437][Min et al. 2018]]).

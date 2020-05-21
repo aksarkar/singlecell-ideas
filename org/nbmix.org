@@ -149,10 +149,9 @@
    :CUSTOM_ID: em-nbmix
    :END:
 
-   Considering the Gamma mixture prior, we can estimate \(\vpi, \vmu, \vphi\)
-   by maximizing the likelihood using an EM algorithm. Letting \(z_{ik} \in
-   \{0, 1\}\) indicate whether cell \(i\) is assigned to cluster \(k\), the
-   exact posterior
+   We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
+   EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
+   assigned to cluster \(k\), the exact posterior
 
    \begin{align}
      q(z_{i1}, \ldots, z_{iK}) &\triangleq p(z_{ik} \mid \cdot) = \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
@@ -162,8 +161,8 @@
    The expected log joint probability with respect to \(q\)
 
    \begin{multline}
-     E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = E_q[z_{ik}] \left[\ln \pi_{ik} + x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
-       \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right].
+     E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = E_q[z_{ik}] \Biggl[\ln \pi_{ik} + x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\\
+       - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\Biggr].
    \end{multline}
 
    In the E step, the necessary expectations are analytic. In the M step, we
@@ -175,9 +174,9 @@
    :CUSTOM_ID: ai
    :END:
 
-   Another alternative algorithm, which is amenable to stochastic gradient
-   descent and online learning, is to use the fact that EM can be viewed as
-   maximizing the evidence lower bound
+   An alternative algorithm, which is amenable to stochastic gradient descent
+   and online learning, is to use the fact that EM can be viewed as maximizing
+   the evidence lower bound
    ([[https://doi.org/10.1007/978-94-011-5014-9_12][Neal and Hinton 1998]])
 
    \begin{align}
@@ -186,12 +185,12 @@
    \end{align}
 
    Exact EM corresponds to (fully) alternately optimizing \(q^* = p(z \mid x,
-   \theta)\) and \(\theta\); however, we can instead amortize inference
+   \theta)\) and \(\theta\). However, we can instead amortize inference
    ([[https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf][Gershman and
    Goodman 2014]], [[https://arxiv.org/abs/1312.6114][Kingma and Welling
    2014]], [[http://proceedings.mlr.press/v32/rezende14.html][Rezende et
    al. 2014]]), estimating a variational approximation parameterized by a
-   neural network \(f_z\), mapping \(\vx_i \rightarrow \vz_i\)
+   neural network \(f_z\) mapping \(\vx_i \rightarrow \vz_i\)
 
    \begin{align}
      p(z_{i1}, \ldots, z_{iK} \mid \vpi) &= \Mult(1, \vpi)\\
@@ -201,8 +200,8 @@
    The evidence lower bound is analytic
 
    \begin{multline}
-     \mathcal{L} = \sum_{i, k} (f_z(\vx_i))_k \Biggl[\ln \pi_{ik} - \ln\bigl((f_z(\vx_i))_k\bigr)\\
-       + \sum_j x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right) - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\Biggr],
+     \mathcal{L} = \sum_{i, k} (f_z(\vx_i))_k \Biggl[\ln\left(\frac{\pi_{ik}}{(f_z(\vx_i))_k}\right) + \sum_j \biggl[ x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right) - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj})\\
+         + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\biggr]\Biggr],
    \end{multline}
 
    and can be optimized using SGD.
@@ -608,7 +607,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
+   # Out[71]:
    :END:
 
    Look at the initial loss.
@@ -659,30 +658,41 @@
    : tensor(31154.1895)
    :END:
 
-   Perform amortized inference, initializing \(\vmu_k, \vphi_k\) from the MLE
-   starting from the ground-truth labels.
+   Perform amortized inference, initializing \(\vmu_k, \vphi_k\)
+   at the batch GD clustering solution.
 
    #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
      torch.manual_seed(0)
      fit1 = mpebpm.gam_mix.EBPMGammaMix(
        p=temp.shape[1],
        k=2,
        log_mean=fit0[0],
-       log_inv_disp=fit0[1]).fit(
+       log_inv_disp=fit0[1])
+     fit1.fit(
          x=temp.X.A,
          s=temp.X.sum(axis=1),
          y=pd.get_dummies(temp.obs['cell_type']).values,
          lr=1e-3,
          batch_size=64,
          shuffle=True,
-         num_pretrain=80,
-         num_epochs=80,
-         log_dir='runs/nbmix/ai-inittruth-epoch80')
+         num_epochs=10,
+         log_dir='runs/nbmix/ai-freeze-64-1e-3-10')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[14]:
+   # Out[73]:
+   #+BEGIN_EXAMPLE
+     EBPMGammaMix(
+     (encoder): Sequential(
+     (0): Linear(in_features=11590, out_features=128, bias=True)
+     (1): ReLU()
+     (2): Linear(in_features=128, out_features=2, bias=True)
+     (3): Softmax(dim=1)
+     )
+     )
+   #+END_EXAMPLE
    :END:
 
    Compute the cross entropy loss over the posterior mean cluster assignments.
@@ -696,8 +706,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
-   : tensor(15.2364)
+   # Out[76]:
+   : tensor(4.5151e-05)
    :END:
 
    Plot the approximate posterior over cluster assignments for each point.
@@ -716,71 +726,43 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[82]:
+   # Out[77]:
    [[file:figure/nbmix.org/am-inf-ex.png]]
    :END:
 
-   Threshold cluster assignments, and compute the cross entropy loss.
+** 10-way example
 
-   #+BEGIN_SRC ipython
-     zhat_thresh = pd.get_dummies(np.argmax(zhat, axis=1))
-     torch.nn.functional.binary_cross_entropy(
-       torch.tensor(zhat_thresh.values, dtype=torch.float),
-       torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float))
+   Subsample the 10-way mixture of sorted cells to get an initialization.
+
+   #+BEGIN_SRC ipython :async t
+     mix10 = sc.pp.subsample(dat, fraction=0.01, copy=True)
+     sc.pp.filter_genes(mix10, min_counts=1)
+     sc.pp.pca(mix10)
+     sc.pp.neighbors(mix10)
+     sc.tl.umap(mix10)
+     sc.tl.leiden(mix10)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[81]:
-   : tensor(0.)
+   # Out[96]:
    :END:
-
-   Now, fit the model starting from a random initialization.
 
    #+BEGIN_SRC ipython :async t
      import imp; imp.reload(mpebpm.gam_mix)
-     torch.manual_seed(1)
-     fit2 = mpebpm.gam_mix.EBPMGammaMix(
-       p=temp.shape[1],
-       k=2).fit(
-         x=temp.X.A,
-         s=temp.X.sum(axis=1),
-         y=pd.get_dummies(temp.obs['cell_type']).values,
-         lr=1e-2,
-         batch_size=64,
-         shuffle=True,
-         num_pretrain=1,
-         num_epochs=120,
-         log_dir='runs/nbmix/ai-init1-pretrain1')
+     torch.manual_seed(0)
+     fit = mpebpm.gam_mix.ebpm_gam_mix_em(
+       x=temp.X.A,
+       s=temp.X.sum(axis=1),
+       k=10,
+       num_epochs=50,
+       max_em_iters=8,
+       log_dir='runs/nbmix/mix10-init-50-8')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[95]:
-   :END:
-
-   Compare the estimated \(\ln\mu\) from the clustering model to the estimates
-   using the ground truth labels.
-
-   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/am-inf-vs-mpebpm.png
-     lim = [-10, 10]
-     plt.clf()
-     fig, ax = plt.subplots(1, 2, sharey=True)
-     fig.set_size_inches(4.5, 2.5)
-     for i, a in enumerate(ax):
-       a.scatter(fit1.log_mean[i].detach().cpu().numpy(), fit2.log_mean[i].detach().cpu().numpy(), s=1, c='k', alpha=0.2)
-       a.plot(lim, lim, c='r', lw=1, ls=':')
-       a.set_title(f'Cluster {i}')
-       a.set_ylim(lim)
-       a.set_xlabel('Ground truth initialization')
-     ax[0].set_ylabel('Random initialization')
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[84]:
-   [[file:figure/nbmix.org/am-inf-vs-mpebpm.png]]
+   0 - 9fd27c7e-12be-4a28-88a3-fd21d6121ff9
    :END:
 
 * Related work

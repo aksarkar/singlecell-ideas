@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-21 Thu 13:31 -->
+<!-- 2020-05-21 Thu 16:30 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -272,6 +272,7 @@ for the JavaScript code in this tag.
 <li><a href="#leiden">Leiden algorithm</a></li>
 <li><a href="#mpebpm">MPEBPM</a></li>
 <li><a href="#amortized">Amortized inference</a></li>
+<li><a href="#org56e7cfb">10-way example</a></li>
 </ul>
 </li>
 <li><a href="#related-work">Related work</a>
@@ -420,10 +421,9 @@ marginal likelihood is a mixture of negative binomials
 <h3 id="em-nbmix"><a id="org839b8c3"></a>EM for Poisson&#x2013;Gamma-mixture</h3>
 <div class="outline-text-3" id="text-em-nbmix">
 <p>
-Considering the Gamma mixture prior, we can estimate \(\vpi, \vmu, \vphi\)
-by maximizing the likelihood using an EM algorithm. Letting \(z_{ik} \in
-   \{0, 1\}\) indicate whether cell \(i\) is assigned to cluster \(k\), the
-exact posterior
+We can estimate \(\vpi, \vmu, \vphi\) by maximizing the likelihood using an
+EM algorithm. Letting \(z_{ik} \in \{0, 1\}\) indicate whether cell \(i\) is
+assigned to cluster \(k\), the exact posterior
 </p>
 
 \begin{align}
@@ -436,8 +436,8 @@ The expected log joint probability with respect to \(q\)
 </p>
 
 \begin{multline}
-  E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = E_q[z_{ik}] \left[\ln \pi_{ik} + x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\right.\\
-    \left. - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\right].
+  E_q[\ln p(x_{ij}, z_{ik} \mid \xiplus, \vpi_i, \vmu_k, \vphi_k)] = E_q[z_{ik}] \Biggl[\ln \pi_{ik} + x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)\\
+    - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\Biggr].
 \end{multline}
 
 <p>
@@ -448,13 +448,13 @@ can improve the expected log joint probability, e.g. by
 </div>
 </div>
 
-<div id="outline-container-org78be1ff" class="outline-3">
-<h3 id="ai"><a id="org78be1ff"></a>Amortized inference</h3>
+<div id="outline-container-org5f5c422" class="outline-3">
+<h3 id="ai"><a id="org5f5c422"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-ai">
 <p>
-Another alternative algorithm, which is amenable to stochastic gradient
-descent and online learning, is to use the fact that EM can be viewed as
-maximizing the evidence lower bound
+An alternative algorithm, which is amenable to stochastic gradient descent
+and online learning, is to use the fact that EM can be viewed as maximizing
+the evidence lower bound
 (<a href="https://doi.org/10.1007/978-94-011-5014-9_12">Neal and Hinton 1998</a>)
 </p>
 
@@ -465,12 +465,12 @@ maximizing the evidence lower bound
 
 <p>
 Exact EM corresponds to (fully) alternately optimizing \(q^* = p(z \mid x,
-   \theta)\) and \(\theta\); however, we can instead amortize inference
+   \theta)\) and \(\theta\). However, we can instead amortize inference
 (<a href="https://escholarship.org/content/qt34j1h7k5/qt34j1h7k5.pdf">Gershman and
 Goodman 2014</a>, <a href="https://arxiv.org/abs/1312.6114">Kingma and Welling
 2014</a>, <a href="http://proceedings.mlr.press/v32/rezende14.html">Rezende et
 al. 2014</a>), estimating a variational approximation parameterized by a
-neural network \(f_z\), mapping \(\vx_i \rightarrow \vz_i\)
+neural network \(f_z\) mapping \(\vx_i \rightarrow \vz_i\)
 </p>
 
 \begin{align}
@@ -483,8 +483,8 @@ The evidence lower bound is analytic
 </p>
 
 \begin{multline}
-  \mathcal{L} = \sum_{i, k} (f_z(\vx_i))_k \Biggl[\ln \pi_{ik} - \ln\bigl((f_z(\vx_i))_k\bigr)\\
-    + \sum_j x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right) - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj}) + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\Biggr],
+  \mathcal{L} = \sum_{i, k} (f_z(\vx_i))_k \Biggl[\ln\left(\frac{\pi_{ik}}{(f_z(\vx_i))_k}\right) + \sum_j \biggl[ x_{ij} \ln\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right) - \phi_{kj}^{-1} \ln(1 + \xiplus\mu_{kj}\phi_{kj})\\
+      + \ln\Gamma(x_{ij} + 1 / \phi_{kj}) - \ln\Gamma(1 / \phi_{kj}) - \ln\Gamma(x_{ij} + 1)\biggr]\Biggr],
 \end{multline}
 
 <p>
@@ -862,8 +862,8 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org4b1d0f9" class="outline-3">
-<h3 id="amortized"><a id="org4b1d0f9"></a>Amortized inference</h3>
+<div id="outline-container-org9606067" class="outline-3">
+<h3 id="amortized"><a id="org9606067"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
 Construct the amortized inference model, initializing \(\vmu_k, \vphi_k\)
@@ -931,28 +931,40 @@ tensor(31154.1895)
 </pre>
 
 <p>
-Perform amortized inference, initializing \(\vmu_k, \vphi_k\) from the MLE
-starting from the ground-truth labels.
+Perform amortized inference, initializing \(\vmu_k, \vphi_k\)
+at the batch GD clustering solution.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">torch.manual_seed(0)
+<pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
+torch.manual_seed(0)
 <span class="org-variable-name">fit1</span> = mpebpm.gam_mix.EBPMGammaMix(
   p=temp.shape[1],
   k=2,
   log_mean=fit0[0],
-  log_inv_disp=fit0[1]).fit(
+  log_inv_disp=fit0[1])
+fit1.fit(
     x=temp.X.A,
     s=temp.X.<span class="org-builtin">sum</span>(axis=1),
     y=pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values,
     lr=1e-3,
     batch_size=64,
     shuffle=<span class="org-constant">True</span>,
-    num_pretrain=80,
-    num_epochs=80,
-    log_dir=<span class="org-string">'runs/nbmix/ai-inittruth-epoch80'</span>)
+    num_epochs=10,
+    log_dir=<span class="org-string">'runs/nbmix/ai-freeze-64-1e-3-10'</span>)
 </pre>
 </div>
+
+<pre class="example">
+EBPMGammaMix(
+(encoder): Sequential(
+(0): Linear(in_features=11590, out_features=128, bias=True)
+(1): ReLU()
+(2): Linear(in_features=128, out_features=2, bias=True)
+(3): Softmax(dim=1)
+)
+)
+</pre>
 
 <p>
 Compute the cross entropy loss over the posterior mean cluster assignments.
@@ -967,7 +979,7 @@ torch.nn.functional.binary_cross_entropy(
 </div>
 
 <pre class="example">
-tensor(15.2364)
+tensor(4.5151e-05)
 
 </pre>
 
@@ -993,72 +1005,42 @@ fig.tight_layout()
 <p><img src="figure/nbmix.org/am-inf-ex.png" alt="am-inf-ex.png">
 </p>
 </div>
+</div>
+</div>
 
+<div id="outline-container-org56e7cfb" class="outline-3">
+<h3 id="org56e7cfb">10-way example</h3>
+<div class="outline-text-3" id="text-org56e7cfb">
 <p>
-Threshold cluster assignments, and compute the cross entropy loss.
+Subsample the 10-way mixture of sorted cells to get an initialization.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">zhat_thresh</span> = pd.get_dummies(np.argmax(zhat, axis=1))
-torch.nn.functional.binary_cross_entropy(
-  torch.tensor(zhat_thresh.values, dtype=torch.<span class="org-builtin">float</span>),
-  torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>))
+<pre class="src src-ipython"><span class="org-variable-name">mix10</span> = sc.pp.subsample(dat, fraction=0.01, copy=<span class="org-constant">True</span>)
+sc.pp.filter_genes(mix10, min_counts=1)
+sc.pp.pca(mix10)
+sc.pp.neighbors(mix10)
+sc.tl.umap(mix10)
+sc.tl.leiden(mix10)
 </pre>
 </div>
-
-<pre class="example">
-tensor(0.)
-
-</pre>
-
-<p>
-Now, fit the model starting from a random initialization.
-</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
-torch.manual_seed(1)
-<span class="org-variable-name">fit2</span> = mpebpm.gam_mix.EBPMGammaMix(
-  p=temp.shape[1],
-  k=2).fit(
-    x=temp.X.A,
-    s=temp.X.<span class="org-builtin">sum</span>(axis=1),
-    y=pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values,
-    lr=1e-2,
-    batch_size=64,
-    shuffle=<span class="org-constant">True</span>,
-    num_pretrain=1,
-    num_epochs=120,
-    log_dir=<span class="org-string">'runs/nbmix/ai-init1-pretrain1'</span>)
+torch.manual_seed(0)
+<span class="org-variable-name">fit</span> = mpebpm.gam_mix.ebpm_gam_mix_em(
+  x=temp.X.A,
+  s=temp.X.<span class="org-builtin">sum</span>(axis=1),
+  k=10,
+  num_epochs=50,
+  max_em_iters=8,
+  log_dir=<span class="org-string">'runs/nbmix/mix10-init-50-8'</span>)
 </pre>
 </div>
 
 <p>
-Compare the estimated \(\ln\mu\) from the clustering model to the estimates
-using the ground truth labels.
+0 - 9fd27c7e-12be-4a28-88a3-fd21d6121ff9
 </p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">lim</span> = [-10, 10]
-plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
-fig.set_size_inches(4.5, 2.5)
-<span class="org-keyword">for</span> i, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax):
-  a.scatter(fit1.log_mean[i].detach().cpu().numpy(), fit2.log_mean[i].detach().cpu().numpy(), s=1, c=<span class="org-string">'k'</span>, alpha=0.2)
-  a.plot(lim, lim, c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
-  a.set_title(f<span class="org-string">'Cluster {i}'</span>)
-  a.set_ylim(lim)
-  a.set_xlabel(<span class="org-string">'Ground truth initialization'</span>)
-ax[0].set_ylabel(<span class="org-string">'Random initialization'</span>)
-fig.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/nbmix.org/am-inf-vs-mpebpm.png" alt="am-inf-vs-mpebpm.png">
-</p>
-</div>
 </div>
 </div>
 </div>
@@ -1452,7 +1434,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-21 Thu 13:31</p>
+<p class="date">Created: 2020-05-21 Thu 16:30</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

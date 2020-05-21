@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-20 Wed 22:30 -->
+<!-- 2020-05-21 Thu 13:31 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -448,8 +448,8 @@ can improve the expected log joint probability, e.g. by
 </div>
 </div>
 
-<div id="outline-container-org27c7a09" class="outline-3">
-<h3 id="ai"><a id="org27c7a09"></a>Amortized inference</h3>
+<div id="outline-container-org78be1ff" class="outline-3">
+<h3 id="ai"><a id="org78be1ff"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-ai">
 <p>
 Another alternative algorithm, which is amenable to stochastic gradient
@@ -537,6 +537,24 @@ sc.tl.umap(temp)
 </pre>
 </div>
 
+<p>
+Write out the estimated embedding.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">temp.write(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/nbmix-example.h5ad'</span>)
+</pre>
+</div>
+
+<p>
+Read the annotated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">temp</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/nbmix-example.h5ad'</span>)
+</pre>
+</div>
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
 plt.clf()
@@ -608,6 +626,17 @@ expression models.
   num_epochs=320,
   shuffle=<span class="org-constant">True</span>,
   log_dir=<span class="org-string">'runs/nbmix/pretrain/'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.savez(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/nbmix-example-pretrain.npz'</span>, fit0)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> np.load(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/nbmix-example-pretrain.npz'</span>) <span class="org-keyword">as</span> f:
+  <span class="org-variable-name">fit0</span> = f[<span class="org-string">'arr_0'</span>]
 </pre>
 </div>
 
@@ -753,21 +782,20 @@ tensor(-1872.7723)
 </pre>
 
 <p>
-Try fitting the model from a random initialization (49 s).
+Try fitting the model from a random initialization (4 s).
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
-torch.manual_seed(2)
+torch.manual_seed(0)
 <span class="org-variable-name">fit</span> = mpebpm.gam_mix.ebpm_gam_mix_em(
   x=temp.X.A,
   s=temp.X.<span class="org-builtin">sum</span>(axis=1),
   y=torch.tensor(pd.get_dummies(temp.obs[<span class="org-string">'cell_type'</span>]).values, dtype=torch.<span class="org-builtin">float</span>).cuda(),
   k=2,
-  lr=1e-3,
-  num_epochs=100,
-  max_em_iters=10,
-  log_dir=<span class="org-string">'runs/nbmix/mpebpm-random-init2-pois1-iter10'</span>)
+  num_epochs=50,
+  max_em_iters=8,
+  log_dir=<span class="org-string">'runs/nbmix/mpebpm-random-init0-pois-50-8'</span>)
 </pre>
 </div>
 
@@ -783,8 +811,8 @@ likelihood using the estimated cluster weights.
 </div>
 
 <pre class="example">
-ground_truth   -41.151709
-est            -41.544491
+ground_truth   -41.151726
+est            -41.145436
 dtype: float64
 </pre>
 
@@ -834,12 +862,12 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org78be1ff" class="outline-3">
-<h3 id="amortized"><a id="org78be1ff"></a>Amortized inference</h3>
+<div id="outline-container-org4b1d0f9" class="outline-3">
+<h3 id="amortized"><a id="org4b1d0f9"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
-Fit the amortized inference model, initializing \(\vmu_k, \vphi_k\) from the
-MLE starting from the ground-truth labels.
+Construct the amortized inference model, initializing \(\vmu_k, \vphi_k\)
+from the MLE starting from the ground-truth labels.
 </p>
 
 <div class="org-src-container">
@@ -1424,7 +1452,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-20 Wed 22:30</p>
+<p class="date">Created: 2020-05-21 Thu 13:31</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

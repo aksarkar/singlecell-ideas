@@ -258,6 +258,28 @@
    # Out[6]:
    :END:
 
+   Write out the estimated embedding.
+
+   #+BEGIN_SRC ipython
+     temp.write('/scratch/midway2/aksarkar/singlecell/nbmix-example.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   Read the annotated data.
+
+   #+BEGIN_SRC ipython
+     temp = anndata.read_h5ad('/scratch/midway2/aksarkar/singlecell/nbmix-example.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   :END:
+
    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/sim-ex.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
@@ -272,7 +294,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[9]:
    [[file:figure/nbmix.org/sim-ex.png]]
    :END:
 
@@ -290,7 +312,7 @@
 
     #+RESULTS:
     :RESULTS:
-    # Out[8]:
+    # Out[10]:
     :END:
 
     #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/leiden-ex.png
@@ -307,7 +329,7 @@
 
     #+RESULTS:
     :RESULTS:
-    # Out[9]:
+    # Out[11]:
     [[file:figure/nbmix.org/leiden-ex.png]]
     :END:
 
@@ -331,7 +353,26 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[33]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     np.savez('/scratch/midway2/aksarkar/singlecell/nbmix-example-pretrain.npz', fit0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[39]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     with np.load('/scratch/midway2/aksarkar/singlecell/nbmix-example-pretrain.npz') as f:
+       fit0 = f['arr_0']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -342,7 +383,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[61]:
+   # Out[49]:
    :END:
 
    For comparison, estimate a point mass expression model for each gene, for
@@ -470,25 +511,24 @@
    : tensor(-1872.7723)
    :END:
 
-   Try fitting the model from a random initialization (49 s).
+   Try fitting the model from a random initialization (4 s).
 
    #+BEGIN_SRC ipython :async t
      import imp; imp.reload(mpebpm.gam_mix)
-     torch.manual_seed(2)
+     torch.manual_seed(0)
      fit = mpebpm.gam_mix.ebpm_gam_mix_em(
        x=temp.X.A,
        s=temp.X.sum(axis=1),
        y=torch.tensor(pd.get_dummies(temp.obs['cell_type']).values, dtype=torch.float).cuda(),
        k=2,
-       lr=1e-3,
-       num_epochs=100,
-       max_em_iters=10,
-       log_dir='runs/nbmix/mpebpm-random-init2-pois1-iter10')
+       num_epochs=50,
+       max_em_iters=8,
+       log_dir='runs/nbmix/mpebpm-random-init0-pois-50-8')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[121]:
+   # Out[30]:
    :END:
 
    Compare the log likelihood using the ground truth labels to the log
@@ -501,10 +541,10 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[128]:
+   # Out[50]:
    #+BEGIN_EXAMPLE
-     ground_truth   -41.151709
-     est            -41.544491
+     ground_truth   -41.151726
+     est            -41.145436
      dtype: float64
    #+END_EXAMPLE
    :END:
@@ -524,7 +564,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[132]:
+   # Out[51]:
    : tensor(0.)
    :END:
 
@@ -544,7 +584,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[133]:
+   # Out[52]:
    [[file:figure/nbmix.org/sim-ex-fit.png]]
    :END:
 
@@ -553,8 +593,8 @@
    :CUSTOM_ID: amortized
    :END:
 
-   Fit the amortized inference model, initializing \(\vmu_k, \vphi_k\) from the
-   MLE starting from the ground-truth labels.
+   Construct the amortized inference model, initializing \(\vmu_k, \vphi_k\)
+   from the MLE starting from the ground-truth labels.
 
    #+BEGIN_SRC ipython
      query = torch.tensor(temp.X.A)

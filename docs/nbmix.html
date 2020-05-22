@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-21 Thu 16:30 -->
+<!-- 2020-05-22 Fri 16:46 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -334,6 +334,7 @@ issues.
 <span class="org-keyword">import</span> time
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
+<span class="org-keyword">import</span> umap
 </pre>
 </div>
 
@@ -344,7 +345,8 @@ issues.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib
 <span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
@@ -448,8 +450,8 @@ can improve the expected log joint probability, e.g. by
 </div>
 </div>
 
-<div id="outline-container-org5f5c422" class="outline-3">
-<h3 id="ai"><a id="org5f5c422"></a>Amortized inference</h3>
+<div id="outline-container-org5e8b340" class="outline-3">
+<h3 id="ai"><a id="org5e8b340"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-ai">
 <p>
 An alternative algorithm, which is amenable to stochastic gradient descent
@@ -862,8 +864,8 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org9606067" class="outline-3">
-<h3 id="amortized"><a id="org9606067"></a>Amortized inference</h3>
+<div id="outline-container-org88b083e" class="outline-3">
+<h3 id="amortized"><a id="org88b083e"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
 Construct the amortized inference model, initializing \(\vmu_k, \vphi_k\)
@@ -1012,35 +1014,180 @@ fig.tight_layout()
 <h3 id="org56e7cfb">10-way example</h3>
 <div class="outline-text-3" id="text-org56e7cfb">
 <p>
+Apply the standard methodology to the 10-way mixture.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
+<span class="org-comment-delimiter"># </span><span class="org-comment">Important: this is required for sparse data; otherwise, scanpy makes a dense</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">copy and runs out of memory</span>
+sc.pp.pca(dat, zero_center=<span class="org-constant">False</span>)
+sc.pp.neighbors(dat)
+sc.tl.umap(dat)
+sc.tl.leiden(dat)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">dat.write(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mix10.h5ad'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mix10.h5ad'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(6, 3)
+<span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(dat.obs[<span class="org-string">'cell_type'</span>].unique()):
+  ax[0].plot(*dat[dat.obs[<span class="org-string">'cell_type'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'{c}'</span>, alpha=0.1)
+<span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(dat.obs[<span class="org-string">'leiden'</span>].unique()):
+  ax[1].plot(*dat[dat.obs[<span class="org-string">'leiden'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'Cluster {i}'</span>, alpha=0.1)
+<span class="org-keyword">for</span> a, t <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'Ground truth'</span>, <span class="org-string">'Leiden'</span>]):
+  a.set_title(t)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  <span class="org-comment-delimiter"># </span><span class="org-comment">a.legend(markerscale=4, handletextpad=0)</span>
+  a.set_xlabel(<span class="org-string">'UMAP 1'</span>)
+ax[0].set_ylabel(<span class="org-string">'UMAP 2'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/mix10-full-std.png" alt="mix10-full-std.png">
+</p>
+</div>
+
+<p>
 Subsample the 10-way mixture of sorted cells to get an initialization.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">mix10</span> = sc.pp.subsample(dat, fraction=0.01, copy=<span class="org-constant">True</span>)
 sc.pp.filter_genes(mix10, min_counts=1)
-sc.pp.pca(mix10)
+sc.pp.pca(mix10, zero_center=<span class="org-constant">False</span>)
 sc.pp.neighbors(mix10)
 sc.tl.umap(mix10)
 sc.tl.leiden(mix10)
+mix10.write(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mix10-init.h5ad'</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
-torch.manual_seed(0)
-<span class="org-variable-name">fit</span> = mpebpm.gam_mix.ebpm_gam_mix_em(
-  x=temp.X.A,
-  s=temp.X.<span class="org-builtin">sum</span>(axis=1),
-  k=10,
-  num_epochs=50,
-  max_em_iters=8,
-  log_dir=<span class="org-string">'runs/nbmix/mix10-init-50-8'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">mix10</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mix10-init.h5ad'</span>)
+<span class="org-variable-name">y</span> = pd.get_dummies(mix10.obs[<span class="org-string">'cell_type'</span>]).values
 </pre>
 </div>
 
 <p>
-0 - 9fd27c7e-12be-4a28-88a3-fd21d6121ff9
+First, fit a point mass expression model, given the ground truth labels.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mean</span> = (y.T @ mix10.X) / (y.T @ mix10.X.<span class="org-builtin">sum</span>(axis=1))
+</pre>
+</div>
+
+<p>
+Estimate the posterior cluster weights, given the components. Then, estimate
+the log loss against the ground truth labels.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">L</span> = st.poisson(mu=np.expand_dims(mean, 0)).logpmf(np.expand_dims(mix10.X.A, 1)).<span class="org-builtin">sum</span>(axis=2)
+<span class="org-variable-name">zhat</span> = sp.softmax(L, axis=1)
+-(y * np.log(zhat + 1e-16)).<span class="org-builtin">sum</span>()
+</pre>
+</div>
+
+<pre class="example">
+-0.0
+
+</pre>
+
+<p>
+Run EM, starting from a random initialization.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
+<span class="org-variable-name">num_epochs</span> = 50
+<span class="org-variable-name">max_em_iters</span> = 8
+<span class="org-variable-name">seed</span> = 4
+torch.manual_seed(seed)
+<span class="org-variable-name">init</span> = mpebpm.gam_mix.ebpm_gam_mix_em(
+  x=mix10.X.A,
+  s=mix10.X.<span class="org-builtin">sum</span>(axis=1),
+  k=10,
+  num_epochs=num_epochs,
+  max_em_iters=max_em_iters,
+  log_dir=f<span class="org-string">'runs/nbmix/mix10-init{seed}-{num_epochs}-{max_em_iters}'</span>)
+</pre>
+</div>
+
+<p>
+Plot the correlation between the posterior cluster weights and the ground
+truth labels.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">r</span> = np.corrcoef(y.T, init[-1].T)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.imshow(r[:10,10:], cmap=colorcet.cm[<span class="org-string">'coolwarm'</span>], vmin=-1, vmax=1)
+<span class="org-variable-name">c</span> = plt.colorbar(shrink=0.5)
+c.set_label(<span class="org-string">'Correlation'</span>)
+plt.xticks(np.arange(10))
+plt.yticks(np.arange(10))
+plt.xlabel(<span class="org-string">'Ground truth label'</span>)
+plt.ylabel(<span class="org-string">'Component'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/mix10-corr.png" alt="mix10-corr.png">
+</p>
+</div>
+
+<p>
+Plot the embedding of the data, colored by the ground truth labels, the
+Leiden cluster assignments, and the model-based cluster assignments.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">zhat</span> = np.argmax(init[-1], axis=1)
+<span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7.5, 3)
+<span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(mix10.obs[<span class="org-string">'cell_type'</span>].unique()):
+  ax[0].plot(*mix10[mix10.obs[<span class="org-string">'cell_type'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'{c}'</span>)
+<span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(mix10.obs[<span class="org-string">'leiden'</span>].unique()):
+  ax[1].plot(*mix10[mix10.obs[<span class="org-string">'leiden'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'Cluster {i}'</span>)
+<span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(pd.Series(zhat).unique()):
+  ax[2].plot(*mix10[zhat == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'Component {i}'</span>)
+<span class="org-keyword">for</span> a, t <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'Ground truth'</span>, <span class="org-string">'Leiden'</span>, <span class="org-string">'NB mix'</span>]):
+  a.set_title(t)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  <span class="org-comment-delimiter"># </span><span class="org-comment">a.legend(markerscale=4, handletextpad=0)</span>
+  a.set_xlabel(<span class="org-string">'UMAP 1'</span>)
+ax[0].set_ylabel(<span class="org-string">'UMAP 2'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/mix10-init-std.png" alt="mix10-init-std.png">
+</p>
+</div>
 </div>
 </div>
 </div>
@@ -1434,7 +1581,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-21 Thu 16:30</p>
+<p class="date">Created: 2020-05-22 Fri 16:46</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

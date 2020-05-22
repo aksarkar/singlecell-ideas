@@ -39,9 +39,11 @@
   #+RESULTS:
   : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="4G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
 
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="16G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+
+  #+CALL: tensorboard(venv="singlecell") :session tensorboard :dir /scratch/midway2/aksarkar/singlecell/
 
   #+BEGIN_SRC ipython
     import anndata
@@ -57,6 +59,7 @@
     import time
     import torch
     import torch.utils.data as td
+    import umap
   #+END_SRC
 
   #+RESULTS:
@@ -75,6 +78,7 @@
   :END:
 
   #+BEGIN_SRC ipython
+    import colorcet
     import matplotlib
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
@@ -85,8 +89,6 @@
   :RESULTS:
   # Out[3]:
   :END:
-
-  #+CALL: tensorboard(venv="singlecell") :session tensorboard :dir /scratch/midway2/aksarkar/singlecell/
 
 * Methods
   :PROPERTIES:
@@ -224,7 +226,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[6]:
    :END:
 
    Get 256 B cells and 256 cytotoxic T cells.
@@ -732,37 +734,186 @@
 
 ** 10-way example
 
+   Apply the standard methodology to the 10-way mixture.
+
+   #+BEGIN_SRC ipython :async t
+     dat = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad')
+     # Important: this is required for sparse data; otherwise, scanpy makes a dense
+     # copy and runs out of memory
+     sc.pp.pca(dat, zero_center=False)
+     sc.pp.neighbors(dat)
+     sc.tl.umap(dat)
+     sc.tl.leiden(dat)
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :async t
+     dat.write('/scratch/midway2/aksarkar/ideas/mix10.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[12]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     dat = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/mix10.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix10-full-std.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     fig.set_size_inches(6, 3)
+     for i, c in enumerate(dat.obs['cell_type'].unique()):
+       ax[0].plot(*dat[dat.obs['cell_type'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, label=f'{c}', alpha=0.1)
+     for i, c in enumerate(dat.obs['leiden'].unique()):
+       ax[1].plot(*dat[dat.obs['leiden'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, label=f'Cluster {i}', alpha=0.1)
+     for a, t in zip(ax, ['Ground truth', 'Leiden']):
+       a.set_title(t)
+     for a in ax:
+       # a.legend(markerscale=4, handletextpad=0)
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   [[file:figure/nbmix.org/mix10-full-std.png]]
+   :END:
+
    Subsample the 10-way mixture of sorted cells to get an initialization.
 
    #+BEGIN_SRC ipython :async t
      mix10 = sc.pp.subsample(dat, fraction=0.01, copy=True)
      sc.pp.filter_genes(mix10, min_counts=1)
-     sc.pp.pca(mix10)
+     sc.pp.pca(mix10, zero_center=False)
      sc.pp.neighbors(mix10)
      sc.tl.umap(mix10)
      sc.tl.leiden(mix10)
+     mix10.write('/scratch/midway2/aksarkar/ideas/mix10-init.h5ad')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[96]:
+   # Out[6]:
    :END:
 
    #+BEGIN_SRC ipython :async t
-     import imp; imp.reload(mpebpm.gam_mix)
-     torch.manual_seed(0)
-     fit = mpebpm.gam_mix.ebpm_gam_mix_em(
-       x=temp.X.A,
-       s=temp.X.sum(axis=1),
-       k=10,
-       num_epochs=50,
-       max_em_iters=8,
-       log_dir='runs/nbmix/mix10-init-50-8')
+     mix10 = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/mix10-init.h5ad')
+     y = pd.get_dummies(mix10.obs['cell_type']).values
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   0 - 9fd27c7e-12be-4a28-88a3-fd21d6121ff9
+   # Out[4]:
+   :END:
+
+   First, fit a point mass expression model, given the ground truth labels.
+
+   #+BEGIN_SRC ipython :async t
+     mean = (y.T @ mix10.X) / (y.T @ mix10.X.sum(axis=1))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   :END:
+
+   Estimate the posterior cluster weights, given the components. Then, estimate
+   the log loss against the ground truth labels.
+
+   #+BEGIN_SRC ipython :async t
+     L = st.poisson(mu=np.expand_dims(mean, 0)).logpmf(np.expand_dims(mix10.X.A, 1)).sum(axis=2)
+     zhat = sp.softmax(L, axis=1)
+     -(y * np.log(zhat + 1e-16)).sum()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[33]:
+   : -0.0
+   :END:
+
+   Run EM, starting from a random initialization.
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     num_epochs = 50
+     max_em_iters = 8
+     seed = 4
+     torch.manual_seed(seed)
+     init = mpebpm.gam_mix.ebpm_gam_mix_em(
+       x=mix10.X.A,
+       s=mix10.X.sum(axis=1),
+       k=10,
+       num_epochs=num_epochs,
+       max_em_iters=max_em_iters,
+       log_dir=f'runs/nbmix/mix10-init{seed}-{num_epochs}-{max_em_iters}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[57]:
+   :END:
+
+   Plot the correlation between the posterior cluster weights and the ground
+   truth labels.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix10-corr.png
+     r = np.corrcoef(y.T, init[-1].T)
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.imshow(r[:10,10:], cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
+     c = plt.colorbar(shrink=0.5)
+     c.set_label('Correlation')
+     plt.xticks(np.arange(10))
+     plt.yticks(np.arange(10))
+     plt.xlabel('Ground truth label')
+     plt.ylabel('Component')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[58]:
+   [[file:figure/nbmix.org/mix10-corr.png]]
+   :END:
+
+   Plot the embedding of the data, colored by the ground truth labels, the
+   Leiden cluster assignments, and the model-based cluster assignments.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix10-init-std.png
+     zhat = np.argmax(init[-1], axis=1)
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(1, 3, sharex=True, sharey=True)
+     fig.set_size_inches(7.5, 3)
+     for i, c in enumerate(mix10.obs['cell_type'].unique()):
+       ax[0].plot(*mix10[mix10.obs['cell_type'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, label=f'{c}')
+     for i, c in enumerate(mix10.obs['leiden'].unique()):
+       ax[1].plot(*mix10[mix10.obs['leiden'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, label=f'Cluster {i}')
+     for i, c in enumerate(pd.Series(zhat).unique()):
+       ax[2].plot(*mix10[zhat == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, label=f'Component {i}')
+     for a, t in zip(ax, ['Ground truth', 'Leiden', 'NB mix']):
+       a.set_title(t)
+     for a in ax:
+       # a.legend(markerscale=4, handletextpad=0)
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[56]:
+   [[file:figure/nbmix.org/mix10-init-std.png]]
    :END:
 
 * Related work
@@ -1142,3 +1293,21 @@
    There are additional deep unsupervised learning methods, which could
    potentially be adapted to this setting (reviewed in
    [[https://dx.doi.org/10.1109/ACCESS.2018.2855437][Min et al. 2018]]).
+* Technical stuff                                                  :noexport:
+
+   #+BEGIN_SRC ipython
+     import gc
+     for o in gc.get_objects():
+       try:
+         if torch.is_tensor(o) or torch.is_tensor(getattr(o, 'data', None)):
+           print(type(o), o.size(), o.device)
+       except:
+         pass
+     torch.cuda.empty_cache()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[32]:
+   :END:
+

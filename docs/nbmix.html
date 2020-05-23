@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-22 Fri 16:46 -->
+<!-- 2020-05-22 Fri 23:10 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -450,8 +450,8 @@ can improve the expected log joint probability, e.g. by
 </div>
 </div>
 
-<div id="outline-container-org5e8b340" class="outline-3">
-<h3 id="ai"><a id="org5e8b340"></a>Amortized inference</h3>
+<div id="outline-container-org30179e2" class="outline-3">
+<h3 id="ai"><a id="org30179e2"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-ai">
 <p>
 An alternative algorithm, which is amenable to stochastic gradient descent
@@ -864,8 +864,8 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org88b083e" class="outline-3">
-<h3 id="amortized"><a id="org88b083e"></a>Amortized inference</h3>
+<div id="outline-container-org9695cdc" class="outline-3">
+<h3 id="amortized"><a id="org9695cdc"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
 Construct the amortized inference model, initializing \(\vmu_k, \vphi_k\)
@@ -1046,7 +1046,7 @@ fig.set_size_inches(6, 3)
 <span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(dat.obs[<span class="org-string">'cell_type'</span>].unique()):
   ax[0].plot(*dat[dat.obs[<span class="org-string">'cell_type'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'{c}'</span>, alpha=0.1)
 <span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(dat.obs[<span class="org-string">'leiden'</span>].unique()):
-  ax[1].plot(*dat[dat.obs[<span class="org-string">'leiden'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'Cluster {i}'</span>, alpha=0.1)
+  ax[1].plot(*dat[dat.obs[<span class="org-string">'leiden'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=colorcet.cm[<span class="org-string">'fire'</span>]((<span class="org-builtin">int</span>(c) + .5) / 22), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'Cluster {i}'</span>, alpha=0.1)
 <span class="org-keyword">for</span> a, t <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'Ground truth'</span>, <span class="org-string">'Leiden'</span>]):
   a.set_title(t)
 <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
@@ -1085,7 +1085,74 @@ mix10.write(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mix10-init
 </div>
 
 <p>
-First, fit a point mass expression model, given the ground truth labels.
+Try running UMAP directly on the sparse data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%%time
+<span class="org-variable-name">embedding</span> = umap.UMAP(metric=<span class="org-string">'cosine'</span>, random_state=0).fit_transform(mix10.X)
+</pre>
+</div>
+
+<p>
+CPU times: user 3.75 s, sys: 41 ms, total: 3.79 s
+Wall time: 3.8 s
+</p>
+
+<p>
+Run NMF on the sparse data, and estimate latent gene expression. Then,
+estimate a UMAP embedding on latent gene expression.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> rpy2.robjects.packages
+<span class="org-keyword">import</span> rpy2.robjects.pandas2ri
+rpy2.robjects.pandas2ri.activate()
+<span class="org-variable-name">matrix</span> = rpy2.robjects.packages.importr(<span class="org-string">'Matrix'</span>)
+<span class="org-variable-name">fasttopics</span> = rpy2.robjects.packages.importr(<span class="org-string">'fastTopics'</span>)
+
+<span class="org-variable-name">temp</span> = mix10.X.tocoo()
+<span class="org-variable-name">y</span> = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+<span class="org-variable-name">res</span> = fasttopics.fit_poisson_nmf(y, k=10, numiter=40, method=<span class="org-string">'scd'</span>, control=rpy2.robjects.ListVector({<span class="org-string">'extrapolate'</span>: <span class="org-constant">True</span>}), verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">lam</span> = np.array(res.rx2(<span class="org-string">'L'</span>)) @ np.array(res.rx2(<span class="org-string">'F'</span>)).T
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">nmf_umap</span> = umap.UMAP(metric=<span class="org-string">'cosine'</span>, random_state=0, n_neighbors=10).fit_transform(lam)
+</pre>
+</div>
+
+<p>
+Compare the UMAP embeddings.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(7.5, 2.5)
+<span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(mix10.obs[<span class="org-string">'cell_type'</span>].unique()):
+  ax[0].plot(*mix10[mix10.obs[<span class="org-string">'cell_type'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'{c}'</span>)
+  ax[1].plot(*embedding[mix10.obs[<span class="org-string">'cell_type'</span>] == c].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'{c}'</span>)
+  ax[2].plot(*nmf_umap[mix10.obs[<span class="org-string">'cell_type'</span>] == c].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, label=f<span class="org-string">'{c}'</span>)
+<span class="org-keyword">for</span> a, t <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'Euclidean/PCA'</span>, <span class="org-string">'Cosine/counts'</span>, <span class="org-string">'Cosine/latent'</span>]):
+  a.set_title(t)
+  a.set_xlabel(<span class="org-string">'UMAP 1'</span>)
+ax[0].set_ylabel(<span class="org-string">'UMAP 2'</span>)
+ax[-1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5), handletextpad=0, markerscale=8)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/mix10-umap.png" alt="mix10-umap.png">
+</p>
+</div>
+
+<p>
+Fit point mass expression models, given the ground truth labels.
 </p>
 
 <div class="org-src-container">
@@ -1581,7 +1648,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-22 Fri 16:46</p>
+<p class="date">Created: 2020-05-22 Fri 23:10</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

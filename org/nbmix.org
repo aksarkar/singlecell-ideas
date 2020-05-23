@@ -761,7 +761,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[34]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix10-full-std.png
@@ -772,7 +772,7 @@
      for i, c in enumerate(dat.obs['cell_type'].unique()):
        ax[0].plot(*dat[dat.obs['cell_type'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, label=f'{c}', alpha=0.1)
      for i, c in enumerate(dat.obs['leiden'].unique()):
-       ax[1].plot(*dat[dat.obs['leiden'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, label=f'Cluster {i}', alpha=0.1)
+       ax[1].plot(*dat[dat.obs['leiden'] == c].obsm["X_umap"].T, c=colorcet.cm['fire']((int(c) + .5) / 22), marker='.', ms=1, lw=0, label=f'Cluster {i}', alpha=0.1)
      for a, t in zip(ax, ['Ground truth', 'Leiden']):
        a.set_title(t)
      for a in ax:
@@ -784,7 +784,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[41]:
    [[file:figure/nbmix.org/mix10-full-std.png]]
    :END:
 
@@ -815,7 +815,75 @@
    # Out[4]:
    :END:
 
-   First, fit a point mass expression model, given the ground truth labels.
+   Try running UMAP directly on the sparse data.
+
+   #+BEGIN_SRC ipython :async t :results output example
+     %%time
+     embedding = umap.UMAP(metric='cosine', random_state=0).fit_transform(mix10.X)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   CPU times: user 3.75 s, sys: 41 ms, total: 3.79 s
+   Wall time: 3.8 s
+   :END:
+
+   Run NMF on the sparse data, and estimate latent gene expression. Then,
+   estimate a UMAP embedding on latent gene expression.
+
+   #+BEGIN_SRC ipython :async t
+     import rpy2.robjects.packages
+     import rpy2.robjects.pandas2ri
+     rpy2.robjects.pandas2ri.activate()
+     matrix = rpy2.robjects.packages.importr('Matrix')
+     fasttopics = rpy2.robjects.packages.importr('fastTopics')
+
+     temp = mix10.X.tocoo()
+     y = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+     res = fasttopics.fit_poisson_nmf(y, k=10, numiter=40, method='scd', control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
+     lam = np.array(res.rx2('L')) @ np.array(res.rx2('F')).T
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[21]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     nmf_umap = umap.UMAP(metric='cosine', random_state=0, n_neighbors=10).fit_transform(lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[36]:
+   :END:
+
+   Compare the UMAP embeddings.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix10-umap.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7.5, 2.5)
+     for i, c in enumerate(mix10.obs['cell_type'].unique()):
+       ax[0].plot(*mix10[mix10.obs['cell_type'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, label=f'{c}')
+       ax[1].plot(*embedding[mix10.obs['cell_type'] == c].T, c=cm(i), marker='.', ms=1, lw=0, label=f'{c}')
+       ax[2].plot(*nmf_umap[mix10.obs['cell_type'] == c].T, c=cm(i), marker='.', ms=1, lw=0, label=f'{c}')
+     for a, t in zip(ax, ['Euclidean/PCA', 'Cosine/counts', 'Cosine/latent']):
+       a.set_title(t)
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     ax[-1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5), handletextpad=0, markerscale=8)
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   [[file:figure/nbmix.org/mix10-umap.png]]
+   :END:
+
+   Fit point mass expression models, given the ground truth labels.
 
    #+BEGIN_SRC ipython :async t
      mean = (y.T @ mix10.X) / (y.T @ mix10.X.sum(axis=1))

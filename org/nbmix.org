@@ -226,7 +226,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[5]:
    :END:
 
    Get 256 B cells and 256 cytotoxic T cells.
@@ -242,7 +242,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
    :END:
 
    Plot a UMAP embedding of the data, coloring points by the ground truth
@@ -278,7 +277,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/sim-ex.png
@@ -730,6 +729,316 @@
    :RESULTS:
    # Out[77]:
    [[file:figure/nbmix.org/am-inf-ex.png]]
+   :END:
+
+   Try amortized inference, using the first minibatch to initialize.
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     torch.manual_seed(0)
+     np.histogram(np.argmax(mpebpm.gam_mix.EBPMGammaMix(p=temp.shape[1], k=2).forward(query).detach().cpu().numpy(), axis=1), np.arange(3))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[40]:
+   : (array([393, 119]), array([0, 1, 2]))
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     torch.manual_seed(1)
+     fit1 = mpebpm.gam_mix.EBPMGammaMix(
+       p=temp.shape[1],
+       k=2)
+     fit1.fit(
+         x=temp.X.A,
+         s=temp.X.sum(axis=1),
+         y=pd.get_dummies(temp.obs['cell_type']).values,
+         lr=1e-2,
+         batch_size=64,
+         shuffle=True,
+         num_epochs=100,
+         log_dir='runs/nbmix/ai-hack1-64-1e-2-100')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/ai-fit-log-mean.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.plot(*fit1.log_mean.detach().cpu().numpy(), marker='.', lw=0, ms=1, c='k')
+     plt.xlabel('Component 1 $\ln\mu$')
+     plt.ylabel('Component 2 $\ln\mu$')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[75]:
+   [[file:figure/nbmix.org/ai-fit-log-mean.png]]
+   :END:
+
+** 4-way example
+
+   Pick 4 cell types which /a priori/ should be easy to distinguish.
+
+   #+BEGIN_SRC ipython :async t
+     mix4 = dat[dat.obs['cell_type'].isin(['cytotoxic_t', 'regulatory_t', 'b_cells', 'cd14_monocytes'])]
+     sc.pp.filter_genes(mix4, min_counts=1)
+     sc.pp.pca(mix4, zero_center=False)
+     sc.pp.neighbors(mix4)
+     sc.tl.leiden(mix4)
+     sc.tl.umap(mix4)
+     mix4
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[154]:
+   #+BEGIN_EXAMPLE
+     AnnData object with n_obs × n_vars = 33169 × 19241
+     obs: 'barcode', 'cell_type', 'leiden'
+     var: 'ensg', 'name', 'n_cells', 'n_counts'
+     uns: 'pca', 'neighbors', 'leiden', 'umap'
+     obsm: 'X_pca', 'X_umap'
+     varm: 'PCs'
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython
+     mix4.write('/scratch/midway2/aksarkar/singlecell/mix4.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[155]:
+   :END:
+
+   Plot the data, colored by ground truth label.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     fig.set_size_inches(4.5, 2.75)
+     for a, k, t in zip(ax, ['cell_type', 'leiden'], ['Ground truth', 'Leiden']):
+       for i, c in enumerate(mix4.obs[k].unique()):
+         a.plot(*mix4[mix4.obs[k] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, alpha=0.1)
+       a.set_title(t)
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[170]:
+   [[file:figure/nbmix.org/mix4.png]]
+   :END:
+
+   Fit batch EM for a subset of the data.
+
+   #+BEGIN_SRC ipython
+     mix4sub = sc.pp.subsample(mix4, n_obs=1000, random_state=1, copy=True)
+     mix4sub.obs['cell_type'].value_counts()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[166]:
+   #+BEGIN_EXAMPLE
+     b_cells           320
+     cytotoxic_t       315
+     regulatory_t      290
+     cd14_monocytes     75
+     Name: cell_type, dtype: int64
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     k = 4
+     seed = 4
+     lr = 1e-2
+     num_epochs = 50
+     max_em_iters = 10
+     torch.manual_seed(seed)
+     fit = mpebpm.gam_mix.ebpm_gam_mix_em(
+       x=mix4sub.X.A,
+       s=mix4sub.X.sum(axis=1),
+       k=k,
+       lr=lr,
+       num_epochs=num_epochs,
+       max_em_iters=max_em_iters,
+       log_dir=f'runs/nbmix/mix4-init-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[173]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4-init.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     plt.gcf().set_size_inches(5, 3.5)
+
+     cm = plt.get_cmap('Paired')
+     for i, c in enumerate(mix4sub.obs['cell_type'].unique()):
+       ax[0].plot(*mix4sub[mix4sub.obs['cell_type'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'{c}')
+     ax[0].set_title('Ground truth')
+     leg = ax[0].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     z = pd.get_dummies(np.argmax(fit[-1], axis=1)).values.astype(bool)
+     cm = plt.get_cmap('Dark2')
+     for i in range(z.shape[1]):
+       ax[1].plot(*mix4sub[z[:,i]].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'Cluster {i}')
+     ax[1].set_title('Batch EM')
+     leg = ax[1].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[174]:
+   [[file:figure/nbmix.org/mix4-init.png]]
+   :END:
+
+*** Placeholder                                                    :noexport:
+
+   See whether the UMAP embedding is misleading, by constructing an alternative
+   embedding using latent gene expression.
+
+   #+BEGIN_SRC ipython :async t
+     import rpy2.robjects.packages
+     import rpy2.robjects.pandas2ri
+     rpy2.robjects.pandas2ri.activate()
+     matrix = rpy2.robjects.packages.importr('Matrix')
+     fasttopics = rpy2.robjects.packages.importr('fastTopics')
+
+     temp = mix4sub.X.tocoo()
+     y = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+     res = fasttopics.fit_poisson_nmf(y, k=10, numiter=40, method='scd', control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
+     lam = np.array(res.rx2('L')) @ np.array(res.rx2('F')).T
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[105]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     nmf_umap = umap.UMAP(metric='cosine', random_state=1, n_neighbors=10).fit_transform(lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[145]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4-init-cos-umap.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     plt.gcf().set_size_inches(5, 3.5)
+     cm = plt.get_cmap('Paired')
+     for i, c in enumerate(mix4sub.obs['cell_type'].unique()):
+       ax[0].plot(*nmf_umap[mix4sub.obs['cell_type'] == c].T, c=cm(i), marker='.', ms=2, lw=0, label=f'{c}')
+     ax[0].set_title('Ground truth')
+     leg = ax[0].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     z = pd.get_dummies(np.argmax(fit[-1], axis=1)).values.astype(bool)
+     cm = plt.get_cmap('Dark2')
+     for i in range(k):
+       ax[1].plot(*nmf_umap[z[:,i]].T, c=cm(i), marker='.', ms=2, lw=0, label=f'Cluster {i}')
+     ax[1].set_title('Batch EM')
+     leg = ax[1].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[146]:
+   [[file:figure/nbmix.org/mix4-init-cos-umap.png]]
+   :END:
+
+   Set the prior mixture weights to the true proportions (based on the ground
+   truth labels).
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     k = 4
+     seed = 5
+     lr = 1e-2
+     num_epochs = 50
+     max_em_iters = 10
+     torch.manual_seed(seed)
+     fit = mpebpm.gam_mix.ebpm_gam_mix_em(
+       x=mix4sub.X.A,
+       s=mix4sub.X.sum(axis=1),
+       k=k,
+       pi=pd.get_dummies(mix4sub.obs['cell_type']).values.mean(axis=0),
+       lr=lr,
+       num_epochs=num_epochs,
+       max_em_iters=max_em_iters,
+       log_dir=f'runs/nbmix/mix4-init-truepi-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[151]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4-init-pi-umap.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     plt.gcf().set_size_inches(5, 3.5)
+     cm = plt.get_cmap('Paired')
+     for i, c in enumerate(mix4sub.obs['cell_type'].unique()):
+       ax[0].plot(*nmf_umap[mix4sub.obs['cell_type'] == c].T, c=cm(i), marker='.', ms=2, lw=0, label=f'{c}')
+     ax[0].set_title('Ground truth')
+     leg = ax[0].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     z = pd.get_dummies(np.argmax(fit[-1], axis=1)).values.astype(bool)
+     cm = plt.get_cmap('Dark2')
+     for i in range(k):
+       ax[1].plot(*nmf_umap[z[:,i]].T, c=cm(i), marker='.', ms=2, lw=0, label=f'Cluster {i}', alpha=0.5)
+     ax[1].set_title('Batch EM')
+     leg = ax[1].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[152]:
+   [[file:figure/nbmix.org/mix4-init-pi-umap.png]]
    :END:
 
 ** 10-way example

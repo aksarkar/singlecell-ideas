@@ -226,7 +226,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[4]:
    :END:
 
    Get 256 B cells and 256 cytotoxic T cells.
@@ -781,6 +781,222 @@
    [[file:figure/nbmix.org/ai-fit-log-mean.png]]
    :END:
 
+** (Full) 2-way example
+
+   Apply the standard methodology (~1 min).
+
+   #+BEGIN_SRC ipython :async t
+     mix2 = dat[dat.obs['cell_type'].isin(['cytotoxic_t', 'b_cells'])]
+     sc.pp.filter_genes(mix2, min_counts=1)
+     sc.pp.pca(mix2, zero_center=False)
+     sc.pp.neighbors(mix2)
+     sc.tl.leiden(mix2)
+     sc.tl.umap(mix2)
+     mix2
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   #+BEGIN_EXAMPLE
+     AnnData object with n_obs × n_vars = 20294 × 17808
+     obs: 'barcode', 'cell_type', 'leiden'
+     var: 'ensg', 'name', 'n_cells', 'n_counts'
+     uns: 'pca', 'neighbors', 'leiden', 'umap'
+     obsm: 'X_pca', 'X_umap'
+     varm: 'PCs'
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix2.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     fig.set_size_inches(4.5, 4)
+     for a, k, t in zip(ax, ['cell_type', 'leiden'], ['Ground truth', 'Leiden']):
+       for i, c in enumerate(mix2.obs[k].unique()):
+         a.plot(*mix2[mix2.obs[k] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=1, lw=0, alpha=0.1, label=f'{k}_{i}')
+       leg = a.legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+       for h in leg.legendHandles:
+         h._legmarker.set_alpha(1)
+       a.set_xlabel('UMAP 1')
+       a.set_title(t)
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[9]:
+   [[file:figure/nbmix.org/mix2.png]]
+   :END:
+
+   Take a subsample to run batch EM.
+
+   #+BEGIN_SRC ipython :async t
+     mix2sub = sc.pp.subsample(mix2, n_obs=1000, random_state=1, copy=True)
+     mix2sub.obs['cell_type'].value_counts()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   #+BEGIN_EXAMPLE
+     cytotoxic_t    513
+     b_cells        487
+     Name: cell_type, dtype: int64
+   #+END_EXAMPLE
+   :END:
+
+   Run batch EM (45 s).
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     k = 2
+     seed = 0
+     lr = 1e-2
+     num_epochs = 50
+     max_em_iters = 10
+     torch.manual_seed(seed)
+     fit = mpebpm.gam_mix.ebpm_gam_mix_em(
+       x=mix2sub.X.A,
+       s=mix2sub.X.sum(axis=1),
+       k=k,
+       lr=lr,
+       num_epochs=num_epochs,
+       max_em_iters=max_em_iters,
+       log_dir=f'runs/nbmix/mix2-init-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix2-init.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     plt.gcf().set_size_inches(5, 3.5)
+
+     cm = plt.get_cmap('Paired')
+     for i, c in enumerate(mix2sub.obs['cell_type'].unique()):
+       ax[0].plot(*mix2sub[mix2sub.obs['cell_type'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'{c}')
+     ax[0].set_title('Ground truth')
+     leg = ax[0].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     z = pd.get_dummies(np.argmax(fit[-1], axis=1)).values.astype(bool)
+     cm = plt.get_cmap('Dark2')
+     for i in range(z.shape[1]):
+       ax[1].plot(*mix2sub[z[:,i]].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'Cluster {i}')
+     ax[1].set_title('Batch EM')
+     leg = ax[1].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[14]:
+   [[file:figure/nbmix.org/mix2-init.png]]
+   :END:
+
+   Run amortized inference on the full data set, initializing components from
+   the batch EM solution. (Perfect accuracy in ~10 s, 49 s total)
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     seed = 1
+     lr = 1e-3
+     num_epochs = 10
+     torch.manual_seed(0)
+     fit1 = mpebpm.gam_mix.EBPMGammaMix(
+       p=mix2.shape[1],
+       k=2,
+       log_mean=fit[0],
+       log_inv_disp=fit[1])
+     fit1.fit(
+         x=mix2.X.A,
+         s=mix2.X.sum(axis=1),
+         y=pd.get_dummies(mix2.obs['cell_type']).values,
+         lr=1e-3,
+         batch_size=64,
+         shuffle=True,
+         num_epochs=10,
+         log_dir=f'runs/nbmix/mix2-full-{seed}-{lr:.1g}-{num_epochs}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[35]:
+   #+BEGIN_EXAMPLE
+     EBPMGammaMix(
+     (encoder): Sequential(
+     (0): Log1p()
+     (1): Linear(in_features=17808, out_features=128, bias=True)
+     (2): ReLU()
+     (3): Linear(in_features=128, out_features=2, bias=True)
+     (4): Softmax(dim=1)
+     )
+     )
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     x = mix2.X
+     data = mpebpm.sparse.SparseDataset(
+       mpebpm.sparse.CSRTensor(x.data, x.indices, x.indptr, x.shape, dtype=torch.float).cuda(),
+       torch.tensor(mix2.X.sum(axis=1), dtype=torch.float).cuda())
+     collate_fn = getattr(data, 'collate_fn', td.dataloader.default_collate)
+     data = td.DataLoader(data, batch_size=64, shuffle=False, collate_fn=data.collate_fn)
+     zhat = []
+     with torch.no_grad():
+       for x, s in data:
+         zhat.append(fit1.forward(x).cpu().numpy())
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[36]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     mix2.obs['comp'] = np.argmax(np.vstack(zhat), axis=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[40]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix2-full.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     fig.set_size_inches(5, 3)
+     for a, k, t, cm in zip(ax, ['cell_type', 'comp'], ['Ground truth', 'Online'], ['Paired', 'Dark2']):
+       for i, c in enumerate(mix2.obs[k].unique()):
+         a.plot(*mix2[mix2.obs[k] == c].obsm["X_umap"].T, c=plt.get_cmap(cm)(i), marker='.', ms=1, lw=0, alpha=0.1, label=f'{k}_{i}')
+       leg = a.legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+       for h in leg.legendHandles:
+         h._legmarker.set_alpha(1)
+       a.set_xlabel('UMAP 1')
+       a.set_title(t)
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   [[file:figure/nbmix.org/mix2-full.png]]
+   :END:
+
 ** 4-way example
 
    Pick 4 cell types which /a priori/ should be easy to distinguish.
@@ -1327,52 +1543,6 @@
    trigamma function. The algorithm uses a partial M step (single
    Newton-Raphson update) for \(\alpha\).
 
-   #+BEGIN_SRC ipython
-     def ebpm_gamma_em(x, s, max_iters=100, tol=1e-3):
-       """Return fitted parameters assuming g is a Gamma distribution
-
-       Returns log mu and -log phi
-
-       x - array-like [n,]
-       s - array-like [n,]
-
-       """
-       n = x.shape[0]
-       assert x.shape == (n,)
-       assert x.shape == s.shape
-       # a = 1 / phi; b = 1 / (mu phi)
-       a = 1
-       # Initialize at the Poisson MLE
-       b = s.sum() / x.sum()
-       obj = []
-       obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).sum())
-       for i in range(max_iters):
-         # E[lam | x]
-         pm = (x + a) / (s + b)
-         assert (pm > 0).all()
-         # E[ln lam | x]
-         plm = sp.digamma(x + a) - np.log(s + b)
-         b = a / pm.mean()
-         # Important: this appears to be incorrect in Karlis 2005
-         a += (np.log(b) - sp.digamma(a) + plm.mean()) / sp.polygamma(1, a)
-         assert a > 0
-         assert b > 0
-         obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).sum())
-         if obj[-1] < obj[-2]:
-           raise RuntimeError('llik decreased')
-         elif obj[-1] - obj[-2] < tol:
-           log_inv_disp = np.log(a)
-           log_mean = -np.log(b) + np.log(a)
-           return log_mean, log_inv_disp, obj
-       else:
-         raise RuntimeError('failed to converge in max_iters')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[101]:
-   :END:
-
    Try EM for a simple example.
 
    #+BEGIN_SRC ipython
@@ -1387,16 +1557,17 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[104]:
+   # Out[4]:
    :END:
 
    #+BEGIN_SRC ipython :async t
-     log_mu, neg_log_phi, trace = ebpm_gamma_em(x, s)
+     import nbmix.em
+     log_mu, neg_log_phi, trace = nbmix.em.fit_pois_gam(x, s)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[105]:
+   # Out[5]:
    :END:
 
    Plot the simulated data, the ground truth marginal distribution on counts,
@@ -1418,7 +1589,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[106]:
+   # Out[6]:
    [[file:figure/nbmix.org/nb-em.png]]
    :END:
 
@@ -1435,7 +1606,7 @@
            lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
            x = rng.poisson(s * lam)
            start = time.time()
-           log_mean_hat, log_inv_disp_hat, trace = ebpm_gamma_em(x, s, max_iters=1000)
+           log_mean_hat, log_inv_disp_hat, trace = nbmix.em.fit_pois_gam(x, s, max_iters=1000)
            elapsed = time.time() - start
            result[(log_mean, log_inv_disp, trial)] = pd.Series([log_mean_hat, log_inv_disp_hat, len(trace), elapsed])
      result = (pd.DataFrame.from_dict(result, orient='index')
@@ -1446,7 +1617,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[138]:
+   # Out[7]:
    :END:
 
    Plot the estimates against the ground truth values.
@@ -1468,7 +1639,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[139]:
+   # Out[8]:
    [[file:figure/nbmix.org/nb-em-sim.png]]
    :END:
 
@@ -1480,8 +1651,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[140]:
-   : (0.18343861034938266, 0.18248113994496618)
+   # Out[9]:
+   : (0.16765535082135882, 0.1686101890016258)
    :END:
 
 ** EM for Poisson-Log compound distribution
@@ -1519,46 +1690,6 @@
    1)]\) in their derivation, and the algorithm as given does not appear to
    improve the expected log joint probability.
 
-   #+BEGIN_SRC ipython
-     def pois_log_series_em(x, s, max_iters=100, tol=1e-3):
-       n = x.shape[0]
-       assert x.shape == (n,)
-       assert x.shape == s.shape
-       z = .5
-       m = .5 * x
-       theta = (x - m).sum() / (x + m * z - m).sum()
-       lam = m.mean()
-       obj = [st.nbinom(n=-lam / np.log(1 - theta), p=1 - theta).logpmf(x).sum()]
-       assert np.isfinite(obj[-1]) and obj[-1] < 0
-       for i in range(max_iters):
-         alpha = -1 / np.log(1 - theta)
-         z = -((1 - theta) / theta - alpha)
-         assert np.ndim(z) == 0
-         assert 0 < z < 1
-         n = lam * alpha
-         m = n * (sp.digamma(n + x) - sp.digamma(n))
-         assert m.shape == x.shape
-         theta = (x - m).sum() / (x + m * z - m).sum()
-         assert 0 < theta < 1
-         lam = m.mean()
-         assert lam > 0
-         obj.append(st.nbinom(n=n, p=1 - theta).logpmf(x).sum())
-         assert np.isfinite(obj[-1]) and obj[-1] < 0
-         if obj[-1] < obj[-2]:
-           raise RuntimeError('llik decreased')
-         elif obj[-1] - obj[-2] < tol:
-           log_inv_disp = -np.log(n)
-           log_mean = np.log(theta) - np.log(1 - theta) - np.log(s) - log_inv_disp
-           return log_mean, log_inv_disp, obj
-       else:
-         raise RuntimeError('failed to converge in max_iters')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[41]:
-   :END:
-
    Try EM for a simple example.
 
    #+BEGIN_SRC ipython
@@ -1573,15 +1704,17 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[10]:
    :END:
 
    #+BEGIN_SRC ipython :async t
-     log_mu, neg_log_phi, trace = pois_log_series_em(x, s)
+     import nbmix.em
+     log_mu, neg_log_phi, trace = nbmix.em.fit_pois_log(x, s)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
+   # Out[11]:
    :END:
 
 ** Deep unsupervised learning

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-26 Tue 19:16 -->
+<!-- 2020-05-28 Thu 23:34 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -272,6 +272,7 @@ for the JavaScript code in this tag.
 <li><a href="#leiden">Leiden algorithm</a></li>
 <li><a href="#mpebpm">MPEBPM</a></li>
 <li><a href="#amortized">Amortized inference</a></li>
+<li><a href="#orge86e8dd">(Full) 2-way example</a></li>
 <li><a href="#org60dbe51">4-way example</a></li>
 <li><a href="#org56e7cfb">10-way example</a></li>
 </ul>
@@ -451,8 +452,8 @@ can improve the expected log joint probability, e.g. by
 </div>
 </div>
 
-<div id="outline-container-org5d689b8" class="outline-3">
-<h3 id="ai"><a id="org5d689b8"></a>Amortized inference</h3>
+<div id="outline-container-org7584ed6" class="outline-3">
+<h3 id="ai"><a id="org7584ed6"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-ai">
 <p>
 An alternative algorithm, which is amenable to stochastic gradient descent
@@ -865,8 +866,8 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orgf5b7a34" class="outline-3">
-<h3 id="amortized"><a id="orgf5b7a34"></a>Amortized inference</h3>
+<div id="outline-container-org71a5e7c" class="outline-3">
+<h3 id="amortized"><a id="org71a5e7c"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
 Construct the amortized inference model, initializing \(\vmu_k, \vphi_k\)
@@ -1056,6 +1057,215 @@ plt.tight_layout()
 
 <div class="figure">
 <p><img src="figure/nbmix.org/ai-fit-log-mean.png" alt="ai-fit-log-mean.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge86e8dd" class="outline-3">
+<h3 id="orge86e8dd">(Full) 2-way example</h3>
+<div class="outline-text-3" id="text-orge86e8dd">
+<p>
+Apply the standard methodology (~1 min).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mix2</span> = dat[dat.obs[<span class="org-string">'cell_type'</span>].isin([<span class="org-string">'cytotoxic_t'</span>, <span class="org-string">'b_cells'</span>])]
+sc.pp.filter_genes(mix2, min_counts=1)
+sc.pp.pca(mix2, zero_center=<span class="org-constant">False</span>)
+sc.pp.neighbors(mix2)
+sc.tl.leiden(mix2)
+sc.tl.umap(mix2)
+mix2
+</pre>
+</div>
+
+<pre class="example">
+AnnData object with n_obs × n_vars = 20294 × 17808
+obs: 'barcode', 'cell_type', 'leiden'
+var: 'ensg', 'name', 'n_cells', 'n_counts'
+uns: 'pca', 'neighbors', 'leiden', 'umap'
+obsm: 'X_pca', 'X_umap'
+varm: 'PCs'
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(4.5, 4)
+<span class="org-keyword">for</span> a, k, t <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'cell_type'</span>, <span class="org-string">'leiden'</span>], [<span class="org-string">'Ground truth'</span>, <span class="org-string">'Leiden'</span>]):
+  <span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(mix2.obs[k].unique()):
+    a.plot(*mix2[mix2.obs[k] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, alpha=0.1, label=f<span class="org-string">'{k}_{i}'</span>)
+  <span class="org-variable-name">leg</span> = a.legend(frameon=<span class="org-constant">False</span>, markerscale=8, handletextpad=0, loc=<span class="org-string">'upper center'</span>, bbox_to_anchor=(.5, -.25), ncol=2)
+  <span class="org-keyword">for</span> h <span class="org-keyword">in</span> leg.legendHandles:
+    h._legmarker.set_alpha(1)
+  a.set_xlabel(<span class="org-string">'UMAP 1'</span>)
+  a.set_title(t)
+ax[0].set_ylabel(<span class="org-string">'UMAP 2'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/mix2.png" alt="mix2.png">
+</p>
+</div>
+
+<p>
+Take a subsample to run batch EM.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mix2sub</span> = sc.pp.subsample(mix2, n_obs=1000, random_state=1, copy=<span class="org-constant">True</span>)
+mix2sub.obs[<span class="org-string">'cell_type'</span>].value_counts()
+</pre>
+</div>
+
+<pre class="example">
+cytotoxic_t    513
+b_cells        487
+Name: cell_type, dtype: int64
+</pre>
+
+<p>
+Run batch EM (45 s).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
+<span class="org-variable-name">k</span> = 2
+<span class="org-variable-name">seed</span> = 0
+<span class="org-variable-name">lr</span> = 1e-2
+<span class="org-variable-name">num_epochs</span> = 50
+<span class="org-variable-name">max_em_iters</span> = 10
+torch.manual_seed(seed)
+<span class="org-variable-name">fit</span> = mpebpm.gam_mix.ebpm_gam_mix_em(
+  x=mix2sub.X.A,
+  s=mix2sub.X.<span class="org-builtin">sum</span>(axis=1),
+  k=k,
+  lr=lr,
+  num_epochs=num_epochs,
+  max_em_iters=max_em_iters,
+  log_dir=f<span class="org-string">'runs/nbmix/mix2-init-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+plt.gcf().set_size_inches(5, 3.5)
+
+<span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
+<span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(mix2sub.obs[<span class="org-string">'cell_type'</span>].unique()):
+  ax[0].plot(*mix2sub[mix2sub.obs[<span class="org-string">'cell_type'</span>] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=2, lw=0, label=f<span class="org-string">'{c}'</span>)
+ax[0].set_title(<span class="org-string">'Ground truth'</span>)
+<span class="org-variable-name">leg</span> = ax[0].legend(frameon=<span class="org-constant">False</span>, markerscale=8, handletextpad=0, loc=<span class="org-string">'upper center'</span>, bbox_to_anchor=(.5, -.25), ncol=2)
+<span class="org-keyword">for</span> h <span class="org-keyword">in</span> leg.legendHandles:
+  h._legmarker.set_alpha(1)
+
+<span class="org-variable-name">z</span> = pd.get_dummies(np.argmax(fit[-1], axis=1)).values.astype(<span class="org-builtin">bool</span>)
+<span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(z.shape[1]):
+  ax[1].plot(*mix2sub[z[:,i]].obsm[<span class="org-string">"X_umap"</span>].T, c=cm(i), marker=<span class="org-string">'.'</span>, ms=2, lw=0, label=f<span class="org-string">'Cluster {i}'</span>)
+ax[1].set_title(<span class="org-string">'Batch EM'</span>)
+<span class="org-variable-name">leg</span> = ax[1].legend(frameon=<span class="org-constant">False</span>, markerscale=8, handletextpad=0, loc=<span class="org-string">'upper center'</span>, bbox_to_anchor=(.5, -.25), ncol=2)
+<span class="org-keyword">for</span> h <span class="org-keyword">in</span> leg.legendHandles:
+  h._legmarker.set_alpha(1)
+
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_xlabel(<span class="org-string">'UMAP 1'</span>)
+ax[0].set_ylabel(<span class="org-string">'UMAP 2'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/mix2-init.png" alt="mix2-init.png">
+</p>
+</div>
+
+<p>
+Run amortized inference on the full data set, initializing components from
+the batch EM solution. (Perfect accuracy in ~10 s, 49 s total)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
+<span class="org-variable-name">seed</span> = 1
+<span class="org-variable-name">lr</span> = 1e-3
+<span class="org-variable-name">num_epochs</span> = 10
+torch.manual_seed(0)
+<span class="org-variable-name">fit1</span> = mpebpm.gam_mix.EBPMGammaMix(
+  p=mix2.shape[1],
+  k=2,
+  log_mean=fit[0],
+  log_inv_disp=fit[1])
+fit1.fit(
+    x=mix2.X.A,
+    s=mix2.X.<span class="org-builtin">sum</span>(axis=1),
+    y=pd.get_dummies(mix2.obs[<span class="org-string">'cell_type'</span>]).values,
+    lr=1e-3,
+    batch_size=64,
+    shuffle=<span class="org-constant">True</span>,
+    num_epochs=10,
+    log_dir=f<span class="org-string">'runs/nbmix/mix2-full-{seed}-{lr:.1g}-{num_epochs}'</span>)
+</pre>
+</div>
+
+<pre class="example">
+EBPMGammaMix(
+(encoder): Sequential(
+(0): Log1p()
+(1): Linear(in_features=17808, out_features=128, bias=True)
+(2): ReLU()
+(3): Linear(in_features=128, out_features=2, bias=True)
+(4): Softmax(dim=1)
+)
+)
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = mix2.X
+<span class="org-variable-name">data</span> = mpebpm.sparse.SparseDataset(
+  mpebpm.sparse.CSRTensor(x.data, x.indices, x.indptr, x.shape, dtype=torch.<span class="org-builtin">float</span>).cuda(),
+  torch.tensor(mix2.X.<span class="org-builtin">sum</span>(axis=1), dtype=torch.<span class="org-builtin">float</span>).cuda())
+<span class="org-variable-name">collate_fn</span> = <span class="org-builtin">getattr</span>(data, <span class="org-string">'collate_fn'</span>, td.dataloader.default_collate)
+<span class="org-variable-name">data</span> = td.DataLoader(data, batch_size=64, shuffle=<span class="org-constant">False</span>, collate_fn=data.collate_fn)
+<span class="org-variable-name">zhat</span> = []
+<span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-keyword">for</span> x, s <span class="org-keyword">in</span> data:
+    zhat.append(fit1.forward(x).cpu().numpy())
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mix2.obs</span>[<span class="org-string">'comp'</span>] = np.argmax(np.vstack(zhat), axis=1)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(5, 3)
+<span class="org-keyword">for</span> a, k, t, cm <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'cell_type'</span>, <span class="org-string">'comp'</span>], [<span class="org-string">'Ground truth'</span>, <span class="org-string">'Online'</span>], [<span class="org-string">'Paired'</span>, <span class="org-string">'Dark2'</span>]):
+  <span class="org-keyword">for</span> i, c <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(mix2.obs[k].unique()):
+    a.plot(*mix2[mix2.obs[k] == c].obsm[<span class="org-string">"X_umap"</span>].T, c=plt.get_cmap(cm)(i), marker=<span class="org-string">'.'</span>, ms=1, lw=0, alpha=0.1, label=f<span class="org-string">'{k}_{i}'</span>)
+  <span class="org-variable-name">leg</span> = a.legend(frameon=<span class="org-constant">False</span>, markerscale=8, handletextpad=0, loc=<span class="org-string">'upper center'</span>, bbox_to_anchor=(.5, -.25), ncol=2)
+  <span class="org-keyword">for</span> h <span class="org-keyword">in</span> leg.legendHandles:
+    h._legmarker.set_alpha(1)
+  a.set_xlabel(<span class="org-string">'UMAP 1'</span>)
+  a.set_title(t)
+ax[0].set_ylabel(<span class="org-string">'UMAP 2'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/nbmix.org/mix2-full.png" alt="mix2-full.png">
 </p>
 </div>
 </div>
@@ -1478,48 +1688,6 @@ trigamma function. The algorithm uses a partial M step (single
 Newton-Raphson update) for \(\alpha\).
 </p>
 
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">ebpm_gamma_em</span>(x, s, max_iters=100, tol=1e-3):
-  <span class="org-doc">"""Return fitted parameters assuming g is a Gamma distribution</span>
-
-<span class="org-doc">  Returns log mu and -log phi</span>
-
-<span class="org-doc">  x - array-like [n,]</span>
-<span class="org-doc">  s - array-like [n,]</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-variable-name">n</span> = x.shape[0]
-  <span class="org-keyword">assert</span> x.shape == (n,)
-  <span class="org-keyword">assert</span> x.shape == s.shape
-  <span class="org-comment-delimiter"># </span><span class="org-comment">a = 1 / phi; b = 1 / (mu phi)</span>
-  <span class="org-variable-name">a</span> = 1
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Initialize at the Poisson MLE</span>
-  <span class="org-variable-name">b</span> = s.<span class="org-builtin">sum</span>() / x.<span class="org-builtin">sum</span>()
-  <span class="org-variable-name">obj</span> = []
-  obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).<span class="org-builtin">sum</span>())
-  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
-    <span class="org-comment-delimiter"># </span><span class="org-comment">E[lam | x]</span>
-    <span class="org-variable-name">pm</span> = (x + a) / (s + b)
-    <span class="org-keyword">assert</span> (pm &gt; 0).<span class="org-builtin">all</span>()
-    <span class="org-comment-delimiter"># </span><span class="org-comment">E[ln lam | x]</span>
-    <span class="org-variable-name">plm</span> = sp.digamma(x + a) - np.log(s + b)
-    <span class="org-variable-name">b</span> = a / pm.mean()
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this appears to be incorrect in Karlis 2005</span>
-    <span class="org-variable-name">a</span> += (np.log(b) - sp.digamma(a) + plm.mean()) / sp.polygamma(1, a)
-    <span class="org-keyword">assert</span> a &gt; 0
-    <span class="org-keyword">assert</span> b &gt; 0
-    obj.append(st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).<span class="org-builtin">sum</span>())
-    <span class="org-keyword">if</span> obj[-1] &lt; obj[-2]:
-      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'llik decreased'</span>)
-    <span class="org-keyword">elif</span> obj[-1] - obj[-2] &lt; tol:
-      <span class="org-variable-name">log_inv_disp</span> = np.log(a)
-      <span class="org-variable-name">log_mean</span> = -np.log(b) + np.log(a)
-      <span class="org-keyword">return</span> log_mean, log_inv_disp, obj
-  <span class="org-keyword">else</span>:
-    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge in max_iters'</span>)
-</pre>
-</div>
-
 <p>
 Try EM for a simple example.
 </p>
@@ -1536,7 +1704,8 @@ Try EM for a simple example.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">trace</span> = ebpm_gamma_em(x, s)
+<pre class="src src-ipython"><span class="org-keyword">import</span> nbmix.em
+<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">trace</span> = nbmix.em.fit_pois_gam(x, s)
 </pre>
 </div>
 
@@ -1581,7 +1750,7 @@ Try a more extensive evaluation of the method.
       <span class="org-variable-name">lam</span> = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
       <span class="org-variable-name">x</span> = rng.poisson(s * lam)
       <span class="org-variable-name">start</span> = time.time()
-      <span class="org-variable-name">log_mean_hat</span>, <span class="org-variable-name">log_inv_disp_hat</span>, <span class="org-variable-name">trace</span> = ebpm_gamma_em(x, s, max_iters=1000)
+      <span class="org-variable-name">log_mean_hat</span>, <span class="org-variable-name">log_inv_disp_hat</span>, <span class="org-variable-name">trace</span> = nbmix.em.fit_pois_gam(x, s, max_iters=1000)
       <span class="org-variable-name">elapsed</span> = time.time() - start
       <span class="org-variable-name">result</span>[(log_mean, log_inv_disp, trial)] = pd.Series([log_mean_hat, log_inv_disp_hat, <span class="org-builtin">len</span>(trace), elapsed])
 <span class="org-variable-name">result</span> = (pd.DataFrame.from_dict(result, orient=<span class="org-string">'index'</span>)
@@ -1627,7 +1796,7 @@ Estimate the average time (seconds) taken to fit each trial.
 </div>
 
 <pre class="example">
-(0.18343861034938266, 0.18248113994496618)
+(0.16765535082135882, 0.1686101890016258)
 
 </pre>
 </div>
@@ -1677,42 +1846,6 @@ However, it appears they neglect the intractable term \(E_q[\ln\Gamma(m_i +
 improve the expected log joint probability.
 </p>
 
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">pois_log_series_em</span>(x, s, max_iters=100, tol=1e-3):
-  <span class="org-variable-name">n</span> = x.shape[0]
-  <span class="org-keyword">assert</span> x.shape == (n,)
-  <span class="org-keyword">assert</span> x.shape == s.shape
-  <span class="org-variable-name">z</span> = .5
-  <span class="org-variable-name">m</span> = .5 * x
-  <span class="org-variable-name">theta</span> = (x - m).<span class="org-builtin">sum</span>() / (x + m * z - m).<span class="org-builtin">sum</span>()
-  <span class="org-variable-name">lam</span> = m.mean()
-  <span class="org-variable-name">obj</span> = [st.nbinom(n=-lam / np.log(1 - theta), p=1 - theta).logpmf(x).<span class="org-builtin">sum</span>()]
-  <span class="org-keyword">assert</span> np.isfinite(obj[-1]) <span class="org-keyword">and</span> obj[-1] &lt; 0
-  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
-    <span class="org-variable-name">alpha</span> = -1 / np.log(1 - theta)
-    <span class="org-variable-name">z</span> = -((1 - theta) / theta - alpha)
-    <span class="org-keyword">assert</span> np.ndim(z) == 0
-    <span class="org-keyword">assert</span> 0 &lt; z &lt; 1
-    <span class="org-variable-name">n</span> = lam * alpha
-    <span class="org-variable-name">m</span> = n * (sp.digamma(n + x) - sp.digamma(n))
-    <span class="org-keyword">assert</span> m.shape == x.shape
-    <span class="org-variable-name">theta</span> = (x - m).<span class="org-builtin">sum</span>() / (x + m * z - m).<span class="org-builtin">sum</span>()
-    <span class="org-keyword">assert</span> 0 &lt; theta &lt; 1
-    <span class="org-variable-name">lam</span> = m.mean()
-    <span class="org-keyword">assert</span> lam &gt; 0
-    obj.append(st.nbinom(n=n, p=1 - theta).logpmf(x).<span class="org-builtin">sum</span>())
-    <span class="org-keyword">assert</span> np.isfinite(obj[-1]) <span class="org-keyword">and</span> obj[-1] &lt; 0
-    <span class="org-keyword">if</span> obj[-1] &lt; obj[-2]:
-      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'llik decreased'</span>)
-    <span class="org-keyword">elif</span> obj[-1] - obj[-2] &lt; tol:
-      <span class="org-variable-name">log_inv_disp</span> = -np.log(n)
-      <span class="org-variable-name">log_mean</span> = np.log(theta) - np.log(1 - theta) - np.log(s) - log_inv_disp
-      <span class="org-keyword">return</span> log_mean, log_inv_disp, obj
-  <span class="org-keyword">else</span>:
-    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge in max_iters'</span>)
-</pre>
-</div>
-
 <p>
 Try EM for a simple example.
 </p>
@@ -1729,7 +1862,8 @@ Try EM for a simple example.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">trace</span> = pois_log_series_em(x, s)
+<pre class="src src-ipython"><span class="org-keyword">import</span> nbmix.em
+<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">neg_log_phi</span>, <span class="org-variable-name">trace</span> = nbmix.em.fit_pois_log(x, s)
 </pre>
 </div>
 </div>
@@ -1831,7 +1965,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-26 Tue 19:16</p>
+<p class="date">Created: 2020-05-28 Thu 23:34</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

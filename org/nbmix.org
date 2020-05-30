@@ -999,9 +999,11 @@
 
 ** 4-way example
 
-   Pick 4 cell types which /a priori/ should be easy to distinguish.
+   Pick 4 cell types which /a priori/ should be easy to distinguish. Apply the
+   standard methodology (1.4 minutes).
 
    #+BEGIN_SRC ipython :async t
+     %%time
      mix4 = dat[dat.obs['cell_type'].isin(['cytotoxic_t', 'regulatory_t', 'b_cells', 'cd14_monocytes'])]
      sc.pp.filter_genes(mix4, min_counts=1)
      sc.pp.pca(mix4, zero_center=False)
@@ -1013,7 +1015,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[154]:
+   # Out[5]:
    #+BEGIN_EXAMPLE
      AnnData object with n_obs × n_vars = 33169 × 19241
      obs: 'barcode', 'cell_type', 'leiden'
@@ -1065,7 +1067,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[166]:
+   # Out[6]:
    #+BEGIN_EXAMPLE
      b_cells           320
      cytotoxic_t       315
@@ -1075,10 +1077,41 @@
    #+END_EXAMPLE
    :END:
 
+   As a sanity check, estimate the components given the ground truth labels,
+   get the MAP estimate of the mixture weights given the components, and report
+   the log loss of the MAP mixture assignments.
+
+   #+BEGIN_SRC ipython :async t
+     num_epochs = 100
+     fit0 = mpebpm.sgd.ebpm_gamma(
+       mix4sub.X,
+       onehot=pd.get_dummies(mix4sub.obs['cell_type']).values,
+       batch_size=32,
+       num_epochs=num_epochs,
+       shuffle=True,
+       log_dir=f'runs/nbmix/mix4-init-gt-{num_epochs}')
+     z = pd.get_dummies(mix4sub.obs['cell_type']).values
+     with torch.no_grad():
+       L = mpebpm.gam_mix._nb_mix_llik(
+         x=torch.tensor(mix4sub.X.A, dtype=torch.float), 
+         s=torch.tensor(mix4sub.X.sum(axis=1), dtype=torch.float),
+         log_mean=torch.tensor(fit0[0], dtype=torch.float),
+         log_inv_disp=torch.tensor(fit0[1], dtype=torch.float))
+       zhat = torch.nn.functional.softmax(L, dim=1).cpu().numpy()
+     loss = (z * np.log(zhat + 1e-16)).sum()
+     loss
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   : 0.0
+   :END:
+
    #+BEGIN_SRC ipython :async t
      import imp; imp.reload(mpebpm.gam_mix)
      k = 4
-     seed = 4
+     seed = 0
      lr = 1e-2
      num_epochs = 50
      max_em_iters = 10
@@ -1095,8 +1128,22 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[173]:
+   # Out[19]:
    :END:
+
+   Report the minimum cluster weight, over MAP estimates for each cell.
+
+   #+BEGIN_SRC ipython
+     np.max(fit[-1], axis=1).min()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[18]:
+   : 0.99999416
+   :END:
+
+   Plot the MAP cluster assignments.
 
    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4-init.png
      plt.clf()
@@ -1128,8 +1175,41 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[174]:
+   # Out[39]:
    [[file:figure/nbmix.org/mix4-init.png]]
+   :END:
+
+   Compare the expected log joint of the fitted model to the oracle.
+
+   #+BEGIN_SRC ipython :async t
+     pi = torch.ones(4) / 4.
+     with torch.no_grad():
+       oracle_log_joint = mpebpm.gam_mix._nb_mix_loss(
+         z=torch.tensor(z, dtype=torch.float),
+         x=torch.tensor(mix4sub.X.A, dtype=torch.float), 
+         s=torch.tensor(mix4sub.X.sum(axis=1), dtype=torch.float),
+         log_mean=torch.tensor(fit0[0], dtype=torch.float),
+         log_inv_disp=torch.tensor(fit0[1], dtype=torch.float),
+         pi=pi).numpy()
+       em_log_joint = mpebpm.gam_mix._nb_mix_loss(
+         z=torch.tensor(fit[2], dtype=torch.float),
+         x=torch.tensor(mix4sub.X.A, dtype=torch.float), 
+         s=torch.tensor(mix4sub.X.sum(axis=1), dtype=torch.float),
+         log_mean=torch.tensor(fit[0], dtype=torch.float),
+         log_inv_disp=torch.tensor(fit[1], dtype=torch.float),
+         pi=pi).numpy()
+     pd.Series({'oracle': oracle_log_joint,
+                'em': em_log_joint})
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   #+BEGIN_EXAMPLE
+     oracle    455.64392
+     em        467.37344
+     dtype: object
+   #+END_EXAMPLE
    :END:
 
 *** Placeholder                                                    :noexport:

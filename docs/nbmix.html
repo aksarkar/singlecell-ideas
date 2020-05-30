@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-28 Thu 23:34 -->
+<!-- 2020-05-30 Sat 16:20 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -452,8 +452,8 @@ can improve the expected log joint probability, e.g. by
 </div>
 </div>
 
-<div id="outline-container-org7584ed6" class="outline-3">
-<h3 id="ai"><a id="org7584ed6"></a>Amortized inference</h3>
+<div id="outline-container-org85286a2" class="outline-3">
+<h3 id="ai"><a id="org85286a2"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-ai">
 <p>
 An alternative algorithm, which is amenable to stochastic gradient descent
@@ -866,8 +866,8 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org71a5e7c" class="outline-3">
-<h3 id="amortized"><a id="org71a5e7c"></a>Amortized inference</h3>
+<div id="outline-container-orgaaafde0" class="outline-3">
+<h3 id="amortized"><a id="orgaaafde0"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
 Construct the amortized inference model, initializing \(\vmu_k, \vphi_k\)
@@ -1275,11 +1275,13 @@ fig.tight_layout()
 <h3 id="org60dbe51">4-way example</h3>
 <div class="outline-text-3" id="text-org60dbe51">
 <p>
-Pick 4 cell types which <i>a priori</i> should be easy to distinguish.
+Pick 4 cell types which <i>a priori</i> should be easy to distinguish. Apply the
+standard methodology (1.4 minutes).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">mix4</span> = dat[dat.obs[<span class="org-string">'cell_type'</span>].isin([<span class="org-string">'cytotoxic_t'</span>, <span class="org-string">'regulatory_t'</span>, <span class="org-string">'b_cells'</span>, <span class="org-string">'cd14_monocytes'</span>])]
+<pre class="src src-ipython">%%time
+<span class="org-variable-name">mix4</span> = dat[dat.obs[<span class="org-string">'cell_type'</span>].isin([<span class="org-string">'cytotoxic_t'</span>, <span class="org-string">'regulatory_t'</span>, <span class="org-string">'b_cells'</span>, <span class="org-string">'cd14_monocytes'</span>])]
 sc.pp.filter_genes(mix4, min_counts=1)
 sc.pp.pca(mix4, zero_center=<span class="org-constant">False</span>)
 sc.pp.neighbors(mix4)
@@ -1347,10 +1349,43 @@ cd14_monocytes     75
 Name: cell_type, dtype: int64
 </pre>
 
+<p>
+As a sanity check, estimate the components given the ground truth labels,
+get the MAP estimate of the mixture weights given the components, and report
+the log loss of the MAP mixture assignments.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">num_epochs</span> = 100
+<span class="org-variable-name">fit0</span> = mpebpm.sgd.ebpm_gamma(
+  mix4sub.X,
+  onehot=pd.get_dummies(mix4sub.obs[<span class="org-string">'cell_type'</span>]).values,
+  batch_size=32,
+  num_epochs=num_epochs,
+  shuffle=<span class="org-constant">True</span>,
+  log_dir=f<span class="org-string">'runs/nbmix/mix4-init-gt-{num_epochs}'</span>)
+<span class="org-variable-name">z</span> = pd.get_dummies(mix4sub.obs[<span class="org-string">'cell_type'</span>]).values
+<span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">L</span> = mpebpm.gam_mix._nb_mix_llik(
+    x=torch.tensor(mix4sub.X.A, dtype=torch.<span class="org-builtin">float</span>), 
+    s=torch.tensor(mix4sub.X.<span class="org-builtin">sum</span>(axis=1), dtype=torch.<span class="org-builtin">float</span>),
+    log_mean=torch.tensor(fit0[0], dtype=torch.<span class="org-builtin">float</span>),
+    log_inv_disp=torch.tensor(fit0[1], dtype=torch.<span class="org-builtin">float</span>))
+  <span class="org-variable-name">zhat</span> = torch.nn.functional.softmax(L, dim=1).cpu().numpy()
+<span class="org-variable-name">loss</span> = (z * np.log(zhat + 1e-16)).<span class="org-builtin">sum</span>()
+loss
+</pre>
+</div>
+
+<pre class="example">
+0.0
+
+</pre>
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
 <span class="org-variable-name">k</span> = 4
-<span class="org-variable-name">seed</span> = 4
+<span class="org-variable-name">seed</span> = 0
 <span class="org-variable-name">lr</span> = 1e-2
 <span class="org-variable-name">num_epochs</span> = 50
 <span class="org-variable-name">max_em_iters</span> = 10
@@ -1365,6 +1400,24 @@ torch.manual_seed(seed)
   log_dir=f<span class="org-string">'runs/nbmix/mix4-init-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}'</span>)
 </pre>
 </div>
+
+<p>
+Report the minimum cluster weight, over MAP estimates for each cell.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.<span class="org-builtin">max</span>(fit[-1], axis=1).<span class="org-builtin">min</span>()
+</pre>
+</div>
+
+<pre class="example">
+0.99999416
+
+</pre>
+
+<p>
+Plot the MAP cluster assignments.
+</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
@@ -1400,6 +1453,38 @@ fig.tight_layout()
 <p><img src="figure/nbmix.org/mix4-init.png" alt="mix4-init.png">
 </p>
 </div>
+
+<p>
+Compare the expected log joint of the fitted model to the oracle.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">pi</span> = torch.ones(4) / 4.
+<span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">oracle_log_joint</span> = mpebpm.gam_mix._nb_mix_loss(
+    z=torch.tensor(z, dtype=torch.<span class="org-builtin">float</span>),
+    x=torch.tensor(mix4sub.X.A, dtype=torch.<span class="org-builtin">float</span>), 
+    s=torch.tensor(mix4sub.X.<span class="org-builtin">sum</span>(axis=1), dtype=torch.<span class="org-builtin">float</span>),
+    log_mean=torch.tensor(fit0[0], dtype=torch.<span class="org-builtin">float</span>),
+    log_inv_disp=torch.tensor(fit0[1], dtype=torch.<span class="org-builtin">float</span>),
+    pi=pi).numpy()
+  <span class="org-variable-name">em_log_joint</span> = mpebpm.gam_mix._nb_mix_loss(
+    z=torch.tensor(fit[2], dtype=torch.<span class="org-builtin">float</span>),
+    x=torch.tensor(mix4sub.X.A, dtype=torch.<span class="org-builtin">float</span>), 
+    s=torch.tensor(mix4sub.X.<span class="org-builtin">sum</span>(axis=1), dtype=torch.<span class="org-builtin">float</span>),
+    log_mean=torch.tensor(fit[0], dtype=torch.<span class="org-builtin">float</span>),
+    log_inv_disp=torch.tensor(fit[1], dtype=torch.<span class="org-builtin">float</span>),
+    pi=pi).numpy()
+pd.Series({<span class="org-string">'oracle'</span>: oracle_log_joint,
+           <span class="org-string">'em'</span>: em_log_joint})
+</pre>
+</div>
+
+<pre class="example">
+oracle    455.64392
+em        467.37344
+dtype: object
+</pre>
 </div>
 </div>
 
@@ -1965,7 +2050,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-28 Thu 23:34</p>
+<p class="date">Created: 2020-05-30 Sat 16:20</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

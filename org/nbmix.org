@@ -51,11 +51,15 @@
     import mpebpm.sgd
     import numpy as np
     import pandas as pd
+    import pickle
     import scanpy as sc
     import scipy.optimize as so
     import scipy.special as sp
     import scipy.stats as st
     import scmodes
+    import sklearn.linear_model
+    import sklearn.model_selection
+    import sklearn.preprocessing
     import time
     import torch
     import torch.utils.data as td
@@ -109,6 +113,7 @@
    \newcommand\kl[2]{\KL(#1\;\Vert\;#2)}
    \newcommand\xiplus{x_{i+}}
    \newcommand\mi{\mathbf{I}}
+   \newcommand\vb{\mathbf{b}}
    \newcommand\vu{\mathbf{u}}
    \newcommand\vx{\mathbf{x}}
    \newcommand\vz{\mathbf{z}}
@@ -156,7 +161,7 @@
    assigned to cluster \(k\), the exact posterior
 
    \begin{align}
-     q(z_{i1}, \ldots, z_{iK}) &\triangleq p(z_{ik} \mid \cdot) = \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
+     q(z_{i1}, \ldots, z_{iK}) &\triangleq p(z_{ik} \mid x_{ij}, \xiplus, \vmu_k, \vphi_k) = \Mult(1, \alpha_{i1}, \ldots, \alpha_{iK})\\
      \alpha_{ik} &\propto \sum_j \frac{\Gamma(x_{ij} + 1 / \phi_{kj})}{\Gamma(1 / \phi_{kj})\Gamma(x_{ij} + 1)}\left(\frac{\xiplus\mu_{kj}\phi_{kj}}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{x_{ij}} \left(\frac{1}{1 + \xiplus\mu_{kj}\phi_{kj}}\right)^{1/\phi_{kj}}.
    \end{align}
 
@@ -1035,6 +1040,15 @@
    # Out[155]:
    :END:
 
+   #+BEGIN_SRC ipython
+     mix4 = anndata.read_h5ad('/scratch/midway2/aksarkar/singlecell/mix4.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
    Plot the data, colored by ground truth label.
 
    #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4.png
@@ -1058,7 +1072,7 @@
    [[file:figure/nbmix.org/mix4.png]]
    :END:
 
-   Fit batch EM for a subset of the data.
+   Use a subset of the data to run batch EM.
 
    #+BEGIN_SRC ipython
      mix4sub = sc.pp.subsample(mix4, n_obs=1000, random_state=1, copy=True)
@@ -1082,15 +1096,16 @@
    the log loss of the MAP mixture assignments.
 
    #+BEGIN_SRC ipython :async t
+     z = pd.get_dummies(mix4sub.obs['cell_type']).values
      num_epochs = 100
      fit0 = mpebpm.sgd.ebpm_gamma(
        mix4sub.X,
-       onehot=pd.get_dummies(mix4sub.obs['cell_type']).values,
+       onehot=z,
        batch_size=32,
        num_epochs=num_epochs,
        shuffle=True,
        log_dir=f'runs/nbmix/mix4-init-gt-{num_epochs}')
-     z = pd.get_dummies(mix4sub.obs['cell_type']).values
+     np.savez('mix4-oracle.npz', fit0)
      with torch.no_grad():
        L = mpebpm.gam_mix._nb_mix_llik(
          x=torch.tensor(mix4sub.X.A, dtype=torch.float), 
@@ -1104,9 +1119,21 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[8]:
    : 0.0
    :END:
+
+   #+BEGIN_SRC ipython
+     with np.load('mix4-oracle.npz') as f:
+       fit0 = f['arr_0']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   Run batch EM.
 
    #+BEGIN_SRC ipython :async t
      import imp; imp.reload(mpebpm.gam_mix)
@@ -1124,23 +1151,22 @@
        num_epochs=num_epochs,
        max_em_iters=max_em_iters,
        log_dir=f'runs/nbmix/mix4-init-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}')
+     np.savez('mix4-init.npz', *fit)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[19]:
+   # Out[102]:
    :END:
 
-   Report the minimum cluster weight, over MAP estimates for each cell.
-
    #+BEGIN_SRC ipython
-     np.max(fit[-1], axis=1).min()
+     with np.load('mix4-init.npz') as f:
+       fit = [f['arr_0'], f['arr_1'], f['arr_2']]
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[18]:
-   : 0.99999416
+   # Out[5]:
    :END:
 
    Plot the MAP cluster assignments.
@@ -1175,7 +1201,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[39]:
+   # Out[104]:
    [[file:figure/nbmix.org/mix4-init.png]]
    :END:
 
@@ -1185,7 +1211,7 @@
      pi = torch.ones(4) / 4.
      with torch.no_grad():
        oracle_log_joint = mpebpm.gam_mix._nb_mix_loss(
-         z=torch.tensor(z, dtype=torch.float),
+         z=torch.tensor(pd.get_dummies(mix4sub.obs['cell_type']).values, dtype=torch.float),
          x=torch.tensor(mix4sub.X.A, dtype=torch.float), 
          s=torch.tensor(mix4sub.X.sum(axis=1), dtype=torch.float),
          log_mean=torch.tensor(fit0[0], dtype=torch.float),
@@ -1204,12 +1230,41 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[38]:
+   # Out[124]:
    #+BEGIN_EXAMPLE
-     oracle    455.64392
-     em        467.37344
+     oracle    455.64493
+     em        467.37347
      dtype: object
    #+END_EXAMPLE
+   :END:
+
+   Look at marker gene expression, stratified by the ground truth labels, and
+   by the MAP cluster assignments.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4-cd74.png
+     idx = np.where(mix4sub.var['name'] == 'CD74')[0]
+     plt.clf()
+     fig, ax = plt.subplots(3, 1)
+     fig.set_size_inches(6, 4.5)
+     grid = np.linspace(0, .05, 1000)
+     ax[0].hist(mix4sub.X[:,idx].A.ravel(), bins=np.arange(mix4sub.X[:,idx].max() + 1), color='0.7')
+     ax[0].set_title('CD74')
+     ax[0].set_xlabel('Number of molecules')
+     ax[0].set_ylabel('Number of cells')
+     for a, cm, f, t, ls in zip(ax[1:], ['Paired', 'Dark2'], [fit0, fit], ['Oracle', 'Batch EM'], [mix4sub.obs['cell_type'].unique(), [f'Cluster {k}' for k in range(4)]]):
+       for i, l in enumerate(ls):
+         F = st.gamma(a=np.exp(f[1][i,idx]), scale=np.exp(f[0][i,idx] - f[1][i,idx])).cdf(grid)
+         a.plot(grid, F, lw=1, c=plt.get_cmap(cm)(i), label=l)
+       a.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+       a.set_ylabel('CDF')
+     ax[-1].set_xlabel('Latent gene expression')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[115]:
+   [[file:figure/nbmix.org/mix4-cd74.png]]
    :END:
 
 *** Placeholder                                                    :noexport:

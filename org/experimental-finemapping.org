@@ -1,0 +1,76 @@
+#+TITLE: Experimental fine-mapping of QTLs from scRNA-seq data
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  One of the fundamental problems in translating genetic associations with
+  disease into actionable insights is identifying the molecular mechanism by
+  which they operate. What do we mean by "identifying a molecular mechanism"?
+  Ideally, we would identify a cell type of action, a collection of regulatory
+  elements, a target gene, and collection of upstream regulators (e.g.,
+  Smemo et al. 2013, Claussnitzer et al. 2015, Sekar et al. 2016). 
+
+  Considerable progress has been made on identifying genomic annotations
+  enriched for associations, which can potentially be used to identify putative
+  cell types of action (e.g., Maurano et al. 2012, Gusev et al. 2015, Finucane
+  et al. 2015, Finucane et al. 2016). Progress has also been made on
+  statistically identifying putative causal variants directly from genotype and
+  phenotype, possibly using enrichments as prior information (e.g., Hormozdiari
+  et al. 2014, Pickrell 2014, Kichaev et al. 2014, Hormozdiari et al. 2014,
+  Chung et al. 2014, Li and Kellis 2016). Recent attention has focused on the
+  statistical problem of identifying the target gene from genotype, phenotype,
+  and gene expression data (e.g., Gamazon et al. 2015, Gusev et al. 2016,
+  Mancuso et al. 2017, Zhu et al. 2018).  
+
+  Together, these statistical approaches can potentially be combined to
+  identify a putative mechanism by which a disease-associated locus causes
+  disease risk/onset. However, they are fundamentally limited by the
+  availability of cell type--specific molecular data at the transcriptomic and
+  epigenomic levels, which are required to derive relevant genomic
+  annotations. These limitations have, in part, motivated recent efforts to
+  generate relevant single cell genomic data (e.g., Regev et al. 2017).
+
+  In parallel, experimental approaches have been developed to identify
+  functional regulatory elements using transfected reporter constructs (e.g.,
+  Melkinov et al. 2012, Arnold et al. 2013, Tewhey et al. 2016, Ernst et
+  al. 2016, Wang et al. 2018), or more recently, combining CRISPR-perturbation
+  with scRNA-seq phenotyping (e.g., Adamson et al. 2016, Dixit et al. 2016,
+  Jaitin et al. 2016, Xie et al. 2017, Datlinger et al. 2017). These approaches
+  have been limited by the cell type in which experiments are performed.
+
+  Here, we outline an alternative approach, which exploits the fact that
+  naturally occuring stochastic variation in protein abundances of upstream
+  regulators will lead to downstream variation in mRNA levels of target
+  genes. This fact suggests that it could possible to identify upstream
+  regulators, functional regulatory elements, and target genes directly from
+  scRNA-seq data. Such an approach could avoid problems of collecting large
+  numbers of donor individuals, of picking the correct cell type/developmental
+  time point /a priori/. It could also more directly answer the relevant
+  questions for interpreting disease-associated loci.
+
+* Method
+** Regulatory network inference from scRNA-seq data
+
+   We assume (Sarkar and Stephens 2020) \(
+   \DeclareMathOperator\Pois{Poisson}
+   \DeclareMathOperator\N{\mathcal{N}}
+   \newcommand\xiplus{x_{i+}}
+   \newcommand\mh{\mathbf{H}}
+   \newcommand\vb{\mathbf{b}}
+   \newcommand\mi{\mathbf{I}}
+   \)
+
+   \begin{equation}
+     x_{ij} \mid \xiplus, \eta_{ij} \sim \Pois(\xiplus \exp(\eta_{ij})),
+   \end{equation}
+
+   where \(x_{ij}\) denotes the number of molecules of gene \(j\) observed in
+   cell \(i\) and \(\xiplus \triangleq \sum_j x_{ij}\). We further assume
+
+   \begin{align}
+     \eta_{\cdot j} &\sim \N([\mh]_{\cdot j} \vb, \sigma^2 \mi)\\
+     b_{j^{\prime}} &\sim \pi \N(0, \sigma^2 \sigma_b^2) + (1 - \pi) \delta_0(\cdot),
+   \end{align}
+
+   where \(\mh = [\eta_{ij}]\) and \([\mh]_{ij}\) denotes the submatrix of
+   \(\mh\) obtained by deleting the \(i\)th row and \(j\)th column.

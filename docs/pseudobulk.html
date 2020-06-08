@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-14 Thu 23:53 -->
+<!-- 2020-06-08 Mon 16:20 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Alternative approaches to scRNA-seq pseudobulk models</title>
@@ -263,6 +263,7 @@ for the JavaScript code in this tag.
 <li><a href="#data">Data</a></li>
 <li><a href="#org1ee740f">Results</a>
 <ul>
+<li><a href="#orgda6373f">Comparison of mean estimates under different expression models</a></li>
 <li><a href="#pseudobulk">Existing approach</a></li>
 <li><a href="#ebpm">Alternative approach</a></li>
 </ul>
@@ -281,14 +282,34 @@ genes \(j = 1, \ldots, p\) measured in cells \(i = 1, \ldots, n\), belonging
 to \(m\) different groups denoted by indicator variables \(z_{ik}, k = 1,
   \ldots, m\), then this approach constructs new data \(y_{kj} = \sum_i x_{ij}
   z_{ik}\). The key idea of this approach is that the new data \(y_{kj}\) can
-be treated as bulk RNA-seq data in downstream analysis.
+be treated as bulk RNA-seq data in downstream analysis. This approach can be
+justified as the MLE of the model \(
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\argmin{arg min}
+  \newcommand\mf{\mathbf{F}} 
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vc{\mathbf{c}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vmu{\boldsymbol{\mu}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\xiplus{x_{i+}}
+  \)
 </p>
 
+\begin{align}
+  x_{ij} \mid \xiplus, \mu_{kj}, z_{ik} = 1 &\sim \Poi(\xiplus \mu_{kj})\\
+  \hat{\mu}_{kj} &= \frac{\sum_i x_{ij} z_{ik}}{\sum_i \xiplus z_{ik}}.
+\end{align}
+
 <p>
-However, this approach has been observed to lead to biases in regression and
-differential expression analyses, possibly due to differing size factors
-(total number of molecules observed). Here, we outline an alternative procedure
-and demonstrate that it is not biased by variation in size factors.
+However, this approach has been observed (by Luis Barreiro&rsquo;s lab) to lead to
+biases in regression and differential expression analyses, possibly due to
+widely varying size factors (total number of molecules observed). Here, we
+investigate this bias, and outline alternative procedures which are not
+biased by variation in size factors.
 </p>
 </div>
 </div>
@@ -299,8 +320,10 @@ and demonstrate that it is not biased by variation in size factors.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> anndata
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> mpebpm
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
+<span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> sqlite3
 </pre>
@@ -326,20 +349,11 @@ and demonstrate that it is not biased by variation in size factors.
 <div class="outline-text-2" id="text-method">
 <p>
 We assume (<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et
- al. 2019</a>) \(
-   \DeclareMathOperator\Gam{Gamma}
-   \DeclareMathOperator\Poi{Poisson}
-   \DeclareMathOperator\argmin{arg min}
-   \newcommand\mf{\mathbf{F}} 
-   \newcommand\ml{\mathbf{L}}
-   \newcommand\mx{\mathbf{X}}
-   \newcommand\vl{\mathbf{l}}
-   \newcommand\vx{\mathbf{x}}
-   \)
+ al. 2019</a>)
 </p>
 
 \begin{align*}
-  x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
+  x_{ij} \mid \xiplus, \lambda_{ij} &\sim \Poi(\xiplus \lambda_{ij})\\
   \lambda_{ij} \mid \mu_{ij}, \phi_{ij}, \pi_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
   \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
   \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
@@ -353,7 +367,7 @@ where
 <ul class="org-ul">
 <li>\(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\) observed
 in cell \(i = 1, \ldots, n\)</li>
-<li>\(x_{i+} \triangleq \sum_j x_{ij}\) is the total number of molecules
+<li>\(\xiplus \triangleq \sum_j x_{ij}\) is the total number of molecules
 observed in sample \(i\)</li>
 <li>cells are taken from \(m\) conditions, \(\ml\) is \(n \times m\),
 and each \(\mf_{(\cdot)}\) is \(p \times m\)</li>
@@ -423,6 +437,22 @@ plt.tight_layout()
 </div>
 
 <p>
+Prepare the data for <code>mpebpm</code>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">s</span> = dat.obs[<span class="org-string">'mol_hs'</span>].values.reshape(-1, 1)
+<span class="org-comment-delimiter"># </span><span class="org-comment">Important: constructing this as a dense matrix will blow up memory for larger</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">data sets</span>
+<span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(dat.shape[0]), (np.arange(dat.shape[0]), pd.Categorical(dat.obs[<span class="org-string">'chip_id'</span>]).codes))).tocsr()
+<span class="org-comment-delimiter"># </span><span class="org-comment">Important: center the matrix of dummy variables (batch), because there is no</span>
+<span class="org-comment-delimiter"># </span><span class="org-comment">baseline</span>
+<span class="org-variable-name">design</span> = ss.coo_matrix(pd.get_dummies(dat.obs[<span class="org-string">'experiment'</span>])).astype(<span class="org-builtin">float</span>).A
+<span class="org-variable-name">design</span> -= design.mean(axis=0)
+</pre>
+</div>
+
+<p>
 <i>SKP1</i> was the top eQTL in this data (refer to the
 <a href="http://shiny.stephenslab.uchicago.edu:5007/qtls">browser</a>). Extract the
 genotypes at the top cis-SNP for this gene.
@@ -440,6 +470,138 @@ genotypes at the top cis-SNP for this gene.
 <h2 id="org1ee740f">Results</h2>
 <div class="outline-text-2" id="text-org1ee740f">
 </div>
+<div id="outline-container-orgda6373f" class="outline-3">
+<h3 id="orgda6373f">Comparison of mean estimates under different expression models</h3>
+<div class="outline-text-3" id="text-orgda6373f">
+<p>
+As a preliminary investigation, compare estimates of the mean gene
+expression under different model assumptions. Pseudobulk approaches are
+justified as fitting a simple point mass expression model. However, in the
+iPSC data, there are cell-specific technical covariates \(\vc_i\) whose
+effect on each gene \(\vb_j\) needs to be estimated. This requires a
+(slightly) more sophisticated approach
+</p>
+
+\begin{equation}
+  x_{ij} \mid \xiplus, \mu_j, \vc_i, \vb_j \sim \Poi(\xiplus \exp(\vc_i' \vb_j) \mu_j)
+\end{equation}
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mu0</span>, <span class="org-variable-name">bhat0</span> = mpebpm.sgd.ebpm_point(
+  dat.X.A,
+  s=s,
+  onehot=onehot,
+  design=design,
+  batch_size=64,
+  shuffle=<span class="org-constant">True</span>,
+  lr=1e-2,
+  num_epochs=40,
+  log_dir=f<span class="org-string">'runs/mpebpm/ipsc/point/'</span>)
+</pre>
+</div>
+
+<p>
+A point mass expression model is unlikely to be supported by the data. Our
+alternative assumes point-Gamma expression models, which are supported by
+empirical data (Sarkar et al. 2019, Sarkar and Stephens 2020). Read the
+<a href="mpebpm.html#ipsc">previously fitted models</a>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mu1</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-log-mu.npy'</span>)
+<span class="org-variable-name">neg_log_phi1</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-neg-log-phi.npy'</span>)
+<span class="org-variable-name">logodds1</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-logodds.npy'</span>)
+<span class="org-variable-name">bhat1</span> = np.load(<span class="org-string">'/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-bhat.npy'</span>)
+</pre>
+</div>
+
+<p>
+Compare different mean estimates against each other.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">naive</span> = np.delete((np.log(y + 1) - np.log(y.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>))), 1, axis=0)
+<span class="org-variable-name">pois</span> = np.delete(log_mu0, 1, axis=0)
+<span class="org-variable-name">pg</span> = -np.log1p(np.exp(logodds1)) + log_mu1
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 2, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(6, 6)
+ax[0,0].scatter(temp.ravel(), pois.ravel(), c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+ax[0,0].set_ylabel(<span class="org-string">'Log point mass mean\n(confounder-corrected)'</span>)
+ax[1,0].scatter(temp.ravel(), pg.ravel(), c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+ax[1,0].set_xlabel(<span class="org-string">'Log point mass mean (naive)'</span>)
+ax[1,0].set_ylabel(<span class="org-string">'Log Point-Gamma mean'</span>)
+ax[1,1].scatter(pois.ravel(), pg.ravel(), c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+ax[1,1].set_xlabel(<span class="org-string">'Log point mass mean\n(confounder-corrected)'</span>)
+<span class="org-variable-name">lim</span> = [-20, -5]
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.ravel():
+  <span class="org-keyword">if</span> a <span class="org-keyword">is</span> <span class="org-keyword">not</span> ax[0,1]:
+    a.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[0,1].set_axis_off()
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pseudobulk.org/naive-vs-point-vs-point-gamma.png" alt="naive-vs-point-vs-point-gamma.png">
+</p>
+</div>
+
+<p>
+Compare different choices of pseudocount in the naive pseudobulk estimates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">pg</span> = -np.log1p(np.exp(logodds1)) + log_mu1
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(7.5, 2.5)
+ax[0].scatter(np.delete((np.log(y + 1) - np.log(y.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>))), 1, axis=0).ravel(), pg.ravel() , c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+ax[0].set_xlabel(<span class="org-string">'$\ln((y+1)/s)$'</span>)
+ax[0].set_ylabel(<span class="org-string">'Log Point-Gamma mean'</span>)
+ax[1].scatter(np.delete((np.log(y + 1e-4) - np.log(y.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>))), 1, axis=0).ravel(), pg.ravel(), c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+ax[1].set_xlabel(<span class="org-string">'$\ln((y+10^{-4})/s)$'</span>)
+ax[2].scatter(np.delete((np.log(y / y.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>) + 1)), 1, axis=0).ravel(), pg.ravel(), c=<span class="org-string">'k'</span>, s=1, alpha=0.1)
+ax[2].set_xlabel(<span class="org-string">'$\ln((y/s) + 1)$'</span>)
+<span class="org-variable-name">lim</span> = [-20, -5]
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.ravel():
+  a.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pseudobulk.org/pg-vs-point-pseudocount.png" alt="pg-vs-point-pseudocount.png">
+</p>
+</div>
+
+<p>
+Look at the distribution of relative differences between the naive estimate
+of the point mass, and the estimate accounting for the effect of technical
+covariates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.hist((pois - naive).ravel(), bins=30, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+plt.axvline(x=np.median(pois - naive), lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+plt.xlabel(<span class="org-string">'Log fold change'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pseudobulk.org/point-mass-rel-diff.png" alt="point-mass-rel-diff.png">
+</p>
+</div>
+</div>
+</div>
+
 <div id="outline-container-org169c7c9" class="outline-3">
 <h3 id="pseudobulk"><a id="org169c7c9"></a>Existing approach</h3>
 <div class="outline-text-3" id="text-pseudobulk">
@@ -648,7 +810,7 @@ gene expression over all cells. Assuming
 </p>
 
 <p>
-\[ x_{ij} \mid x_{i+}, \mu_j \sim \Poi(x_{i+} \mu_j), \]
+\[ x_{ij} \mid \xiplus, \mu_j \sim \Poi(\xiplus \mu_j), \]
 </p>
 
 <p>
@@ -656,7 +818,7 @@ it is straightforward to show
 </p>
 
 <p>
-\[ \hat{\mu_j} = \frac{\sum_i x_{ij}}{\sum_i x_{i+}}. \]
+\[ \hat{\mu_j} = \frac{\sum_i x_{ij}}{\sum_i \xiplus}. \]
 </p>
 
 <div class="org-src-container">
@@ -822,7 +984,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-14 Thu 23:53</p>
+<p class="date">Created: 2020-06-08 Mon 16:20</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

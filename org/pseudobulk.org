@@ -12,12 +12,32 @@
   to \(m\) different groups denoted by indicator variables \(z_{ik}, k = 1,
   \ldots, m\), then this approach constructs new data \(y_{kj} = \sum_i x_{ij}
   z_{ik}\). The key idea of this approach is that the new data \(y_{kj}\) can
-  be treated as bulk RNA-seq data in downstream analysis.
+  be treated as bulk RNA-seq data in downstream analysis. This approach can be
+  justified as the MLE of the model \(
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\argmin{arg min}
+  \newcommand\mf{\mathbf{F}} 
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vc{\mathbf{c}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vmu{\boldsymbol{\mu}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\xiplus{x_{i+}}
+  \)
 
-  However, this approach has been observed to lead to biases in regression and
-  differential expression analyses, possibly due to differing size factors
-  (total number of molecules observed). Here, we outline an alternative procedure
-  and demonstrate that it is not biased by variation in size factors.
+  \begin{align}
+    x_{ij} \mid \xiplus, \mu_{kj}, z_{ik} = 1 &\sim \Poi(\xiplus \mu_{kj})\\
+    \hat{\mu}_{kj} &= \frac{\sum_i x_{ij} z_{ik}}{\sum_i \xiplus z_{ik}}.
+  \end{align}
+
+  However, this approach has been observed (by Luis Barreiro's lab) to lead to
+  biases in regression and differential expression analyses, possibly due to
+  widely varying size factors (total number of molecules observed). Here, we
+  investigate this bias, and outline alternative procedures which are not
+  biased by variation in size factors.
 
 * Setup
   :PROPERTIES:
@@ -30,25 +50,26 @@
   #+END_SRC
 
   #+RESULTS:
-  : 1
+  : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :dir /scratch/midway2/aksarkar/singlecell/
 
-  #+RESULTS:
-  : Submitted batch job 1142220
+  #+CALL: tensorboard(venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell/
 
   #+BEGIN_SRC ipython
     import anndata
     import numpy as np
+    import mpebpm
     import pandas as pd
     import scipy.special as sp
+    import scipy.sparse as ss
     import scipy.stats as st
     import sqlite3
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[6]:
+  # Out[8]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -78,19 +99,10 @@
   :END:
 
   We assume ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
-   al. 2019]]) \(
-   \DeclareMathOperator\Gam{Gamma}
-   \DeclareMathOperator\Poi{Poisson}
-   \DeclareMathOperator\argmin{arg min}
-   \newcommand\mf{\mathbf{F}} 
-   \newcommand\ml{\mathbf{L}}
-   \newcommand\mx{\mathbf{X}}
-   \newcommand\vl{\mathbf{l}}
-   \newcommand\vx{\mathbf{x}}
-   \)
+   al. 2019]])
   
   \begin{align*}
-    x_{ij} \mid x_{i+}, \lambda_{ij} &\sim \Poi(x_{i+} \lambda_{ij})\\
+    x_{ij} \mid \xiplus, \lambda_{ij} &\sim \Poi(\xiplus \lambda_{ij})\\
     \lambda_{ij} \mid \mu_{ij}, \phi_{ij}, \pi_{ij} &\sim \pi_{ij} \delta_0(\cdot) + (1 - \pi_{ij}) \Gam(\phi_{ij}^{-1}, \mu_{ij}^{-1} \phi_{ij}^{-1})\\
     \ln \mu_{ij} &= (\ml \mf_\mu')_{ij}\\
     \ln \phi_{ij} &= (\ml \mf_\phi')_{ij}\\
@@ -101,7 +113,7 @@
 
   - \(x_{ij}\) is the number of molecules of gene \(j = 1, \ldots, p\) observed
     in cell \(i = 1, \ldots, n\)
-  - \(x_{i+} \triangleq \sum_j x_{ij}\) is the total number of molecules
+  - \(\xiplus \triangleq \sum_j x_{ij}\) is the total number of molecules
     observed in sample \(i\)
   - cells are taken from \(m\) conditions, \(\ml\) is \(n \times m\),
     and each \(\mf_{(\cdot)}\) is \(p \times m\)
@@ -121,64 +133,206 @@
   :CUSTOM_ID: data
   :END:
 
-   Read the iPSC data
-   ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
-   al. 2019]]). We generated scRNA-seq data for 5,597 induced pluripotent stem
-   cells derived from 54 donor individuals at 9,957 genes (after quality
-   control) using the Fludigm C1 platform.
+  Read the iPSC data
+  ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et
+  al. 2019]]). We generated scRNA-seq data for 5,597 induced pluripotent stem
+  cells derived from 54 donor individuals at 9,957 genes (after quality
+  control) using the Fludigm C1 platform.
 
-   #+BEGIN_SRC ipython
-     dat = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+  #+BEGIN_SRC ipython
+    dat = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[4]:
+  :END:
+
+  Construct pseudobulk data.
+
+  #+BEGIN_SRC ipython :async t
+    y = pd.get_dummies(dat.obs['chip_id']).values.T @ dat.X
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[5]:
+  :END:
+
+  Plot the distribution of size factors for the pseudobulk data.
+
+  #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/size.png
+    plt.clf()
+    plt.gcf().set_size_inches(2.5, 2.5)
+    plt.hist(y.sum(axis=1).ravel(), bins=12, color='0.7')
+    plt.xlabel('Size factor')
+    plt.ylabel('Number of conditions')
+    plt.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[54]:
+  [[file:figure/pseudobulk.org/size.png]]
+  :END:
+
+  Prepare the data for ~mpebpm~.
+
+  #+BEGIN_SRC ipython
+    s = dat.obs['mol_hs'].values.reshape(-1, 1)
+    # Important: constructing this as a dense matrix will blow up memory for larger
+    # data sets
+    onehot = ss.coo_matrix((np.ones(dat.shape[0]), (np.arange(dat.shape[0]), pd.Categorical(dat.obs['chip_id']).codes))).tocsr()
+    # Important: center the matrix of dummy variables (batch), because there is no
+    # baseline
+    design = ss.coo_matrix(pd.get_dummies(dat.obs['experiment'])).astype(float).A
+    design -= design.mean(axis=0)
    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[47]:
-   :END:
+  #+RESULTS:
+  :RESULTS:
+  # Out[10]:
+  :END:
 
-   Construct pseudobulk data.
+  /SKP1/ was the top eQTL in this data (refer to the
+  [[http://shiny.stephenslab.uchicago.edu:5007/qtls][browser]]). Extract the
+  genotypes at the top cis-SNP for this gene.
+
+  #+BEGIN_SRC ipython
+    with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as con:
+      query = pd.read_sql('select ind, value from mean_qtl_geno, qtls where mean_qtl_geno.gene == qtls.gene and qtls.name == "SKP1";', con=con)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[38]:
+  :END:
+
+* Results
+** Comparison of mean estimates under different expression models
+
+   As a preliminary investigation, compare estimates of the mean gene
+   expression under different model assumptions. Pseudobulk approaches are
+   justified as fitting a simple point mass expression model. However, in the
+   iPSC data, there are cell-specific technical covariates \(\vc_i\) whose
+   effect on each gene \(\vb_j\) needs to be estimated. This requires a
+   (slightly) more sophisticated approach
+
+   \begin{equation}
+     x_{ij} \mid \xiplus, \mu_j, \vc_i, \vb_j \sim \Poi(\xiplus \exp(\vc_i' \vb_j) \mu_j)
+   \end{equation}
 
    #+BEGIN_SRC ipython :async t
-     y = pd.get_dummies(dat.obs['chip_id']).values.T @ dat.X
+     log_mu0, bhat0 = mpebpm.sgd.ebpm_point(
+       dat.X.A,
+       s=s,
+       onehot=onehot,
+       design=design,
+       batch_size=64,
+       shuffle=True,
+       lr=1e-2,
+       num_epochs=40,
+       log_dir=f'runs/mpebpm/ipsc/point/')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[48]:
+   # Out[12]:
    :END:
 
-   Plot the distribution of size factors for the pseudobulk data.
+   A point mass expression model is unlikely to be supported by the data. Our
+   alternative assumes point-Gamma expression models, which are supported by
+   empirical data (Sarkar et al. 2019, Sarkar and Stephens 2020). Read the
+   [[file:mpebpm.org::#ipsc][previously fitted models]].
 
-   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/size.png
+   #+BEGIN_SRC ipython
+     log_mu1 = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-log-mu.npy')
+     neg_log_phi1 = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-neg-log-phi.npy')
+     logodds1 = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-logodds.npy')
+     bhat1 = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-bhat.npy')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   :END:
+
+   Compare different mean estimates against each other.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/naive-vs-point-vs-point-gamma.png
+     naive = np.delete((np.log(y + 1) - np.log(y.sum(axis=1, keepdims=True))), 1, axis=0)
+     pois = np.delete(log_mu0, 1, axis=0)
+     pg = -np.log1p(np.exp(logodds1)) + log_mu1
+     plt.clf()
+     fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+     fig.set_size_inches(6, 6)
+     ax[0,0].scatter(temp.ravel(), pois.ravel(), c='k', s=1, alpha=0.1)
+     ax[0,0].set_ylabel('Log point mass mean\n(confounder-corrected)')
+     ax[1,0].scatter(temp.ravel(), pg.ravel(), c='k', s=1, alpha=0.1)
+     ax[1,0].set_xlabel('Log point mass mean (naive)')
+     ax[1,0].set_ylabel('Log Point-Gamma mean')
+     ax[1,1].scatter(pois.ravel(), pg.ravel(), c='k', s=1, alpha=0.1)
+     ax[1,1].set_xlabel('Log point mass mean\n(confounder-corrected)')
+     lim = [-20, -5]
+     for a in ax.ravel():
+       if a is not ax[0,1]:
+         a.plot(lim, lim, lw=1, ls=':', c='r')
+     ax[0,1].set_axis_off()
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[59]:
+   [[file:figure/pseudobulk.org/naive-vs-point-vs-point-gamma.png]]
+   :END:
+
+   Compare different choices of pseudocount in the naive pseudobulk estimates.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/pg-vs-point-pseudocount.png
+     pg = -np.log1p(np.exp(logodds1)) + log_mu1
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7.5, 2.5)
+     ax[0].scatter(np.delete((np.log(y + 1) - np.log(y.sum(axis=1, keepdims=True))), 1, axis=0).ravel(), pg.ravel() , c='k', s=1, alpha=0.1)
+     ax[0].set_xlabel('$\ln((y+1)/s)$')
+     ax[0].set_ylabel('Log Point-Gamma mean')
+     ax[1].scatter(np.delete((np.log(y + 1e-4) - np.log(y.sum(axis=1, keepdims=True))), 1, axis=0).ravel(), pg.ravel(), c='k', s=1, alpha=0.1)
+     ax[1].set_xlabel('$\ln((y+10^{-4})/s)$')
+     ax[2].scatter(np.delete((np.log(y / y.sum(axis=1, keepdims=True) + 1)), 1, axis=0).ravel(), pg.ravel(), c='k', s=1, alpha=0.1)
+     ax[2].set_xlabel('$\ln((y/s) + 1)$')
+     lim = [-20, -5]
+     for a in ax.ravel():
+       a.plot(lim, lim, lw=1, ls=':', c='r')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[64]:
+   [[file:figure/pseudobulk.org/pg-vs-point-pseudocount.png]]
+   :END:
+
+   Look at the distribution of relative differences between the naive estimate
+   of the point mass, and the estimate accounting for the effect of technical
+   covariates.
+
+   #+BEGIN_SRC ipython :ipyfile figure/pseudobulk.org/point-mass-rel-diff.png
      plt.clf()
      plt.gcf().set_size_inches(2.5, 2.5)
-     plt.hist(y.sum(axis=1).ravel(), bins=12, color='0.7')
-     plt.xlabel('Size factor')
-     plt.ylabel('Number of conditions')
+     plt.hist((pois - naive).ravel(), bins=30, color='0.7', density=True)
+     plt.axvline(x=np.median(pois - naive), lw=1, ls=':', c='r')
+     plt.xlabel('Log fold change')
+     plt.ylabel('Density')
      plt.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[54]:
-   [[file:figure/pseudobulk.org/size.png]]
+   # Out[72]:
+   [[file:figure/pseudobulk.org/point-mass-rel-diff.png]]
    :END:
 
-   /SKP1/ was the top eQTL in this data (refer to the
-   [[http://shiny.stephenslab.uchicago.edu:5007/qtls][browser]]). Extract the
-   genotypes at the top cis-SNP for this gene.
-
-   #+BEGIN_SRC ipython
-     with sqlite3.connect('/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db') as con:
-       query = pd.read_sql('select ind, value from mean_qtl_geno, qtls where mean_qtl_geno.gene == qtls.gene and qtls.name == "SKP1";', con=con)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[38]:
-   :END:
-
-* Results
 ** Existing approach
    :PROPERTIES:
    :CUSTOM_ID: pseudobulk
@@ -391,11 +545,11 @@
    Plot the distribution of regression coefficients, binned by the mean latent
    gene expression over all cells. Assuming
 
-   \[ x_{ij} \mid x_{i+}, \mu_j \sim \Poi(x_{i+} \mu_j), \]
+   \[ x_{ij} \mid \xiplus, \mu_j \sim \Poi(\xiplus \mu_j), \]
 
    it is straightforward to show
 
-   \[ \hat{\mu_j} = \frac{\sum_i x_{ij}}{\sum_i x_{i+}}. \]
+   \[ \hat{\mu_j} = \frac{\sum_i x_{ij}}{\sum_i \xiplus}. \]
 
    #+BEGIN_SRC ipython :async t
      global_log_mean = np.log(dat.X.sum(axis=0) / dat.X.sum()).ravel()

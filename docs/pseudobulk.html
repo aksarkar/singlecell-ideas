@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-09 Tue 01:58 -->
+<!-- 2020-06-09 Tue 12:07 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Alternative approaches to scRNA-seq pseudobulk models</title>
@@ -266,7 +266,6 @@ for the JavaScript code in this tag.
 <li><a href="#orgda6373f">Comparison of mean estimates under different expression models</a></li>
 <li><a href="#pseudobulk">Existing approach</a></li>
 <li><a href="#ebpm">Homoscedastic approach</a></li>
-<li><a href="#org218b466">Heteroscedastic approach</a></li>
 </ul>
 </li>
 </ul>
@@ -983,107 +982,11 @@ fig.tight_layout()
 </div>
 </div>
 </div>
-
-<div id="outline-container-org218b466" class="outline-3">
-<h3 id="org218b466">Heteroscedastic approach</h3>
-<div class="outline-text-3" id="text-org218b466">
-<p>
-The motivation behind limma-voom (Law et al. 2014) is: (1) to use a
-transform \(\ln(y_{kj} / y_{k+} + \epsilon)\) as an estimate of the log of
-true gene expression, and (2) to produce an estimate of uncertainty for each
-observation. As discussed above, in scRNA-seq analysis, (1) is justified
-under a point mass expression model. To achieve (2), Law et al. 2014 use a
-non-parametric regression to predict \(V[\ln(y_{kj} / y_{k+} + \epsilon)]\)
-from \(\ln(y_{kj} / y_{k+} + \epsilon)\), because there is no information in
-bulk RNA-seq data which could be used to estimate a variance. However, that
-is no longer true for scRNA-seq data, for which there are (at least) two
-possibilities for a precision weight derived from fitted expression models:
-</p>
-
-<ol class="org-ol">
-<li><b>point mass:</b> the standard error of the estimated mean</li>
-<li><b>(point-)Gamma:</b> the estimated variance</li>
-</ol>
-
-<p>
-Choice (1) is analytic:
-</p>
-
-\begin{align}
-  \ell &\triangleq \sum_i \ln p(x_{ij} \mid \xiplus, \mu_j) = \sum_i x_{ij} \ln(\xiplus \mu_j) - \xiplus \mu_j + \mathrm{const}\\
-  \frac{\partial \ell}{\partial \mu_j} &= \sum_i \frac{x_{ij}}{\mu_j} - \xiplus\\
-  \frac{\partial^2 \ell}{\partial \mu_j^2} &= -\sum_i \frac{x_{ij}}{\mu_j^2}\\
-  \mathcal{I}(\mu_j) &= -E\left[\frac{\partial^2 \ell}{\partial \mu_j^2}\right] = \frac{E[\sum_i \xiplus]}{\mu_j^2} = \frac{\sum_i \xiplus}{\mu_j}\\
-  s_j^2 &= \frac{\mu_j}{\sum_i \xiplus},
-\end{align}
-
-<p>
-where we have used the fact that \(\sum_i x_{ij} \sim \Poi(\mu_j \sum_i
-   \xiplus)\). The standard error remains unchanged even after introducing
-multiplicative effects for observed technical covariates. As a sanity check,
-the standard error decreases as the total sequencing depth increases, and
-increases as the estimated mean increases (consistent with higher
-variability in higher expressed genes). As an example, plot the bootstrap
-distribution of the estimated mean against the analytic SE for a simple
-simulation.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
-<span class="org-variable-name">n_trials</span> = 500
-<span class="org-variable-name">n</span> = 100
-<span class="org-variable-name">s</span> = 1e4
-<span class="org-variable-name">log_mu</span> = -10
-<span class="org-variable-name">muhat</span> = []
-<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
-  <span class="org-variable-name">x</span> = rng.poisson(s * np.exp(log_mu), size=n)
-  muhat.append(x.<span class="org-builtin">sum</span>() / (n * s))
-<span class="org-variable-name">muhat</span> = np.array(muhat)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-plt.gcf().set_size_inches(2.5, 2.5)
-plt.hist(muhat, bins=16, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
-<span class="org-variable-name">grid</span> = np.linspace(muhat.<span class="org-builtin">min</span>(), muhat.<span class="org-builtin">max</span>(), 1000)
-plt.plot(grid, st.norm(loc=muhat.mean(), scale=np.sqrt(muhat[0] / (n * s))).pdf(grid), lw=1, c=<span class="org-string">'k'</span>)
-plt.xlabel(<span class="org-string">'Est mean gene expression'</span>)
-plt.ylabel(<span class="org-string">'Density'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/pseudobulk.org/analytic-se.png" alt="analytic-se.png">
-</p>
-</div>
-
-<p>
-Choice (2) is also analytic, e.g., assuming a Gamma expression model
-</p>
-
-\begin{align}
-  \lambda_{ij} &\sim \Gam(\phi_j^{-1}, \mu_j^{-1} \phi_j^{-1})\\
-  E[\ln \lambda_{ij}] &= \digamma(\phi_j^{-1}) + \ln(\mu_j \phi_j)\\
-  V[\ln \lambda_{ij}] &= \trigamma(\phi_j^{-1}),
-\end{align}
-
-<p>
-where the Gamma distribution is parameterized by shape and rate,
-\(\digamma(\cdot)\) denotes the digamma function, and \(\trigamma(\cdot)\)
-denotes the trigamma function. However, we previously noted that robustly
-estimating \(\phi_j\) is difficult, even from hundreds of cells per
-condition.
-</p>
-</div>
-</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-09 Tue 01:58</p>
+<p class="date">Created: 2020-06-09 Tue 12:07</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

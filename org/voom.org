@@ -1,0 +1,243 @@
+#+TITLE: An improved voom transform for scRNA-seq data
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Suppose we have observed (pseudo-)bulk RNA-seq data \([y_{kj}]\), where
+  \(y_{kj}\) denotes the number of molecules from gene \(j\) observed in donor
+  \(k\). The motivation behind limma-voom (Law et al. 2014) is: (1) to use a
+  transform \(\ln(y_{kj} / y_{k+} + \epsilon)\) as an estimate of the log of
+  true gene expression, where \(y_{k+} \triangleq \sum_j y_{kj}\) and (2) to
+  produce an estimate of uncertainty for each observation. These two quantities
+  can be thought of as transformed data and standard errors, and which can be
+  analyzed using (heteroscedastic) Gaussian methods for RNA-seq data. \(
+  \DeclareMathOperator\E{E}
+  \DeclareMathOperator\V{V}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\digamma{\psi}
+  \DeclareMathOperator\trigamma{\psi^{(1)}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vc{\mathbf{c}}
+  \newcommand\xiplus{x_{i+}}
+  \)
+
+  Now suppose we have observed scRNA-seq data \(x_{ij}\), where \(x_{ij}\)
+  denotes the number of molecules from gene \(j\) observed in cell \(i\). Then,
+  we can construct \(y_{jk} \triangleq \sum_i x_{ij} z_{ik}\), where \(z_{ik}\)
+  indicates whether cell \(i\) came from donor \(k\), and (1) is justified
+  under a point mass expression model for cells from donor \(k\)
+
+  \begin{align}
+    x_{ij} \mid \xiplus, \theta_j &\sim \Poi(\xiplus \exp(\theta_j))\\
+    \ell \triangleq \sum_i \ln p(x_{ij} \mid \xiplus, \theta_j) &= \sum_i x_{ij} (\ln \xiplus + \theta_j) - \xiplus \exp(\theta_j) + \mathrm{const}\\
+    \frac{\partial \ell}{\partial \theta_j} &= \sum_i x_{ij} - \xiplus \exp(\theta_j) = 0\\
+    \exp(\theta_j) &= \frac{\sum_i x_{ij}}{\sum_i \xiplus}\\
+  \end{align}
+
+  where \(\xiplus \triangleq \sum_j x_{ij}\). To achieve (2), Law et al. 2014
+  use a non-parametric regression to predict \(V[\ln(y_{kj} / y_{k+} +
+  \epsilon)]\) from \(\ln(y_{kj} / y_{k+} + \epsilon)\), because bulk RNA-seq
+  data provides only one observation per donor, which is insufficient to
+  estimate a variance per observation. However, scRNA-seq data does provide
+  such information, and there are (at least) two possibilities for a precision
+  weight derived from fitted expression models: (1) the inverse squared
+  standard error of a point mass model, or (2) the inverse variance of the log
+  true expression under a Gamma model. Here, we show using these estimates
+  improves the power and robustness of DE analysis in scRNA-seq data.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :dir /scratch/midway2/aksarkar/singlecell/
+
+  #+CALL: tensorboard(venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell/
+
+  #+BEGIN_SRC ipython
+    import anndata
+    import numpy as np
+    import mpebpm
+    import pandas as pd
+    import scipy.special as sp
+    import scipy.sparse as ss
+    import scipy.stats as st
+    import sqlite3
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+* Methods
+** Standard error of point mass expression model
+
+   The standard error of \(\hat\theta_j\) is analytic
+
+   \begin{align}
+     \frac{\partial^2 \ell}{\partial \theta_j^2} &= -\sum_i \xiplus \exp(\theta_j)\\
+     \mathcal{I}(\mu_j) &= -\E\left[\frac{\partial^2 \ell}{\partial \mu_j^2}\right] = \sum_i \xiplus \exp(\theta_j)\\
+     s_j^2 &= \frac{1}{\sum_i \xiplus \exp(\theta_j)},
+   \end{align}
+
+   where we have treated \(\xiplus\) as fixed. This treatment is justified by
+   the fact that the Poisson measurement model for each gene arises from a
+   Multinomial measurement model for all genes jointly, in which the total
+   number of molecules observed is fixed rather than a sum of random
+   variables. As an illustrative example, plot the bootstrap distribution of the
+   \(\hat\theta_j\) against a normal density with mean \(\theta_j\) and variance
+   \(s_j^2\) for a simple simulation.
+
+   #+BEGIN_SRC ipython :async t
+     rng = np.random.default_rng(1)
+     n_trials = 1000
+     n = 100
+     s = 1e4
+     theta = -10
+     thetahat = []
+     for i in range(n_trials):
+       x = rng.poisson(s * np.exp(theta), size=n)
+       thetahat.append(np.log(x.sum()) - np.log(n) - np.log(s))
+     thetahat = np.array(thetahat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/analytic-se-log-link.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.hist(thetahat, bins=16, density=True, color='0.7')
+     grid = np.linspace(thetahat.min(), thetahat.max(), 1000)
+     plt.plot(grid, st.norm(loc=theta, scale=np.sqrt(1 / (np.exp(theta) * n * s))).pdf(grid), lw=1, c='k')
+     plt.xlabel('Est ln mean gene expression')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[12]:
+   [[file:figure/voom.org/analytic-se-log-link.png]]
+   :END:
+
+   After introducing multiplicative effects \(\vb_j\) for observed technical
+   covariates \(\vc_i\) into the measurement model
+
+   \begin{equation}
+     x_{ij} \mid \xiplus, \vc_i, \vb_j, \theta_j \sim \Poi(\xiplus \exp(\vc_i' \vb_j + \theta_j)),
+   \end{equation}
+
+   the standard error of \(\hat\theta_j\) also depends on \(\vc_i'\vb_j\). In
+   contrast, if we assume the identity link
+
+   \begin{align}
+     x_{ij} \mid \xiplus, \mu_j &\sim \Poi(\xiplus \mu_j)\\
+     \ell \triangleq \sum_i \ln p(x_{ij} \mid \xiplus, \mu_j) &= \sum_i x_{ij} \ln(\xiplus \mu_j) - \xiplus \mu_j + \mathrm{const}\\
+     \frac{\partial \ell}{\partial \mu_j} &= \sum_i \frac{x_{ij}}{\mu_j} - \xiplus\\
+     \hat\mu_j &= \frac{\sum_i x_{ij}}{\sum_i \xiplus}\\
+     \frac{\partial^2 \ell}{\partial \mu_j^2} &= -\sum_i \frac{x_{ij}}{\mu_j^2}\\
+     \mathcal{I}(\mu_j) &= -\E\left[\frac{\partial^2 \ell}{\partial \mu_j^2}\right] = \frac{\E[\sum_i x_{ij}]}{\mu_j^2} = \frac{\sum_i \xiplus}{\mu_j}\\
+     s_j^2 &= \frac{\mu_j}{\sum_i \xiplus},
+   \end{align}
+
+   where we have used the fact that \(\sum_i x_{ij} \sim \Poi(\mu_j \sum_i
+   \xiplus)\). Surprisingly, \(\ln \hat\mu_j = \hat\theta_j\), the standard
+   error of \(\hat\mu_j\) increases as \(\mu_j\) increases, and the standard
+   error does not depend on technical covariates or their effects. As a sanity
+   check, plot the bootstrap distribution of \(\hat\mu_j\) against a normal
+   density with mean \(\theta_j\) and variance \(s_j^2\) for a simple
+   simulation.
+
+   #+BEGIN_SRC ipython :async t
+     rng = np.random.default_rng(2)
+     n_trials = 500
+     n = 100
+     s = 1e4
+     log_mu = -10
+     muhat = []
+     for i in range(n_trials):
+       x = rng.poisson(s * np.exp(log_mu), size=n)
+       muhat.append(x.sum() / (n * s))
+     muhat = np.array(muhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[16]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/analytic-se-identity-link.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.hist(muhat, bins=14, density=True, color='0.7')
+     grid = np.linspace(muhat.min(), muhat.max(), 1000)
+     plt.plot(grid, st.norm(loc=muhat.mean(), scale=np.sqrt(muhat[0] / (n * s))).pdf(grid), lw=1, c='k')
+     plt.xlabel('Est mean gene expression')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[17]:
+   [[file:figure/voom.org/analytic-se-identity-link.png]]
+   :END:
+
+** Variance of Gamma expression model
+
+   Assuming a Gamma expression model
+
+   \begin{align}
+     \lambda_{ij} &\sim \Gam(\phi_j^{-1}, \mu_j^{-1} \phi_j^{-1})\\
+     \E[\ln \lambda_{ij}] &= \digamma(\phi_j^{-1}) + \ln(\mu_j \phi_j)\\
+     \V[\ln \lambda_{ij}] &= \trigamma(\phi_j^{-1}),
+   \end{align}
+
+   where the Gamma distribution is parameterized by shape and rate,
+   \(\digamma(\cdot)\) denotes the digamma function, and \(\trigamma(\cdot)\)
+   denotes the trigamma function. However, we previously noted that robustly
+   estimating \(\phi_j\) is difficult, even from hundreds of cells per
+   condition.
+
+** Improved limma
+
+   Given transformed data and standard errors, DE analysis is performed in two
+   steps:
+   
+   1. Estimate the effect of the covariate of interest by GLS
+   2. Estimate moderated test statistics and \(p\)-values by EB treatment of
+      the standard errors from (1)
+
+   [[https://arxiv.org/abs/1901.10679][Lu and Stephens 2019]] describe a more
+   powerful approach to solve (2).
+
+* Results
+** Type 1 error rate
+
+   To generate null data, randomly sample cells from a homogeneous population,
+   and randomly assign labels.
+
+** Power
+
+   To generate true positives, randomly sample cells from a homogeneous
+   population, randomly assign labels, and then use binomial thinning
+   (Gerard 2019) to introduce effects of a given magnitude.

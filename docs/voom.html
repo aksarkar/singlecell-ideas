@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-09 Tue 13:02 -->
+<!-- 2020-06-09 Tue 14:19 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An improved voom transform for scRNA-seq data</title>
@@ -264,6 +264,7 @@ for the JavaScript code in this tag.
 <li><a href="#org8a4c1a0">Standard error of point mass expression model</a></li>
 <li><a href="#org618f456">Variance of Gamma expression model</a></li>
 <li><a href="#orge54949e">Improved limma</a></li>
+<li><a href="#orgc7d2b9a">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#org9652fb0">Results</a>
@@ -316,16 +317,23 @@ under a point mass expression model for cells from donor \(k\)
 \end{align}
 
 <p>
-where \(\xiplus \triangleq \sum_j x_{ij}\). To achieve (2), Law et al. 2014
-use a non-parametric regression to predict \(V[\ln(y_{kj} / y_{k+} +
-  \epsilon)]\) from \(\ln(y_{kj} / y_{k+} + \epsilon)\), because bulk RNA-seq
-data provides only one observation per donor, which is insufficient to
-estimate a variance per observation. However, scRNA-seq data does provide
-such information, and there are (at least) two possibilities for a precision
-weight derived from fitted expression models: (1) the inverse squared
-standard error of a point mass model, or (2) the inverse variance of the log
-true expression under a Gamma model. Here, we show using these estimates
-improves the power and robustness of DE analysis in scRNA-seq data.
+where \(\xiplus \triangleq \sum_j x_{ij}\). However, a point mass expression
+model is unlikely to be supported by real data, and more complex expression
+models could be fit to scRNA-seq data, entailing different estimates of the
+mean log true gene expression.
+</p>
+
+<p>
+To achieve (2), Law et al. 2014 use a non-parametric regression to predict
+\(\V[\ln(y_{kj} / y_{k+} + \epsilon)]\) from \(\ln(y_{kj} / y_{k+} +
+  \epsilon)\), because bulk RNA-seq data provides only one observation per
+donor, which is insufficient to estimate a variance per observation. However,
+scRNA-seq data does provide such information, and there are (at least) two
+possibilities for a precision weight derived from fitted expression models:
+(1) the inverse squared standard error of a point mass model, or (2) the
+inverse variance of the log true expression under a Gamma model. Here, we
+investigate whether these alterantive approaches improve the power or
+robustness of DE analysis in scRNA-seq data.
 </p>
 </div>
 </div>
@@ -520,14 +528,115 @@ steps:
 
 <ol class="org-ol">
 <li>Estimate the effect of the covariate of interest by GLS</li>
-<li>Estimate moderated test statstics and \(p\)-values by EB treatment of the
-standard errors from (1)</li>
+<li>Estimate moderated test statistics and \(p\)-values by EB treatment of
+the standard errors from (1)</li>
 </ol>
 
 <p>
 <a href="https://arxiv.org/abs/1901.10679">Lu and Stephens 2019</a> describe a more
 powerful approach to solve (2).
 </p>
+</div>
+</div>
+
+<div id="outline-container-orgc7d2b9a" class="outline-3">
+<h3 id="orgc7d2b9a">Simulation</h3>
+<div class="outline-text-3" id="text-orgc7d2b9a">
+<p>
+Implement a simplified
+<a href="https://stephenslab.github.io/dsc-wiki/overview.html">DSC</a>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_null</span>(dat, n_donors=2, n_cells=100, to_dense=<span class="org-constant">False</span>, seed=0):
+  <span class="org-doc">"""Return counts and labels</span>
+
+<span class="org-doc">  counts - matrix [n_donors * n_cells, n_genes]</span>
+<span class="org-doc">  labels - CSR matrix [n_donors * n_cells, n_donors]</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">query</span> = sc.pp.subsample(dat, n_obs=n_donors * n_cells, random_state=seed, copy=<span class="org-constant">True</span>)
+  <span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(dat.shape[0]), (np.arange(dat.shape[0]), np.repeat(np.arange(n_donors), n_cells)))).tocsr()
+  <span class="org-keyword">if</span> to_dense:
+    <span class="org-keyword">return</span> query.X.A, onehot.A
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">return</span> query.X, onehot
+
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_limma_voom</span>(mean, var, onehot):
+  <span class="org-doc">"""Return DataFrame of bhat, se"""</span>
+  <span class="org-variable-name">limma</span> = rpy2.packages.importr(<span class="org-string">'limma'</span>)
+  <span class="org-variable-name">design</span> = limma.model_matrix(<span class="org-string">"~ onehot"</span>)
+  <span class="org-variable-name">fit</span> = limma.lmFit(design)
+  <span class="org-keyword">return</span> fit
+
+<span class="org-keyword">def</span> <span class="org-function-name">fit_wls</span>(x, y, w):
+  <span class="org-keyword">raise</span> <span class="org-type">NotImplementedError</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">temp = np.linalg.pinv(onehot.T @ np.diag(np.sqrt(prec)))</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">bhat = np.linalg.solve(, onehot.T @ np.diag(prec) @ log_mean)</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">s2 = np.diag(onehot.T @ np.diag(prec) @ onehot)</span>
+
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_wls_point</span>(x, onehot, design=<span class="org-constant">None</span>, lr=1e-2, num_epochs=40, batch_size=64, shuffle=<span class="org-constant">True</span>):
+  <span class="org-doc">"""Return DataFrame of bhat, se</span>
+
+<span class="org-doc">  Instead of voom, estimate log &#956;_j and its sampling variance, and use those as</span>
+<span class="org-doc">  input to WLS.</span>
+
+<span class="org-doc">  Important: design contains technical covariates used to estimate log &#956;_j. The</span>
+<span class="org-doc">  design matrix used for WLS is onehot</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
+  log_mean, *<span class="org-variable-name">bhat</span> = mpebpm.ebpm_point(
+    x,
+    s=s,
+    onehot=onehot,
+    design=design,
+    lr=lr,
+    num_epochs=num_epochs,
+    batch_size=batch_size,
+    shuffle=shuffle)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">[n_donors, n_genes]</span>
+  <span class="org-variable-name">prec</span> = np.exp(log_mean) * (onehot @ s)
+  <span class="org-keyword">if</span> design <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: bhat[0] is inelegant</span>
+    <span class="org-variable-name">prec</span> *= onehot @ np.exp(design @ bhat[0])
+  <span class="org-keyword">return</span> fit_wls(onehot, log_mean - log_mean.mean(axis=0), np.diag(prec))
+
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_wls_gamma</span>(x, onehot, design=<span class="org-constant">None</span>, lr=1e-2, num_epochs=40, batch_size=64, shuffle=<span class="org-constant">True</span>):
+  <span class="org-doc">"""Return DataFrame of bhat, se</span>
+
+<span class="org-doc">  Instead of voom, estimate E[log &#955;_{ij}] and V[log &#955;_{ij}], and use those as</span>
+<span class="org-doc">  input to WLS.</span>
+
+<span class="org-doc">  Important: design contains technical covariates used to estimate log &#956;_j. The</span>
+<span class="org-doc">  design matrix used for WLS is onehot</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
+  log_mean, log_inv_disp, *<span class="org-variable-name">_</span> = mpebpm.ebpm_gamma(
+    x,
+    s=s,
+    onehot=onehot,
+    design=design,
+    lr=lr,
+    num_epochs=num_epochs,
+    batch_size=batch_size,
+    shuffle=shuffle)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">[n_donors, n_genes]</span>
+  <span class="org-variable-name">m</span> = sp.digamma(log_inv_disp) + log_mean - log_inv_disp
+  <span class="org-variable-name">w</span> = sp.polygamma(log_inv_disp, 1)
+  <span class="org-keyword">return</span> fit_wls(onehot, m - m.mean(axis=0), np.diag(w))
+
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_moderated_t</span>(bhat, s2):
+  <span class="org-variable-name">limma</span> = rpy2.packages.importr(<span class="org-string">'limma'</span>)
+  <span class="org-keyword">raise</span> <span class="org-type">NotImplementedError</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">return limma.eBayes()</span>
+
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_ebtm</span>(bhat, s2):
+  <span class="org-variable-name">ashr</span> = rpy2.packages.importr(<span class="org-string">'ashr'</span>)
+
+</pre>
+</div>
 </div>
 </div>
 </div>
@@ -560,7 +669,7 @@ population, randomly assign labels, and then use binomial thinning
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-09 Tue 13:02</p>
+<p class="date">Created: 2020-06-09 Tue 14:19</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

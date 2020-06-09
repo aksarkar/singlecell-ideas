@@ -35,16 +35,21 @@
     \exp(\theta_j) &= \frac{\sum_i x_{ij}}{\sum_i \xiplus}\\
   \end{align}
 
-  where \(\xiplus \triangleq \sum_j x_{ij}\). To achieve (2), Law et al. 2014
-  use a non-parametric regression to predict \(V[\ln(y_{kj} / y_{k+} +
-  \epsilon)]\) from \(\ln(y_{kj} / y_{k+} + \epsilon)\), because bulk RNA-seq
-  data provides only one observation per donor, which is insufficient to
-  estimate a variance per observation. However, scRNA-seq data does provide
-  such information, and there are (at least) two possibilities for a precision
-  weight derived from fitted expression models: (1) the inverse squared
-  standard error of a point mass model, or (2) the inverse variance of the log
-  true expression under a Gamma model. Here, we show using these estimates
-  improves the power and robustness of DE analysis in scRNA-seq data.
+  where \(\xiplus \triangleq \sum_j x_{ij}\). However, a point mass expression
+  model is unlikely to be supported by real data, and more complex expression
+  models could be fit to scRNA-seq data, entailing different estimates of the
+  mean log true gene expression.
+
+  To achieve (2), Law et al. 2014 use a non-parametric regression to predict
+  \(\V[\ln(y_{kj} / y_{k+} + \epsilon)]\) from \(\ln(y_{kj} / y_{k+} +
+  \epsilon)\), because bulk RNA-seq data provides only one observation per
+  donor, which is insufficient to estimate a variance per observation. However,
+  scRNA-seq data does provide such information, and there are (at least) two
+  possibilities for a precision weight derived from fitted expression models:
+  (1) the inverse squared standard error of a point mass model, or (2) the
+  inverse variance of the log true expression under a Gamma model. Here, we
+  investigate whether these alterantive approaches improve the power or
+  robustness of DE analysis in scRNA-seq data.
 
 * Setup
   :PROPERTIES:
@@ -229,6 +234,101 @@
 
    [[https://arxiv.org/abs/1901.10679][Lu and Stephens 2019]] describe a more
    powerful approach to solve (2).
+
+** Simulation
+
+   Implement a simplified
+   [[https://stephenslab.github.io/dsc-wiki/overview.html][DSC]].
+
+   #+BEGIN_SRC ipython
+     def simulate_null(dat, n_donors=2, n_cells=100, to_dense=False, seed=0):
+       """Return counts and labels
+
+       counts - matrix [n_donors * n_cells, n_genes]
+       labels - CSR matrix [n_donors * n_cells, n_donors]
+
+       """
+       query = sc.pp.subsample(dat, n_obs=n_donors * n_cells, random_state=seed, copy=True)
+       onehot = ss.coo_matrix((np.ones(dat.shape[0]), (np.arange(dat.shape[0]), np.repeat(np.arange(n_donors), n_cells)))).tocsr()
+       if to_dense:
+         return query.X.A, onehot.A
+       else:
+         return query.X, onehot
+
+     def estimate_limma_voom(mean, var, onehot):
+       """Return DataFrame of bhat, se"""
+       limma = rpy2.packages.importr('limma')
+       design = limma.model_matrix("~ onehot")
+       fit = limma.lmFit(design)
+       return fit
+
+     def fit_wls(x, y, w):
+       raise NotImplementedError
+       # temp = np.linalg.pinv(onehot.T @ np.diag(np.sqrt(prec)))
+       # bhat = np.linalg.solve(, onehot.T @ np.diag(prec) @ log_mean)
+       # s2 = np.diag(onehot.T @ np.diag(prec) @ onehot)
+
+     def estimate_wls_point(x, onehot, design=None, lr=1e-2, num_epochs=40, batch_size=64, shuffle=True):
+       """Return DataFrame of bhat, se
+
+       Instead of voom, estimate log μ_j and its sampling variance, and use those as
+       input to WLS.
+
+       Important: design contains technical covariates used to estimate log μ_j. The
+       design matrix used for WLS is onehot
+
+       """
+       s = x.sum(axis=1)
+       log_mean, *bhat = mpebpm.ebpm_point(
+         x,
+         s=s,
+         onehot=onehot,
+         design=design,
+         lr=lr,
+         num_epochs=num_epochs,
+         batch_size=batch_size,
+         shuffle=shuffle)
+       # [n_donors, n_genes]
+       prec = np.exp(log_mean) * (onehot @ s)
+       if design is not None:
+         # TODO: bhat[0] is inelegant
+         prec *= onehot @ np.exp(design @ bhat[0])
+       return fit_wls(onehot, log_mean - log_mean.mean(axis=0), np.diag(prec))
+
+     def estimate_wls_gamma(x, onehot, design=None, lr=1e-2, num_epochs=40, batch_size=64, shuffle=True):
+       """Return DataFrame of bhat, se
+
+       Instead of voom, estimate E[log λ_{ij}] and V[log λ_{ij}], and use those as
+       input to WLS.
+
+       Important: design contains technical covariates used to estimate log μ_j. The
+       design matrix used for WLS is onehot
+
+       """
+       s = x.sum(axis=1)
+       log_mean, log_inv_disp, *_ = mpebpm.ebpm_gamma(
+         x,
+         s=s,
+         onehot=onehot,
+         design=design,
+         lr=lr,
+         num_epochs=num_epochs,
+         batch_size=batch_size,
+         shuffle=shuffle)
+       # [n_donors, n_genes]
+       m = sp.digamma(log_inv_disp) + log_mean - log_inv_disp
+       w = sp.polygamma(log_inv_disp, 1)
+       return fit_wls(onehot, m - m.mean(axis=0), np.diag(w))
+
+     def estimate_moderated_t(bhat, s2):
+       limma = rpy2.packages.importr('limma')
+       raise NotImplementedError
+       # return limma.eBayes()
+
+     def estimate_ebtm(bhat, s2):
+       ashr = rpy2.packages.importr('ashr')
+
+   #+END_SRC
 
 * Results
 ** Type 1 error rate

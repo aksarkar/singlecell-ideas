@@ -6,7 +6,8 @@
   The minimal description of the working environment is:
 
   #+BEGIN_SRC sh :results none
-    srun --partition=build --mem=4G xargs -L100 conda create -y -c aksarkar -n singlecell <<EOF
+    srun --partition=build --mem=4G xargs -L100 conda create -y -c aksarkar -c bioconda -n singlecell <<EOF
+    bioconductor-limma
     colorcet
     ipython
     jupyter_console

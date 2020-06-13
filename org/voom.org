@@ -409,11 +409,35 @@
                result.append((n_donors, n_cells, method, test, i, (pval < alpha).mean()))
        result = pd.DataFrame(result, columns=['n_donors', 'n_cells', 'method', 'test', 'trial', 'fpr'])
        return result
+
+     def evaluate_power(dat, b=None, alpha=0.01, n_trials=1, min_counts=10):
+       if b is None:
+         b = -np.log(1.5)
+       elif b > 0:
+         b = -b
+       result = []
+       for i in range(n_trials):
+         for n_cells in (200,):
+           # Important: keep this sparse to make downsampling non-zeros easier
+           x, onehot = simulate_null(dat, n_cells=n_cells, to_dense=False, min_counts=min_counts, seed=i)
+           temp = x[:n_cells].astype(int)
+           y = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(float), temp.indices, temp.indptr), shape=temp.shape)
+           x = ss.vstack((y, x[n_cells:]), format='csr').A
+           onehot = onehot.A
+           # Heuristic: fix total number of updates
+           num_epochs = 6000 * 64 // x.shape[0]
+           for method in ('limma_voom', 'wls_point'):
+             fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
+             for test in ('moderated_t', 'z'):
+               pval = globals()[f'estimate_{test}'](fit)
+               result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
+       result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'tpr'])
+       return result
    #+END_SRC
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[24]:
+   # Out[125]:
    :END:
 
 * Results
@@ -621,6 +645,34 @@
    population, randomly assign labels, and then use binomial thinning
    (Gerard 2019) to introduce effects of a given magnitude.
 
-   #+BEGIN_SRC ipython
-   
+   #+BEGIN_SRC ipython :async t
+     result = []
+     for b in -np.log(np.linspace(1.05, 1.5, 20)):
+       result.append(evaluate_power(b_cells, b=b, alpha=0.1, n_trials=1))
+     result = pd.concat(result)
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[143]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/power-2-0.01.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     plt.gcf().set_size_inches(3.5, 2.5)
+     labels = ['LV-EB', 'LV-Z', 'PM-EB', 'PM-Z']
+     for i, (k, g) in enumerate(result.groupby(['method', 'test'])):
+       plt.plot(np.exp(-g['b']), g['tpr'], lw=1, c=cm(i), marker='.', ms=4, label=labels[i])
+     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     plt.xlabel('True effect size')
+     plt.ylabel(r'Power ($\alpha$=0.01)')
+     plt.ylim(0, 1)
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[144]:
+   [[file:figure/voom.org/power-2-0.01.png]]
+   :END:

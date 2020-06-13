@@ -112,6 +112,7 @@
     import scipy.stats as st
     import sqlite3
 
+    limma = rpy2.robjects.packages.importr('limma')
     rpy2.robjects.pandas2ri.activate()
   #+END_SRC
 
@@ -175,7 +176,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
+   # Out[121]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/voom.org/analytic-se-log-link.png
@@ -310,33 +311,10 @@
 
      def estimate_limma_voom(x, onehot):
        """Return DataFrame of bhat, se"""
-       limma = rpy2.robjects.packages.importr('limma')
        # Important: limma expects genes x samples
        y = limma.voom(x.T)
        fit = limma.lmFit(y, np.vstack([onehot[:,0], np.ones(x.shape[0])]).T)
-       fit = limma.eBayes(fit)
-       return fit.rx2('p.value')[:,0]
-
-     def fit_wls(x, y, w):
-       """Return DataFrame of bhat, se
-
-       x - array-like (n, 1)
-       y - array-like (n, p)
-       w - array-like (n, p)
-
-       """
-       result = []
-       for j in range(y.shape[1]):
-         wj = np.diag(np.sqrt(w[:,j]))
-         wx = wj @ x
-         wy = wj @ y[:,j]
-         bhat = np.linalg.pinv(wx) @ wy
-         V = 1 / (wx.T @ wx)
-         stat = bhat[0] / np.sqrt(V[0,0])
-         pval = st.chi2(1).sf(stat * stat)
-         result.append(pval)
-       result = np.array(result)
-       return result
+       return fit
 
      def estimate_wls_point(x, onehot):
        """Return DataFrame of bhat, se
@@ -349,7 +327,9 @@
        log_mean = np.log(x + 1) - np.log(s)
        # [n_donors, n_genes]
        w = np.exp(log_mean) * s
-       return fit_wls(np.vstack([onehot[:,0], np.ones(x.shape[0])]).T, log_mean, w)
+       # Reuse limma
+       fit = limma.lm_series(log_mean.T, design=np.vstack([onehot[:,0], np.ones(x.shape[0])]).T, weights=w.T)
+       return fit
 
      def estimate_wls_gamma(x, onehot, lr=1e-2, num_epochs=40, batch_size=64, shuffle=True):
        """Return DataFrame of bhat, se
@@ -372,21 +352,34 @@
        w = 1 / sp.polygamma(1, np.exp(log_inv_disp))
        return fit_wls(np.hstack([np.arange(2), np.ones(2)]).reshape(2, -1), m, w)
 
+     def estimate_moderated_t(fit):
+       fit = limma.eBayes(fit)
+       return fit.rx2('p.value')[:,0]
+
+     def estimate_z(fit):
+       sf = st.chi2(1).sf
+       # Important: this has estimates for the intercept also
+       stat = fit.rx2('coefficients') / fit.rx2('stdev.unscaled')
+       pval = sf(np.square(stat))
+       return pval[:,0]
+
      def evaluate_type1(dat, alpha=0.01, n_trials=1, min_counts=10):
        result = []
        for i in range(n_trials):
          for n_cells in (200,):
-           x, onehot = simulate_null(dat, n_cells=n_cells, to_dense=True, min_counts=10, seed=i)
+           x, onehot = simulate_null(dat, n_cells=n_cells, to_dense=True, min_counts=min_counts, seed=i)
            for method in ('limma_voom', 'wls_point'):
-             pval = globals()[f'estimate_{method}'](x, onehot)
-             result.append((n_cells, method, i, (pval < alpha).mean()))
-       result = pd.DataFrame(result, columns=['n_cells', 'method', 'trial', 'fpr'])
+             fit = globals()[f'estimate_{method}'](x, onehot)
+             for test in ('moderated_t', 'z'):
+               pval = globals()[f'estimate_{test}'](fit)
+               result.append((n_cells, method, test, i, (pval < alpha).mean()))
+       result = pd.DataFrame(result, columns=['n_cells', 'method', 'test', 'trial', 'fpr'])
        return result
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[101]:
+   # Out[70]:
    :END:
 
 * Results
@@ -402,30 +395,31 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[4]:
    :END:
 
    #+BEGIN_SRC ipython :async t
-     result = evaluate_type1(b_cells, n_trials=50)
+     result = evaluate_type1(b_cells, min_counts=10, n_trials=50)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[109]:
+   # Out[74]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/voom.org/fpr.png
      plt.clf()
      fig, ax = plt.subplots(1, 2)
      fig.set_size_inches(4.5, 2.5)
-     for i, (k, g) in enumerate(result.groupby('method')):
-       ax[0].boxplot(g['fpr'], positions=[i], widths=0.2, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
-       ax[1].boxplot(g['fpr'], positions=[i], widths=0.2, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
+     labels = ['LV-EB', 'LV-Z', 'PM-EB', 'PM-Z']
+     for i, (k, g) in enumerate(result.groupby(['method', 'test'])):
+       ax[0].boxplot(g['fpr'], positions=[i], widths=0.35, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
+       ax[1].boxplot(g['fpr'], positions=[i], widths=0.35, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
      ax[1].set_ylim(0, 0.02)
      for a in ax:
        a.axhline(y=0.01, c='r', lw=1, ls=':')
-       a.set_xticks(np.arange(2))
-       a.set_xticklabels(result['method'].unique())
+       a.set_xticks(range(len(labels)))
+       a.set_xticklabels(labels, rotation=90)
        a.set_xlabel('Method')
      ax[0].set_ylabel('Type 1 error rate')
      fig.tight_layout()
@@ -433,8 +427,111 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[116]:
+   # Out[75]:
    [[file:figure/voom.org/fpr.png]]
+   :END:
+
+   Extract the case where limma-voom does worst.
+
+   #+BEGIN_SRC ipython :async t
+     query = result.loc[(result['method'] == 'limma_voom') & (result['test'] == 'moderated_t') & (result['fpr'] > 0.2)]
+     x, onehot = simulate_null(b_cells, n_cells=200, min_counts=10, seed=query['trial'], to_dense=True)
+     fits = {method: globals()[f'estimate_{method}'](x, onehot) for method in ('limma_voom', 'wls_point')}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[143]:
+   :END:
+
+   Look at the distributions of estimated effect sizes.
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/lv-ex.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(4.5, 2.5)
+     grid = np.linspace(-.3, .3, 1000)
+     for a, k in zip(ax, fits):
+       a.hist(fits[k].rx2('coefficients')[:,0], bins=15, color='0.7')
+       a.plot(grid, st.norm(scale=fits[k].rx2('stdev.unscaled')[:,0].mean()).pdf(grid), c='k', lw=1)
+       a.set_title(k)
+       a.set_xlabel('Effect size')
+     ax[0].set_ylabel('Density')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[99]:
+   [[file:figure/voom.org/lv-ex.png]]
+   :END:
+
+   Look at the relationship between estimated effect size and estimated
+   standard error.
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/lv-bhat-se.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(5, 2.5)
+     for a, k in zip(ax, ['coefficients', 'stdev.unscaled']):
+       a.scatter(fits['limma_voom'].rx2(k)[:,0], fits['wls_point'].rx2(k)[:,0], s=1, c='k', alpha=0.1)
+       a.set_xlabel(f'limma-voom {k}')
+       a.set_ylabel(f'wls-SE {k}')
+     lim = [-.5, .5]
+     ax[0].plot(lim, lim, lw=1, ls=':', c='r')
+     lim = [0, .1]
+     ax[1].plot(lim, lim, lw=1, ls=':', c='r')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[117]:
+   [[file:figure/voom.org/lv-bhat-se.png]]
+   :END:
+
+   Plot the voom-estimated weights against the point mass--estimated weights.
+
+   #+BEGIN_SRC ipython :async t
+     y = limma.voom(x.T)
+     w0 = y.rx2('weights').T
+     w1 = x + 1
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[144]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/sim-ex-voom.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.scatter(y.rx2('E').ravel(), y.rx2('weights'), s=1, c='k', alpha=0.1)
+     plt.xlabel('$\ln(10^6 (y + .5) / (s + 1))$')
+     plt.ylabel('Weight')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[146]:
+   [[file:figure/voom.org/sim-ex-voom.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/voom-vs-point-mass.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.scatter(w0.ravel(), w1.ravel(), s=1, c='k', alpha=0.1)
+     plt.xlabel('voom weight')
+     plt.ylabel('Point mass inverse var')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[119]:
+   [[file:figure/voom.org/voom-vs-point-mass.png]]
    :END:
 
 ** Power

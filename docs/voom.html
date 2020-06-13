@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-13 Sat 13:02 -->
+<!-- 2020-06-13 Sat 15:11 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An improved voom transform for scRNA-seq data</title>
@@ -389,6 +389,7 @@ in scRNA-seq data.
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> sqlite3
 
+<span class="org-variable-name">limma</span> = rpy2.robjects.packages.importr(<span class="org-string">'limma'</span>)
 rpy2.robjects.pandas2ri.activate()
 </pre>
 </div>
@@ -606,33 +607,10 @@ Implement a simplified
 
 <span class="org-keyword">def</span> <span class="org-function-name">estimate_limma_voom</span>(x, onehot):
   <span class="org-doc">"""Return DataFrame of bhat, se"""</span>
-  <span class="org-variable-name">limma</span> = rpy2.robjects.packages.importr(<span class="org-string">'limma'</span>)
   <span class="org-comment-delimiter"># </span><span class="org-comment">Important: limma expects genes x samples</span>
   <span class="org-variable-name">y</span> = limma.voom(x.T)
   <span class="org-variable-name">fit</span> = limma.lmFit(y, np.vstack([onehot[:,0], np.ones(x.shape[0])]).T)
-  <span class="org-variable-name">fit</span> = limma.eBayes(fit)
-  <span class="org-keyword">return</span> fit.rx2(<span class="org-string">'p.value'</span>)[:,0]
-
-<span class="org-keyword">def</span> <span class="org-function-name">fit_wls</span>(x, y, w):
-  <span class="org-doc">"""Return DataFrame of bhat, se</span>
-
-<span class="org-doc">  x - array-like (n, 1)</span>
-<span class="org-doc">  y - array-like (n, p)</span>
-<span class="org-doc">  w - array-like (n, p)</span>
-
-<span class="org-doc">  """</span>
-  <span class="org-variable-name">result</span> = []
-  <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(y.shape[1]):
-    <span class="org-variable-name">wj</span> = np.diag(np.sqrt(w[:,j]))
-    <span class="org-variable-name">wx</span> = wj @ x
-    <span class="org-variable-name">wy</span> = wj @ y[:,j]
-    <span class="org-variable-name">bhat</span> = np.linalg.pinv(wx) @ wy
-    <span class="org-variable-name">V</span> = 1 / (wx.T @ wx)
-    <span class="org-variable-name">stat</span> = bhat[0] / np.sqrt(V[0,0])
-    <span class="org-variable-name">pval</span> = st.chi2(1).sf(stat * stat)
-    result.append(pval)
-  <span class="org-variable-name">result</span> = np.array(result)
-  <span class="org-keyword">return</span> result
+  <span class="org-keyword">return</span> fit
 
 <span class="org-keyword">def</span> <span class="org-function-name">estimate_wls_point</span>(x, onehot):
   <span class="org-doc">"""Return DataFrame of bhat, se</span>
@@ -645,7 +623,9 @@ Implement a simplified
   <span class="org-variable-name">log_mean</span> = np.log(x + 1) - np.log(s)
   <span class="org-comment-delimiter"># </span><span class="org-comment">[n_donors, n_genes]</span>
   <span class="org-variable-name">w</span> = np.exp(log_mean) * s
-  <span class="org-keyword">return</span> fit_wls(np.vstack([onehot[:,0], np.ones(x.shape[0])]).T, log_mean, w)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Reuse limma</span>
+  <span class="org-variable-name">fit</span> = limma.lm_series(log_mean.T, design=np.vstack([onehot[:,0], np.ones(x.shape[0])]).T, weights=w.T)
+  <span class="org-keyword">return</span> fit
 
 <span class="org-keyword">def</span> <span class="org-function-name">estimate_wls_gamma</span>(x, onehot, lr=1e-2, num_epochs=40, batch_size=64, shuffle=<span class="org-constant">True</span>):
   <span class="org-doc">"""Return DataFrame of bhat, se</span>
@@ -668,15 +648,28 @@ Implement a simplified
   <span class="org-variable-name">w</span> = 1 / sp.polygamma(1, np.exp(log_inv_disp))
   <span class="org-keyword">return</span> fit_wls(np.hstack([np.arange(2), np.ones(2)]).reshape(2, -1), m, w)
 
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_moderated_t</span>(fit):
+  <span class="org-variable-name">fit</span> = limma.eBayes(fit)
+  <span class="org-keyword">return</span> fit.rx2(<span class="org-string">'p.value'</span>)[:,0]
+
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_z</span>(fit):
+  <span class="org-variable-name">sf</span> = st.chi2(1).sf
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this has estimates for the intercept also</span>
+  <span class="org-variable-name">stat</span> = fit.rx2(<span class="org-string">'coefficients'</span>) / fit.rx2(<span class="org-string">'stdev.unscaled'</span>)
+  <span class="org-variable-name">pval</span> = sf(np.square(stat))
+  <span class="org-keyword">return</span> pval[:,0]
+
 <span class="org-keyword">def</span> <span class="org-function-name">evaluate_type1</span>(dat, alpha=0.01, n_trials=1, min_counts=10):
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
     <span class="org-keyword">for</span> n_cells <span class="org-keyword">in</span> (200,):
-      <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, n_cells=n_cells, to_dense=<span class="org-constant">True</span>, min_counts=10, seed=i)
+      <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, n_cells=n_cells, to_dense=<span class="org-constant">True</span>, min_counts=min_counts, seed=i)
       <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'limma_voom'</span>, <span class="org-string">'wls_point'</span>):
-        <span class="org-variable-name">pval</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot)
-        result.append((n_cells, method, i, (pval &lt; alpha).mean()))
-  <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fpr'</span>])
+        <span class="org-variable-name">fit</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot)
+        <span class="org-keyword">for</span> test <span class="org-keyword">in</span> (<span class="org-string">'moderated_t'</span>, <span class="org-string">'z'</span>):
+          <span class="org-variable-name">pval</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{test}'</span>](fit)
+          result.append((n_cells, method, test, i, (pval &lt; alpha).mean()))
+  <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'test'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fpr'</span>])
   <span class="org-keyword">return</span> result
 </pre>
 </div>
@@ -703,7 +696,7 @@ homogeneous population, and randomly assign labels.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate_type1(b_cells, n_trials=50)
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate_type1(b_cells, min_counts=10, n_trials=50)
 </pre>
 </div>
 
@@ -711,14 +704,15 @@ homogeneous population, and randomly assign labels.
 <pre class="src src-ipython">plt.clf()
 <span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
 fig.set_size_inches(4.5, 2.5)
-<span class="org-keyword">for</span> i, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(result.groupby(<span class="org-string">'method'</span>)):
-  ax[0].boxplot(g[<span class="org-string">'fpr'</span>], positions=[i], widths=0.2, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
-  ax[1].boxplot(g[<span class="org-string">'fpr'</span>], positions=[i], widths=0.2, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
+<span class="org-variable-name">labels</span> = [<span class="org-string">'LV-EB'</span>, <span class="org-string">'LV-Z'</span>, <span class="org-string">'PM-EB'</span>, <span class="org-string">'PM-Z'</span>]
+<span class="org-keyword">for</span> i, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(result.groupby([<span class="org-string">'method'</span>, <span class="org-string">'test'</span>])):
+  ax[0].boxplot(g[<span class="org-string">'fpr'</span>], positions=[i], widths=0.35, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
+  ax[1].boxplot(g[<span class="org-string">'fpr'</span>], positions=[i], widths=0.35, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
 ax[1].set_ylim(0, 0.02)
 <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
   a.axhline(y=0.01, c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
-  a.set_xticks(np.arange(2))
-  a.set_xticklabels(result[<span class="org-string">'method'</span>].unique())
+  a.set_xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(labels)))
+  a.set_xticklabels(labels, rotation=90)
   a.set_xlabel(<span class="org-string">'Method'</span>)
 ax[0].set_ylabel(<span class="org-string">'Type 1 error rate'</span>)
 fig.tight_layout()
@@ -728,6 +722,113 @@ fig.tight_layout()
 
 <div class="figure">
 <p><img src="figure/voom.org/fpr.png" alt="fpr.png">
+</p>
+</div>
+
+<p>
+Extract the case where limma-voom does worst.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = result.loc[(result[<span class="org-string">'method'</span>] == <span class="org-string">'limma_voom'</span>) &amp; (result[<span class="org-string">'test'</span>] == <span class="org-string">'moderated_t'</span>) &amp; (result[<span class="org-string">'fpr'</span>] &gt; 0.2)]
+<span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(b_cells, n_cells=200, min_counts=10, seed=query[<span class="org-string">'trial'</span>], to_dense=<span class="org-constant">True</span>)
+<span class="org-variable-name">fits</span> = {method: <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot) <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'limma_voom'</span>, <span class="org-string">'wls_point'</span>)}
+</pre>
+</div>
+
+<p>
+Look at the distributions of estimated effect sizes.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
+fig.set_size_inches(4.5, 2.5)
+<span class="org-variable-name">grid</span> = np.linspace(-.3, .3, 1000)
+<span class="org-keyword">for</span> a, k <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, fits):
+  a.hist(fits[k].rx2(<span class="org-string">'coefficients'</span>)[:,0], bins=15, color=<span class="org-string">'0.7'</span>)
+  a.plot(grid, st.norm(scale=fits[k].rx2(<span class="org-string">'stdev.unscaled'</span>)[:,0].mean()).pdf(grid), c=<span class="org-string">'k'</span>, lw=1)
+  a.set_title(k)
+  a.set_xlabel(<span class="org-string">'Effect size'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/lv-ex.png" alt="lv-ex.png">
+</p>
+</div>
+
+<p>
+Look at the relationship between estimated effect size and estimated
+standard error.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
+fig.set_size_inches(5, 2.5)
+<span class="org-keyword">for</span> a, k <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'coefficients'</span>, <span class="org-string">'stdev.unscaled'</span>]):
+  a.scatter(fits[<span class="org-string">'limma_voom'</span>].rx2(k)[:,0], fits[<span class="org-string">'wls_point'</span>].rx2(k)[:,0], s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+  a.set_xlabel(f<span class="org-string">'limma-voom {k}'</span>)
+  a.set_ylabel(f<span class="org-string">'wls-SE {k}'</span>)
+<span class="org-variable-name">lim</span> = [-.5, .5]
+ax[0].plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+<span class="org-variable-name">lim</span> = [0, .1]
+ax[1].plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/lv-bhat-se.png" alt="lv-bhat-se.png">
+</p>
+</div>
+
+<p>
+Plot the voom-estimated weights against the point mass&#x2013;estimated weights.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = limma.voom(x.T)
+<span class="org-variable-name">w0</span> = y.rx2(<span class="org-string">'weights'</span>).T
+<span class="org-variable-name">w1</span> = x + 1
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.scatter(y.rx2(<span class="org-string">'E'</span>).ravel(), y.rx2(<span class="org-string">'weights'</span>), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+plt.xlabel(<span class="org-string">'$\ln(10^6 (y + .5) / (s + 1))$'</span>)
+plt.ylabel(<span class="org-string">'Weight'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/sim-ex-voom.png" alt="sim-ex-voom.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.scatter(w0.ravel(), w1.ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+plt.xlabel(<span class="org-string">'voom weight'</span>)
+plt.ylabel(<span class="org-string">'Point mass inverse var'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/voom-vs-point-mass.png" alt="voom-vs-point-mass.png">
 </p>
 </div>
 </div>
@@ -747,7 +848,7 @@ population, randomly assign labels, and then use binomial thinning
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-13 Sat 13:02</p>
+<p class="date">Created: 2020-06-13 Sat 15:11</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

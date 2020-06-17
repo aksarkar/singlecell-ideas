@@ -111,6 +111,7 @@
     import scipy.sparse as ss
     import scipy.stats as st
     import sqlite3
+    import scqtl
 
     limma = rpy2.robjects.packages.importr('limma')
     rpy2.robjects.pandas2ri.activate()
@@ -118,7 +119,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[6]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -441,6 +442,108 @@
    :END:
 
 * Results
+** Accuracy of estimation
+
+   We previously evaluated ~mpebpm~ [[file:mpebpm.org::#accuracy][by simulating
+   from a point-Gamma expression model]]. Now, simulate from a Gamma model, and
+   evaluate the accuracy of estimating \(\V[\ln\lambda_{ij}]\).
+
+   #+BEGIN_SRC ipython
+     def evaluate(num_samples, num_mols, num_trials=10, **kwargs):
+       # Important: generate all of the samples for each trial in one shot, and use
+       # one-hot encoding to get separate estimates
+       args = [(num_samples * num_trials, num_mols, log_mu, log_phi, -1000, None, None, None)
+               for log_mu in np.linspace(-12, -6, 7)
+               for log_phi in np.linspace(-4, 0, 5)]
+       x = np.concatenate([scqtl.simulation.simulate(*a)[0][:,:1] for a in args], axis=1)
+       x = ss.csr_matrix(x)
+       s = num_mols * np.ones((x.shape[0], 1))
+       onehot = np.zeros((num_samples * num_trials, num_trials))
+       onehot[np.arange(onehot.shape[0]), np.arange(onehot.shape[0]) // num_samples] = 1
+       onehot = ss.csr_matrix(onehot)
+
+       log_mu, neg_log_phi = mpebpm.sgd.ebpm_gamma(x, s=s, onehot=onehot, **kwargs)
+       result = pd.DataFrame(
+         [(a[0] // num_trials, int(a[1]), int(a[2]), int(a[3]), int(a[4]), a[-1], trial)
+          for a in args
+          for trial in range(num_trials)],
+         columns=['num_samples', 'num_mols', 'log_mu', 'log_phi', 'logodds', 'fold', 'trial'])
+       result['mean'] = np.exp(result['log_mu'])
+       result['var'] = (1 - sp.expit(result['logodds'])) * np.exp(2 * result['log_mu'] + result['log_phi']) + sp.expit(-result['logodds']) * (1 - sp.expit(result['logodds'])) * np.exp(2 * result['log_mu'])
+
+       result['log_mu_hat'] = log_mu.ravel(order='F')
+       result['log_phi_hat'] = -neg_log_phi.ravel(order='F')
+       result['mean_hat'] = np.exp(result['log_mu_hat'])
+       result['var_hat'] = np.exp(2 * result['log_mu_hat'] + result['log_phi_hat'])
+       return result
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[20]:
+   :END:
+
+   Run the simulation.
+
+   #+BEGIN_SRC ipython :async t
+     result = [evaluate(num_samples=num_samples,
+                        num_mols=int(1e5),
+                        batch_size=32,
+                        num_epochs=num_epochs,
+                        log_dir=f'runs/mpebpm/gamma-sim-{num_samples}/')
+               # Important: for fixed batch size, having more samples means more
+               # updates to each parameter per epoch
+               for num_samples, num_epochs in zip((100, 1000), (200, 20))]
+     pd.concat(result).to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-gamma-sim.txt.gz', sep='\t')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[21]:
+   :END:
+
+   Read the results.
+
+   #+BEGIN_SRC ipython
+     result = pd.read_csv('/scratch/midway2/aksarkar/ideas/mpebpm-gamma-sim.txt.gz', sep='\t', index_col=0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   :END:
+
+   Compare the estimated \(\V[\ln\lambda_{ij}]\) to the ground truth, limiting
+   only to simulations with \(\ln\mu > -11\). (The performance is much worse
+   for simulations with lower mean expression.)
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/sim-var-log.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharey=True)
+     fig.set_size_inches(4.5, 2.5)
+     lim = [1e-4, 1e2]
+     for a, (k, g) in zip(ax, result.groupby('num_samples')):
+       query = g[g['log_mu'] > -11]
+       a.set_xscale('log')
+       a.set_yscale('log')
+       a.scatter(sp.polygamma(1, np.exp(-query['log_phi'])),
+                 sp.polygamma(1, np.exp(-query['log_phi_hat'])),
+                 s=1, c='k', alpha=0.2)
+       a.plot(lim, lim, lw=1, ls=':', c='r')
+       a.set_xlim(lim)
+       a.set_ylim(lim)
+       a.set_title(f'$n$={k}')
+       a.set_xlabel('True $\mathrm{V}[\ln\ \lambda]$')
+     ax[0].set_ylabel('Estimated $\mathrm{V}[\ln\ \lambda]$')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
+   [[file:figure/voom.org/sim-var-log.png]]
+   :END:
+
 ** Type 1 error rate (scenario 1)
 
    To generate null data in the first scenario, randomly sample cells from a

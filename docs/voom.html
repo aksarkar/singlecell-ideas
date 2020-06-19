@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-19 Fri 14:51 -->
+<!-- 2020-06-19 Fri 15:46 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An improved voom transform for scRNA-seq data</title>
@@ -1093,6 +1093,84 @@ plt.tight_layout()
 </div>
 </div>
 </div>
+
+<div id="outline-container-orgf772c96" class="outline-4">
+<h4 id="orgf772c96">Unequal size factors</h4>
+<div class="outline-text-4" id="text-orgf772c96">
+<p>
+To generate single cells with unequal size factors, combine simulated
+doublets from sorted cells in one group.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
+<span class="org-variable-name">n_cells</span> = 100
+<span class="org-variable-name">x1</span>, <span class="org-variable-name">onehot1</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=1, n_cells=n_cells, min_counts=0, to_dense=<span class="org-constant">False</span>)
+<span class="org-variable-name">x2</span>, <span class="org-variable-name">onehot2</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=n_cells, n_cells=2, min_counts=0, to_dense=<span class="org-constant">False</span>)
+<span class="org-variable-name">mix</span> = ss.vstack([x1, onehot2.T @ x2], <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>)
+<span class="org-variable-name">mix</span> = anndata.AnnData(mix)
+<span class="org-comment-delimiter"># </span><span class="org-comment">Estimate the global mean for filtering genes</span>
+<span class="org-variable-name">thetahat</span> = np.log(mix.X.A.<span class="org-builtin">sum</span>(axis=0) + 1) - np.log(mix.X.<span class="org-builtin">sum</span>())
+<span class="org-variable-name">onehot</span> = ss.block_diag([onehot1, np.ones((100, 1))], <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>)
+</pre>
+</div>
+
+<p>
+Fit <code>limma-voom</code>, followed by EB shrinkage of standard errors. Report the
+number of false positives (\(\alpha < 0.01\)).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = thetahat &gt; -7.48
+(estimate_moderated_t(estimate_limma_voom(mix[:,query].X.A, onehot.A)) &lt; 0.01).mean(), query.<span class="org-builtin">sum</span>()
+</pre>
+</div>
+
+<pre class="example">
+(0.010810810810810811, 185)
+
+</pre>
+
+<p>
+Repeat the analysis for a larger number of cells.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_cells</span> = 1000
+<span class="org-variable-name">x1</span>, <span class="org-variable-name">onehot1</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=1, n_cells=n_cells, min_counts=0, to_dense=<span class="org-constant">False</span>)
+<span class="org-variable-name">x2</span>, <span class="org-variable-name">onehot2</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=n_cells, n_cells=2, min_counts=0, to_dense=<span class="org-constant">False</span>)
+<span class="org-variable-name">mix</span> = ss.vstack([x1, onehot2.T @ x2], <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>)
+<span class="org-variable-name">mix</span> = anndata.AnnData(mix)
+<span class="org-comment-delimiter"># </span><span class="org-comment">Estimate the global mean for filtering genes</span>
+<span class="org-variable-name">thetahat</span> = np.log(mix.X.A.<span class="org-builtin">sum</span>(axis=0) + 1) - np.log(mix.X.<span class="org-builtin">sum</span>())
+<span class="org-variable-name">onehot</span> = ss.block_diag([onehot1, np.ones((n_cells, 1))], <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = thetahat &gt; -6
+(estimate_moderated_t(estimate_limma_voom(mix[:,query].X.A, onehot.A)) &lt; 0.01).mean(), query.<span class="org-builtin">sum</span>()
+</pre>
+</div>
+
+<pre class="example">
+(0.010526315789473684, 95)
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = thetahat &gt; -10
+<span class="org-variable-name">y</span> = np.log(mix[:,query].X.A + 1) - np.log(mix[:,query].X.<span class="org-builtin">sum</span>(axis=1))
+(estimate_moderated_t(limma.lm_series(y.T, design=np.vstack([onehot[:,0].A.ravel(), np.ones(2000)]).T)) &lt; 0.01).mean()
+</pre>
+</div>
+
+<pre class="example">
+0.9754404698344902
+
+</pre>
+</div>
+</div>
 </div>
 
 <div id="outline-container-org6fff017" class="outline-3">
@@ -1179,6 +1257,86 @@ fig.tight_layout()
 </p>
 </div>
 </div>
+
+<div id="outline-container-orgb44f348" class="outline-4">
+<h4 id="orgb44f348">Unequal size factors</h4>
+<div class="outline-text-4" id="text-orgb44f348">
+<p>
+Generate null data with different size factors by assigning different
+numbers of cells to different donors.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x1</span>, <span class="org-variable-name">onehot1</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=4, n_cells=50, min_counts=1, to_array=<span class="org-constant">False</span>)
+<span class="org-variable-name">x2</span>, <span class="org-variable-name">onehot2</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=4, n_cells=100, min_counts=1, to_array=<span class="org-constant">False</span>)
+<span class="org-variable-name">mix</span> = x1.concatenate(x2)
+sc.pp.filter_genes(mix, min_counts=10)
+<span class="org-variable-name">onehot</span> = ss.block_diag([onehot1, onehot2], <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>)
+<span class="org-variable-name">design</span> = np.ones((8, 2))
+<span class="org-variable-name">design</span>[:4,0] = 0
+</pre>
+</div>
+
+<p>
+Look at the distribution of size factors.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.boxplot((onehot.T @ mix.X.<span class="org-builtin">sum</span>(axis=1)).A.reshape(2, -1).T, widths=0.5, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>})
+plt.xlabel(<span class="org-string">'Group'</span>)
+plt.ylabel(<span class="org-string">'Size factor'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/sim-ex-unequal-s-hist.png" alt="sim-ex-unequal-s-hist.png">
+</p>
+</div>
+
+<p>
+Fit <code>limma-voom</code>, followed by EB shrinkage of standard errors.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">(estimate_moderated_t(estimate_limma_voom(mix.X.A, onehot, design)) &lt; 0.01).mean()
+</pre>
+</div>
+
+<pre class="example">
+0.0
+
+</pre>
+
+<p>
+Look at the point mass estimates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">thetahat</span> = np.log((onehot.T @ mix.X).A + 1) - np.log(onehot.T @ mix.X.<span class="org-builtin">sum</span>(axis=1).A)
+plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.scatter(thetahat[:4].ravel(), thetahat[4:].ravel(), s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
+<span class="org-variable-name">lim</span> = [-15, 3]
+plt.plot(lim, lim, c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
+plt.xlim(lim)
+plt.ylim(lim)
+plt.xlabel(<span class="org-string">'Est mean (50 cells)'</span>)
+plt.ylabel(<span class="org-string">'Est mean (100 cells)'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/sim-ex-unequal-s-point-mass.png" alt="sim-ex-unequal-s-point-mass.png">
+</p>
+</div>
+</div>
+</div>
 </div>
 
 <div id="outline-container-org9c356fb" class="outline-3">
@@ -1226,7 +1384,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-19 Fri 14:51</p>
+<p class="date">Created: 2020-06-19 Fri 15:46</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

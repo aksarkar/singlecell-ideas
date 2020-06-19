@@ -445,7 +445,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[52]:
+   # Out[5]:
    :END:
 
 * Results
@@ -789,6 +789,83 @@
    [[file:figure/voom.org/voom-vs-point-mass.png]]
    :END:
 
+*** Unequal size factors
+
+    To generate single cells with unequal size factors, combine simulated
+    doublets from sorted cells in one group.
+
+    #+BEGIN_SRC ipython :async t
+      dat = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad')
+      n_cells = 100
+      x1, onehot1 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=1, n_cells=n_cells, min_counts=0, to_dense=False)
+      x2, onehot2 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=n_cells, n_cells=2, min_counts=0, to_dense=False)
+      mix = ss.vstack([x1, onehot2.T @ x2], format='csr')
+      mix = anndata.AnnData(mix)
+      # Estimate the global mean for filtering genes
+      thetahat = np.log(mix.X.A.sum(axis=0) + 1) - np.log(mix.X.sum())
+      onehot = ss.block_diag([onehot1, np.ones((100, 1))], format='csr')
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[53]:
+    :END:
+
+    Fit ~limma-voom~, followed by EB shrinkage of standard errors. Report the
+    number of false positives (\(\alpha < 0.01\)).
+
+    #+BEGIN_SRC ipython :async t
+      query = thetahat > -7.48
+      (estimate_moderated_t(estimate_limma_voom(mix[:,query].X.A, onehot.A)) < 0.01).mean(), query.sum()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[72]:
+    : (0.010810810810810811, 185)
+    :END:
+
+    Repeat the analysis for a larger number of cells.
+
+    #+BEGIN_SRC ipython :async t
+      n_cells = 1000
+      x1, onehot1 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=1, n_cells=n_cells, min_counts=0, to_dense=False)
+      x2, onehot2 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=n_cells, n_cells=2, min_counts=0, to_dense=False)
+      mix = ss.vstack([x1, onehot2.T @ x2], format='csr')
+      mix = anndata.AnnData(mix)
+      # Estimate the global mean for filtering genes
+      thetahat = np.log(mix.X.A.sum(axis=0) + 1) - np.log(mix.X.sum())
+      onehot = ss.block_diag([onehot1, np.ones((n_cells, 1))], format='csr')
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[77]:
+    :END:
+
+    #+BEGIN_SRC ipython :async t
+      query = thetahat > -6
+      (estimate_moderated_t(estimate_limma_voom(mix[:,query].X.A, onehot.A)) < 0.01).mean(), query.sum()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[81]:
+    : (0.010526315789473684, 95)
+    :END:
+
+    #+BEGIN_SRC ipython
+      query = thetahat > -10
+      y = np.log(mix[:,query].X.A + 1) - np.log(mix[:,query].X.sum(axis=1))
+      (estimate_moderated_t(limma.lm_series(y.T, design=np.vstack([onehot[:,0].A.ravel(), np.ones(2000)]).T)) < 0.01).mean()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[107]:
+    : 0.9754404698344902
+    :END:
+
 ** Power (single cells as units)
 
    To generate true positives treating cells as units, randomly sample cells
@@ -874,6 +951,77 @@
    # Out[26]:
    [[file:figure/voom.org/fpr-by-donor.png]]
    :END:
+
+*** Unequal size factors
+
+    Generate null data with different size factors by assigning different
+    numbers of cells to different donors.
+
+    #+BEGIN_SRC ipython :async t
+      x1, onehot1 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=4, n_cells=50, min_counts=1, to_array=False)
+      x2, onehot2 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=4, n_cells=100, min_counts=1, to_array=False)
+      mix = x1.concatenate(x2)
+      sc.pp.filter_genes(mix, min_counts=10)
+      onehot = ss.block_diag([onehot1, onehot2], format='csr')
+      design = np.ones((8, 2))
+      design[:4,0] = 0
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[155]:
+    :END:
+
+    Look at the distribution of size factors.
+
+    #+BEGIN_SRC ipython :ipyfile figure/voom.org/sim-ex-unequal-s-hist.png
+      plt.clf()
+      plt.gcf().set_size_inches(2.5, 2.5)
+      plt.boxplot((onehot.T @ mix.X.sum(axis=1)).A.reshape(2, -1).T, widths=0.5, medianprops={'color': 'k'})
+      plt.xlabel('Group')
+      plt.ylabel('Size factor')
+      plt.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[156]:
+    [[file:figure/voom.org/sim-ex-unequal-s-hist.png]]
+    :END:
+
+    Fit ~limma-voom~, followed by EB shrinkage of standard errors.
+
+    #+BEGIN_SRC ipython :async t
+      (estimate_moderated_t(estimate_limma_voom(mix.X.A, onehot, design)) < 0.01).mean()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[157]:
+    : 0.0
+    :END:
+
+    Look at the point mass estimates.
+
+    #+BEGIN_SRC ipython :ipyfile figure/voom.org/sim-ex-unequal-s-point-mass.png
+      thetahat = np.log((onehot.T @ mix.X).A + 1) - np.log(onehot.T @ mix.X.sum(axis=1).A)
+      plt.clf()
+      plt.gcf().set_size_inches(2.5, 2.5)
+      plt.scatter(thetahat[:4].ravel(), thetahat[4:].ravel(), s=1, c='k', alpha=0.1)
+      lim = [-15, 3]
+      plt.plot(lim, lim, c='r', lw=1, ls=':')
+      plt.xlim(lim)
+      plt.ylim(lim)
+      plt.xlabel('Est mean (50 cells)')
+      plt.ylabel('Est mean (100 cells)')
+      plt.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[158]:
+    [[file:figure/voom.org/sim-ex-unequal-s-point-mass.png]]
+    :END:
 
 ** Power (donors as units)
 

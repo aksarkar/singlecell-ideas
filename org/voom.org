@@ -114,6 +114,7 @@
     import sqlite3
     import scqtl
 
+    ashr = rpy2.robjects.packages.importr('ashr')
     limma = rpy2.robjects.packages.importr('limma')
     rpy2.robjects.pandas2ri.activate()
   #+END_SRC
@@ -441,11 +442,65 @@
        result = (evaluate_power_by_donor(dat, b=0, alpha=alpha, n_trials=n_trials, n_donors=n_donors, min_counts=min_counts)
                  .rename({'tpr': 'fpr'}, axis=1))
        return result
+
+     def estimate_lfsr(fit):
+       fit1 = ashr.ash(
+         betahat=pd.Series(fit.rx2('coefficients')[:,0]),
+         sebetahat=pd.Series(np.sqrt(((fit.rx2('df.total') - fit.rx2('df.residual')) * fit.rx2('s2.prior') + fit.rx2('df.residual') * fit.rx2('stdev.unscaled')[:,0]) / fit.rx2('df.total'))),
+         df=fit.rx2('df.total')[0],
+         mixcompdist='halfuniform')
+       return ashr.get_lfsr(fit1)
+
+     def estimate_fdr_bh(fit):
+       return rpy2.robjects.r['p.adjust'](fit.rx2('p.value')[:,0], method='BH')
+
+     def simulate_study_by_donor(dat, pi0=0.9, n_donors=4, n_cells=100, min_counts=10, seed=0):
+       assert n_donors * n_cells <= dat.shape[0]
+       # Important: keep this sparse to make downsampling non-zeros easier
+       x, onehot = simulate_null(dat, n_donors=2 * n_donors, n_cells=n_cells, to_dense=False, min_counts=min_counts, seed=seed)
+       # Important: taken from real data
+       g = st.t(scale=0.1, df=2.5)
+       # Simulate effects symmetrically about zero, then convert to negative
+       # effects in the appropriate group
+       b = np.zeros(x.shape[1])
+       effect = np.random.uniform(size=x.shape[1]) > pi0
+       b[effect] = g.rvs(size=effect.sum())
+       # Convert to CSC to deal with half the cells at a time
+       y = x.tocsc()
+       data = y.data.copy()
+       for i in range(y.shape[0]):
+         if b[i] > 0:
+           idx = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] > n_donors * n_cells)[0]
+           data[idx] = st.binom(n=y.data[idx].astype(int), p=np.exp(-b[i])).rvs(size=len(idx)).astype(float)
+         elif b[i] < 0:
+           idx = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] < n_donors * n_cells)[0]
+           data[idx] = st.binom(n=y.data[idx].astype(int), p=np.exp(b[i])).rvs(size=len(idx)).astype(float)
+       design = np.ones((2 * n_donors, 2))
+       design[:n_donors,0] = 0
+       return ss.csc_matrix((data, y.indices, y.indptr)).A, onehot, design, b
+
+     def evaluate_power_by_donor_fdr(dat, pi0=0.9, fdr=0.1, n_trials=1, n_donors=4, n_cells=100, min_counts=10):
+       result = []
+       for i in range(n_trials):
+         x, onehot, design, b = simulate_study_by_donor(dat, pi0=pi0, n_donors=n_donors, n_cells=n_cells, min_counts=min_counts, seed=i)
+         # Heuristic: fix total number of updates
+         num_epochs = 6000 * 64 // x.shape[0]
+         for method in ('limma_voom', 'wls_point'):
+           fit = globals()[f'estimate_{method}'](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
+           # Important: always use moderated t test
+           fit = limma.eBayes(fit)
+           for fdr_method in ('fdr_bh', 'lfsr'):
+             score = globals()[f'estimate_{fdr_method}'](fit)
+             fdp = ((score < fdr) & np.isclose(b, 0)).mean()
+             power = ((score < fdr) & ~np.isclose(b, 0)).mean()
+             result.append((pi0, fdr, n_donors, n_cells, method, fdr_method, i, fdp, power))
+       result = pd.DataFrame(result, columns=['pi0', 'fdr', 'n_donors', 'n_cells', 'method', 'fdr_method', 'trial', 'fdp', 'power'])
+       return result
    #+END_SRC
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[5]:
+   # Out[122]:
    :END:
 
 * Results
@@ -559,9 +614,14 @@
    sizes and standard errors output by limma-voom on a constructed problem
    using ~ashr~.
 
-   #+BEGIN_SRC ipython
+   #+BEGIN_SRC ipython :async t
      dat = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad')
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
 
    Construct a problem comparing B cells to cytotoxic T cells. Randomly assign
    50 sorted cells to each of 128 donors within each cell type.

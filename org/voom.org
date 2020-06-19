@@ -66,10 +66,11 @@
   from donor \(k\), and using \(\ln(y_{kj} / y_{k+})\) as the estimated mean of
   true log gene expression, where \(y_{k+} \triangleq \sum_j y_{kj}\). However,
   the relationship between the voom-estimated variance and the true gene
-  expression variance is unclear, because the variance used by voom is between
-  individuals, not within an individual. There is some evidence that the two
-  are highly, but not perfectly, correlated. Further, it is unlikely that a
-  point mass expression model will be supported by the data.
+  expression variance is unclear because the variance used by voom is between
+  individuals, not within an individual (although there is
+  [[file:mpebpm.org::*Variance%20within%20versus%20between%20individuals%20in%20iPSC%20data][some
+  evidence that the two are highly correlated]]). Further, it is unlikely that
+  a point mass expression model will be supported by the data.
 
   We previously developed a method to efficiently estimate more complex
   expression models in large-scale scRNA-seq data sets (Sarkar et
@@ -93,7 +94,7 @@
   #+RESULTS:
   : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :dir /scratch/midway2/aksarkar/singlecell/
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1 -w midway2-gpu01",memory="8G") :dir /scratch/midway2/aksarkar/singlecell/
 
   #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :dir /scratch/midway2/aksarkar/singlecell/
 
@@ -381,59 +382,32 @@
        pval = sf(np.square(stat))
        return pval[:,0]
 
-     def evaluate_type1(dat, alpha=0.01, n_trials=1, min_counts=10):
-       result = []
-       for i in range(n_trials):
-         for n_cells in (200,):
-           x, onehot = simulate_null(dat, n_cells=n_cells, to_dense=True, min_counts=min_counts, seed=i)
-           # Heuristic: fix total number of updates
-           num_epochs = 6000 * 64 // x.shape[0]
-           for method in ('limma_voom', 'wls_point'):
-             fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
-             for test in ('moderated_t', 'z'):
-               pval = globals()[f'estimate_{test}'](fit)
-               result.append((n_cells, method, test, i, (pval < alpha).mean()))
-       result = pd.DataFrame(result, columns=['n_cells', 'method', 'test', 'trial', 'fpr'])
-       return result
-
-     def evaluate_type1_by_donor(dat, alpha=0.01, n_trials=1, n_cells=100, min_counts=10):
-       result = []
-       for i in range(n_trials):
-         for n_donors in (4,):
-           x, onehot = simulate_null(dat, n_donors=2 * n_donors, n_cells=n_cells, to_dense=True, min_counts=min_counts, seed=i)
-           design = np.vstack([np.repeat(np.arange(2), n_donors), np.ones(2 * n_donors)]).T
-           # Heuristic: fix total number of updates
-           num_epochs = 6000 * 64 // x.shape[0]
-           for method in ('limma_voom', 'wls_point', 'wls_gamma'):
-             fit = globals()[f'estimate_{method}'](x, onehot, design=design)
-             for test in ('moderated_t', 'z'):
-               pval = globals()[f'estimate_{test}'](fit)
-               result.append((n_donors, n_cells, method, test, i, (pval < alpha).mean()))
-       result = pd.DataFrame(result, columns=['n_donors', 'n_cells', 'method', 'test', 'trial', 'fpr'])
-       return result
-
-     def evaluate_power(dat, b=None, alpha=0.01, n_trials=1, min_counts=10):
+     def evaluate_power(dat, b=None, alpha=0.01, n_cells=100, n_trials=1, min_counts=10):
        if b is None:
          b = -np.log(1.5)
        elif b > 0:
          b = -b
        result = []
        for i in range(n_trials):
-         for n_cells in (200,):
-           # Important: keep this sparse to make downsampling non-zeros easier
-           x, onehot = simulate_null(dat, n_cells=n_cells, to_dense=False, min_counts=min_counts, seed=i)
-           temp = x[:n_cells].astype(int)
-           y = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(float), temp.indices, temp.indptr), shape=temp.shape)
-           x = ss.vstack((y, x[n_cells:]), format='csr').A
-           onehot = onehot.A
-           # Heuristic: fix total number of updates
-           num_epochs = 6000 * 64 // x.shape[0]
-           for method in ('limma_voom', 'wls_point'):
-             fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
-             for test in ('moderated_t', 'z'):
-               pval = globals()[f'estimate_{test}'](fit)
-               result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
+         # Important: keep this sparse to make downsampling non-zeros easier
+         x, onehot = simulate_null(dat, n_cells=n_cells, to_dense=False, min_counts=min_counts, seed=i)
+         temp = x[:n_cells].astype(int)
+         y = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(float), temp.indices, temp.indptr), shape=temp.shape)
+         x = ss.vstack((y, x[n_cells:]), format='csr').A
+         onehot = onehot.A
+         # Heuristic: fix total number of updates
+         num_epochs = 6000 * 64 // x.shape[0]
+         for method in ('limma_voom', 'wls_point'):
+           fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
+           for test in ('moderated_t', 'z'):
+             pval = globals()[f'estimate_{test}'](fit)
+             result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
        result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'tpr'])
+       return result
+
+     def evaluate_type1(dat, alpha=0.01, n_cells=100, n_trials=1, min_counts=10):
+       result = (evaluate_power(dat, b=0, alpha=alpha, n_cells=n_cells, n_trials=n_trials, min_counts=min_counts)
+                 .rename({'tpr': 'fpr'}, axis=1))
        return result
 
      def evaluate_power_by_donor(dat, b=None, alpha=0.01, n_donors=4, n_cells=100, n_trials=1, min_counts=10):
@@ -449,23 +423,27 @@
          temp = x[:n_donors * n_cells].astype(int)
          y = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(float), temp.indices, temp.indptr), shape=temp.shape)
          x = ss.vstack((y, x[n_donors * n_cells:]), format='csr').A
-         assert x.shape == (2 * n_donors * n_cells, y.shape[1])
          design = np.ones((2 * n_donors, 2))
          design[:n_donors,0] = 0
          # Heuristic: fix total number of updates
          num_epochs = 6000 * 64 // x.shape[0]
-         for method in ('limma_voom', 'wls_gamma', 'wls_point'):
+         for method in ('limma_voom', 'wls_point'):
            fit = globals()[f'estimate_{method}'](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
            for test in ('moderated_t', 'z'):
              pval = globals()[f'estimate_{test}'](fit)
              result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
        result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'tpr'])
        return result
+
+     def evaluate_type1_by_donor(dat, alpha=0.01, n_trials=1, n_donors=4, n_cells=100, min_counts=10):
+       result = (evaluate_power_by_donor(dat, b=0, alpha=alpha, n_trials=n_trials, n_donors=n_donors, min_counts=min_counts)
+                 .rename({'tpr': 'fpr'}, axis=1))
+       return result
    #+END_SRC
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[170]:
+   # Out[16]:
    :END:
 
 * Results
@@ -571,10 +549,10 @@
    [[file:figure/voom.org/sim-var-log.png]]
    :END:
 
-** Type 1 error rate (scenario 1)
+** Type 1 error rate (single cells as units)
 
-   To generate null data in the first scenario, randomly sample cells from a
-   homogeneous population, and randomly assign labels.
+   To generate null data, randomly sample cells from a homogeneous population,
+   and randomly assign labels.
 
    #+BEGIN_SRC ipython :async t
      dat = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad')
@@ -583,7 +561,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython :async t
@@ -619,7 +597,10 @@
    [[file:figure/voom.org/fpr.png]]
    :END:
 
-** Pathological example
+*** Pathological example
+    :PROPERTIES:
+    :CUSTOM_ID: pathological-example
+    :END:
 
    Extract the case where limma-voom does worst.
 
@@ -724,7 +705,48 @@
    [[file:figure/voom.org/voom-vs-point-mass.png]]
    :END:
 
-** Type 1 error rate (scenario 2)
+** Power (single cells as units)
+
+   To generate true positives treating cells as units, randomly sample cells
+   from a homogeneous population, randomly assign labels, and then use binomial
+   thinning (Gerard 2019) to introduce effects of a given magnitude.
+
+   #+BEGIN_SRC ipython :async t
+     result = []
+     for b in -np.log(np.linspace(1.05, 1.5, 20)):
+       result.append(evaluate_power(b_cells, b=b, alpha=0.1, n_trials=1))
+     result = pd.concat(result)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[143]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/power-2-0.01.png
+     cm = plt.get_cmap('Paired')
+     plt.clf()
+     plt.gcf().set_size_inches(3.5, 2.5)
+     labels = ['LV-EB', 'LV-Z', 'PM-EB', 'PM-Z']
+     for i, (k, g) in enumerate(result.groupby(['method', 'test'])):
+       plt.plot(np.exp(-g['b']), g['tpr'], lw=1, c=cm(i), marker='.', ms=4, label=labels[i])
+     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     plt.xlabel('True effect size')
+     plt.ylabel(r'Power ($\alpha$=0.01)')
+     plt.ylim(0, 1)
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[144]:
+   [[file:figure/voom.org/power-2-0.01.png]]
+   :END:
+
+** Type 1 error rate (donors as units)
+
+   To generate null data, first randomly assign cells from a homogeneous sample
+   to donors, then randomly assign donors to groups.
 
    #+BEGIN_SRC ipython :async t
      dat = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad')
@@ -769,51 +791,17 @@
    [[file:figure/voom.org/fpr-by-donor.png]]
    :END:
 
-** Power
+** Power (donors as units)
 
-   To generate true positives, randomly sample cells from a homogeneous
-   population, randomly assign labels, and then use binomial thinning
-   (Gerard 2019) to introduce effects of a given magnitude.
-
-   #+BEGIN_SRC ipython :async t
-     result = []
-     for b in -np.log(np.linspace(1.05, 1.5, 20)):
-       result.append(evaluate_power(b_cells, b=b, alpha=0.1, n_trials=1))
-     result = pd.concat(result)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[143]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/voom.org/power-2-0.01.png
-     cm = plt.get_cmap('Paired')
-     plt.clf()
-     plt.gcf().set_size_inches(3.5, 2.5)
-     labels = ['LV-EB', 'LV-Z', 'PM-EB', 'PM-Z']
-     for i, (k, g) in enumerate(result.groupby(['method', 'test'])):
-       plt.plot(np.exp(-g['b']), g['tpr'], lw=1, c=cm(i), marker='.', ms=4, label=labels[i])
-     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
-     plt.xlabel('True effect size')
-     plt.ylabel(r'Power ($\alpha$=0.01)')
-     plt.ylim(0, 1)
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[144]:
-   [[file:figure/voom.org/power-2-0.01.png]]
-   :END:
-
-   Use the same strategy for evaluating power when donors are the unit,
-   subsampling each cell equally in the effect group.
+   To generate true positives treating donors as units, randomly sample cells
+   from a homogeneous population, randomly assign cells to donors, randomly
+   assign donors to groups, and then thin all cells assigned to the effect
+   group equally.
 
    #+BEGIN_SRC ipython :async t
      result = []
      for b in -np.log(np.linspace(1, 2, 20)):
-       result.append(evaluate_power_by_donor(b_cells, b=b, n_donors=40, n_cells=100, alpha=0.01, n_trials=1))
+       result.append(evaluate_power_by_donor(b_cells, b=b, n_donors=64, n_cells=50, alpha=0.01, n_trials=1))
      result = pd.concat(result)
      result.to_csv('/scratch/midway2/aksarkar/singlecell/limma-voom-power-by-donor-40.txt.gz')
    #+END_SRC

@@ -44,9 +44,69 @@
   genes. This fact suggests that it could possible to identify upstream
   regulators, functional regulatory elements, and target genes directly from
   scRNA-seq data. Such an approach could avoid problems of collecting large
-  numbers of donor individuals, of picking the correct cell type/developmental
-  time point /a priori/. It could also more directly answer the relevant
-  questions for interpreting disease-associated loci.
+  numbers of donor individuals, and of picking the correct cell
+  type/developmental time point /a priori/. Further, it could more directly
+  answer the relevant questions for interpreting disease-associated
+  loci. Longer term, this methodology could be extended to spatial
+  transcriptomic measurements, allowing us to account for microenvironments and
+  cell-cell interactions.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell/
+
+  #+CALL: tensorboard(venv="singlecell") :dir /scratch/midway2/aksarkar/singlecell/
+
+  #+BEGIN_SRC ipython
+    import anndata
+    import numpy as np
+    import pandas as pd
+    import rpy2.robjects.packages
+    import rpy2.robjects.pandas2ri
+    import txpred.models.susie
+    import torch
+    import torch.utils.data as td
+
+    rpy2.robjects.pandas2ri.activate()
+    susie = rpy2.robjects.packages.importr('susieR')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[5]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
 
 * Method
 ** Regulatory network inference from scRNA-seq data
@@ -68,9 +128,161 @@
    cell \(i\) and \(\xiplus \triangleq \sum_j x_{ij}\). We further assume
 
    \begin{align}
-     \eta_{\cdot j} &\sim \N([\mh]_{\cdot j} \vb, \sigma^2 \mi)\\
-     b_{j^{\prime}} &\sim \pi \N(0, \sigma^2 \sigma_b^2) + (1 - \pi) \delta_0(\cdot),
+     \eta_{\cdot j} &\sim \N([\mh]_{\cdot j} \vb_j, \sigma^2 \mi)\\
+     b_{j j^{\prime}} &\sim \pi \N(0, \sigma^2 \sigma_b^2) + (1 - \pi) \delta_0(\cdot),
    \end{align}
 
    where \(\mh = [\eta_{ij}]\) and \([\mh]_{ij}\) denotes the submatrix of
-   \(\mh\) obtained by deleting the \(i\)th row and \(j\)th column.
+   \(\mh\) obtained by deleting the \(i\)th row and \(j\)th column. Then, the
+   vectors \(\vb_j\) give the off-diagonal elements of the adjacency matrix of
+   the gene-gene-interaction network. We can estimate \(\eta_{ij}\) from the
+   data using e.g., [[file:mpebpm.org][mpebpm]] (Sarkar et al. 2019), and
+   estimate \(\vb_j\) from the data using e.g., ~susie~ (Wang et al. 2018).
+
+* Results
+** Proof of concept
+
+   Read the iPSC data (Sarkar et al. 2019).
+
+   #+BEGIN_SRC ipython :async t
+     dat = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[2]:
+   :END:
+
+   Read the estimated expression models.
+
+   #+BEGIN_SRC ipython
+     log_mu = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-log-mu.npy')
+     neg_log_phi = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-neg-log-phi.npy')
+     logodds = np.load('/scratch/midway2/aksarkar/ideas/mpebpm-ipsc-design-logodds.npy')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[3]:
+   :END:
+
+   Compute \(E[\ln\lambda_{ij}]\) to zeroth order. (This is needed because the
+   expectation is not finite when \(\pi_j > 0\).)
+
+   #+BEGIN_SRC ipython :async t
+     onehot = pd.get_dummies(dat.obs['chip_id'], sparse=True)
+     del onehot['NA18498']
+     onehot = onehot.sparse.to_coo().tocsr()
+     # Important: this is cells by genes, not donors by genes
+     log_mean = (onehot @ -np.log1p(-logodds)) + np.log1p(dat.X + onehot @ np.exp(neg_log_phi)) - np.log(dat.X.sum(axis=1) + onehot @ np.exp(-log_mu + neg_log_phi))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   Download a [[http://humantfs.ccbr.utoronto.ca/download.php][curated
+   database]] of TF genes
+   ([[https://doi.org/10.1016/j.cell.2018.01.029][Lambert et al. 2018]])
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/singlecell/
+     curl -OL "http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_v_1.01.csv"
+   #+END_SRC
+
+   #+RESULTS:
+
+   #+BEGIN_SRC ipython
+     tfs = pd.read_csv('/scratch/midway2/aksarkar/singlecell/DatabaseExtract_v_1.01.csv', index_col=0)
+     query = dat.var.merge(tfs.loc[tfs['Is TF?'] == 'Yes'], left_index=True, right_on='Ensembl ID', how='inner').index
+     design = log_mean[:,query]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[86]:
+   :END:
+
+   Focus on /SKP1/, an eQTL found in the previous study. First, fit ~sgvbvs~,
+   and report genes with non-trivial PIP.
+
+   #+BEGIN_SRC ipython :async t
+     gene = 'SKP1'
+     batch_size = 128
+     seed = 3
+     torch.manual_seed(seed)
+     j = np.where(dat.var['name'] == gene)[0][0]
+     data = td.DataLoader(
+       td.TensorDataset(
+         torch.tensor(design),
+         torch.tensor(log_mean[:,j])),
+       batch_size=batch_size,
+       shuffle=True)
+     fit0 = (txpred.models.susie.GaussianRegression(txpred.models.susie.SpikeSlab(design.shape[1]))
+             .fit(data, n_epochs=100, log_dir=f'runs/txpred/{gene}-{batch_size}-{seed}'))
+     dat[:,query].var.loc[(torch.sigmoid(fit0.prior.logits) > 0.1).numpy()]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[121]:
+   #+BEGIN_EXAMPLE
+     chr     start       end name strand      source
+     index
+     ENSG00000087086  hs19  49468558  49470135  FTL      +  H. sapiens
+   #+END_EXAMPLE
+   :END:
+
+   Fit ~susie~ to get credible sets.
+
+   #+BEGIN_SRC ipython :async t
+     fit = susie.susie(design, log_mean[:,j], L=5)
+     fit.rx2('V')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[116]:
+   : array([0.04996618, 0.0089835 , 0.00727507, 0.00513533, 0.00376015])
+   :END:
+
+   Get the credible sets.
+
+   #+BEGIN_SRC ipython :async t
+     cs = [susie.susie_get_cs(fit, coverage=0.95).rx2('cs').rx2(i + 1) for i in range(5)]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[117]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     dat[:,query].var.iloc[np.array(cs).ravel()]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[124]:
+   #+BEGIN_EXAMPLE
+     chr     start       end     name strand      source
+     index
+     ENSG00000060656   hs1  29563028  29653325    PTPRU      +  H. sapiens
+     ENSG00000103145  hs16   3072621   3074287  HCFC1R1      -  H. sapiens
+     ENSG00000054116   hs1  36602173  36615098  TRAPPC3      -  H. sapiens
+     ENSG00000059122  hs16   2961938   3001209  FLYWCH1      +  H. sapiens
+     ENSG00000083544  hs13  60970591  61148012    TDRD3      +  H. sapiens
+   #+END_EXAMPLE
+   :END:
+
+   Get all predicted TF binding motifs within 1MB of /SKP1/.
+
+   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/singlecell/
+     module load htslib
+     curl -OL "http://compbio.mit.edu/encode-motifs/enrichments.txt.gz"
+     curl -OL "http://compbio.mit.edu/encode-motifs/matches.txt.gz"
+     zcat matches.txt.gz | sort -k2,2 -k3,3n -k4,4n | bgzip >motif-matches.txt.gz
+     tabix -s 2 -b 3 -e 4 motif-matches.txt.gz
+   #+END_SRC
+
+   #+RESULTS:

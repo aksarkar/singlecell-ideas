@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-22 Mon 14:21 -->
+<!-- 2020-06-22 Mon 14:20 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Grand challenges in single-cell data science</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -230,46 +230,149 @@ for the JavaScript code in this tag.
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
-<p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
-</p>
-
-<ul class="org-ul">
-<li><a href="grand-challenges.html">Grand challenges in single-cell data science</a></li>
-<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
-<li><a href="voom.html">An improved voom transform for scRNA-seq data</a></li>
-<li><a href="experimental-finemapping.html">Experimental fine-mapping of QTLs from
-scRNA-seq data</a></li>
-<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
-<li><a href="pseudobulk.html">Alternative approaches to scRNA-seq pseudobulk models</a></li>
-<li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
-<li><a href="zinb-vae-gmm.html"><del>ZINB-VAE-GMM</del></a></li>
+<h1 class="title">Grand challenges in single-cell data science</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgfe92fa2">Introduction</a></li>
+<li><a href="#orgc310edd">Recurring challenges</a>
+<ul>
+<li><a href="#org29bcd62">Varying levels of resolution</a></li>
+<li><a href="#org412686e">Quantifying uncertainty of measurements and analysis results</a></li>
+<li><a href="#org0bfd6b8">Scaling to higher dimensionalities: more cells, more features, and broader coverage</a></li>
 </ul>
+</li>
+<li><a href="#orgcf2a286">Challenges in single-cell transcriptomics</a>
+<ul>
+<li><a href="#org25f7f2e">Handling sparsity in single-cell RNA sequencing</a></li>
+<li><a href="#orgdf8c25b">Defining flexible statistical frameworks for discovering complex differential patterns in gene expression</a></li>
+<li><a href="#org753a584">Mapping single cells to a reference atlas</a></li>
+<li><a href="#org9e0a234">Generalizing trajectory inference</a></li>
+<li><a href="#org85d4405">Finding patterns in spatially resolved measurements</a></li>
+</ul>
+</li>
+<li><a href="#org2bf77d5">Challenges in single-cell genomics</a>
+<ul>
+<li><a href="#org1701f2f">Dealing with errors and missing data in the identification of variation from single-cell DNA sequencing data</a></li>
+</ul>
+</li>
+<li><a href="#orge9a2016">Challenges in single-cell phylogenomics</a>
+<ul>
+<li><a href="#orga37ea44">Scaling phylogenetic models to many cells and many sites</a></li>
+<li><a href="#org1d6d0de">Integrating multiple types of variation into phylogenetic models</a></li>
+<li><a href="#org793fc14">Inferring population genetic parameters of tumor heterogeneity by model integration</a></li>
+</ul>
+</li>
+<li><a href="#org7c4f07b">Overarching challenges</a>
+<ul>
+<li><a href="#orged12648">Integration of single-cell data across samples, experiments, and types of measurement</a></li>
+<li><a href="#org50e6c39">Validating and benchmarking analysis tools for single-cell measurements</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgfe92fa2" class="outline-2">
+<h2 id="orgfe92fa2">Introduction</h2>
+<div class="outline-text-2" id="text-orgfe92fa2">
+<p>
+<a href="https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-1926-6">Lähnemann
+et al. 2020</a> list 11 &ldquo;grand challenges&rdquo; in single cell data science. On
+first reading, the list of challenges struck me as reviewing areas where
+researchers have already made the fundamental contributions, rather than
+areas where fundamental contributions remain to be made. Here, I revisit the
+paper more carefully to try and identify areas where fundamental
+contributions could be made.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc310edd" class="outline-2">
+<h2 id="orgc310edd">Recurring challenges</h2>
+<div class="outline-text-2" id="text-orgc310edd">
+</div>
+<div id="outline-container-org29bcd62" class="outline-3">
+<h3 id="org29bcd62">Varying levels of resolution</h3>
+</div>
+
+<div id="outline-container-org412686e" class="outline-3">
+<h3 id="org412686e">Quantifying uncertainty of measurements and analysis results</h3>
+</div>
+
+<div id="outline-container-org0bfd6b8" class="outline-3">
+<h3 id="org0bfd6b8">Scaling to higher dimensionalities: more cells, more features, and broader coverage</h3>
+</div>
+</div>
+
+<div id="outline-container-orgcf2a286" class="outline-2">
+<h2 id="orgcf2a286">Challenges in single-cell transcriptomics</h2>
+<div class="outline-text-2" id="text-orgcf2a286">
+</div>
+<div id="outline-container-org25f7f2e" class="outline-3">
+<h3 id="org25f7f2e">Handling sparsity in single-cell RNA sequencing</h3>
+</div>
+
+<div id="outline-container-orgdf8c25b" class="outline-3">
+<h3 id="orgdf8c25b">Defining flexible statistical frameworks for discovering complex differential patterns in gene expression</h3>
+</div>
+
+<div id="outline-container-org753a584" class="outline-3">
+<h3 id="org753a584">Mapping single cells to a reference atlas</h3>
+</div>
+
+<div id="outline-container-org9e0a234" class="outline-3">
+<h3 id="org9e0a234">Generalizing trajectory inference</h3>
+</div>
+
+<div id="outline-container-org85d4405" class="outline-3">
+<h3 id="org85d4405">Finding patterns in spatially resolved measurements</h3>
+</div>
+</div>
+
+<div id="outline-container-org2bf77d5" class="outline-2">
+<h2 id="org2bf77d5">Challenges in single-cell genomics</h2>
+<div class="outline-text-2" id="text-org2bf77d5">
+</div>
+<div id="outline-container-org1701f2f" class="outline-3">
+<h3 id="org1701f2f">Dealing with errors and missing data in the identification of variation from single-cell DNA sequencing data</h3>
+</div>
+</div>
+
+<div id="outline-container-orge9a2016" class="outline-2">
+<h2 id="orge9a2016">Challenges in single-cell phylogenomics</h2>
+<div class="outline-text-2" id="text-orge9a2016">
+</div>
+<div id="outline-container-orga37ea44" class="outline-3">
+<h3 id="orga37ea44">Scaling phylogenetic models to many cells and many sites</h3>
+</div>
+
+<div id="outline-container-org1d6d0de" class="outline-3">
+<h3 id="org1d6d0de">Integrating multiple types of variation into phylogenetic models</h3>
+</div>
+
+<div id="outline-container-org793fc14" class="outline-3">
+<h3 id="org793fc14">Inferring population genetic parameters of tumor heterogeneity by model integration</h3>
+</div>
+</div>
+
+<div id="outline-container-org7c4f07b" class="outline-2">
+<h2 id="org7c4f07b">Overarching challenges</h2>
+<div class="outline-text-2" id="text-org7c4f07b">
+</div>
+<div id="outline-container-orged12648" class="outline-3">
+<h3 id="orged12648">Integration of single-cell data across samples, experiments, and types of measurement</h3>
+</div>
+
+<div id="outline-container-org50e6c39" class="outline-3">
+<h3 id="org50e6c39">Validating and benchmarking analysis tools for single-cell measurements</h3>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-22 Mon 14:21</p>
+<p class="date">Created: 2020-06-22 Mon 14:20</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

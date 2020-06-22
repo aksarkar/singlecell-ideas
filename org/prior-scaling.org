@@ -1,0 +1,59 @@
+#+TITLE: Scaling priors for regression models
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  [[https://www.jstor.org/stable/27640090][Park and Casella 2008]] propose the
+  Bayesian lasso, and argue that a "scaled prior"
+
+  \begin{align}
+    \vy \mid \mx, \vb, \sigma^2 &\sim \N(\mx \vb, \sigma^2 \mi)\\
+    \vb \mid \lambda, \sigma^2 &\sim \Lapl(0, \lambda / \sqrt{\sigma^2})
+  \end{align}
+
+  leads to a unimodal posterior \(p(\vb, \sigma^2 \mid \mx, \vy)\), whereas an
+  unconditional prior
+
+  \begin{equation}
+    \vb \mid \lambda \sim \Lapl(0, \lambda)
+  \end{equation}
+
+  does not. We previously noted that for the spike and slab prior
+
+  \begin{equation}
+    b_j \mid \pi, \sigma_b^2 \sim \pi \N(0, \sigma_b^2) + (1 - \pi) \delta_0(\cdot),
+  \end{equation}
+
+  the (approximate) posterior \(p(\vb \mid \mx, \vy, \sigma_b^2)\) sometimes
+  converges to a point mass on zero. Here, we investigate how scaling the slab
+  variance changes this behavior.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3() :exports none :dir /scratch/midway2/aksarkar
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+* Results
+
+  

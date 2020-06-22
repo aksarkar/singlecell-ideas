@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-22 Mon 14:21 -->
+<!-- 2020-06-04 Thu 17:03 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Scaling priors for regression models</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,49 +227,106 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">Scaling priors for regression models</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orga6ec496">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org46dff4e">Results</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orga6ec496" class="outline-2">
+<h2 id="orga6ec496">Introduction</h2>
+<div class="outline-text-2" id="text-orga6ec496">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+<a href="https://www.jstor.org/stable/27640090">Park and Casella 2008</a> propose the
+Bayesian lasso, and argue that a &ldquo;scaled prior&rdquo;
 </p>
 
-<ul class="org-ul">
-<li><a href="grand-challenges.html">Grand challenges in single-cell data science</a></li>
-<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
-<li><a href="voom.html">An improved voom transform for scRNA-seq data</a></li>
-<li><a href="experimental-finemapping.html">Experimental fine-mapping of QTLs from
-scRNA-seq data</a></li>
-<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
-<li><a href="pseudobulk.html">Alternative approaches to scRNA-seq pseudobulk models</a></li>
-<li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
-<li><a href="zinb-vae-gmm.html"><del>ZINB-VAE-GMM</del></a></li>
-</ul>
+\begin{align}
+  \vy \mid \mx, \vb, \sigma^2 &\sim \N(\mx \vb, \sigma^2 \mi)\\
+  \vb \mid \lambda, \sigma^2 &\sim \Lapl(0, \lambda / \sqrt{\sigma^2})
+\end{align}
+
+<p>
+leads to a unimodal posterior \(p(\vb, \sigma^2 \mid \mx, \vy)\), whereas an
+unconditional prior
+</p>
+
+\begin{equation}
+  \vb \mid \lambda \sim \Lapl(0, \lambda)
+\end{equation}
+
+<p>
+does not. We previously noted that for the spike and slab prior
+</p>
+
+\begin{equation}
+  b_j \mid \pi, \sigma_b^2 \sim \pi \N(0, \sigma_b^2) + (1 - \pi) \delta_0(\cdot),
+\end{equation}
+
+<p>
+the (approximate) posterior \(p(\vb \mid \mx, \vy, \sigma_b^2)\) sometimes
+converges to a point mass on zero. Here, we investigate how scaling the slab
+variance changes this behavior.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org556a8d0" class="outline-2">
+<h2 id="setup"><a id="org556a8d0"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org46dff4e" class="outline-2">
+<h2 id="org46dff4e">Results</h2>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-22 Mon 14:21</p>
+<p class="date">Created: 2020-06-04 Thu 17:03</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

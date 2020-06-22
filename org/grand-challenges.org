@@ -1,0 +1,49 @@
+#+TITLE: Grand challenges in single-cell data science
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  [[https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-1926-6][Lähnemann
+  et al. 2020]] list 11 "grand challenges" in single cell data science. On
+  first reading, the list of challenges struck me as reviewing areas where
+  researchers have already made the fundamental contributions, rather than
+  areas where fundamental contributions remain to be made. Here, I revisit the
+  paper more carefully to try and identify areas where fundamental
+  contributions could be made.
+
+* Recurring challenges
+** Varying levels of resolution
+
+** Quantifying uncertainty of measurements and analysis results
+
+** Scaling to higher dimensionalities: more cells, more features, and broader coverage
+
+* Challenges in single-cell transcriptomics
+
+** Handling sparsity in single-cell RNA sequencing
+
+** Defining flexible statistical frameworks for discovering complex differential patterns in gene expression
+
+** Mapping single cells to a reference atlas
+
+** Generalizing trajectory inference
+
+** Finding patterns in spatially resolved measurements
+
+* Challenges in single-cell genomics
+
+** Dealing with errors and missing data in the identification of variation from single-cell DNA sequencing data
+
+* Challenges in single-cell phylogenomics
+
+** Scaling phylogenetic models to many cells and many sites
+
+** Integrating multiple types of variation into phylogenetic models
+
+** Inferring population genetic parameters of tumor heterogeneity by model integration
+
+* Overarching challenges
+
+** Integration of single-cell data across samples, experiments, and types of measurement
+
+** Validating and benchmarking analysis tools for single-cell measurements

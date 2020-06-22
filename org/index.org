@@ -4,6 +4,8 @@
 A collection of various (often incomplete or broken) ideas for single cell
 analysis plus some related topics.
 
+- [[file:grand-challenges.org][Grand challenges in single-cell data science]]
+- [[file:prior-scaling.org][Scaling priors for regression models]]
 - [[file:voom.org][An improved voom transform for scRNA-seq data]]
 - [[file:experimental-finemapping.org][Experimental fine-mapping of QTLs from
   scRNA-seq data]]

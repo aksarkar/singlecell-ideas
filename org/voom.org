@@ -309,6 +309,8 @@
        """
        query = sc.pp.subsample(dat, n_obs=n_donors * n_cells, random_state=seed, copy=True)
        sc.pp.filter_genes(query, min_counts=min_counts)
+       if not ss.isspmatrix_csr(query.X):
+         query.X = query.X.tocsr()
        onehot = ss.coo_matrix((np.ones(query.shape[0]), (np.arange(query.shape[0]), np.repeat(np.arange(n_donors), n_cells)))).tocsr()
        if not to_array:
          return query, onehot
@@ -502,7 +504,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[122]:
+   # Out[217]:
    :END:
 
 * Results
@@ -782,25 +784,26 @@
 ** Type 1 error rate (single cells as units)
 
    To generate null data, randomly sample cells from a homogeneous population,
-   and randomly assign labels.
+   and randomly assign labels. Use
+   [[https://support.10xgenomics.com/single-cell-gene-expression/datasets/3.0.0/pbmc_10k_v3][10X
+   v3 PBMC data]], which has more molecules observed per sample on average.
 
-   #+BEGIN_SRC ipython :async t
-     dat = anndata.read_h5ad('/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad')
-     b_cells = dat[dat.obs['cell_type'] == 'b_cells']
+   #+BEGIN_SRC ipython
+     dat = anndata.read_h5ad('/scratch/midway2/aksarkar/modes/10k_pbmc_v3.h5ad')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[208]:
    :END:
 
    #+BEGIN_SRC ipython :async t
-     result = evaluate_type1(b_cells, min_counts=10, n_trials=50)
+     result = evaluate_type1(dat, min_counts=20, n_trials=10)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[20]:
+   # Out[227]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/voom.org/fpr.png
@@ -823,116 +826,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[75]:
+   # Out[228]:
    [[file:figure/voom.org/fpr.png]]
-   :END:
-
-*** Pathological example
-    :PROPERTIES:
-    :CUSTOM_ID: pathological-example
-    :END:
-
-   Extract the case where limma-voom does worst.
-
-   #+BEGIN_SRC ipython :async t
-     query = result.loc[(result['method'] == 'limma_voom') & (result['test'] == 'moderated_t') & (result['fpr'] > 0.2)]
-     x, onehot = simulate_null(b_cells, n_cells=200, min_counts=10, seed=query['trial'], to_dense=True)
-     fits = {method: globals()[f'estimate_{method}'](x, onehot) for method in ('limma_voom', 'wls_point')}
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[143]:
-   :END:
-
-   Look at the distributions of estimated effect sizes.
-
-   #+BEGIN_SRC ipython :ipyfile figure/voom.org/lv-ex.png
-     plt.clf()
-     fig, ax = plt.subplots(1, 2)
-     fig.set_size_inches(4.5, 2.5)
-     grid = np.linspace(-.3, .3, 1000)
-     for a, k in zip(ax, fits):
-       a.hist(fits[k].rx2('coefficients')[:,0], bins=15, color='0.7')
-       a.plot(grid, st.norm(scale=fits[k].rx2('stdev.unscaled')[:,0].mean()).pdf(grid), c='k', lw=1)
-       a.set_title(k)
-       a.set_xlabel('Effect size')
-     ax[0].set_ylabel('Density')
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[99]:
-   [[file:figure/voom.org/lv-ex.png]]
-   :END:
-
-   Look at the relationship between estimated effect size and estimated
-   standard error.
-
-   #+BEGIN_SRC ipython :ipyfile figure/voom.org/lv-bhat-se.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     fig, ax = plt.subplots(1, 2)
-     fig.set_size_inches(5, 2.5)
-     for a, k in zip(ax, ['coefficients', 'stdev.unscaled']):
-       a.scatter(fits['limma_voom'].rx2(k)[:,0], fits['wls_point'].rx2(k)[:,0], s=1, c='k', alpha=0.1)
-       a.set_xlabel(f'limma-voom {k}')
-       a.set_ylabel(f'wls-SE {k}')
-     lim = [-.5, .5]
-     ax[0].plot(lim, lim, lw=1, ls=':', c='r')
-     lim = [0, .1]
-     ax[1].plot(lim, lim, lw=1, ls=':', c='r')
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[117]:
-   [[file:figure/voom.org/lv-bhat-se.png]]
-   :END:
-
-   Plot the voom-estimated weights against the point mass--estimated weights.
-
-   #+BEGIN_SRC ipython :async t
-     y = limma.voom(x.T)
-     w0 = y.rx2('weights').T
-     w1 = x + 1
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[144]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/voom.org/sim-ex-voom.png
-     plt.clf()
-     plt.gcf().set_size_inches(2.5, 2.5)
-     plt.scatter(y.rx2('E').ravel(), y.rx2('weights'), s=1, c='k', alpha=0.1)
-     plt.xlabel('$\ln(10^6 (y + .5) / (s + 1))$')
-     plt.ylabel('Weight')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[146]:
-   [[file:figure/voom.org/sim-ex-voom.png]]
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/voom.org/voom-vs-point-mass.png
-     plt.clf()
-     plt.gcf().set_size_inches(2.5, 2.5)
-     plt.scatter(w0.ravel(), w1.ravel(), s=1, c='k', alpha=0.1)
-     plt.xlabel('voom weight')
-     plt.ylabel('Point mass inverse var')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[119]:
-   [[file:figure/voom.org/voom-vs-point-mass.png]]
    :END:
 
 *** Unequal size factors
@@ -954,21 +849,22 @@
 
     #+RESULTS:
     :RESULTS:
-    # Out[53]:
+    # Out[229]:
     :END:
 
     Fit ~limma-voom~, followed by EB shrinkage of standard errors. Report the
-    number of false positives (\(\alpha < 0.01\)).
+    number of false positives (\(\alpha < 0.01\)), and the number of genes
+    tested.
 
     #+BEGIN_SRC ipython :async t
-      query = thetahat > -7.48
+      query = thetahat > -11
       (estimate_moderated_t(estimate_limma_voom(mix[:,query].X.A, onehot.A)) < 0.01).mean(), query.sum()
     #+END_SRC
 
     #+RESULTS:
     :RESULTS:
-    # Out[72]:
-    : (0.010810810810810811, 185)
+    # Out[231]:
+    : (0.9590070598952403, 4391)
     :END:
 
     Repeat the analysis for a larger number of cells.
@@ -986,31 +882,85 @@
 
     #+RESULTS:
     :RESULTS:
-    # Out[77]:
+    # Out[232]:
     :END:
 
     #+BEGIN_SRC ipython :async t
-      query = thetahat > -6
+      query = thetahat > -11
       (estimate_moderated_t(estimate_limma_voom(mix[:,query].X.A, onehot.A)) < 0.01).mean(), query.sum()
     #+END_SRC
 
     #+RESULTS:
     :RESULTS:
-    # Out[81]:
-    : (0.010526315789473684, 95)
+    # Out[233]:
+    : (0.96875, 4096)
     :END:
 
+    Fit a point mass expression model to each group.
+
     #+BEGIN_SRC ipython
-      query = thetahat > -10
-      y = np.log(mix[:,query].X.A + 1) - np.log(mix[:,query].X.sum(axis=1))
-      (estimate_moderated_t(limma.lm_series(y.T, design=np.vstack([onehot[:,0].A.ravel(), np.ones(2000)]).T)) < 0.01).mean()
+      theta = np.log(onehot.T @ mix.X[:,query].A + 1) - np.log(onehot.T @ mix.X.sum(axis=1))
     #+END_SRC
 
     #+RESULTS:
     :RESULTS:
-    # Out[107]:
-    : 0.9754404698344902
+    # Out[238]:
     :END:
+
+    Fit a Gamma expression model to each group.
+
+    #+BEGIN_SRC ipython :async t
+      log_mu, neg_log_phi = mpebpm.sgd.ebpm_gamma(
+        mix.X[:,query].A,
+        s=mix.X.sum(axis=1).A,
+        onehot=onehot.A,
+        batch_size=32,
+        num_epochs=1000,
+        log_dir='runs/mpebpm/b_cells-sim-unequal-s')
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[236]:
+    :END:
+
+    Compare the estimated mean log expression for each gene under the Gamma
+    model to the estimate under the point mass model.
+
+    #+BEGIN_SRC ipython :ipyfile figure/voom.org/b_cells-sim-unequal-s.png
+      plt.clf()
+      fig, ax = plt.subplots(1, 2, sharey=True)
+      fig.set_size_inches(4, 2.5)
+      lim = [-12, -2]
+      for a, y, t in zip(ax, [theta.A, log_mu], ['Point mass', 'Gamma']):
+        a.scatter(y[0], y[1], c='k', s=1, alpha=0.1)
+        a.plot(lim, lim, lw=1, ls=':', c='r')
+        a.set_xlim(lim)
+        a.set_ylim(lim)
+        a.set_title(t)
+        a.set_xlabel('$\mathrm{E}[\ln\ \lambda]$ (size $s$)')
+      ax[0].set_ylabel('$\mathrm{E}[\ln\ \lambda]$ (size $2s$)')
+      fig.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[249]:
+    [[file:figure/voom.org/b_cells-sim-unequal-s.png]]
+    :END:
+
+    The problem seems to be that in ~limma~, observed \(x_{ij} = 0\) are
+    treated as having \(\ln\lambda_{ij} = -\ln\xiplus\) in group 1, and
+    \(\ln\lambda_{ij} = -\ln (2\xiplus)\) in group 2. This problem cannot be
+    solved by using the posterior mean of gene expression under e.g., Gamma
+    models for each group instead, because the posterior mean is
+
+    \begin{equation}
+      \E[\ln\lambda_{ij} \mid x_{ij}, \xiplus, g_{jk}] = \psi(x_{ij} + \phi_{jk}^{-1}) + \ln(x_{ij} + \phi_{jk}^{-1}) + \ln(\xiplus + \mu_{jk}^{-1}\phi_{jk}^{-1}),
+    \end{equation}
+
+    and we have shown empirically that \(\mu_{jk}\) and \(\phi_{jk}\) are
+    nearly equal between the two groups \(k\).
 
 ** Power (single cells as units)
 

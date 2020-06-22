@@ -131,7 +131,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[27]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -142,7 +142,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[28]:
   :END:
 
 * Methods
@@ -279,7 +279,7 @@
    this difficulty, our method can still accurately estimate the variance of
    true gene expression.
 
-** Improved limma
+** Controlling FDR
 
    Given transformed data and standard errors, DE analysis is performed in two
    steps:
@@ -287,14 +287,16 @@
    1. Estimate the effect of the covariate of interest by GLS
    2. Estimate moderated test statistics and \(p\)-values by EB treatment of
       the standard errors from (1)
+   3. Control FDR by applying e.g., the BH procedure to the \(p\)-values from
+      (2)
 
    [[https://arxiv.org/abs/1901.10679][Lu and Stephens 2019]] describe a more
-   powerful approach to solve (2).
+   powerful approach to solve (3).
 
 ** Simulation
 
    Implement a simplified
-   [[https://stephenslab.github.io/dsc-wiki/overview.html][DSC]].
+   [[https://stephenslab.github.io/dsc-log-fold-change][DSC]].
 
    #+NAME: simulation
    #+BEGIN_SRC ipython
@@ -508,7 +510,8 @@
 
    We previously evaluated ~mpebpm~ [[file:mpebpm.org::#accuracy][by simulating
    from a point-Gamma expression model]]. Now, simulate from a Gamma model, and
-   evaluate the accuracy of estimating \(\V[\ln\lambda_{ij}]\).
+   evaluate the accuracy of estimating \(\E[\ln\lambda_{ij}]\) and
+   \(\V[\ln\lambda_{ij}]\).
 
    #+BEGIN_SRC ipython
      def evaluate(num_samples, num_mols, num_trials=10, **kwargs):
@@ -524,44 +527,48 @@
        onehot[np.arange(onehot.shape[0]), np.arange(onehot.shape[0]) // num_samples] = 1
        onehot = ss.csr_matrix(onehot)
 
+       # Important: this is analytic
+       theta = mpebpm.sgd.ebpm_point(x.A, s=s, onehot=onehot.A)
        log_mu, neg_log_phi = mpebpm.sgd.ebpm_gamma(x, s=s, onehot=onehot, **kwargs)
        result = pd.DataFrame(
          [(a[0] // num_trials, int(a[1]), int(a[2]), int(a[3]), int(a[4]), a[-1], trial)
           for a in args
           for trial in range(num_trials)],
          columns=['num_samples', 'num_mols', 'log_mu', 'log_phi', 'logodds', 'fold', 'trial'])
-       result['mean'] = np.exp(result['log_mu'])
-       result['var'] = (1 - sp.expit(result['logodds'])) * np.exp(2 * result['log_mu'] + result['log_phi']) + sp.expit(-result['logodds']) * (1 - sp.expit(result['logodds'])) * np.exp(2 * result['log_mu'])
-
+       result['theta_hat'] = theta.ravel(order='F')
        result['log_mu_hat'] = log_mu.ravel(order='F')
        result['log_phi_hat'] = -neg_log_phi.ravel(order='F')
-       result['mean_hat'] = np.exp(result['log_mu_hat'])
-       result['var_hat'] = np.exp(2 * result['log_mu_hat'] + result['log_phi_hat'])
+       # Important: sign flipped in scqtl.simulation.simulate
+       result['mean_log'] = sp.digamma(np.exp(-query['log_phi'])) + query['log_mu'] + query['log_phi']
+       result['var_log'] = sp.polygamma(1, np.exp(-result['log_phi']))
+       result['mean_log_hat'] = sp.digamma(np.exp(-result['log_phi_hat'])) + result['log_mu_hat'] + result['log_phi_hat']
+       result['var_log_hat'] = sp.polygamma(1, np.exp(-result['log_phi_hat']))
        return result
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[20]:
+   # Out[185]:
    :END:
 
    Run the simulation.
 
    #+BEGIN_SRC ipython :async t
      result = [evaluate(num_samples=num_samples,
-                        num_mols=int(1e5),
+                        num_mols=num_mols,
                         batch_size=32,
                         num_epochs=num_epochs,
-                        log_dir=f'runs/mpebpm/gamma-sim-{num_samples}/')
+                        log_dir=f'runs/mpebpm/gamma-sim-{num_mols}-{num_samples}/')
+               for num_mols in (10000, 100000)
                # Important: for fixed batch size, having more samples means more
                # updates to each parameter per epoch
-               for num_samples, num_epochs in zip((100, 1000), (200, 20))]
+               for num_samples, num_epochs in zip((100, 1000), (400, 40))]
      pd.concat(result).to_csv('/scratch/midway2/aksarkar/ideas/mpebpm-gamma-sim.txt.gz', sep='\t')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[21]:
+   # Out[170]:
    :END:
 
    Read the results.
@@ -572,38 +579,117 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[24]:
+   # Out[172]:
    :END:
 
-   Compare the estimated \(\V[\ln\lambda_{ij}]\) to the ground truth, limiting
-   only to simulations with \(\ln\mu > -11\). (The performance is much worse
-   for simulations with lower mean expression.)
+   Compare the estimated \(\E[\ln\lambda_{ij}]\) to the ground truth.
 
-   #+BEGIN_SRC ipython :ipyfile figure/voom.org/sim-var-log.png
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/sim-mean-log.png
      plt.clf()
-     fig, ax = plt.subplots(1, 2, sharey=True)
-     fig.set_size_inches(4.5, 2.5)
-     lim = [1e-4, 1e2]
-     for a, (k, g) in zip(ax, result.groupby('num_samples')):
-       query = g[g['log_mu'] > -11]
-       a.set_xscale('log')
-       a.set_yscale('log')
-       a.scatter(sp.polygamma(1, np.exp(-query['log_phi'])),
-                 sp.polygamma(1, np.exp(-query['log_phi_hat'])),
-                 s=1, c='k', alpha=0.2)
+     fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+     fig.set_size_inches(4.5, 4.5)
+     lim = [-20, -5]
+     for a, (k, g) in zip(ax.ravel(), result.groupby(['num_samples', 'num_mols'])):
+       a.scatter(sp.digamma(np.exp(-g['log_phi'])) + g['log_mu'] + g['log_phi'],
+                 sp.digamma(np.exp(-g['log_phi_hat'])) + g['log_mu_hat'] + g['log_phi_hat'], s=1, c='k', alpha=0.3)
        a.plot(lim, lim, lw=1, ls=':', c='r')
        a.set_xlim(lim)
        a.set_ylim(lim)
-       a.set_title(f'$n$={k}')
-       a.set_xlabel('True $\mathrm{V}[\ln\ \lambda]$')
-     ax[0].set_ylabel('Estimated $\mathrm{V}[\ln\ \lambda]$')
+       a.set_title(f'$n$={k[0]}, $s$={k[1]}')
+       a.set_xlabel('True $\mathrm{E}[\ln\ \lambda]$')
+     for a in ax:
+       a[0].set_ylabel('Estimated $\mathrm{E}[\ln\ \lambda]$')
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[53]:
+   # Out[195]:
+   [[file:figure/voom.org/sim-mean-log.png]]
+   :END:
+
+   Estimate \(\E[\ln\lambda_{ij}]\) under a point mass expression model, and
+   compare to the ground truth.
+
+   #+BEGIN_SRC ipython :ipyfile :ipyfile figure/voom.org/sim-gam-vs-point.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+     fig.set_size_inches(4.5, 4.5)
+     lim = [-15, -5]
+     for a, (k, g) in zip(ax.ravel(), result.groupby(['num_samples', 'num_mols'])):
+       a.scatter(sp.digamma(np.exp(-g['log_phi'])) + g['log_mu'] + g['log_phi'], g['theta_hat'], s=1, c='k', alpha=0.3)
+       a.plot(lim, lim, lw=1, ls=':', c='r')
+       a.set_xlim(lim)
+       a.set_ylim(lim)
+       a.set_title(f'$n$={k[0]}, $s$={k[1]}')
+       a.set_xlabel('True $\mathrm{E}[\ln\ \lambda]$')
+     for a in ax:
+       a[0].set_ylabel('Estimated $\mathrm{E}[\ln\ \lambda]$')
+     fig.tight_layout()
+
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[183]:
+   [[file:figure/voom.org/sim-gam-vs-point.png]]
+   :END:
+
+   Compare the estimated \(\V[\ln\lambda_{ij}]\) to the ground truth.
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/sim-var-log.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+     fig.set_size_inches(4.5, 4.5)
+     lim = [1e-4, 1e2]
+     for a, (k, g) in zip(ax.ravel(), result.groupby(['num_samples', 'num_mols'])):
+       query = g
+       a.set_xscale('log')
+       a.set_yscale('log')
+       a.scatter(query['var_log'], query['var_log_hat'], s=1, c='k', alpha=0.2)
+       a.plot(lim, lim, lw=1, ls=':', c='r')
+       a.set_xlim(lim)
+       a.set_ylim(lim)
+       a.set_title(f'$n$={k[0]}, $s$={k[1]}')
+       a.set_xlabel('True $\mathrm{V}[\ln\ \lambda]$')
+     for a in ax:
+       a[0].set_ylabel('Estimated $\mathrm{V}[\ln\ \lambda]$')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[196]:
    [[file:figure/voom.org/sim-var-log.png]]
+   :END:
+
+   Compare the estimated \(\V[\ln\lambda_{ij}]\) to the ground truth,
+   restricting to genes with \(\ln\mu > -11\).
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/sim-var-log-mu-pass.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+     fig.set_size_inches(4.5, 4.5)
+     lim = [1e-4, 1e2]
+     for a, (k, g) in zip(ax.ravel(), result.groupby(['num_samples', 'num_mols'])):
+       query = g[g['log_mu'] > -10]
+       a.set_xscale('log')
+       a.set_yscale('log')
+       a.scatter(query['var_log'], query['var_log_hat'], s=1, c='k', alpha=0.2)
+       a.plot(lim, lim, lw=1, ls=':', c='r')
+       a.set_xlim(lim)
+       a.set_ylim(lim)
+       a.set_title(f'$n$={k[0]}, $s$={k[1]}')
+       a.set_xlabel('True $\mathrm{V}[\ln\ \lambda]$')
+     for a in ax:
+       a[0].set_ylabel('Estimated $\mathrm{V}[\ln\ \lambda]$')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[200]:
+   [[file:figure/voom.org/sim-var-log-mu-pass.png]]
    :END:
 
 ** Estimation of true effect size distribution

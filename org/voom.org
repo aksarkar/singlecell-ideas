@@ -131,7 +131,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[27]:
+  # Out[20]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -142,7 +142,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[28]:
+  # Out[21]:
   :END:
 
 * Methods
@@ -504,7 +504,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[217]:
+   # Out[3]:
    :END:
 
 * Results
@@ -871,8 +871,8 @@
 
     #+BEGIN_SRC ipython :async t
       n_cells = 1000
-      x1, onehot1 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=1, n_cells=n_cells, min_counts=0, to_dense=False)
-      x2, onehot2 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=n_cells, n_cells=2, min_counts=0, to_dense=False)
+      x1, onehot1 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=1, n_cells=n_cells, min_counts=0, to_dense=False, seed=1)
+      x2, onehot2 = simulate_null(dat[dat.obs['cell_type'] == 'b_cells'], n_donors=n_cells, n_cells=2, min_counts=0, to_dense=False, seed=2)
       mix = ss.vstack([x1, onehot2.T @ x2], format='csr')
       mix = anndata.AnnData(mix)
       # Estimate the global mean for filtering genes
@@ -882,7 +882,7 @@
 
     #+RESULTS:
     :RESULTS:
-    # Out[232]:
+    # Out[28]:
     :END:
 
     #+BEGIN_SRC ipython :async t
@@ -892,19 +892,19 @@
 
     #+RESULTS:
     :RESULTS:
-    # Out[233]:
-    : (0.96875, 4096)
+    # Out[29]:
+    : (0.9706529713866471, 4089)
     :END:
 
     Fit a point mass expression model to each group.
 
     #+BEGIN_SRC ipython
-      theta = np.log(onehot.T @ mix.X[:,query].A + 1) - np.log(onehot.T @ mix.X.sum(axis=1))
+      theta = np.log(onehot.T @ mix.X[:,query].A + 1) - np.log(onehot.T @ mix.X.sum(axis=1)).A
     #+END_SRC
 
     #+RESULTS:
     :RESULTS:
-    # Out[238]:
+    # Out[30]:
     :END:
 
     Fit a Gamma expression model to each group.
@@ -950,17 +950,58 @@
     :END:
 
     The problem seems to be that in ~limma~, observed \(x_{ij} = 0\) are
-    treated as having \(\ln\lambda_{ij} = -\ln\xiplus\) in group 1, and
-    \(\ln\lambda_{ij} = -\ln (2\xiplus)\) in group 2. This problem cannot be
-    solved by using the posterior mean of gene expression under e.g., Gamma
-    models for each group instead, because the posterior mean is
+    treated as having \(\ln\lambda_{ij} = -\ln\xiplus\). This treatment makes
+    sense, because observing a zero is strong information that true gene
+    expression is not bigger than \(1 / \xiplus\); however, it is clear that
+    with double \(\xiplus\), observing a zero further bounds true gene
+    expression. Therefore, ~limma~ is expected to identify all genes as
+    "differentially expressed" in this scenario. This problem cannot be solved
+    by using the posterior mean of gene expression under e.g., Gamma models for
+    each group instead, because the posterior mean is
 
     \begin{equation}
-      \E[\ln\lambda_{ij} \mid x_{ij}, \xiplus, g_{jk}] = \psi(x_{ij} + \phi_{jk}^{-1}) + \ln(x_{ij} + \phi_{jk}^{-1}) + \ln(\xiplus + \mu_{jk}^{-1}\phi_{jk}^{-1}),
+      \E[\ln\lambda_{ij} \mid x_{ij}, \xiplus, g_{jk}] = \psi(x_{ij} + \phi_{jk}^{-1}) + \ln(\xiplus + \mu_{jk}^{-1}\phi_{jk}^{-1}),
     \end{equation}
 
-    and we have shown empirically that \(\mu_{jk}\) and \(\phi_{jk}\) are
-    nearly equal between the two groups \(k\).
+    and we have shown empirically that the prior means are equal. Therefore, it
+    will still be the case that the posterior means will be systematically
+    different between two groups with systematically different size
+    factors. Suppose instead we use the estimate \(\hat\theta_{jk}\) under a
+    point mass model and its estimated standard error to compute a \(z\)-score.
+
+    #+BEGIN_SRC ipython
+      # Important: this only reduces when there is no design matrix
+      s2 = 1 / (onehot.T @ mix.X[:,query].A)
+      z = (theta[0].ravel() - theta[1].ravel()) / np.sqrt(s2.sum(axis=0))
+      (st.norm().sf(abs(z)) < 0.01).mean()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[31]:
+    : 0.016385424309122036
+    :END:
+
+    Plot the distribution of \(z\)-scores in this simulation against a standard
+    normal density (to make sure we don't need to use a \(t\) distribution
+    instead).
+
+    #+BEGIN_SRC ipython :ipyfile figure/voom.org/b_cells-sim-unequal-s-dist.png
+      grid = np.linspace(-4, 4, 1000)
+      plt.clf()
+      plt.gcf().set_size_inches(2.5, 2.5)
+      plt.hist(z, bins=11, color='0.7', density=True)
+      plt.plot(grid, st.norm().pdf(grid), lw=1, c='k')
+      plt.xlabel('$z$-score')
+      plt.ylabel('Density')
+      plt.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[34]:
+    [[file:figure/voom.org/b_cells-sim-unequal-s-dist.png]]
+    :END:
 
 ** Power (single cells as units)
 

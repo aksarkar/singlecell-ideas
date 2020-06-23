@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-22 Mon 19:09 -->
+<!-- 2020-06-23 Tue 02:47 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An improved voom transform for scRNA-seq data</title>
@@ -1135,9 +1135,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org541743d" class="outline-4">
-<h4 id="org541743d">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org541743d">
+<div id="outline-container-org769a76a" class="outline-4">
+<h4 id="org769a76a">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org769a76a">
 <p>
 To generate single cells with unequal size factors, combine simulated
 doublets from sorted cells in one group.
@@ -1179,8 +1179,8 @@ Repeat the analysis for a larger number of cells.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">n_cells</span> = 1000
-<span class="org-variable-name">x1</span>, <span class="org-variable-name">onehot1</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=1, n_cells=n_cells, min_counts=0, to_dense=<span class="org-constant">False</span>)
-<span class="org-variable-name">x2</span>, <span class="org-variable-name">onehot2</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=n_cells, n_cells=2, min_counts=0, to_dense=<span class="org-constant">False</span>)
+<span class="org-variable-name">x1</span>, <span class="org-variable-name">onehot1</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=1, n_cells=n_cells, min_counts=0, to_dense=<span class="org-constant">False</span>, seed=1)
+<span class="org-variable-name">x2</span>, <span class="org-variable-name">onehot2</span> = simulate_null(dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>], n_donors=n_cells, n_cells=2, min_counts=0, to_dense=<span class="org-constant">False</span>, seed=2)
 <span class="org-variable-name">mix</span> = ss.vstack([x1, onehot2.T @ x2], <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>)
 <span class="org-variable-name">mix</span> = anndata.AnnData(mix)
 <span class="org-comment-delimiter"># </span><span class="org-comment">Estimate the global mean for filtering genes</span>
@@ -1196,7 +1196,7 @@ Repeat the analysis for a larger number of cells.
 </div>
 
 <pre class="example">
-(0.96875, 4096)
+(0.9706529713866471, 4089)
 
 </pre>
 
@@ -1205,7 +1205,7 @@ Fit a point mass expression model to each group.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">theta</span> = np.log(onehot.T @ mix.X[:,query].A + 1) - np.log(onehot.T @ mix.X.<span class="org-builtin">sum</span>(axis=1))
+<pre class="src src-ipython"><span class="org-variable-name">theta</span> = np.log(onehot.T @ mix.X[:,query].A + 1) - np.log(onehot.T @ mix.X.<span class="org-builtin">sum</span>(axis=1)).A
 </pre>
 </div>
 
@@ -1254,20 +1254,64 @@ fig.tight_layout()
 
 <p>
 The problem seems to be that in <code>limma</code>, observed \(x_{ij} = 0\) are
-treated as having \(\ln\lambda_{ij} = -\ln\xiplus\) in group 1, and
-\(\ln\lambda_{ij} = -\ln (2\xiplus)\) in group 2. This problem cannot be
-solved by using the posterior mean of gene expression under e.g., Gamma
-models for each group instead, because the posterior mean is
+treated as having \(\ln\lambda_{ij} = -\ln\xiplus\). This treatment makes
+sense, because observing a zero is strong information that true gene
+expression is not bigger than \(1 / \xiplus\); however, it is clear that
+with double \(\xiplus\), observing a zero further bounds true gene
+expression. Therefore, <code>limma</code> is expected to identify all genes as
+&ldquo;differentially expressed&rdquo; in this scenario. This problem cannot be solved
+by using the posterior mean of gene expression under e.g., Gamma models for
+each group instead, because the posterior mean is
 </p>
 
 \begin{equation}
-  \E[\ln\lambda_{ij} \mid x_{ij}, \xiplus, g_{jk}] = \psi(x_{ij} + \phi_{jk}^{-1}) + \ln(x_{ij} + \phi_{jk}^{-1}) + \ln(\xiplus + \mu_{jk}^{-1}\phi_{jk}^{-1}),
+  \E[\ln\lambda_{ij} \mid x_{ij}, \xiplus, g_{jk}] = \psi(x_{ij} + \phi_{jk}^{-1}) + \ln(\xiplus + \mu_{jk}^{-1}\phi_{jk}^{-1}),
 \end{equation}
 
 <p>
-and we have shown empirically that \(\mu_{jk}\) and \(\phi_{jk}\) are
-nearly equal between the two groups \(k\).
+and we have shown empirically that the prior means are equal. Therefore, it
+will still be the case that the posterior means will be systematically
+different between two groups with systematically different size
+factors. Suppose instead we use the estimate \(\hat\theta_{jk}\) under a
+point mass model and its estimated standard error to compute a \(z\)-score.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: this only reduces when there is no design matrix</span>
+<span class="org-variable-name">s2</span> = 1 / (onehot.T @ mix.X[:,query].A)
+<span class="org-variable-name">z</span> = (theta[0].ravel() - theta[1].ravel()) / np.sqrt(s2.<span class="org-builtin">sum</span>(axis=0))
+(st.norm().sf(<span class="org-builtin">abs</span>(z)) &lt; 0.01).mean()
+</pre>
+</div>
+
+<pre class="example">
+0.016385424309122036
+
+</pre>
+
+<p>
+Plot the distribution of \(z\)-scores in this simulation against a standard
+normal density (to make sure we don&rsquo;t need to use a \(t\) distribution
+instead).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(-4, 4, 1000)
+plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.hist(z, bins=11, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+plt.plot(grid, st.norm().pdf(grid), lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'$z$-score'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/b_cells-sim-unequal-s-dist.png" alt="b_cells-sim-unequal-s-dist.png">
+</p>
+</div>
 </div>
 </div>
 </div>
@@ -1357,9 +1401,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org3c05f52" class="outline-4">
-<h4 id="org3c05f52">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org3c05f52">
+<div id="outline-container-org4642170" class="outline-4">
+<h4 id="org4642170">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org4642170">
 <p>
 Generate null data with different size factors by assigning different
 numbers of cells to different donors.
@@ -1483,7 +1527,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-22 Mon 19:09</p>
+<p class="date">Created: 2020-06-23 Tue 02:47</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

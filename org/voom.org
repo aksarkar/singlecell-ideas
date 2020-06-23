@@ -131,7 +131,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[20]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -142,7 +142,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[21]:
+  # Out[3]:
   :END:
 
 * Methods
@@ -320,7 +320,7 @@
          return query.X, onehot
 
      def estimate_limma_voom(x, onehot, design=None, **kwargs):
-       """Return DataFrame of bhat, se"""
+       """Return MarrayLM object"""
        # Important: limma expects genes x samples
        if design is None:
          design = np.vstack([onehot[:,0], np.ones(x.shape[0])]).T
@@ -329,6 +329,23 @@
          y = limma.voom(x.T @ onehot, design)
        fit = limma.lmFit(y, design)
        return fit
+
+     def estimate_point(x, onehot, **kwargs):
+       """Return DataFrame of bhat, se, p
+
+       Treating cells as units, for each group, estimate θ_j = log μ_j under a point
+       mass expression model
+
+       """
+       theta = np.log(onehot.T @ x + 1) - np.log(onehot.T @ x.sum(axis=1, keepdims=True))
+       if ss.isspmatrix(theta):
+         theta = theta.A
+       bhat = theta[0] - theta[1]
+       V = 1 / (onehot.T @ x + 1)
+       se = np.sqrt(V.sum(axis=0))
+       z = bhat / se
+       p = st.t(4).sf(abs(z))
+       return pd.DataFrame({'bhat': bhat, 'se': se, 'p': p})
 
      def estimate_wls_point(x, onehot, design=None, **kwargs):
        """Return DataFrame of bhat, se
@@ -409,6 +426,9 @@
            for test in ('moderated_t', 'z'):
              pval = globals()[f'estimate_{test}'](fit)
              result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
+         for method in ('point',):
+           fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
+           result.append((b, n_cells, method, 'z', i, (fit['p'] < alpha).mean()))
        result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'tpr'])
        return result
 
@@ -504,7 +524,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[3]:
+   # Out[51]:
    :END:
 
 * Results
@@ -794,7 +814,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[208]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython :async t
@@ -964,10 +984,11 @@
     \end{equation}
 
     and we have shown empirically that the prior means are equal. Therefore, it
-    will still be the case that the posterior means will be systematically
-    different between two groups with systematically different size
-    factors. Suppose instead we use the estimate \(\hat\theta_{jk}\) under a
-    point mass model and its estimated standard error to compute a \(z\)-score.
+    will still be the case that the posterior means for observed zeros will be
+    systematically different between two groups with systematically different
+    size factors. Suppose instead we use the estimate \(\hat\theta_{jk}\) under
+    a point mass model and its estimated standard error to compute a
+    \(z\)-score.
 
     #+BEGIN_SRC ipython
       # Important: this only reduces when there is no design matrix
@@ -1001,6 +1022,57 @@
     :RESULTS:
     # Out[34]:
     [[file:figure/voom.org/b_cells-sim-unequal-s-dist.png]]
+    :END:
+
+*** Pathological example
+
+    #+BEGIN_SRC ipython :async t
+      x, onehot = simulate_null(dat, n_donors=2, n_cells=400, min_counts=30, seed=2)
+      fit = estimate_point(x.A, onehot.A)
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[61]:
+    :END:
+
+    #+BEGIN_SRC ipython :ipyfile figure/voom.org/point-example-hist.png
+      plt.clf()
+      plt.gcf().set_size_inches(3, 3)
+      plt.hist(fit['bhat'] / fit['se'], bins=20, density=True, color='0.7')
+      plt.xlabel('$z$-score')
+      plt.ylabel('Density')
+      plt.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[78]:
+    [[file:figure/voom.org/point-example-hist.png]]
+    :END:
+
+    #+BEGIN_SRC ipython :ipyfile figure/voom.org/point-example.png
+      lim = [1e-4, 1]
+      cm = plt.get_cmap('Dark2')
+      plt.clf()
+      plt.gcf().set_size_inches(3, 3)
+      plt.xscale('log')
+      plt.yscale('log')
+      for i, (F, label) in enumerate(zip([st.norm(), st.t(1, scale=0.1)], ['N(0, 1)', '$t_4$'])):
+        plt.plot(np.linspace(0, 1, fit.shape[0] + 1)[1:], np.sort(F.cdf(fit['bhat'] / fit['se'])), lw=1, c=cm(i), label=label)
+      plt.plot(lim, lim, lw=1, ls=':', c='k')
+      plt.xlim(lim)
+      plt.ylim(lim)
+      plt.legend(frameon=False)
+      plt.xlabel('Theoretical quantile')
+      plt.ylabel('Observed quantile')
+      plt.tight_layout()
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[81]:
+    [[file:figure/voom.org/point-example.png]]
     :END:
 
 ** Power (single cells as units)

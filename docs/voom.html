@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-23 Tue 14:41 -->
+<!-- 2020-06-23 Tue 18:07 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An improved voom transform for scRNA-seq data</title>
@@ -271,6 +271,7 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#orga144bdf">Accuracy of estimation</a></li>
 <li><a href="#org1638472">Estimation of true effect size distribution</a></li>
+<li><a href="#org403ef73">Simulation sanity check</a></li>
 <li><a href="#org05839be">Type 1 error rate (single cells as units)</a></li>
 <li><a href="#org6fff017">Power (single cells as units)</a></li>
 <li><a href="#org3aa1007">Type 1 error rate (donors as units)</a></li>
@@ -608,14 +609,17 @@ Implement a simplified
 <span class="org-doc">  """</span>
   <span class="org-variable-name">query</span> = sc.pp.subsample(dat, n_obs=n_donors * n_cells, random_state=seed, copy=<span class="org-constant">True</span>)
   sc.pp.filter_genes(query, min_counts=min_counts)
-  <span class="org-keyword">if</span> <span class="org-keyword">not</span> ss.isspmatrix_csr(query.X):
-    <span class="org-variable-name">query.X</span> = query.X.tocsr()
   <span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(query.shape[0]), (np.arange(query.shape[0]), np.repeat(np.arange(n_donors), n_cells)))).tocsr()
   <span class="org-keyword">if</span> <span class="org-keyword">not</span> to_array:
     <span class="org-keyword">return</span> query, onehot
   <span class="org-keyword">elif</span> to_dense:
-    <span class="org-keyword">return</span> query.X.A, onehot.A
+    <span class="org-keyword">if</span> ss.isspmatrix(query.X):
+      <span class="org-keyword">return</span> query.X.A, onehot.A
+    <span class="org-keyword">else</span>:
+      <span class="org-keyword">return</span> query.X, onehot.A
   <span class="org-keyword">else</span>:
+    <span class="org-keyword">if</span> ss.isspmatrix(query.X) <span class="org-keyword">and</span> <span class="org-keyword">not</span> ss.isspmatrix_csr(query.X):
+      <span class="org-keyword">return</span> query.X.tocsr(), onehot.A
     <span class="org-keyword">return</span> query.X, onehot
 
 <span class="org-keyword">def</span> <span class="org-function-name">estimate_limma_voom</span>(x, onehot, design=<span class="org-constant">None</span>, **kwargs):
@@ -787,7 +791,9 @@ Implement a simplified
   <span class="org-comment-delimiter"># </span><span class="org-comment">effects in the appropriate group</span>
   <span class="org-variable-name">b</span> = np.zeros(x.shape[1])
   <span class="org-variable-name">effect</span> = np.random.uniform(size=x.shape[1]) &gt; pi0
-  <span class="org-variable-name">b</span>[effect] = g.rvs(size=effect.<span class="org-builtin">sum</span>())
+  <span class="org-variable-name">b</span>[effect] = 2
+  <span class="org-variable-name">sign</span> = np.random.uniform(size=x.shape[1]) &gt; 0.5
+  <span class="org-variable-name">b</span>[sign] = -b[sign]
   <span class="org-comment-delimiter"># </span><span class="org-comment">Convert to CSC to deal with half the cells at a time</span>
   <span class="org-variable-name">y</span> = x.tocsc()
   <span class="org-variable-name">data</span> = y.data.copy()
@@ -815,7 +821,7 @@ Implement a simplified
       <span class="org-keyword">for</span> fdr_method <span class="org-keyword">in</span> (<span class="org-string">'fdr_bh'</span>, <span class="org-string">'lfsr'</span>):
         <span class="org-variable-name">score</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{fdr_method}'</span>](fit)
         <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(b, 0)).mean()
-        <span class="org-variable-name">power</span> = ((score &lt; fdr) &amp; ~np.isclose(b, 0)).mean()
+        <span class="org-variable-name">power</span> = (score[~np.isclose(b, 0)] &lt; fdr).mean()
         result.append((pi0, fdr, n_donors, n_cells, method, fdr_method, i, fdp, power))
   <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'pi0'</span>, <span class="org-string">'fdr'</span>, <span class="org-string">'n_donors'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'fdr_method'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fdp'</span>, <span class="org-string">'power'</span>])
   <span class="org-keyword">return</span> result
@@ -1109,6 +1115,56 @@ plt.tight_layout()
 </div>
 </div>
 
+<div id="outline-container-org403ef73" class="outline-3">
+<h3 id="org403ef73">Simulation sanity check</h3>
+<div class="outline-text-3" id="text-org403ef73">
+<p>
+As a sanity check, use bulk RNA-seq data from GTEx v6 lung.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.AnnData(rpy2.robjects.r[<span class="org-string">'readRDS'</span>](<span class="org-string">'/project2/gilad/joycehsiao/dsc-log-fold-change/dsc/data/gtex_lung.rds'</span>).T)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_donors</span> = 4
+<span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, n_donors=2 * n_donors, n_cells=1, to_dense=<span class="org-constant">True</span>, min_counts=2000, seed=1)
+<span class="org-variable-name">design</span> = np.ones((2 * n_donors, 2))
+<span class="org-variable-name">design</span>[:n_donors,0] = 0
+(estimate_moderated_t(estimate_limma_voom(x, onehot, design)) &lt; 0.01).mean()
+</pre>
+</div>
+
+<pre class="example">
+0.005917682388270624
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(3)
+<span class="org-variable-name">pi0</span> = 0.9
+<span class="org-variable-name">z</span> = np.random.uniform(size=x.shape[1]) &gt; pi0
+<span class="org-variable-name">s</span> = np.random.uniform(size=x.shape[1]) &gt; 0.5
+<span class="org-variable-name">x1</span> = x[:n_donors].copy()
+<span class="org-variable-name">x1</span>[:,z &amp; s] = st.binom(n=x1[:,z &amp; s].astype(<span class="org-builtin">int</span>), p=0.5).rvs()
+<span class="org-variable-name">x2</span> = x[n_donors:].copy()
+<span class="org-variable-name">x2</span>[:,z &amp; ~s] = st.binom(n=x2[:,z &amp; ~s].astype(<span class="org-builtin">int</span>), p=0.5).rvs()
+<span class="org-variable-name">y</span> = np.vstack([x1, x2])
+<span class="org-variable-name">fit</span> = estimate_limma_voom(y, onehot, design)
+<span class="org-variable-name">fit</span> = limma.eBayes(fit)
+<span class="org-variable-name">score</span> = estimate_fdr_bh(fit)
+(score[z] &lt; 0.1).mean(), (score[~z] &lt; 0.1).mean()
+</pre>
+</div>
+
+<pre class="example">
+(0.33662477558348297, 0.0025470219435736676)
+
+</pre>
+</div>
+</div>
+
 <div id="outline-container-org05839be" class="outline-3">
 <h3 id="org05839be">Type 1 error rate (single cells as units)</h3>
 <div class="outline-text-3" id="text-org05839be">
@@ -1155,9 +1211,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org4642170" class="outline-4">
-<h4 id="org4642170">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org4642170">
+<div id="outline-container-org4564469" class="outline-4">
+<h4 id="org4564469">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org4564469">
 <p>
 To generate single cells with unequal size factors, combine simulated
 doublets from sorted cells in one group.
@@ -1474,9 +1530,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org4564469" class="outline-4">
-<h4 id="org4564469">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org4564469">
+<div id="outline-container-org36512c2" class="outline-4">
+<h4 id="org36512c2">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org36512c2">
 <p>
 Generate null data with different size factors by assigning different
 numbers of cells to different donors.
@@ -1600,7 +1656,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-23 Tue 14:41</p>
+<p class="date">Created: 2020-06-23 Tue 18:07</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

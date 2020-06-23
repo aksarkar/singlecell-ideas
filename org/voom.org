@@ -309,14 +309,17 @@
        """
        query = sc.pp.subsample(dat, n_obs=n_donors * n_cells, random_state=seed, copy=True)
        sc.pp.filter_genes(query, min_counts=min_counts)
-       if not ss.isspmatrix_csr(query.X):
-         query.X = query.X.tocsr()
        onehot = ss.coo_matrix((np.ones(query.shape[0]), (np.arange(query.shape[0]), np.repeat(np.arange(n_donors), n_cells)))).tocsr()
        if not to_array:
          return query, onehot
        elif to_dense:
-         return query.X.A, onehot.A
+         if ss.isspmatrix(query.X):
+           return query.X.A, onehot.A
+         else:
+           return query.X, onehot.A
        else:
+         if ss.isspmatrix(query.X) and not ss.isspmatrix_csr(query.X):
+           return query.X.tocsr(), onehot.A
          return query.X, onehot
 
      def estimate_limma_voom(x, onehot, design=None, **kwargs):
@@ -488,7 +491,9 @@
        # effects in the appropriate group
        b = np.zeros(x.shape[1])
        effect = np.random.uniform(size=x.shape[1]) > pi0
-       b[effect] = g.rvs(size=effect.sum())
+       b[effect] = 2
+       sign = np.random.uniform(size=x.shape[1]) > 0.5
+       b[sign] = -b[sign]
        # Convert to CSC to deal with half the cells at a time
        y = x.tocsc()
        data = y.data.copy()
@@ -516,7 +521,7 @@
            for fdr_method in ('fdr_bh', 'lfsr'):
              score = globals()[f'estimate_{fdr_method}'](fit)
              fdp = ((score < fdr) & np.isclose(b, 0)).mean()
-             power = ((score < fdr) & ~np.isclose(b, 0)).mean()
+             power = (score[~np.isclose(b, 0)] < fdr).mean()
              result.append((pi0, fdr, n_donors, n_cells, method, fdr_method, i, fdp, power))
        result = pd.DataFrame(result, columns=['pi0', 'fdr', 'n_donors', 'n_cells', 'method', 'fdr_method', 'trial', 'fdp', 'power'])
        return result
@@ -524,7 +529,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[51]:
+   # Out[209]:
    :END:
 
 * Results
@@ -801,6 +806,55 @@
    [[file:figure/voom.org/b_cells-cytotoxic_t-fitted_g.png]]
    :END:
 
+** Simulation sanity check
+
+   As a sanity check, use bulk RNA-seq data from GTEx v6 lung.
+
+   #+BEGIN_SRC ipython
+     dat = anndata.AnnData(rpy2.robjects.r['readRDS']('/project2/gilad/joycehsiao/dsc-log-fold-change/dsc/data/gtex_lung.rds').T)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[29]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     n_donors = 4
+     x, onehot = simulate_null(dat, n_donors=2 * n_donors, n_cells=1, to_dense=True, min_counts=2000, seed=1)
+     design = np.ones((2 * n_donors, 2))
+     design[:n_donors,0] = 0
+     (estimate_moderated_t(estimate_limma_voom(x, onehot, design)) < 0.01).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[176]:
+   : 0.005917682388270624
+   :END:
+
+   #+BEGIN_SRC ipython
+     np.random.seed(3)
+     pi0 = 0.9
+     z = np.random.uniform(size=x.shape[1]) > pi0
+     s = np.random.uniform(size=x.shape[1]) > 0.5
+     x1 = x[:n_donors].copy()
+     x1[:,z & s] = st.binom(n=x1[:,z & s].astype(int), p=0.5).rvs()
+     x2 = x[n_donors:].copy()
+     x2[:,z & ~s] = st.binom(n=x2[:,z & ~s].astype(int), p=0.5).rvs()
+     y = np.vstack([x1, x2])
+     fit = estimate_limma_voom(y, onehot, design)
+     fit = limma.eBayes(fit)
+     score = estimate_fdr_bh(fit)
+     (score[z] < 0.1).mean(), (score[~z] < 0.1).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[184]:
+   : (0.33662477558348297, 0.0025470219435736676)
+   :END:
+
 ** Type 1 error rate (single cells as units)
 
    To generate null data, randomly sample cells from a homogeneous population,
@@ -814,7 +868,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[185]:
    :END:
 
    #+BEGIN_SRC ipython :async t

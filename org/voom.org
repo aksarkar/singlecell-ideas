@@ -122,7 +122,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[60]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -309,8 +309,6 @@
        observed) by subsequently applying binomial thinning (Gerard 2019) to *every*
        gene.
 
-       Parameters
-
        dat - AnnData object
        b - log fold change in total number of molecules observed between groups
        n_donors - number of donors per group
@@ -331,37 +329,71 @@
            # Important: keep this sparse to make downsampling non-zeros easier
            temp = query.X[:n_donors * n_cells].astype(int).tocsr()
            y = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(float), temp.indices, temp.indptr), shape=temp.shape)
-           x = ss.vstack((y, query.X[n_donors * n_cells:]), format='csr').A
+           x = ss.vstack((y, query.X[n_donors * n_cells:]), format='csr')
          else:
            # TODO: this breaks for n=0, but treating e.g. bulk RNA-seq counts as
            # sparse is *very* slow
            x = st.binom(n=query.X.astype(int), p=np.exp(b)).rvs().astype(float)
          return anndata.AnnData(x, obs=query.obs, var=query.var), onehot
 
-     def simulate_study_by_donor(dat, pi0=0.9, n_donors=4, n_cells=100, min_counts=10, seed=0):
-       assert n_donors * n_cells <= dat.shape[0]
-       # Important: keep this sparse to make downsampling non-zeros easier
-       x, onehot = simulate_null(dat, n_donors=2 * n_donors, n_cells=n_cells, to_dense=False, min_counts=min_counts, seed=seed)
-       # Simulate effects symmetrically about zero, then convert to negative
-       # effects in the appropriate group
-       b = np.zeros(x.shape[1])
-       effect = np.random.uniform(size=x.shape[1]) > pi0
-       b[effect] = 2
-       sign = np.random.uniform(size=x.shape[1]) > 0.5
-       b[sign] = -b[sign]
-       # Convert to CSC to deal with half the cells at a time
-       y = x.tocsc()
-       data = y.data.copy()
-       for i in range(y.shape[0]):
-         if b[i] > 0:
-           idx = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] > n_donors * n_cells)[0]
-           data[idx] = st.binom(n=y.data[idx].astype(int), p=np.exp(-b[i])).rvs(size=len(idx)).astype(float)
-         elif b[i] < 0:
-           idx = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] < n_donors * n_cells)[0]
-           data[idx] = st.binom(n=y.data[idx].astype(int), p=np.exp(b[i])).rvs(size=len(idx)).astype(float)
-       design = np.ones((2 * n_donors, 2))
-       design[:n_donors,0] = 0
-       return ss.csc_matrix((data, y.indices, y.indptr)).A, onehot, design, b
+     def simulate_effects_law_2014(size, pi0=0.9):
+       """Return effect sizes assumed by Law et al. 2014"""
+       b = np.zeros(size)
+       z = np.random.uniform(size=size) > pi0
+       s = np.random.uniform(size=size) > 0.5
+       b[z & s] = 2
+       b[z & ~s] = -2
+       return b
+
+     def simulate_effects_pn(size, pi0=0.9, scale=1):
+       """Return effect sizes assuming a point-Normal distribution"""
+       b = np.zeros(size)
+       z = np.random.uniform(size=size) > pi0
+       b[z] = st.norm(scale=scale).rvs(size=z.sum())
+       return b
+
+     def simulate_study(dat, g, b=0, n_donors=1, n_cells=100, min_cells=10, seed=0):
+       """Return AnnData object with simulated counts, onehot matrix, design matrix,
+     and true effect size vector
+
+       Simulate non-null data assuming effect size distribution g by first
+       simulating null data, then applying binomial thinning (Gerard 2019) to effect
+       genes.
+
+       dat - AnnData object
+       g - function which returns array of effect sizes
+       b - log fold change in total number of molecules observed between groups
+       n_donors - number of donors per group
+       n_cells - number of cells per donor
+       min_cells - minimum number of non-zero observations to retain genes
+
+       """
+       x, onehot = simulate_null(dat, b=b, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=seed)
+       lfc = g(size=x.shape[1])
+       if ss.isspmatrix(x.X):
+         # Convert to CSC to deal with half the cells at a time
+         y = x.X.tocsc()
+         data = y.data.copy()
+         for i in range(y.shape[0]):
+           if lfc[i] > 0:
+             idx = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] > n_donors * n_cells)[0]
+             data[idx] = st.binom(n=y.data[idx].astype(int), p=np.exp(-lfc[i])).rvs(size=len(idx)).astype(float)
+           elif lfc[i] < 0:
+             idx = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] < n_donors * n_cells)[0]
+             data[idx] = st.binom(n=y.data[idx].astype(int), p=np.exp(lfc[i])).rvs(size=len(idx)).astype(float)
+         x = anndata.AnnData(ss.csc_matrix((data, y.indices, y.indptr)), var=x.var, obs=x.obs)
+       else:
+         y = x.X.copy()
+         query = lfc < 0
+         y[n_donors * n_cells:,query] = st.binom(n=y[n_donors * n_cells,query].astype(int), p=np.exp(lfc[query])).rvs()
+         y[:n_donors * n_cells,~query] = st.binom(n=y[:n_donors * n_cells,~query].astype(int), p=np.exp(lfc[~query])).rvs()
+         x = annData.AnnData(y, var=x.var, obs=x.obs)
+       if n_donors > 1:
+         design = np.ones((2 * n_donors, 2))
+         design[:n_donors,0] = 0
+       else:
+         design = None
+       return x, onehot, design, lfc
 
      def estimate_limma_voom(x, onehot, design=None, **kwargs):
        """Return MarrayLM object
@@ -458,7 +490,7 @@
          log_dir=log_dir)
        # [n_donors, n_genes]
        m = sp.digamma(np.exp(log_inv_disp)) + log_mean - log_inv_disp
-       w = sp.polygamma(1, np.exp(log_inv_disp))
+       w = 1 / sp.polygamma(1, np.exp(log_inv_disp))
        fit = limma.lm_series(m.T, design=design, weights=w.T)
        return fit
 
@@ -474,13 +506,10 @@
        return pval[:,0]
 
      def evaluate_type1(dat, b=0, alpha=0.01, n_cells=100, n_trials=1, min_cells=10):
-       """Estimate Type 1 error to detect DE genes.
+       """Estimate Type 1 error to detect DE genes, treating cells as units.
 
        Use binomial thinning to simulate scenarios with unequal sequencing depth
        (total number of molecules observed).
-
-       If n_donors = 1, treat cells as units and "donors" as groups. Otherwise,
-       treat donors as units.
 
        dat - AnnData object
        b - fold change in total observed molecules between groups
@@ -512,6 +541,20 @@
        return result
 
      def evaluate_type1_by_donor(dat, n_donors, b=0, alpha=0.01, n_cells=100, n_trials=1, min_cells=10):
+       """Estimate Type 1 error to detect DE genes, treating donors as units.
+
+       Use binomial thinning to simulate scenarios with unequal sequencing depth
+       (total number of molecules observed).
+
+       dat - AnnData object
+       b - fold change in total observed molecules between groups
+       n_donor - number of donors per group
+       alpha - significance level
+       n_cells - number of cells per group
+       n_trials - number of simulation trials
+       min_cells - minimum number of non-zero observations to retain a gene
+
+       """
        result = []
        for i in range(n_trials):
          x, onehot = simulate_null(dat, b=b, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=i)
@@ -532,7 +575,18 @@
        result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'fdp'])
        return result
 
+     def estimate_fdr_bh(fit):
+       """Return vector of BH adjusted p-values"""
+       return rpy2.robjects.r['p.adjust'](fit.rx2('p.value')[:,0], method='BH')
+
      def estimate_lfsr(fit):
+       """Return vector of lfsr
+
+       Implement the pipeline of Liu and Stephens 2020
+
+       https://arxiv.org/pdf/1901.10679
+
+       """
        fit1 = ashr.ash(
          betahat=pd.Series(fit.rx2('coefficients')[:,0]),
          sebetahat=pd.Series(np.sqrt(((fit.rx2('df.total') - fit.rx2('df.residual')) * fit.rx2('s2.prior') + fit.rx2('df.residual') * fit.rx2('stdev.unscaled')[:,0]) / fit.rx2('df.total'))),
@@ -540,13 +594,28 @@
          mixcompdist='halfuniform')
        return ashr.get_lfsr(fit1)
 
-     def estimate_fdr_bh(fit):
-       return rpy2.robjects.r['p.adjust'](fit.rx2('p.value')[:,0], method='BH')
+     def evaluate_power(dat, g, b=0, fdr=0.1, n_trials=1, n_cells=100, min_cells=10):
+       """Evaluate power to detect DE genes, assuming effect size distribution g, at
+     specified FDR.
 
-     def evaluate_power_by_donor_fdr(dat, pi0=0.9, fdr=0.1, n_trials=1, n_donors=4, n_cells=100, min_cells=10):
+       dat - AnnData object
+       g - function which returns array of effect sizes
+       n_donors - number of donors per group
+       b - log fold change in total number of molecules observed between groups
+       fdr - False Discovery Rate
+       n_trials - number of simulation trials
+       n_cells - number of cells per donor
+       min_cells - minimum number of non-zero observations to retain genes
+
+       """
        result = []
        for i in range(n_trials):
-         x, onehot, design, b = simulate_study_by_donor(dat, pi0=pi0, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=i)
+         x, onehot, design, b = simulate_study(dat, g, b=b, n_donors=1, n_cells=n_cells, min_cells=min_cells, seed=i)
+         if ss.isspmatrix(x.X):
+           x = x.X.A
+         else:
+           x = x.X
+         onehot = onehot.A
          # Heuristic: fix total number of updates
          num_epochs = 6000 * 64 // x.shape[0]
          for method in ('limma_voom', 'wls_point'):
@@ -557,14 +626,57 @@
              score = globals()[f'estimate_{fdr_method}'](fit)
              fdp = ((score < fdr) & np.isclose(b, 0)).mean()
              power = (score[~np.isclose(b, 0)] < fdr).mean()
-             result.append((pi0, fdr, n_donors, n_cells, method, fdr_method, i, fdp, power))
-       result = pd.DataFrame(result, columns=['pi0', 'fdr', 'n_donors', 'n_cells', 'method', 'fdr_method', 'trial', 'fdp', 'power'])
+             result.append((fdr, n_cells, method, fdr_method, i, fdp, power))
+         for method in ('point',):
+           fit = globals()[f'estimate_{method}'](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
+           score = rpy2.robjects.r['p.adjust'](fit['p'], method='BH')
+           fdp = ((score < fdr) & np.isclose(b, 0)).mean()
+           power = (score[~np.isclose(b, 0)] < fdr).mean()
+           result.append((fdr, n_cells, method, 'fdr_bh', i, fdp, power))
+       result = pd.DataFrame(result, columns=['fdr', 'n_cells', 'method', 'fdr_method', 'trial', 'fdp', 'power'])
+       return result
+
+     def evaluate_power_by_donor(dat, g, n_donors, b=0, fdr=0.1, n_trials=1, n_cells=100, min_cells=10):
+       """Evaluate power to detect DE genes, assuming effect size distribution g, at
+     specified FDR.
+
+       dat - AnnData object
+       g - function which returns array of effect sizes
+       n_donors - number of donors per group
+       b - log fold change in total number of molecules observed between groups
+       fdr - False Discovery Rate
+       n_trials - number of simulation trials
+       n_cells - number of cells per donor
+       min_cells - minimum number of non-zero observations to retain genes
+
+       """
+       assert n_donors > 1
+       result = []
+       for i in range(n_trials):
+         x, onehot, design, b = simulate_study(dat, g, b=b, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=i)
+         if ss.isspmatrix(x.X):
+           x = x.X.A
+         else:
+           x = x.X
+         onehot = onehot.A
+         # Heuristic: fix total number of updates
+         num_epochs = 6000 * 64 // x.shape[0]
+         for method in ('limma_voom', 'wls_gamma', 'wls_point'):
+           fit = globals()[f'estimate_{method}'](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
+           # Important: always use moderated t test
+           fit = limma.eBayes(fit)
+           for fdr_method in ('fdr_bh', 'lfsr'):
+             score = globals()[f'estimate_{fdr_method}'](fit)
+             fdp = ((score < fdr) & np.isclose(b, 0)).mean()
+             power = (score[~np.isclose(b, 0)] < fdr).mean()
+             result.append((fdr, n_donors, n_cells, method, fdr_method, i, fdp, power))
+       result = pd.DataFrame(result, columns=['fdr', 'n_donors', 'n_cells', 'method', 'fdr_method', 'trial', 'fdp', 'power'])
        return result
    #+END_SRC
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[63]:
+   # Out[53]:
    :END:
 
 * Results
@@ -903,7 +1015,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[33]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython :async t

@@ -113,6 +113,7 @@
     import scipy.stats as st
     import sqlite3
     import scqtl
+    import torch
 
     ashr = rpy2.robjects.packages.importr('ashr')
     limma = rpy2.robjects.packages.importr('limma')
@@ -121,7 +122,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[60]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -300,193 +301,47 @@
 
    #+NAME: simulation
    #+BEGIN_SRC ipython
-     def simulate_null(dat, n_donors=2, n_cells=100, to_array=True, to_dense=False, min_counts=1, seed=0):
-       """Return counts and labels
+     def simulate_null(dat, b=0, n_donors=1, n_cells=100, min_cells=1, seed=0):
+       """Return AnnData object with simulated counts, and onehot matrix of labels
 
-       counts - matrix [n_donors * n_cells, n_genes]
-       labels - CSR matrix [n_donors * n_cells, n_donors]
+       Simulate data under the null by randomly assigning cells to donors. Simulate
+       data with unequal sequencing depths (unequal total number of molecules
+       observed) by subsequently applying binomial thinning (Gerard 2019) to *every*
+       gene.
+
+       Parameters
+
+       dat - AnnData object
+       b - log fold change in total number of molecules observed between groups
+       n_donors - number of donors per group
+       n_cells - number of cells per donor
+       min_cells - minimum number of non-zero observations to retain genes
 
        """
-       query = sc.pp.subsample(dat, n_obs=n_donors * n_cells, random_state=seed, copy=True)
-       sc.pp.filter_genes(query, min_counts=min_counts)
-       onehot = ss.coo_matrix((np.ones(query.shape[0]), (np.arange(query.shape[0]), np.repeat(np.arange(n_donors), n_cells)))).tocsr()
-       if not to_array:
+       assert 2 * n_donors * n_cells <= dat.shape[0]
+       if b > 0:
+         b = -b
+       query = sc.pp.subsample(dat, n_obs=2 * n_donors * n_cells, random_state=seed, copy=True)
+       sc.pp.filter_genes(query, min_cells=min_cells)
+       onehot = ss.coo_matrix((np.ones(query.shape[0]), (np.arange(query.shape[0]), np.repeat(np.arange(2 * n_donors), n_cells)))).tocsr()
+       if np.isclose(b, 0):
          return query, onehot
-       elif to_dense:
+       else:
          if ss.isspmatrix(query.X):
-           return query.X.A, onehot.A
+           # Important: keep this sparse to make downsampling non-zeros easier
+           temp = query.X[:n_donors * n_cells].astype(int).tocsr()
+           y = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(float), temp.indices, temp.indptr), shape=temp.shape)
+           x = ss.vstack((y, query.X[n_donors * n_cells:]), format='csr').A
          else:
-           return query.X, onehot.A
-       else:
-         if ss.isspmatrix(query.X) and not ss.isspmatrix_csr(query.X):
-           return query.X.tocsr(), onehot.A
-         return query.X, onehot
-
-     def estimate_limma_voom(x, onehot, design=None, **kwargs):
-       """Return MarrayLM object"""
-       # Important: limma expects genes x samples
-       if design is None:
-         design = np.vstack([onehot[:,0], np.ones(x.shape[0])]).T
-         y = limma.voom(x.T, design)
-       else:
-         y = limma.voom(x.T @ onehot, design)
-       fit = limma.lmFit(y, design)
-       return fit
-
-     def estimate_point(x, onehot, **kwargs):
-       """Return DataFrame of bhat, se, p
-
-       Treating cells as units, for each group, estimate θ_j = log μ_j under a point
-       mass expression model
-
-       """
-       theta = np.log(onehot.T @ x + 1) - np.log(onehot.T @ x.sum(axis=1, keepdims=True))
-       if ss.isspmatrix(theta):
-         theta = theta.A
-       bhat = theta[0] - theta[1]
-       V = 1 / (onehot.T @ x + 1)
-       se = np.sqrt(V.sum(axis=0))
-       z = bhat / se
-       p = st.t(4).sf(abs(z))
-       return pd.DataFrame({'bhat': bhat, 'se': se, 'p': p})
-
-     def estimate_wls_point(x, onehot, design=None, **kwargs):
-       """Return DataFrame of bhat, se
-
-       Instead of voom, estimate θ_j = log μ_j under a point mass expression model
-       and its sampling variance, and use those as input to WLS.
-
-       """
-       s = x.sum(axis=1, keepdims=True)
-       if design is None:
-         log_mean = np.log(x + 1) - np.log(s)
-         # Important: this only reduces when there are no techncial covariates in
-         # the measurement model
-         w = x + 1
-         design = np.vstack([onehot[:,0], np.ones(x.shape[0])]).T
-       else:
-         log_mean = np.log(onehot.T @ x + 1) - np.log(onehot.T @ s)
-         w = onehot.T @ x + 1
-       fit = limma.lm_series(log_mean.T, design=design, weights=w.T)
-       return fit
-
-     def estimate_wls_gamma(x, onehot, design, lr=1e-2, num_epochs=40, batch_size=64, shuffle=True, log_dir=None, **kwargs):
-       """Return DataFrame of bhat, se
-
-       Instead of voom, estimate E[log λ_{ij}] and V[log λ_{ij}] under a Gamma
-       model, and use those as input to WLS.
-
-       Important: this only makes sense when donors are units
-
-       """
-       import torch
-       # Important: this will be too slow on CPU
-       assert torch.cuda.is_available()
-       s = x.sum(axis=1, keepdims=True)
-       log_mean, log_inv_disp = mpebpm.ebpm_gamma(
-         x,
-         s=s,
-         onehot=onehot,
-         lr=lr,
-         num_epochs=num_epochs,
-         batch_size=batch_size,
-         shuffle=shuffle,
-         log_dir=log_dir)
-       # [n_donors, n_genes]
-       m = sp.digamma(np.exp(log_inv_disp)) + log_mean - log_inv_disp
-       w = 1 / sp.polygamma(1, np.exp(log_inv_disp))
-       fit = limma.lm_series(m.T, design=design, weights=w.T)
-       return fit
-
-     def estimate_moderated_t(fit):
-       fit = limma.eBayes(fit)
-       return fit.rx2('p.value')[:,0]
-
-     def estimate_z(fit):
-       sf = st.chi2(1).sf
-       # Important: this has estimates for the intercept also
-       stat = fit.rx2('coefficients') / fit.rx2('stdev.unscaled')
-       pval = sf(np.square(stat))
-       return pval[:,0]
-
-     def evaluate_power(dat, b=None, alpha=0.01, n_cells=100, n_trials=1, min_counts=10):
-       if b is None:
-         b = -np.log(1.5)
-       elif b > 0:
-         b = -b
-       result = []
-       for i in range(n_trials):
-         # Important: keep this sparse to make downsampling non-zeros easier
-         x, onehot = simulate_null(dat, n_cells=n_cells, to_dense=False, min_counts=min_counts, seed=i)
-         temp = x[:n_cells].astype(int)
-         y = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(float), temp.indices, temp.indptr), shape=temp.shape)
-         x = ss.vstack((y, x[n_cells:]), format='csr').A
-         onehot = onehot.A
-         # Heuristic: fix total number of updates
-         num_epochs = 6000 * 64 // x.shape[0]
-         for method in ('limma_voom', 'wls_point'):
-           fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
-           for test in ('moderated_t', 'z'):
-             pval = globals()[f'estimate_{test}'](fit)
-             result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
-         for method in ('point',):
-           fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
-           result.append((b, n_cells, method, 'z', i, (fit['p'] < alpha).mean()))
-       result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'tpr'])
-       return result
-
-     def evaluate_type1(dat, alpha=0.01, n_cells=100, n_trials=1, min_counts=10):
-       result = (evaluate_power(dat, b=0, alpha=alpha, n_cells=n_cells, n_trials=n_trials, min_counts=min_counts)
-                 .rename({'tpr': 'fpr'}, axis=1))
-       return result
-
-     def evaluate_power_by_donor(dat, b=None, alpha=0.01, n_donors=4, n_cells=100, n_trials=1, min_counts=10):
-       assert n_donors * n_cells <= dat.shape[0]
-       if b is None:
-         b = -np.log(1.5)
-       elif b > 0:
-         b = -b
-       result = []
-       for i in range(n_trials):
-         # Important: keep this sparse to make downsampling non-zeros easier
-         x, onehot = simulate_null(dat, n_donors=2 * n_donors, n_cells=n_cells, to_dense=False, min_counts=min_counts, seed=i)
-         temp = x[:n_donors * n_cells].astype(int)
-         y = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(float), temp.indices, temp.indptr), shape=temp.shape)
-         x = ss.vstack((y, x[n_donors * n_cells:]), format='csr').A
-         design = np.ones((2 * n_donors, 2))
-         design[:n_donors,0] = 0
-         # Heuristic: fix total number of updates
-         num_epochs = 6000 * 64 // x.shape[0]
-         for method in ('limma_voom', 'wls_point'):
-           fit = globals()[f'estimate_{method}'](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
-           for test in ('moderated_t', 'z'):
-             pval = globals()[f'estimate_{test}'](fit)
-             result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
-       result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'tpr'])
-       return result
-
-     def evaluate_type1_by_donor(dat, alpha=0.01, n_trials=1, n_donors=4, n_cells=100, min_counts=10):
-       result = (evaluate_power_by_donor(dat, b=0, alpha=alpha, n_trials=n_trials, n_donors=n_donors, min_counts=min_counts)
-                 .rename({'tpr': 'fpr'}, axis=1))
-       return result
-
-     def estimate_lfsr(fit):
-       fit1 = ashr.ash(
-         betahat=pd.Series(fit.rx2('coefficients')[:,0]),
-         sebetahat=pd.Series(np.sqrt(((fit.rx2('df.total') - fit.rx2('df.residual')) * fit.rx2('s2.prior') + fit.rx2('df.residual') * fit.rx2('stdev.unscaled')[:,0]) / fit.rx2('df.total'))),
-         df=fit.rx2('df.total')[0],
-         mixcompdist='halfuniform')
-       return ashr.get_lfsr(fit1)
-
-     def estimate_fdr_bh(fit):
-       return rpy2.robjects.r['p.adjust'](fit.rx2('p.value')[:,0], method='BH')
+           # TODO: this breaks for n=0, but treating e.g. bulk RNA-seq counts as
+           # sparse is *very* slow
+           x = st.binom(n=query.X.astype(int), p=np.exp(b)).rvs().astype(float)
+         return anndata.AnnData(x, obs=query.obs, var=query.var), onehot
 
      def simulate_study_by_donor(dat, pi0=0.9, n_donors=4, n_cells=100, min_counts=10, seed=0):
        assert n_donors * n_cells <= dat.shape[0]
        # Important: keep this sparse to make downsampling non-zeros easier
        x, onehot = simulate_null(dat, n_donors=2 * n_donors, n_cells=n_cells, to_dense=False, min_counts=min_counts, seed=seed)
-       # Important: taken from real data
-       g = st.t(scale=0.1, df=2.5)
        # Simulate effects symmetrically about zero, then convert to negative
        # effects in the appropriate group
        b = np.zeros(x.shape[1])
@@ -508,10 +363,190 @@
        design[:n_donors,0] = 0
        return ss.csc_matrix((data, y.indices, y.indptr)).A, onehot, design, b
 
-     def evaluate_power_by_donor_fdr(dat, pi0=0.9, fdr=0.1, n_trials=1, n_donors=4, n_cells=100, min_counts=10):
+     def estimate_limma_voom(x, onehot, design=None, **kwargs):
+       """Return MarrayLM object
+
+       If design is None, assume rows of x are statistical units, and onehot[:,0]
+       gives assignment of units to groups. Otherwise, assume onehot gives
+       assignment of cells to donors, donors are statistical units, and design [:,0]
+       gives the assignment of units to groups.
+
+       x - count matrix (dense)
+       onehot - mapping of cells to groups/donors (dense)
+       design - design matrix for limma (dense)
+
+       """
+       # Important: limma expects genes x samples
+       if design is None:
+         design = np.vstack([onehot[:,0], np.ones(x.shape[0])]).T
+         y = limma.voom(x.T, design)
+       else:
+         y = limma.voom(x.T @ onehot, design)
+       fit = limma.lmFit(y, design)
+       return fit
+
+     def estimate_point(x, onehot, **kwargs):
+       """Return DataFrame of (bhat, se, p)
+
+       Assume cells are units, and for each group estimate θ_j = log μ_j and its SE
+       under a point mass expression model.
+
+       x - count matrix (sparse)
+       onehot - mapping of cells to groups (dense)
+
+       """
+       theta = np.log(onehot.T @ x + 1) - np.log(onehot.T @ x.sum(axis=1, keepdims=True))
+       if ss.isspmatrix(theta):
+         theta = theta.A
+       bhat = theta[0] - theta[1]
+       V = 1 / (onehot.T @ x + 1)
+       se = np.sqrt(V.sum(axis=0))
+       z = bhat / se
+       p = st.norm().sf(abs(z))
+       return pd.DataFrame({'bhat': bhat, 'se': se, 'p': p})
+
+     def estimate_wls_point(x, onehot, design=None, **kwargs):
+       """Return MarrayLM object
+
+       Instead of voom, estimate θ_j = log μ_j under a point mass expression model
+       and its sampling variance, and use those as input to WLS.
+
+       If design is None, assume rows of x are statistical units, and onehot[:,0]
+       gives assignment of units to groups. Otherwise, assume onehot gives
+       assignment of cells to donors, donors are statistical units, and design [:,0]
+       gives the assignment of units to groups.
+
+       x - count matrix (dense)
+       onehot - mapping of cells to groups/donors (dense)
+       design - design matrix for limma (dense)
+
+       """
+       s = x.sum(axis=1, keepdims=True)
+       if design is None:
+         log_mean = np.log(x + 1) - np.log(s)
+         # Important: this only reduces when there are no techncial covariates in
+         # the measurement model
+         w = x + 1
+         design = np.vstack([onehot[:,0], np.ones(x.shape[0])]).T
+       else:
+         log_mean = np.log(onehot.T @ x + 1) - np.log(onehot.T @ s)
+         w = onehot.T @ x + 1
+       fit = limma.lm_series(log_mean.T, design=design, weights=w.T)
+       return fit
+
+     def estimate_wls_gamma(x, onehot, design, lr=1e-2, num_epochs=40, batch_size=64, shuffle=True, log_dir=None, **kwargs):
+       """Return DataFrame of bhat, se
+
+       Instead of voom, estimate E[log λ_{ij}] and V[log λ_{ij}] under a Gamma
+       model, and use those as input to WLS.
+
+       Assume donors are statistical units, onehot gives assignment of cells to
+       donors, and design [:,0] gives the assignment of units to groups.
+
+       """
+       # Important: this will be too slow on CPU
+       assert torch.cuda.is_available()
+       s = x.sum(axis=1, keepdims=True)
+       log_mean, log_inv_disp = mpebpm.ebpm_gamma(
+         x,
+         s=s,
+         onehot=onehot,
+         lr=lr,
+         num_epochs=num_epochs,
+         batch_size=batch_size,
+         shuffle=shuffle,
+         log_dir=log_dir)
+       # [n_donors, n_genes]
+       m = sp.digamma(np.exp(log_inv_disp)) + log_mean - log_inv_disp
+       w = sp.polygamma(1, np.exp(log_inv_disp))
+       fit = limma.lm_series(m.T, design=design, weights=w.T)
+       return fit
+
+     def estimate_moderated_t(fit):
+       fit = limma.eBayes(fit)
+       return fit.rx2('p.value')[:,0]
+
+     def estimate_z(fit):
+       sf = st.chi2(1).sf
+       # Important: this has estimates for the intercept also
+       stat = fit.rx2('coefficients') / fit.rx2('stdev.unscaled')
+       pval = sf(np.square(stat))
+       return pval[:,0]
+
+     def evaluate_type1(dat, b=0, alpha=0.01, n_cells=100, n_trials=1, min_cells=10):
+       """Estimate Type 1 error to detect DE genes.
+
+       Use binomial thinning to simulate scenarios with unequal sequencing depth
+       (total number of molecules observed).
+
+       If n_donors = 1, treat cells as units and "donors" as groups. Otherwise,
+       treat donors as units.
+
+       dat - AnnData object
+       b - fold change in total observed molecules between groups
+       alpha - significance level
+       n_cells - number of cells per group
+       n_trials - number of simulation trials
+       min_cells - minimum number of non-zero observations to retain a gene
+
+       """
        result = []
        for i in range(n_trials):
-         x, onehot, design, b = simulate_study_by_donor(dat, pi0=pi0, n_donors=n_donors, n_cells=n_cells, min_counts=min_counts, seed=i)
+         x, onehot = simulate_null(dat, b=b, n_donors=2, n_cells=n_cells, min_cells=min_cells, seed=i)
+         if ss.isspmatrix(x.X):
+           x = x.X.A
+         else:
+           x = x.X
+         onehot = onehot.A
+         # Heuristic: fix total number of updates
+         num_epochs = 6000 * 64 // x.shape[0]
+         for method in ('limma_voom', 'wls_point'):
+           fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
+           for test in ('moderated_t', 'z'):
+             pval = globals()[f'estimate_{test}'](fit)
+             result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
+         for method in ('point',):
+           fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
+           result.append((b, n_cells, method, 'z', i, (fit['p'] < alpha).mean()))
+       result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'fdp'])
+       return result
+
+     def evaluate_type1_by_donor(dat, n_donors, b=0, alpha=0.01, n_cells=100, n_trials=1, min_cells=10):
+       result = []
+       for i in range(n_trials):
+         x, onehot = simulate_null(dat, b=b, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=i)
+         if ss.isspmatrix(x.X):
+           x = x.X.A
+         else:
+           x = x.X
+         onehot = onehot.A
+         design = np.ones((2 * n_donors, 2))
+         design[:n_donors,0] = 0
+         # Heuristic: fix total number of updates
+         num_epochs = 6000 * 64 // x.shape[0]
+         for method in ('limma_voom', 'wls_gamma', 'wls_point'):
+           fit = globals()[f'estimate_{method}'](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
+           for test in ('moderated_t', 'z'):
+             pval = globals()[f'estimate_{test}'](fit)
+             result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
+       result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'fdp'])
+       return result
+
+     def estimate_lfsr(fit):
+       fit1 = ashr.ash(
+         betahat=pd.Series(fit.rx2('coefficients')[:,0]),
+         sebetahat=pd.Series(np.sqrt(((fit.rx2('df.total') - fit.rx2('df.residual')) * fit.rx2('s2.prior') + fit.rx2('df.residual') * fit.rx2('stdev.unscaled')[:,0]) / fit.rx2('df.total'))),
+         df=fit.rx2('df.total')[0],
+         mixcompdist='halfuniform')
+       return ashr.get_lfsr(fit1)
+
+     def estimate_fdr_bh(fit):
+       return rpy2.robjects.r['p.adjust'](fit.rx2('p.value')[:,0], method='BH')
+
+     def evaluate_power_by_donor_fdr(dat, pi0=0.9, fdr=0.1, n_trials=1, n_donors=4, n_cells=100, min_cells=10):
+       result = []
+       for i in range(n_trials):
+         x, onehot, design, b = simulate_study_by_donor(dat, pi0=pi0, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=i)
          # Heuristic: fix total number of updates
          num_epochs = 6000 * 64 // x.shape[0]
          for method in ('limma_voom', 'wls_point'):
@@ -529,7 +564,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[209]:
+   # Out[63]:
    :END:
 
 * Results
@@ -816,7 +851,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[29]:
+   # Out[14]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -868,7 +903,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[185]:
+   # Out[33]:
    :END:
 
    #+BEGIN_SRC ipython :async t

@@ -263,6 +263,15 @@
    [[file:figure/voom.org/analytic-se-identity-link.png]]
    :END:
 
+   With an analytic expression for \(s_j^2\), we can also derive a \(z\)-test
+   for DE, where
+
+   \begin{align}
+     \frac{\hat\theta_{1j} - \hat\theta_{0j}}{\sqrt(s_{1j}^2 + s_{0j}^2)} \sim \N(0, 1)
+   \end{align}
+
+   under the null.
+
 ** Variance of Gamma expression model
 
    Assuming a Gamma expression model
@@ -676,7 +685,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[53]:
+   # Out[4]:
    :END:
 
 * Results
@@ -1019,36 +1028,70 @@
    :END:
 
    #+BEGIN_SRC ipython :async t
-     result = evaluate_type1(dat, min_counts=20, n_trials=10)
+     result = dict()
+     for n_cells in (25, 50, 100):
+       result[n_cells] = evaluate_type1(dat, n_cells=n_cells, min_cells=n_cells, n_trials=50)
+     result = pd.concat(result).reset_index(drop=True)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[227]:
+   # Out[17]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/voom.org/fpr.png
      plt.clf()
-     fig, ax = plt.subplots(1, 2)
-     fig.set_size_inches(4.5, 2.5)
-     labels = ['LV-EB', 'LV-Z', 'PM-EB', 'PM-Z']
-     for i, (k, g) in enumerate(result.groupby(['method', 'test'])):
-       ax[0].boxplot(g['fpr'], positions=[i], widths=0.35, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
-       ax[1].boxplot(g['fpr'], positions=[i], widths=0.35, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
-     ax[1].set_ylim(0, 0.02)
-     for a in ax:
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(5.5, 2.5)
+     labels = ['LV-EB', 'LV-Z', 'PM-Z', 'SE-EB', 'SE-Z']
+     for a, (t, g) in zip(ax, result.groupby('n_cells')):
+       a.boxplot(g.pivot_table(columns='trial', index=['method', 'test'], values='fdp'), widths=0.35, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
        a.axhline(y=0.01, c='r', lw=1, ls=':')
-       a.set_xticks(range(len(labels)))
        a.set_xticklabels(labels, rotation=90)
        a.set_xlabel('Method')
+       a.set_title(f'$n$={t}')
      ax[0].set_ylabel('Type 1 error rate')
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[228]:
+   # Out[21]:
    [[file:figure/voom.org/fpr.png]]
+   :END:
+
+   To generate null data with systematic differences in sequencing depth,
+   follow the scheme above, then apply binomial thinning with \(p = 0.5\) to
+   every gene.
+
+   #+BEGIN_SRC ipython :async t
+     result = dict()
+     for n_cells in (25, 50, 100):
+       result[n_cells] = evaluate_type1(dat, b=np.log(2), n_cells=n_cells, min_cells=n_cells, n_trials=50)
+     result = pd.concat(result).reset_index(drop=True)
+   #+END_SRC
+
+   #+RESULTS:
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/fpr-unequal-s.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(5.5, 2.5)
+     labels = ['LV-EB', 'LV-Z', 'PM-Z', 'SE-EB', 'SE-Z']
+     for a, (t, g) in zip(ax, result.groupby('n_cells')):
+       a.boxplot(g.pivot_table(columns='trial', index=['method', 'test'], values='fdp'), widths=0.35, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
+       a.axhline(y=0.01, c='r', lw=1, ls=':')
+       a.set_xticklabels(labels, rotation=90)
+       a.set_xlabel('Method')
+       a.set_title(f'$n$={t}')
+     ax[0].set_ylabel('Type 1 error rate')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   [[file:figure/voom.org/fpr-unequal-s.png]]
    :END:
 
 *** Unequal size factors

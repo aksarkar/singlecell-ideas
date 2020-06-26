@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-23 Tue 18:07 -->
+<!-- 2020-06-25 Thu 23:14 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An improved voom transform for scRNA-seq data</title>
@@ -395,6 +395,7 @@ in scRNA-seq data.
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> sqlite3
 <span class="org-keyword">import</span> scqtl
+<span class="org-keyword">import</span> torch
 
 <span class="org-variable-name">ashr</span> = rpy2.robjects.packages.importr(<span class="org-string">'ashr'</span>)
 <span class="org-variable-name">limma</span> = rpy2.robjects.packages.importr(<span class="org-string">'limma'</span>)
@@ -541,6 +542,19 @@ plt.tight_layout()
 <p><img src="figure/voom.org/analytic-se-identity-link.png" alt="analytic-se-identity-link.png">
 </p>
 </div>
+
+<p>
+With an analytic expression for \(s_j^2\), we can also derive a \(z\)-test
+for DE, where
+</p>
+
+\begin{align}
+  \frac{\hat\theta_{1j} - \hat\theta_{0j}}{\sqrt(s_{1j}^2 + s_{0j}^2)} \sim \N(0, 1)
+\end{align}
+
+<p>
+under the null.
+</p>
 </div>
 </div>
 
@@ -600,30 +614,113 @@ Implement a simplified
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython" id="org1888ed1"><span class="org-keyword">def</span> <span class="org-function-name">simulate_null</span>(dat, n_donors=2, n_cells=100, to_array=<span class="org-constant">True</span>, to_dense=<span class="org-constant">False</span>, min_counts=1, seed=0):
-  <span class="org-doc">"""Return counts and labels</span>
+<pre class="src src-ipython" id="org1888ed1"><span class="org-keyword">def</span> <span class="org-function-name">simulate_null</span>(dat, b=0, n_donors=1, n_cells=100, min_cells=1, seed=0):
+  <span class="org-doc">"""Return AnnData object with simulated counts, and onehot matrix of labels</span>
 
-<span class="org-doc">  counts - matrix [n_donors * n_cells, n_genes]</span>
-<span class="org-doc">  labels - CSR matrix [n_donors * n_cells, n_donors]</span>
+<span class="org-doc">  Simulate data under the null by randomly assigning cells to donors. Simulate</span>
+<span class="org-doc">  data with unequal sequencing depths (unequal total number of molecules</span>
+<span class="org-doc">  observed) by subsequently applying binomial thinning (Gerard 2019) to *every*</span>
+<span class="org-doc">  gene.</span>
+
+<span class="org-doc">  dat - AnnData object</span>
+<span class="org-doc">  b - log fold change in total number of molecules observed between groups</span>
+<span class="org-doc">  n_donors - number of donors per group</span>
+<span class="org-doc">  n_cells - number of cells per donor</span>
+<span class="org-doc">  min_cells - minimum number of non-zero observations to retain genes</span>
 
 <span class="org-doc">  """</span>
-  <span class="org-variable-name">query</span> = sc.pp.subsample(dat, n_obs=n_donors * n_cells, random_state=seed, copy=<span class="org-constant">True</span>)
-  sc.pp.filter_genes(query, min_counts=min_counts)
-  <span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(query.shape[0]), (np.arange(query.shape[0]), np.repeat(np.arange(n_donors), n_cells)))).tocsr()
-  <span class="org-keyword">if</span> <span class="org-keyword">not</span> to_array:
+  <span class="org-keyword">assert</span> 2 * n_donors * n_cells &lt;= dat.shape[0]
+  <span class="org-keyword">if</span> b &gt; 0:
+    <span class="org-variable-name">b</span> = -b
+  <span class="org-variable-name">query</span> = sc.pp.subsample(dat, n_obs=2 * n_donors * n_cells, random_state=seed, copy=<span class="org-constant">True</span>)
+  sc.pp.filter_genes(query, min_cells=min_cells)
+  <span class="org-variable-name">onehot</span> = ss.coo_matrix((np.ones(query.shape[0]), (np.arange(query.shape[0]), np.repeat(np.arange(2 * n_donors), n_cells)))).tocsr()
+  <span class="org-keyword">if</span> np.isclose(b, 0):
     <span class="org-keyword">return</span> query, onehot
-  <span class="org-keyword">elif</span> to_dense:
-    <span class="org-keyword">if</span> ss.isspmatrix(query.X):
-      <span class="org-keyword">return</span> query.X.A, onehot.A
-    <span class="org-keyword">else</span>:
-      <span class="org-keyword">return</span> query.X, onehot.A
   <span class="org-keyword">else</span>:
-    <span class="org-keyword">if</span> ss.isspmatrix(query.X) <span class="org-keyword">and</span> <span class="org-keyword">not</span> ss.isspmatrix_csr(query.X):
-      <span class="org-keyword">return</span> query.X.tocsr(), onehot.A
-    <span class="org-keyword">return</span> query.X, onehot
+    <span class="org-keyword">if</span> ss.isspmatrix(query.X):
+      <span class="org-comment-delimiter"># </span><span class="org-comment">Important: keep this sparse to make downsampling non-zeros easier</span>
+      <span class="org-variable-name">temp</span> = query.X[:n_donors * n_cells].astype(<span class="org-builtin">int</span>).tocsr()
+      <span class="org-variable-name">y</span> = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(<span class="org-builtin">float</span>), temp.indices, temp.indptr), shape=temp.shape)
+      <span class="org-variable-name">x</span> = ss.vstack((y, query.X[n_donors * n_cells:]), <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>)
+    <span class="org-keyword">else</span>:
+      <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: this breaks for n=0, but treating e.g. bulk RNA-seq counts as</span>
+      <span class="org-comment-delimiter"># </span><span class="org-comment">sparse is *very* slow</span>
+      <span class="org-variable-name">x</span> = st.binom(n=query.X.astype(<span class="org-builtin">int</span>), p=np.exp(b)).rvs().astype(<span class="org-builtin">float</span>)
+    <span class="org-keyword">return</span> anndata.AnnData(x, obs=query.obs, var=query.var), onehot
+
+<span class="org-keyword">def</span> <span class="org-function-name">simulate_effects_law_2014</span>(size, pi0=0.9):
+  <span class="org-doc">"""Return effect sizes assumed by Law et al. 2014"""</span>
+  <span class="org-variable-name">b</span> = np.zeros(size)
+  <span class="org-variable-name">z</span> = np.random.uniform(size=size) &gt; pi0
+  <span class="org-variable-name">s</span> = np.random.uniform(size=size) &gt; 0.5
+  <span class="org-variable-name">b</span>[z &amp; s] = 2
+  <span class="org-variable-name">b</span>[z &amp; ~s] = -2
+  <span class="org-keyword">return</span> b
+
+<span class="org-keyword">def</span> <span class="org-function-name">simulate_effects_pn</span>(size, pi0=0.9, scale=1):
+  <span class="org-doc">"""Return effect sizes assuming a point-Normal distribution"""</span>
+  <span class="org-variable-name">b</span> = np.zeros(size)
+  <span class="org-variable-name">z</span> = np.random.uniform(size=size) &gt; pi0
+  <span class="org-variable-name">b</span>[z] = st.norm(scale=scale).rvs(size=z.<span class="org-builtin">sum</span>())
+  <span class="org-keyword">return</span> b
+
+<span class="org-keyword">def</span> <span class="org-function-name">simulate_study</span>(dat, g, b=0, n_donors=1, n_cells=100, min_cells=10, seed=0):
+  <span class="org-doc">"""Return AnnData object with simulated counts, onehot matrix, design matrix,</span>
+<span class="org-doc">and true effect size vector</span>
+
+<span class="org-doc">  Simulate non-null data assuming effect size distribution g by first</span>
+<span class="org-doc">  simulating null data, then applying binomial thinning (Gerard 2019) to effect</span>
+<span class="org-doc">  genes.</span>
+
+<span class="org-doc">  dat - AnnData object</span>
+<span class="org-doc">  g - function which returns array of effect sizes</span>
+<span class="org-doc">  b - log fold change in total number of molecules observed between groups</span>
+<span class="org-doc">  n_donors - number of donors per group</span>
+<span class="org-doc">  n_cells - number of cells per donor</span>
+<span class="org-doc">  min_cells - minimum number of non-zero observations to retain genes</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, b=b, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=seed)
+  <span class="org-variable-name">lfc</span> = g(size=x.shape[1])
+  <span class="org-keyword">if</span> ss.isspmatrix(x.X):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Convert to CSC to deal with half the cells at a time</span>
+    <span class="org-variable-name">y</span> = x.X.tocsc()
+    <span class="org-variable-name">data</span> = y.data.copy()
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(y.shape[0]):
+      <span class="org-keyword">if</span> lfc[i] &gt; 0:
+        <span class="org-variable-name">idx</span> = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] &gt; n_donors * n_cells)[0]
+        <span class="org-variable-name">data</span>[idx] = st.binom(n=y.data[idx].astype(<span class="org-builtin">int</span>), p=np.exp(-lfc[i])).rvs(size=<span class="org-builtin">len</span>(idx)).astype(<span class="org-builtin">float</span>)
+      <span class="org-keyword">elif</span> lfc[i] &lt; 0:
+        <span class="org-variable-name">idx</span> = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] &lt; n_donors * n_cells)[0]
+        <span class="org-variable-name">data</span>[idx] = st.binom(n=y.data[idx].astype(<span class="org-builtin">int</span>), p=np.exp(lfc[i])).rvs(size=<span class="org-builtin">len</span>(idx)).astype(<span class="org-builtin">float</span>)
+    <span class="org-variable-name">x</span> = anndata.AnnData(ss.csc_matrix((data, y.indices, y.indptr)), var=x.var, obs=x.obs)
+  <span class="org-keyword">else</span>:
+    <span class="org-variable-name">y</span> = x.X.copy()
+    <span class="org-variable-name">query</span> = lfc &lt; 0
+    <span class="org-variable-name">y</span>[n_donors * n_cells:,query] = st.binom(n=y[n_donors * n_cells,query].astype(<span class="org-builtin">int</span>), p=np.exp(lfc[query])).rvs()
+    <span class="org-variable-name">y</span>[:n_donors * n_cells,~query] = st.binom(n=y[:n_donors * n_cells,~query].astype(<span class="org-builtin">int</span>), p=np.exp(lfc[~query])).rvs()
+    <span class="org-variable-name">x</span> = annData.AnnData(y, var=x.var, obs=x.obs)
+  <span class="org-keyword">if</span> n_donors &gt; 1:
+    <span class="org-variable-name">design</span> = np.ones((2 * n_donors, 2))
+    <span class="org-variable-name">design</span>[:n_donors,0] = 0
+  <span class="org-keyword">else</span>:
+    <span class="org-variable-name">design</span> = <span class="org-constant">None</span>
+  <span class="org-keyword">return</span> x, onehot, design, lfc
 
 <span class="org-keyword">def</span> <span class="org-function-name">estimate_limma_voom</span>(x, onehot, design=<span class="org-constant">None</span>, **kwargs):
-  <span class="org-doc">"""Return MarrayLM object"""</span>
+  <span class="org-doc">"""Return MarrayLM object</span>
+
+<span class="org-doc">  If design is None, assume rows of x are statistical units, and onehot[:,0]</span>
+<span class="org-doc">  gives assignment of units to groups. Otherwise, assume onehot gives</span>
+<span class="org-doc">  assignment of cells to donors, donors are statistical units, and design [:,0]</span>
+<span class="org-doc">  gives the assignment of units to groups.</span>
+
+<span class="org-doc">  x - count matrix (dense)</span>
+<span class="org-doc">  onehot - mapping of cells to groups/donors (dense)</span>
+<span class="org-doc">  design - design matrix for limma (dense)</span>
+
+<span class="org-doc">  """</span>
   <span class="org-comment-delimiter"># </span><span class="org-comment">Important: limma expects genes x samples</span>
   <span class="org-keyword">if</span> design <span class="org-keyword">is</span> <span class="org-constant">None</span>:
     <span class="org-variable-name">design</span> = np.vstack([onehot[:,0], np.ones(x.shape[0])]).T
@@ -634,10 +731,13 @@ Implement a simplified
   <span class="org-keyword">return</span> fit
 
 <span class="org-keyword">def</span> <span class="org-function-name">estimate_point</span>(x, onehot, **kwargs):
-  <span class="org-doc">"""Return DataFrame of bhat, se, p</span>
+  <span class="org-doc">"""Return DataFrame of (bhat, se, p)</span>
 
-<span class="org-doc">  Treating cells as units, for each group, estimate &#952;_j = log &#956;_j under a point</span>
-<span class="org-doc">  mass expression model</span>
+<span class="org-doc">  Assume cells are units, and for each group estimate &#952;_j = log &#956;_j and its SE</span>
+<span class="org-doc">  under a point mass expression model.</span>
+
+<span class="org-doc">  x - count matrix (sparse)</span>
+<span class="org-doc">  onehot - mapping of cells to groups (dense)</span>
 
 <span class="org-doc">  """</span>
   <span class="org-variable-name">theta</span> = np.log(onehot.T @ x + 1) - np.log(onehot.T @ x.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>))
@@ -647,14 +747,23 @@ Implement a simplified
   <span class="org-variable-name">V</span> = 1 / (onehot.T @ x + 1)
   <span class="org-variable-name">se</span> = np.sqrt(V.<span class="org-builtin">sum</span>(axis=0))
   <span class="org-variable-name">z</span> = bhat / se
-  <span class="org-variable-name">p</span> = st.t(4).sf(<span class="org-builtin">abs</span>(z))
+  <span class="org-variable-name">p</span> = st.norm().sf(<span class="org-builtin">abs</span>(z))
   <span class="org-keyword">return</span> pd.DataFrame({<span class="org-string">'bhat'</span>: bhat, <span class="org-string">'se'</span>: se, <span class="org-string">'p'</span>: p})
 
 <span class="org-keyword">def</span> <span class="org-function-name">estimate_wls_point</span>(x, onehot, design=<span class="org-constant">None</span>, **kwargs):
-  <span class="org-doc">"""Return DataFrame of bhat, se</span>
+  <span class="org-doc">"""Return MarrayLM object</span>
 
 <span class="org-doc">  Instead of voom, estimate &#952;_j = log &#956;_j under a point mass expression model</span>
 <span class="org-doc">  and its sampling variance, and use those as input to WLS.</span>
+
+<span class="org-doc">  If design is None, assume rows of x are statistical units, and onehot[:,0]</span>
+<span class="org-doc">  gives assignment of units to groups. Otherwise, assume onehot gives</span>
+<span class="org-doc">  assignment of cells to donors, donors are statistical units, and design [:,0]</span>
+<span class="org-doc">  gives the assignment of units to groups.</span>
+
+<span class="org-doc">  x - count matrix (dense)</span>
+<span class="org-doc">  onehot - mapping of cells to groups/donors (dense)</span>
+<span class="org-doc">  design - design matrix for limma (dense)</span>
 
 <span class="org-doc">  """</span>
   <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
@@ -676,10 +785,10 @@ Implement a simplified
 <span class="org-doc">  Instead of voom, estimate E[log &#955;_{ij}] and V[log &#955;_{ij}] under a Gamma</span>
 <span class="org-doc">  model, and use those as input to WLS.</span>
 
-<span class="org-doc">  Important: this only makes sense when donors are units</span>
+<span class="org-doc">  Assume donors are statistical units, onehot gives assignment of cells to</span>
+<span class="org-doc">  donors, and design [:,0] gives the assignment of units to groups.</span>
 
 <span class="org-doc">  """</span>
-  <span class="org-keyword">import</span> torch
   <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this will be too slow on CPU</span>
   <span class="org-keyword">assert</span> torch.cuda.is_available()
   <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
@@ -709,18 +818,27 @@ Implement a simplified
   <span class="org-variable-name">pval</span> = sf(np.square(stat))
   <span class="org-keyword">return</span> pval[:,0]
 
-<span class="org-keyword">def</span> <span class="org-function-name">evaluate_power</span>(dat, b=<span class="org-constant">None</span>, alpha=0.01, n_cells=100, n_trials=1, min_counts=10):
-  <span class="org-keyword">if</span> b <span class="org-keyword">is</span> <span class="org-constant">None</span>:
-    <span class="org-variable-name">b</span> = -np.log(1.5)
-  <span class="org-keyword">elif</span> b &gt; 0:
-    <span class="org-variable-name">b</span> = -b
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_type1</span>(dat, b=0, alpha=0.01, n_cells=100, n_trials=1, min_cells=10):
+  <span class="org-doc">"""Estimate Type 1 error to detect DE genes, treating cells as units.</span>
+
+<span class="org-doc">  Use binomial thinning to simulate scenarios with unequal sequencing depth</span>
+<span class="org-doc">  (total number of molecules observed).</span>
+
+<span class="org-doc">  dat - AnnData object</span>
+<span class="org-doc">  b - fold change in total observed molecules between groups</span>
+<span class="org-doc">  alpha - significance level</span>
+<span class="org-doc">  n_cells - number of cells per group</span>
+<span class="org-doc">  n_trials - number of simulation trials</span>
+<span class="org-doc">  min_cells - minimum number of non-zero observations to retain a gene</span>
+
+<span class="org-doc">  """</span>
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: keep this sparse to make downsampling non-zeros easier</span>
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, n_cells=n_cells, to_dense=<span class="org-constant">False</span>, min_counts=min_counts, seed=i)
-    <span class="org-variable-name">temp</span> = x[:n_cells].astype(<span class="org-builtin">int</span>)
-    <span class="org-variable-name">y</span> = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(<span class="org-builtin">float</span>), temp.indices, temp.indptr), shape=temp.shape)
-    <span class="org-variable-name">x</span> = ss.vstack((y, x[n_cells:]), <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>).A
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, b=b, n_donors=2, n_cells=n_cells, min_cells=min_cells, seed=i)
+    <span class="org-keyword">if</span> ss.isspmatrix(x.X):
+      <span class="org-variable-name">x</span> = x.X.A
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">x</span> = x.X
     <span class="org-variable-name">onehot</span> = onehot.A
     <span class="org-comment-delimiter"># </span><span class="org-comment">Heuristic: fix total number of updates</span>
     <span class="org-variable-name">num_epochs</span> = 6000 * 64 // x.shape[0]
@@ -732,45 +850,56 @@ Implement a simplified
     <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'point'</span>,):
       <span class="org-variable-name">fit</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot, batch_size=64, num_epochs=num_epochs)
       result.append((b, n_cells, method, <span class="org-string">'z'</span>, i, (fit[<span class="org-string">'p'</span>] &lt; alpha).mean()))
-  <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'b'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'test'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'tpr'</span>])
+  <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'b'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'test'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fdp'</span>])
   <span class="org-keyword">return</span> result
 
-<span class="org-keyword">def</span> <span class="org-function-name">evaluate_type1</span>(dat, alpha=0.01, n_cells=100, n_trials=1, min_counts=10):
-  <span class="org-variable-name">result</span> = (evaluate_power(dat, b=0, alpha=alpha, n_cells=n_cells, n_trials=n_trials, min_counts=min_counts)
-            .rename({<span class="org-string">'tpr'</span>: <span class="org-string">'fpr'</span>}, axis=1))
-  <span class="org-keyword">return</span> result
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_type1_by_donor</span>(dat, n_donors, b=0, alpha=0.01, n_cells=100, n_trials=1, min_cells=10):
+  <span class="org-doc">"""Estimate Type 1 error to detect DE genes, treating donors as units.</span>
 
-<span class="org-keyword">def</span> <span class="org-function-name">evaluate_power_by_donor</span>(dat, b=<span class="org-constant">None</span>, alpha=0.01, n_donors=4, n_cells=100, n_trials=1, min_counts=10):
-  <span class="org-keyword">assert</span> n_donors * n_cells &lt;= dat.shape[0]
-  <span class="org-keyword">if</span> b <span class="org-keyword">is</span> <span class="org-constant">None</span>:
-    <span class="org-variable-name">b</span> = -np.log(1.5)
-  <span class="org-keyword">elif</span> b &gt; 0:
-    <span class="org-variable-name">b</span> = -b
+<span class="org-doc">  Use binomial thinning to simulate scenarios with unequal sequencing depth</span>
+<span class="org-doc">  (total number of molecules observed).</span>
+
+<span class="org-doc">  dat - AnnData object</span>
+<span class="org-doc">  b - fold change in total observed molecules between groups</span>
+<span class="org-doc">  n_donor - number of donors per group</span>
+<span class="org-doc">  alpha - significance level</span>
+<span class="org-doc">  n_cells - number of cells per group</span>
+<span class="org-doc">  n_trials - number of simulation trials</span>
+<span class="org-doc">  min_cells - minimum number of non-zero observations to retain a gene</span>
+
+<span class="org-doc">  """</span>
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: keep this sparse to make downsampling non-zeros easier</span>
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, n_donors=2 * n_donors, n_cells=n_cells, to_dense=<span class="org-constant">False</span>, min_counts=min_counts, seed=i)
-    <span class="org-variable-name">temp</span> = x[:n_donors * n_cells].astype(<span class="org-builtin">int</span>)
-    <span class="org-variable-name">y</span> = ss.csr_matrix((st.binom(n=temp.data, p=np.exp(b)).rvs().astype(<span class="org-builtin">float</span>), temp.indices, temp.indptr), shape=temp.shape)
-    <span class="org-variable-name">x</span> = ss.vstack((y, x[n_donors * n_cells:]), <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>).A
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, b=b, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=i)
+    <span class="org-keyword">if</span> ss.isspmatrix(x.X):
+      <span class="org-variable-name">x</span> = x.X.A
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">x</span> = x.X
+    <span class="org-variable-name">onehot</span> = onehot.A
     <span class="org-variable-name">design</span> = np.ones((2 * n_donors, 2))
     <span class="org-variable-name">design</span>[:n_donors,0] = 0
     <span class="org-comment-delimiter"># </span><span class="org-comment">Heuristic: fix total number of updates</span>
     <span class="org-variable-name">num_epochs</span> = 6000 * 64 // x.shape[0]
-    <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'limma_voom'</span>, <span class="org-string">'wls_point'</span>):
+    <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'limma_voom'</span>, <span class="org-string">'wls_gamma'</span>, <span class="org-string">'wls_point'</span>):
       <span class="org-variable-name">fit</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
       <span class="org-keyword">for</span> test <span class="org-keyword">in</span> (<span class="org-string">'moderated_t'</span>, <span class="org-string">'z'</span>):
         <span class="org-variable-name">pval</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{test}'</span>](fit)
         result.append((b, n_cells, method, test, i, (pval &lt; alpha).mean()))
-  <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'b'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'test'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'tpr'</span>])
+  <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'b'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'test'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fdp'</span>])
   <span class="org-keyword">return</span> result
 
-<span class="org-keyword">def</span> <span class="org-function-name">evaluate_type1_by_donor</span>(dat, alpha=0.01, n_trials=1, n_donors=4, n_cells=100, min_counts=10):
-  <span class="org-variable-name">result</span> = (evaluate_power_by_donor(dat, b=0, alpha=alpha, n_trials=n_trials, n_donors=n_donors, min_counts=min_counts)
-            .rename({<span class="org-string">'tpr'</span>: <span class="org-string">'fpr'</span>}, axis=1))
-  <span class="org-keyword">return</span> result
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_fdr_bh</span>(fit):
+  <span class="org-doc">"""Return vector of BH adjusted p-values"""</span>
+  <span class="org-keyword">return</span> rpy2.robjects.r[<span class="org-string">'p.adjust'</span>](fit.rx2(<span class="org-string">'p.value'</span>)[:,0], method=<span class="org-string">'BH'</span>)
 
 <span class="org-keyword">def</span> <span class="org-function-name">estimate_lfsr</span>(fit):
+  <span class="org-doc">"""Return vector of lfsr</span>
+
+<span class="org-doc">  Implement the pipeline of Liu and Stephens 2020</span>
+
+<span class="org-doc">  https://arxiv.org/pdf/1901.10679</span>
+
+<span class="org-doc">  """</span>
   <span class="org-variable-name">fit1</span> = ashr.ash(
     betahat=pd.Series(fit.rx2(<span class="org-string">'coefficients'</span>)[:,0]),
     sebetahat=pd.Series(np.sqrt(((fit.rx2(<span class="org-string">'df.total'</span>) - fit.rx2(<span class="org-string">'df.residual'</span>)) * fit.rx2(<span class="org-string">'s2.prior'</span>) + fit.rx2(<span class="org-string">'df.residual'</span>) * fit.rx2(<span class="org-string">'stdev.unscaled'</span>)[:,0]) / fit.rx2(<span class="org-string">'df.total'</span>))),
@@ -778,40 +907,28 @@ Implement a simplified
     mixcompdist=<span class="org-string">'halfuniform'</span>)
   <span class="org-keyword">return</span> ashr.get_lfsr(fit1)
 
-<span class="org-keyword">def</span> <span class="org-function-name">estimate_fdr_bh</span>(fit):
-  <span class="org-keyword">return</span> rpy2.robjects.r[<span class="org-string">'p.adjust'</span>](fit.rx2(<span class="org-string">'p.value'</span>)[:,0], method=<span class="org-string">'BH'</span>)
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_power</span>(dat, g, b=0, fdr=0.1, n_trials=1, n_cells=100, min_cells=10):
+  <span class="org-doc">"""Evaluate power to detect DE genes, assuming effect size distribution g, at</span>
+<span class="org-doc">specified FDR.</span>
 
-<span class="org-keyword">def</span> <span class="org-function-name">simulate_study_by_donor</span>(dat, pi0=0.9, n_donors=4, n_cells=100, min_counts=10, seed=0):
-  <span class="org-keyword">assert</span> n_donors * n_cells &lt;= dat.shape[0]
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: keep this sparse to make downsampling non-zeros easier</span>
-  <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, n_donors=2 * n_donors, n_cells=n_cells, to_dense=<span class="org-constant">False</span>, min_counts=min_counts, seed=seed)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: taken from real data</span>
-  <span class="org-variable-name">g</span> = st.t(scale=0.1, df=2.5)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Simulate effects symmetrically about zero, then convert to negative</span>
-  <span class="org-comment-delimiter"># </span><span class="org-comment">effects in the appropriate group</span>
-  <span class="org-variable-name">b</span> = np.zeros(x.shape[1])
-  <span class="org-variable-name">effect</span> = np.random.uniform(size=x.shape[1]) &gt; pi0
-  <span class="org-variable-name">b</span>[effect] = 2
-  <span class="org-variable-name">sign</span> = np.random.uniform(size=x.shape[1]) &gt; 0.5
-  <span class="org-variable-name">b</span>[sign] = -b[sign]
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Convert to CSC to deal with half the cells at a time</span>
-  <span class="org-variable-name">y</span> = x.tocsc()
-  <span class="org-variable-name">data</span> = y.data.copy()
-  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(y.shape[0]):
-    <span class="org-keyword">if</span> b[i] &gt; 0:
-      <span class="org-variable-name">idx</span> = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] &gt; n_donors * n_cells)[0]
-      <span class="org-variable-name">data</span>[idx] = st.binom(n=y.data[idx].astype(<span class="org-builtin">int</span>), p=np.exp(-b[i])).rvs(size=<span class="org-builtin">len</span>(idx)).astype(<span class="org-builtin">float</span>)
-    <span class="org-keyword">elif</span> b[i] &lt; 0:
-      <span class="org-variable-name">idx</span> = y.indptr[i] + np.where(y.indices[y.indptr[i]:y.indptr[i+1]] &lt; n_donors * n_cells)[0]
-      <span class="org-variable-name">data</span>[idx] = st.binom(n=y.data[idx].astype(<span class="org-builtin">int</span>), p=np.exp(b[i])).rvs(size=<span class="org-builtin">len</span>(idx)).astype(<span class="org-builtin">float</span>)
-  <span class="org-variable-name">design</span> = np.ones((2 * n_donors, 2))
-  <span class="org-variable-name">design</span>[:n_donors,0] = 0
-  <span class="org-keyword">return</span> ss.csc_matrix((data, y.indices, y.indptr)).A, onehot, design, b
+<span class="org-doc">  dat - AnnData object</span>
+<span class="org-doc">  g - function which returns array of effect sizes</span>
+<span class="org-doc">  n_donors - number of donors per group</span>
+<span class="org-doc">  b - log fold change in total number of molecules observed between groups</span>
+<span class="org-doc">  fdr - False Discovery Rate</span>
+<span class="org-doc">  n_trials - number of simulation trials</span>
+<span class="org-doc">  n_cells - number of cells per donor</span>
+<span class="org-doc">  min_cells - minimum number of non-zero observations to retain genes</span>
 
-<span class="org-keyword">def</span> <span class="org-function-name">evaluate_power_by_donor_fdr</span>(dat, pi0=0.9, fdr=0.1, n_trials=1, n_donors=4, n_cells=100, min_counts=10):
+<span class="org-doc">  """</span>
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span>, <span class="org-variable-name">design</span>, <span class="org-variable-name">b</span> = simulate_study_by_donor(dat, pi0=pi0, n_donors=n_donors, n_cells=n_cells, min_counts=min_counts, seed=i)
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span>, <span class="org-variable-name">design</span>, <span class="org-variable-name">b</span> = simulate_study(dat, g, b=b, n_donors=1, n_cells=n_cells, min_cells=min_cells, seed=i)
+    <span class="org-keyword">if</span> ss.isspmatrix(x.X):
+      <span class="org-variable-name">x</span> = x.X.A
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">x</span> = x.X
+    <span class="org-variable-name">onehot</span> = onehot.A
     <span class="org-comment-delimiter"># </span><span class="org-comment">Heuristic: fix total number of updates</span>
     <span class="org-variable-name">num_epochs</span> = 6000 * 64 // x.shape[0]
     <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'limma_voom'</span>, <span class="org-string">'wls_point'</span>):
@@ -822,8 +939,51 @@ Implement a simplified
         <span class="org-variable-name">score</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{fdr_method}'</span>](fit)
         <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(b, 0)).mean()
         <span class="org-variable-name">power</span> = (score[~np.isclose(b, 0)] &lt; fdr).mean()
-        result.append((pi0, fdr, n_donors, n_cells, method, fdr_method, i, fdp, power))
-  <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'pi0'</span>, <span class="org-string">'fdr'</span>, <span class="org-string">'n_donors'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'fdr_method'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fdp'</span>, <span class="org-string">'power'</span>])
+        result.append((fdr, n_cells, method, fdr_method, i, fdp, power))
+    <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'point'</span>,):
+      <span class="org-variable-name">fit</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
+      <span class="org-variable-name">score</span> = rpy2.robjects.r[<span class="org-string">'p.adjust'</span>](fit[<span class="org-string">'p'</span>], method=<span class="org-string">'BH'</span>)
+      <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(b, 0)).mean()
+      <span class="org-variable-name">power</span> = (score[~np.isclose(b, 0)] &lt; fdr).mean()
+      result.append((fdr, n_cells, method, <span class="org-string">'fdr_bh'</span>, i, fdp, power))
+  <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'fdr'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'fdr_method'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fdp'</span>, <span class="org-string">'power'</span>])
+  <span class="org-keyword">return</span> result
+
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_power_by_donor</span>(dat, g, n_donors, b=0, fdr=0.1, n_trials=1, n_cells=100, min_cells=10):
+  <span class="org-doc">"""Evaluate power to detect DE genes, assuming effect size distribution g, at</span>
+<span class="org-doc">specified FDR.</span>
+
+<span class="org-doc">  dat - AnnData object</span>
+<span class="org-doc">  g - function which returns array of effect sizes</span>
+<span class="org-doc">  n_donors - number of donors per group</span>
+<span class="org-doc">  b - log fold change in total number of molecules observed between groups</span>
+<span class="org-doc">  fdr - False Discovery Rate</span>
+<span class="org-doc">  n_trials - number of simulation trials</span>
+<span class="org-doc">  n_cells - number of cells per donor</span>
+<span class="org-doc">  min_cells - minimum number of non-zero observations to retain genes</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">assert</span> n_donors &gt; 1
+  <span class="org-variable-name">result</span> = []
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span>, <span class="org-variable-name">design</span>, <span class="org-variable-name">b</span> = simulate_study(dat, g, b=b, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=i)
+    <span class="org-keyword">if</span> ss.isspmatrix(x.X):
+      <span class="org-variable-name">x</span> = x.X.A
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">x</span> = x.X
+    <span class="org-variable-name">onehot</span> = onehot.A
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Heuristic: fix total number of updates</span>
+    <span class="org-variable-name">num_epochs</span> = 6000 * 64 // x.shape[0]
+    <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'limma_voom'</span>, <span class="org-string">'wls_gamma'</span>, <span class="org-string">'wls_point'</span>):
+      <span class="org-variable-name">fit</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
+      <span class="org-comment-delimiter"># </span><span class="org-comment">Important: always use moderated t test</span>
+      <span class="org-variable-name">fit</span> = limma.eBayes(fit)
+      <span class="org-keyword">for</span> fdr_method <span class="org-keyword">in</span> (<span class="org-string">'fdr_bh'</span>, <span class="org-string">'lfsr'</span>):
+        <span class="org-variable-name">score</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{fdr_method}'</span>](fit)
+        <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(b, 0)).mean()
+        <span class="org-variable-name">power</span> = (score[~np.isclose(b, 0)] &lt; fdr).mean()
+        result.append((fdr, n_donors, n_cells, method, fdr_method, i, fdp, power))
+  <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'fdr'</span>, <span class="org-string">'n_donors'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'fdr_method'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fdp'</span>, <span class="org-string">'power'</span>])
   <span class="org-keyword">return</span> result
 </pre>
 </div>
@@ -1181,24 +1341,24 @@ v3 PBMC data</a>, which has more molecules observed per sample on average.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate_type1(dat, min_counts=20, n_trials=10)
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = <span class="org-builtin">dict</span>()
+<span class="org-keyword">for</span> n_cells <span class="org-keyword">in</span> (25, 50, 100):
+  <span class="org-variable-name">result</span>[n_cells] = evaluate_type1(dat, n_cells=n_cells, min_cells=n_cells, n_trials=50)
+<span class="org-variable-name">result</span> = pd.concat(result).reset_index(drop=<span class="org-constant">True</span>)
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
-fig.set_size_inches(4.5, 2.5)
-<span class="org-variable-name">labels</span> = [<span class="org-string">'LV-EB'</span>, <span class="org-string">'LV-Z'</span>, <span class="org-string">'PM-EB'</span>, <span class="org-string">'PM-Z'</span>]
-<span class="org-keyword">for</span> i, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(result.groupby([<span class="org-string">'method'</span>, <span class="org-string">'test'</span>])):
-  ax[0].boxplot(g[<span class="org-string">'fpr'</span>], positions=[i], widths=0.35, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
-  ax[1].boxplot(g[<span class="org-string">'fpr'</span>], positions=[i], widths=0.35, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
-ax[1].set_ylim(0, 0.02)
-<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(5.5, 2.5)
+<span class="org-variable-name">labels</span> = [<span class="org-string">'LV-EB'</span>, <span class="org-string">'LV-Z'</span>, <span class="org-string">'PM-Z'</span>, <span class="org-string">'SE-EB'</span>, <span class="org-string">'SE-Z'</span>]
+<span class="org-keyword">for</span> a, (t, g) <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, result.groupby(<span class="org-string">'n_cells'</span>)):
+  a.boxplot(g.pivot_table(columns=<span class="org-string">'trial'</span>, index=[<span class="org-string">'method'</span>, <span class="org-string">'test'</span>], values=<span class="org-string">'fdp'</span>), widths=0.35, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
   a.axhline(y=0.01, c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
-  a.set_xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(labels)))
   a.set_xticklabels(labels, rotation=90)
   a.set_xlabel(<span class="org-string">'Method'</span>)
+  a.set_title(f<span class="org-string">'$n$={t}'</span>)
 ax[0].set_ylabel(<span class="org-string">'Type 1 error rate'</span>)
 fig.tight_layout()
 </pre>
@@ -1209,11 +1369,47 @@ fig.tight_layout()
 <p><img src="figure/voom.org/fpr.png" alt="fpr.png">
 </p>
 </div>
+
+<p>
+To generate null data with systematic differences in sequencing depth,
+follow the scheme above, then apply binomial thinning with \(p = 0.5\) to
+every gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = <span class="org-builtin">dict</span>()
+<span class="org-keyword">for</span> n_cells <span class="org-keyword">in</span> (25, 50, 100):
+  <span class="org-variable-name">result</span>[n_cells] = evaluate_type1(dat, b=np.log(2), n_cells=n_cells, min_cells=n_cells, n_trials=50)
+<span class="org-variable-name">result</span> = pd.concat(result).reset_index(drop=<span class="org-constant">True</span>)
+</pre>
 </div>
 
-<div id="outline-container-org4564469" class="outline-4">
-<h4 id="org4564469">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org4564469">
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(5.5, 2.5)
+<span class="org-variable-name">labels</span> = [<span class="org-string">'LV-EB'</span>, <span class="org-string">'LV-Z'</span>, <span class="org-string">'PM-Z'</span>, <span class="org-string">'SE-EB'</span>, <span class="org-string">'SE-Z'</span>]
+<span class="org-keyword">for</span> a, (t, g) <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, result.groupby(<span class="org-string">'n_cells'</span>)):
+  a.boxplot(g.pivot_table(columns=<span class="org-string">'trial'</span>, index=[<span class="org-string">'method'</span>, <span class="org-string">'test'</span>], values=<span class="org-string">'fdp'</span>), widths=0.35, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
+  a.axhline(y=0.01, c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
+  a.set_xticklabels(labels, rotation=90)
+  a.set_xlabel(<span class="org-string">'Method'</span>)
+  a.set_title(f<span class="org-string">'$n$={t}'</span>)
+ax[0].set_ylabel(<span class="org-string">'Type 1 error rate'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/fpr-unequal-s.png" alt="fpr-unequal-s.png">
+</p>
+</div>
+</div>
+
+<div id="outline-container-org3197416" class="outline-4">
+<h4 id="org3197416">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org3197416">
 <p>
 To generate single cells with unequal size factors, combine simulated
 doublets from sorted cells in one group.
@@ -1530,9 +1726,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org36512c2" class="outline-4">
-<h4 id="org36512c2">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org36512c2">
+<div id="outline-container-org4e77346" class="outline-4">
+<h4 id="org4e77346">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org4e77346">
 <p>
 Generate null data with different size factors by assigning different
 numbers of cells to different donors.
@@ -1656,7 +1852,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-23 Tue 18:07</p>
+<p class="date">Created: 2020-06-25 Thu 23:14</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

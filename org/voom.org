@@ -437,11 +437,12 @@
        onehot - mapping of cells to groups (dense)
 
        """
-       theta = np.log(onehot.T @ x + 1) - np.log(onehot.T @ x.sum(axis=1, keepdims=True))
+       theta = np.log(onehot.T @ x) - np.log(onehot.T @ x.sum(axis=1, keepdims=True))
        if ss.isspmatrix(theta):
          theta = theta.A
        bhat = theta[0] - theta[1]
-       V = 1 / (onehot.T @ x + 1)
+       # Important: allow infinite SE; otherwise this is anti-conservative
+       V = 1 / (onehot.T @ x)
        se = np.sqrt(V.sum(axis=0))
        z = bhat / se
        p = st.norm().sf(abs(z))
@@ -468,11 +469,11 @@
          log_mean = np.log(x + 1) - np.log(s)
          # Important: this only reduces when there are no techncial covariates in
          # the measurement model
-         w = x + 1
+         w = x
          design = np.vstack([onehot[:,0], np.ones(x.shape[0])]).T
        else:
          log_mean = np.log(onehot.T @ x + 1) - np.log(onehot.T @ s)
-         w = onehot.T @ x + 1
+         w = onehot.T @ x
        fit = limma.lm_series(log_mean.T, design=design, weights=w.T)
        return fit
 
@@ -686,7 +687,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[4]:
+   # Out[51]:
    :END:
 
 * Results
@@ -1029,15 +1030,14 @@
    :END:
 
    #+BEGIN_SRC ipython :async t
-     result = dict()
-     for n_cells in (25, 50, 100):
-       result[n_cells] = evaluate_type1(dat, n_cells=n_cells, min_cells=n_cells, n_trials=50)
-     result = pd.concat(result).reset_index(drop=True)
+     result = pd.concat(
+       evaluate_type1(dat, n_cells=n_cells, min_cells=n_cells, n_trials=50)
+       for n_cells in (10, 100, 1000))
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[17]:
+   # Out[54]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/voom.org/fpr.png
@@ -1057,7 +1057,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[21]:
+   # Out[55]:
    [[file:figure/voom.org/fpr.png]]
    :END:
 
@@ -1093,6 +1093,42 @@
    :RESULTS:
    # Out[24]:
    [[file:figure/voom.org/fpr-unequal-s.png]]
+   :END:
+
+   As an alternative view, fix the number of cells \(n=100\) and vary the
+   difference in sequencing depth.
+
+   #+BEGIN_SRC ipython :async t
+     result = pd.concat(
+       evaluate_type1(dat, b=b, n_cells=100, min_cells=100, n_trials=50)
+       for b in np.log(np.linspace(1, 2, 4))
+     )
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/fpr-vs-b.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(6.5, 2.5)
+     labels = ['LV-EB', 'LV-Z', 'PM-Z', 'SE-EB', 'SE-Z']
+     for a, (b, g) in zip(ax, result.groupby('b')):
+       a.boxplot(g.pivot_table(columns='trial', index=['method', 'test'], values='fdp'), widths=0.35, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
+       a.axhline(y=0.01, c='r', lw=1, ls=':')
+       a.set_xticklabels(labels, rotation=90)
+       a.set_xlabel('Method')
+       a.set_title(f'$b$={np.exp(b):.2g}')
+     ax[0].set_ylabel('Type 1 error rate')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   [[file:figure/voom.org/fpr-vs-b.png]]
    :END:
 
 *** Unequal size factors

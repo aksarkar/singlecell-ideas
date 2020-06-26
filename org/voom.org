@@ -14,6 +14,7 @@
   variance of true gene expression values across donors. \(
   \DeclareMathOperator\E{E}
   \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\N{\mathcal{N}}
   \DeclareMathOperator\Poi{Poisson}
   \DeclareMathOperator\V{V}
   \DeclareMathOperator\digamma{\psi}
@@ -267,7 +268,7 @@
    for DE, where
 
    \begin{align}
-     \frac{\hat\theta_{1j} - \hat\theta_{0j}}{\sqrt(s_{1j}^2 + s_{0j}^2)} \sim \N(0, 1)
+     \frac{\hat\theta_{1j} - \hat\theta_{0j}}{\sqrt{s_{1j}^2 + s_{0j}^2}} \sim \N(0, 1)
    \end{align}
 
    under the null.
@@ -1321,39 +1322,41 @@
 
 ** Power (single cells as units)
 
-   To generate true positives treating cells as units, randomly sample cells
-   from a homogeneous population, randomly assign labels, and then use binomial
-   thinning (Gerard 2019) to introduce effects of a given magnitude.
+   To generate true positives treating cells as units, generate null data as
+   above, and then use binomial thinning (Gerard 2019) to introduce effects of
+   a given magnitude at effect genes. Assume effects are drawn from a scaled
+   \(t\) distribution \(g = 0.1 t_1\).
 
    #+BEGIN_SRC ipython :async t
-     result = []
-     for b in -np.log(np.linspace(1.05, 1.5, 20)):
-       result.append(evaluate_power(b_cells, b=b, alpha=0.1, n_trials=1))
-     result = pd.concat(result)
+     result = dict()
+     for n_cells in (25, 50, 100):
+       result[n_cells] = evaluate_power(dat, g=st.t(scale=0.1, df=1).rvs, n_cells=n_cells, min_cells=n_cells, n_trials=1)
+     result = pd.concat(result).reset_index(drop=True)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[143]:
+   # Out[34]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/voom.org/power-2-0.01.png
      cm = plt.get_cmap('Paired')
      plt.clf()
-     plt.gcf().set_size_inches(3.5, 2.5)
-     labels = ['LV-EB', 'LV-Z', 'PM-EB', 'PM-Z']
-     for i, (k, g) in enumerate(result.groupby(['method', 'test'])):
-       plt.plot(np.exp(-g['b']), g['tpr'], lw=1, c=cm(i), marker='.', ms=4, label=labels[i])
-     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
-     plt.xlabel('True effect size')
-     plt.ylabel(r'Power ($\alpha$=0.01)')
-     plt.ylim(0, 1)
-     plt.tight_layout()
+     fig, ax = plt.subplots(1, 3, sharey=True)
+     fig.set_size_inches(5, 2.5)
+     labels = ['LV-EB', 'PM-EB', 'PM-Z']
+     for a, (t, g) in zip(ax, result[result['fdr_method'] == 'fdr_bh'].groupby('n_cells')):
+       a.boxplot(g.pivot_table(columns='trial', index=['method', 'test'], values='power'), widths=0.35, medianprops={'color': 'k'}, flierprops={'marker': '.', 'markersize': 2})
+       a.set_xticklabels(labels, rotation=90)
+       a.set_xlabel('Method')
+       a.set_title(f'$n$={t}')
+     ax[0].set_ylabel(r'Power (FDR 10%)')
+     fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[144]:
+   # Out[44]:
    [[file:figure/voom.org/power-2-0.01.png]]
    :END:
 

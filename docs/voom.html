@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-26 Fri 17:01 -->
+<!-- 2020-06-27 Sat 03:45 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An improved voom transform for scRNA-seq data</title>
@@ -925,7 +925,7 @@ Implement a simplified
 <span class="org-doc">  """</span>
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span>, <span class="org-variable-name">design</span>, <span class="org-variable-name">b</span> = simulate_study(dat, g, b=b, n_donors=1, n_cells=n_cells, min_cells=min_cells, seed=i)
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span>, <span class="org-variable-name">design</span>, <span class="org-variable-name">lfc</span> = simulate_study(dat, g, b=b, n_donors=1, n_cells=n_cells, min_cells=min_cells, seed=i)
     <span class="org-keyword">if</span> ss.isspmatrix(x.X):
       <span class="org-variable-name">x</span> = x.X.A
     <span class="org-keyword">else</span>:
@@ -939,14 +939,14 @@ Implement a simplified
       <span class="org-variable-name">fit</span> = limma.eBayes(fit)
       <span class="org-keyword">for</span> fdr_method <span class="org-keyword">in</span> (<span class="org-string">'fdr_bh'</span>, <span class="org-string">'lfsr'</span>):
         <span class="org-variable-name">score</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{fdr_method}'</span>](fit)
-        <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(b, 0)).mean()
-        <span class="org-variable-name">power</span> = (score[~np.isclose(b, 0)] &lt; fdr).mean()
+        <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(lfc, 0)).mean()
+        <span class="org-variable-name">power</span> = (score[~np.isclose(lfc, 0)] &lt; fdr).mean()
         result.append((fdr, n_cells, method, fdr_method, i, fdp, power))
     <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'point'</span>,):
       <span class="org-variable-name">fit</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
       <span class="org-variable-name">score</span> = rpy2.robjects.r[<span class="org-string">'p.adjust'</span>](fit[<span class="org-string">'p'</span>], method=<span class="org-string">'BH'</span>)
-      <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(b, 0)).mean()
-      <span class="org-variable-name">power</span> = (score[~np.isclose(b, 0)] &lt; fdr).mean()
+      <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(lfc, 0)).mean()
+      <span class="org-variable-name">power</span> = (score[~np.isclose(lfc, 0)] &lt; fdr).mean()
       result.append((fdr, n_cells, method, <span class="org-string">'fdr_bh'</span>, i, fdp, power))
   <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'fdr'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'fdr_method'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fdp'</span>, <span class="org-string">'power'</span>])
   <span class="org-keyword">return</span> result
@@ -968,7 +968,7 @@ Implement a simplified
   <span class="org-keyword">assert</span> n_donors &gt; 1
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span>, <span class="org-variable-name">design</span>, <span class="org-variable-name">b</span> = simulate_study(dat, g, b=b, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=i)
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span>, <span class="org-variable-name">design</span>, <span class="org-variable-name">lfc</span> = simulate_study(dat, g, b=b, n_donors=n_donors, n_cells=n_cells, min_cells=min_cells, seed=i)
     <span class="org-keyword">if</span> ss.isspmatrix(x.X):
       <span class="org-variable-name">x</span> = x.X.A
     <span class="org-keyword">else</span>:
@@ -982,11 +982,23 @@ Implement a simplified
       <span class="org-variable-name">fit</span> = limma.eBayes(fit)
       <span class="org-keyword">for</span> fdr_method <span class="org-keyword">in</span> (<span class="org-string">'fdr_bh'</span>, <span class="org-string">'lfsr'</span>):
         <span class="org-variable-name">score</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{fdr_method}'</span>](fit)
-        <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(b, 0)).mean()
-        <span class="org-variable-name">power</span> = (score[~np.isclose(b, 0)] &lt; fdr).mean()
+        <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(lfc, 0)).mean()
+        <span class="org-variable-name">power</span> = (score[~np.isclose(lfc, 0)] &lt; fdr).mean()
         result.append((fdr, n_donors, n_cells, method, fdr_method, i, fdp, power))
   <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'fdr'</span>, <span class="org-string">'n_donors'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'fdr_method'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fdp'</span>, <span class="org-string">'power'</span>])
   <span class="org-keyword">return</span> result
+</pre>
+</div>
+
+<p>
+To generate null data, randomly sample cells from a homogeneous population,
+and randomly assign labels. Use
+<a href="https://support.10xgenomics.com/single-cell-gene-expression/datasets/3.0.0/pbmc_10k_v3">10X
+v3 PBMC data</a>, which has more molecules observed per sample on average.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/modes/10k_pbmc_v3.h5ad'</span>)
 </pre>
 </div>
 </div>
@@ -1331,16 +1343,8 @@ As a sanity check, use bulk RNA-seq data from GTEx v6 lung.
 <h3 id="org05839be">Type 1 error rate (single cells as units)</h3>
 <div class="outline-text-3" id="text-org05839be">
 <p>
-To generate null data, randomly sample cells from a homogeneous population,
-and randomly assign labels. Use
-<a href="https://support.10xgenomics.com/single-cell-gene-expression/datasets/3.0.0/pbmc_10k_v3">10X
-v3 PBMC data</a>, which has more molecules observed per sample on average.
+Simulate null data, varying the number of cells per group.
 </p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/modes/10k_pbmc_v3.h5ad'</span>)
-</pre>
-</div>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">result</span> = pd.concat(
@@ -1348,6 +1352,10 @@ v3 PBMC data</a>, which has more molecules observed per sample on average.
   <span class="org-keyword">for</span> n_cells <span class="org-keyword">in</span> (10, 100, 1000))
 </pre>
 </div>
+
+<p>
+Plot the distribution of Type 1 errors in each trial.
+</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
@@ -1443,9 +1451,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orga33496c" class="outline-4">
-<h4 id="orga33496c">Unequal size factors</h4>
-<div class="outline-text-4" id="text-orga33496c">
+<div id="outline-container-org4cbfade" class="outline-4">
+<h4 id="org4cbfade">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org4cbfade">
 <p>
 To generate single cells with unequal size factors, combine simulated
 doublets from sorted cells in one group.
@@ -1624,19 +1632,31 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-orgd147d31" class="outline-4">
-<h4 id="orgd147d31">Pathological example</h4>
-<div class="outline-text-4" id="text-orgd147d31">
+<div id="outline-container-orgd9329ed" class="outline-4">
+<h4 id="orgd9329ed">Anti-conservative \(z\)-test</h4>
+<div class="outline-text-4" id="text-orgd9329ed">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, n_donors=2, n_cells=400, min_counts=30, seed=2)
-<span class="org-variable-name">fit</span> = estimate_point(x.A, onehot.A)
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, n_donors=1, n_cells=100, min_cells=100, seed=3)
+<span class="org-variable-name">y</span> = x.X.A.copy()
+<span class="org-comment-delimiter"># </span><span class="org-comment">for j in range(y.shape[1]):</span>
+<span class="org-comment-delimiter">#   </span><span class="org-comment">temp = y[:,j].copy()</span>
+<span class="org-comment-delimiter">#   </span><span class="org-comment">np.random.shuffle(temp)</span>
+<span class="org-comment-delimiter">#   </span><span class="org-comment">y[:,j] = temp</span>
+<span class="org-variable-name">theta</span> = np.log(onehot.T @ y) - np.log(onehot.T @ y.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>))
+<span class="org-variable-name">bhat</span> = theta[0] - theta[1]
+<span class="org-variable-name">V</span> = 1 / (onehot.T @ y)
+<span class="org-variable-name">se</span> = np.sqrt(V.<span class="org-builtin">sum</span>(axis=0))
+<span class="org-variable-name">z</span> = bhat / se
+<span class="org-variable-name">p</span> = st.norm().sf(<span class="org-builtin">abs</span>(z))
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
+<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(-5, 5, 1000)
+plt.clf()
 plt.gcf().set_size_inches(3, 3)
-plt.hist(fit[<span class="org-string">'bhat'</span>] / fit[<span class="org-string">'se'</span>], bins=20, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+plt.hist(bhat / se, bins=21, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+plt.plot(grid, st.norm().pdf(grid), lw=1, c=<span class="org-string">'k'</span>)
 plt.xlabel(<span class="org-string">'$z$-score'</span>)
 plt.ylabel(<span class="org-string">'Density'</span>)
 plt.tight_layout()
@@ -1656,7 +1676,7 @@ plt.clf()
 plt.gcf().set_size_inches(3, 3)
 plt.xscale(<span class="org-string">'log'</span>)
 plt.yscale(<span class="org-string">'log'</span>)
-<span class="org-keyword">for</span> i, (F, label) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>([st.norm(), st.t(1, scale=0.1)], [<span class="org-string">'N(0, 1)'</span>, <span class="org-string">'$t_4$'</span>])):
+<span class="org-keyword">for</span> i, (F, label) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>([st.norm()], [<span class="org-string">'N(0, 1)'</span>])):
   plt.plot(np.linspace(0, 1, fit.shape[0] + 1)[1:], np.sort(F.cdf(fit[<span class="org-string">'bhat'</span>] / fit[<span class="org-string">'se'</span>])), lw=1, c=cm(i), label=label)
 plt.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'k'</span>)
 plt.xlim(lim)
@@ -1671,6 +1691,53 @@ plt.tight_layout()
 
 <div class="figure">
 <p><img src="figure/voom.org/point-example.png" alt="point-example.png">
+</p>
+</div>
+
+<p>
+Check whether the SE is calibrated.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_trials</span> = 50
+<span class="org-variable-name">n_bootstraps</span> = 400
+<span class="org-variable-name">n_cells</span> = 100
+<span class="org-variable-name">s</span> = 1e4
+<span class="org-variable-name">result</span> = []
+<span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
+  <span class="org-keyword">for</span> theta <span class="org-keyword">in</span> np.arange(-12, -2, 1):
+    <span class="org-variable-name">x</span> = st.poisson(s * np.exp(theta)).rvs(size=n_cells)
+    <span class="org-variable-name">thetahat</span> = np.log(x.<span class="org-builtin">sum</span>()) - np.log(n_cells * s)
+    <span class="org-variable-name">se</span> = np.sqrt(1 / x.<span class="org-builtin">sum</span>())
+    <span class="org-variable-name">bootstraps</span> = []
+    <span class="org-keyword">for</span> b <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_bootstraps):
+      <span class="org-variable-name">x</span> = st.poisson(s * np.exp(theta)).rvs(size=n_cells)
+      bootstraps.append(np.log(x.<span class="org-builtin">sum</span>()) - np.log(n_cells * s))
+    <span class="org-variable-name">se_b</span> = np.array(bootstraps).std()
+    result.append([theta, trial, thetahat, se, se_b])
+<span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'theta'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'thetahat'</span>, <span class="org-string">'se'</span>, <span class="org-string">'se_b'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.xscale(<span class="org-string">'log'</span>)
+plt.yscale(<span class="org-string">'log'</span>)
+plt.scatter(result[<span class="org-string">'se'</span>], result[<span class="org-string">'se_b'</span>], s=1, c=<span class="org-string">'k'</span>)
+<span class="org-variable-name">lim</span> = [1e-3, 1.5]
+plt.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+plt.xlim(lim)
+plt.ylim(lim)
+plt.xlabel(<span class="org-string">'Analytic SE'</span>)
+plt.ylabel(<span class="org-string">'Bootstrap SE'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/se.png" alt="se.png">
 </p>
 </div>
 </div>
@@ -1728,31 +1795,25 @@ to donors, then randomly assign donors to groups.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
-<span class="org-variable-name">b_cells</span> = dat[dat.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'b_cells'</span>]
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">result</span> = evaluate_type1_by_donor(b_cells, min_counts=10, n_trials=50)
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = pd.concat(
+  evaluate_type1_by_donor(dat, b=b, n_donors=4, n_cells=100, min_cells=100, n_trials=10)
+  <span class="org-keyword">for</span> b <span class="org-keyword">in</span> np.log(np.linspace(1, 2, 4)))
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
-fig.set_size_inches(4.5, 2.5)
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(5.5, 2.5)
 <span class="org-variable-name">labels</span> = [<span class="org-string">'LV-EB'</span>, <span class="org-string">'LV-Z'</span>, <span class="org-string">'GAM-EB'</span>, <span class="org-string">'GAM-Z'</span>, <span class="org-string">'PM-EB'</span>, <span class="org-string">'PM-Z'</span>]
-<span class="org-keyword">for</span> i, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(result.groupby([<span class="org-string">'method'</span>, <span class="org-string">'test'</span>])):
-  ax[0].boxplot(g[<span class="org-string">'fpr'</span>], positions=[i], widths=0.35, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
-  ax[1].boxplot(g[<span class="org-string">'fpr'</span>], positions=[i], widths=0.35, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
-ax[1].set_ylim(0, 0.02)
-<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+<span class="org-keyword">for</span> a, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, result.groupby(<span class="org-string">'b'</span>)):
+  a.boxplot(g.pivot_table(index=[<span class="org-string">'method'</span>, <span class="org-string">'test'</span>], columns=<span class="org-string">'trial'</span>, values=<span class="org-string">'fdp'</span>), widths=0.35, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
   a.axhline(y=0.01, c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
-  a.set_xticks(<span class="org-builtin">range</span>(<span class="org-builtin">len</span>(labels)))
   a.set_xticklabels(labels, rotation=90)
+  a.set_title(f<span class="org-string">'$b$={np.exp(k):.3g}'</span>)
   a.set_xlabel(<span class="org-string">'Method'</span>)
 ax[0].set_ylabel(<span class="org-string">'Type 1 error rate'</span>)
+ax[0].set_ylim(0, 0.1)
 fig.tight_layout()
 </pre>
 </div>
@@ -1764,9 +1825,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org4cbfade" class="outline-4">
-<h4 id="org4cbfade">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org4cbfade">
+<div id="outline-container-org726dc6f" class="outline-4">
+<h4 id="org726dc6f">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org726dc6f">
 <p>
 Generate null data with different size factors by assigning different
 numbers of cells to different donors.
@@ -1851,31 +1912,29 @@ plt.tight_layout()
 <p>
 To generate true positives treating donors as units, randomly sample cells
 from a homogeneous population, randomly assign cells to donors, randomly
-assign donors to groups, and then thin all cells assigned to the effect
-group equally.
+assign donors to groups, and then thin effect genes.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">result</span> = []
-<span class="org-keyword">for</span> b <span class="org-keyword">in</span> -np.log(np.linspace(1, 2, 20)):
-  result.append(evaluate_power_by_donor(b_cells, b=b, n_donors=64, n_cells=50, alpha=0.01, n_trials=1))
-<span class="org-variable-name">result</span> = pd.concat(result)
-result.to_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/limma-voom-power-by-donor-40.txt.gz'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">result</span> = pd.concat(
+  evaluate_power_by_donor(dat, g=st.t(scale=0.1, df=1).rvs, n_donors=n_donors, n_cells=50, n_trials=10)
+  <span class="org-keyword">for</span> n_donors <span class="org-keyword">in</span> (4, 16, 64))
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Paired'</span>)
 plt.clf()
-plt.gcf().set_size_inches(3.5, 2.5)
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(5, 2.5)
 <span class="org-variable-name">labels</span> = [<span class="org-string">'LV-EB'</span>, <span class="org-string">'LV-Z'</span>, <span class="org-string">'GAM-EB'</span>, <span class="org-string">'GAM-Z'</span>, <span class="org-string">'PM-EB'</span>, <span class="org-string">'PM-Z'</span>]
-<span class="org-keyword">for</span> i, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(result.groupby([<span class="org-string">'method'</span>, <span class="org-string">'test'</span>])):
-  plt.plot(np.exp(-g[<span class="org-string">'b'</span>]), g[<span class="org-string">'tpr'</span>], lw=1, c=cm(i), marker=<span class="org-string">'.'</span>, ms=4, label=labels[i])
-plt.legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
-plt.xlabel(<span class="org-string">'True effect size'</span>)
-plt.ylabel(r<span class="org-string">'Power ($\alpha$=0.01)'</span>)
-plt.ylim(0, 1)
-plt.tight_layout()
+<span class="org-keyword">for</span> a, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, result[result[<span class="org-string">'fdr_method'</span>] == <span class="org-string">'fdr_bh'</span>].groupby(<span class="org-string">'n_donors'</span>)):
+  a.boxplot(g.pivot_table(columns=<span class="org-string">'trial'</span>, index=[<span class="org-string">'method'</span>, <span class="org-string">'test'</span>], values=<span class="org-string">'power'</span>), widths=0.4, medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markersize'</span>: 2})
+  a.set_xticklabels(labels, rotation=90)
+  a.set_xlabel(<span class="org-string">'Method'</span>)
+  a.set_title(f<span class="org-string">'$n$={k}'</span>)
+ax[0].set_ylabel(r<span class="org-string">'Power (FDR 10%)'</span>)
+fig.tight_layout()
 </pre>
 </div>
 
@@ -1890,7 +1949,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-26 Fri 17:01</p>
+<p class="date">Created: 2020-06-27 Sat 03:45</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

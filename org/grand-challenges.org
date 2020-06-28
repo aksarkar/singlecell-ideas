@@ -12,38 +12,117 @@
   contributions could be made.
 
 * Recurring challenges
-** Varying levels of resolution
 
-** Quantifying uncertainty of measurements and analysis results
+  *Varying levels of resolution.* The discussion in this section implicitly
+  assumes that the goal of the scRNA-seq experiment in question is to generate
+  a reference map of cell types. The overarching questions, which remain
+  unstated explicitly here but implicitly motivate which considerations are
+  deemed "important", are:
 
-** Scaling to higher dimensionalities: more cells, more features, and broader coverage
+  - How can we identify subsets of cells which make sense to treat as coherent
+    units?
+  - How can we choose the "resolution" (degree of coherence on the axis of
+    interest versus degree of heterogeneity elsewhere) for a particular
+    scientific question of interest?
+  - How do we build representations of the data which facilitate extracting
+    coherent subsets of cells at the desired resolution?
+
+  The questions underlying this section appear to hinge on the idea that
+  scRNA-seq is being used to create catalogues of cells, e.g., Human Cell
+  Atlas. The most basic question (which subsets can be considered as coherent
+  units) stops being a problem in, e.g., QTL mapping studies, or perturbation
+  screens, where the coherent units are known /a priori/. The problem of
+  resolution depends on the specific scientific question, which is also known
+  /a priori/ for non-atlas experimental designs. For such experiments,
+  multi-resolution views of the data are mostly unnecessary.
+
+  *Quantifying uncertainty of measurements and analysis results.* There are two
+  issues: (1) the measurement noise is increased (compared to bulk assays),
+  making certain analyses harder/impossible; (2) analyses have uncertainties,
+  which are often not propagated through typical analysis pipelines. The first
+  issue is not properly appreciated in the field, but unfortunately, likely
+  cannot be addressed through clever computation. (For example, accurately
+  estimating gene expression variance from the data appears generally not
+  possible.) The second issue appears more difficult, until considering what a
+  typical analysis pipeline actually does. The primary point where errors are
+  not propagated are cluster assignments.
+
+  *Scaling to higher dimensionalities: more cells, more features, and broader
+  coverage.* There are two fundamental questions: (1) do the software
+  implementations of common models/methods run with reasonable computational
+  budgets on time/space, and (2) do the models/methods support multiple types
+  of measurements, either simultaneously on the same samples or not? The first
+  issue requires the most difficult work, which seems highly unsuited to many
+  research labs. The second issue requires linked models in the case of
+  simultaneous measurements (and likely specialized software implementations),
+  and may have fundamental statistical problems in the case of non-simultaneous
+  measurements.
 
 * Challenges in single-cell transcriptomics
 
-** Handling sparsity in single-cell RNA sequencing
+  *Handling sparsity in single-cell RNA sequencing.* This discussion is
+  moot. "Dropouts" are not a problem, "imputation" does not make sense, and
+  sparsity is a problem only for efficient, robust software
+  implementations. Denoising is mostly an interesting side-effect of fitting
+  generative models for real tasks of interest.
 
-** Defining flexible statistical frameworks for discovering complex differential patterns in gene expression
+  *Defining flexible statistical frameworks for discovering complex
+  differential patterns in gene expression.* In what sense are current DE
+  frameworks "inflexible"? The paper suggests two senses: (1) DE needs fixed
+  assignments of samples to conditions, and (2) DE only considers mean
+  shifts. The first issue matters only when the assignments come from some
+  clustering algorithm, which generally has an uncertainty that is not
+  computed. This issue could be easily resolved by a model-based clustering
+  algorithm which assigns a posterior probability of cluster assignment. The
+  second issue relates to the general problem of detecting whether two
+  distributions are different from each other in a statistically meaningful
+  way, which seems to be a much harder problem, and one which has an unclear
+  biological interpretation.
 
-** Mapping single cells to a reference atlas
+  *Mapping single cells to a reference atlas.* The problems in this section
+  boil down to the statistical problem of semi-supervised learning of cell
+  clusters in new data sets, using reference data as labeled auxiliary
+  data. This problem seems to run into a fundamental limitation, that there
+  will be systematic differences in measurement error between new data sets and
+  reference data sets. This limitation suggests that what is needed is not just
+  labeled reference data, but a full generative model for the reference data
+  which can be updated with the new data set. On the one hand, distributing a
+  full generative model could be easier than distributing a high-dimensional
+  cell atlas (c.f., pre-trained ImageNet). On the other hand, it is unclear how
+  to make this sort of framework widely accessible to non-experts.
 
-** Generalizing trajectory inference
+  *Generalizing trajectory inference.* It is unclear what "generalizing" means
+  in this context. The paper instead discusses the problem of performing
+  trajectory inference from different types of measurements, or in parallel
+  over different initial conditions, and making rigorous statistical
+  comparisons between estimated trajectories.
 
-** Finding patterns in spatially resolved measurements
+  Why would this be an interesting thing to do?
+
+  *Finding patterns in spatially resolved measurements.* The paper suggests the
+  fundamental question is assigning samples to cell types/compartments given
+  gene expression and spatial coordinates. The paper also suggests that there
+  are similar problems of "resolution" in spatial coherence of cells.
+
+  Why would this be an interesting thing to do?
 
 * Challenges in single-cell genomics
 
-** Dealing with errors and missing data in the identification of variation from single-cell DNA sequencing data
+  *Dealing with errors and missing data in the identification of variation from
+  single-cell DNA sequencing data.*
 
 * Challenges in single-cell phylogenomics
 
-** Scaling phylogenetic models to many cells and many sites
+  *Scaling phylogenetic models to many cells and many sites.*
 
-** Integrating multiple types of variation into phylogenetic models
+  *Integrating multiple types of variation into phylogenetic models.*
 
-** Inferring population genetic parameters of tumor heterogeneity by model integration
+  *Inferring population genetic parameters of tumor heterogeneity by model
+  integration.*
 
 * Overarching challenges
 
-** Integration of single-cell data across samples, experiments, and types of measurement
+  *Integration of single-cell data across samples, experiments, and types of
+  measurement.*
 
-** Validating and benchmarking analysis tools for single-cell measurements
+  *Validating and benchmarking analysis tools for single-cell measurements.*

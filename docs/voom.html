@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-27 Sat 03:45 -->
+<!-- 2020-06-29 Mon 18:17 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An improved voom transform for scRNA-seq data</title>
@@ -451,7 +451,7 @@ variables. As an illustrative example, plot the bootstrap distribution of the
 <span class="org-variable-name">n_trials</span> = 1000
 <span class="org-variable-name">n</span> = 100
 <span class="org-variable-name">s</span> = 1e4
-<span class="org-variable-name">theta</span> = -10
+<span class="org-variable-name">theta</span> = -11
 <span class="org-variable-name">thetahat</span> = []
 <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
   <span class="org-variable-name">x</span> = rng.poisson(s * np.exp(theta), size=n)
@@ -514,7 +514,7 @@ simulation.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(2)
-<span class="org-variable-name">n_trials</span> = 500
+<span class="org-variable-name">n_trials</span> = 1000
 <span class="org-variable-name">n</span> = 100
 <span class="org-variable-name">s</span> = 1e4
 <span class="org-variable-name">log_mu</span> = -10
@@ -554,8 +554,51 @@ for DE, where
 \end{align}
 
 <p>
-under the null.
+under the null. However, one clear issue is that the estimator (8) is
+biased, because
 </p>
+
+\begin{equation}
+  \E[\ln \textstyle\sum_i x_{ij}] = \sum_{t=0}^{\infty} \ln(t) \Poi(t; \textstyle\sum_i \xiplus \exp(\theta_j)) = -\infty.
+\end{equation}
+
+<p>
+This issue was previously noted (e.g., Lun 2018) via Taylor expansion
+</p>
+
+\begin{equation}
+  \E[\ln x] \approx \ln \E[x] - \frac{\V[x]}{2 \E[x]^2},
+\end{equation}
+
+<p>
+and demonstrates that the bias is worse for lower-expressed genes. To
+illustrate the issue, plot the theoretical quantiles of the \(\N(\theta_j,
+   s^2_j)\) distribution against the empirical quantiles of the (parametric,
+oracle) bootstrap distribution of \(\hat\theta_j\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">grid</span> = np.linspace(0, 1, thetahat.shape[0] + 1)[1:]
+plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.xscale(<span class="org-string">'log'</span>)
+plt.yscale(<span class="org-string">'log'</span>)
+plt.plot(grid, st.norm(loc=theta, scale=np.sqrt(1 / (np.exp(theta) * n * s))).cdf(np.sort(thetahat)), lw=1, c=<span class="org-string">'k'</span>)
+<span class="org-variable-name">lim</span> = [5e-7, 1]
+plt.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+plt.xlim(lim)
+plt.ylim(lim)
+plt.xlabel(<span class="org-string">'Theoretical quantile'</span>)
+plt.ylabel(<span class="org-string">'Empirical quantile'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/voom.org/analytic-se-log-link-qq.png" alt="analytic-se-log-link-qq.png">
+</p>
+</div>
 </div>
 </div>
 
@@ -741,11 +784,27 @@ Implement a simplified
 <span class="org-doc">  onehot - mapping of cells to groups (dense)</span>
 
 <span class="org-doc">  """</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Allow -inf</span>
   <span class="org-variable-name">theta</span> = np.log(onehot.T @ x) - np.log(onehot.T @ x.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>))
   <span class="org-keyword">if</span> ss.isspmatrix(theta):
     <span class="org-variable-name">theta</span> = theta.A
   <span class="org-variable-name">bhat</span> = theta[0] - theta[1]
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: allow infinite SE; otherwise this is anti-conservative</span>
+  <span class="org-variable-name">V</span> = 1 / (onehot.T @ x)
+  <span class="org-variable-name">se</span> = np.sqrt(V.<span class="org-builtin">sum</span>(axis=0))
+  <span class="org-variable-name">z</span> = bhat / se
+  <span class="org-variable-name">p</span> = st.norm().sf(<span class="org-builtin">abs</span>(z))
+  <span class="org-keyword">return</span> pd.DataFrame({<span class="org-string">'bhat'</span>: bhat, <span class="org-string">'se'</span>: se, <span class="org-string">'p'</span>: p})
+
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_point_rqr</span>(x, onehot, **kwargs):
+  <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Allow -inf</span>
+  <span class="org-variable-name">theta</span> = np.log(onehot.T @ x) - np.log(onehot.T @ s)
+  <span class="org-keyword">if</span> ss.isspmatrix(theta):
+    <span class="org-variable-name">theta</span> = theta.A
+  <span class="org-variable-name">F</span> = st.poisson(mu=np.exp(np.log(s) + onehot.T @ theta))
+  <span class="org-variable-name">u</span> = F.cdf(x - 1) + np.random.uniform(size=x.shape) * F.pmf(x)
+  <span class="org-variable-name">resid</span> = st.norm().ppf(u)
+  <span class="org-variable-name">bhat</span> = np.diff((onehot @ resid) / (onehot.<span class="org-builtin">sum</span>(axis=0)), axis=0)
   <span class="org-variable-name">V</span> = 1 / (onehot.T @ x)
   <span class="org-variable-name">se</span> = np.sqrt(V.<span class="org-builtin">sum</span>(axis=0))
   <span class="org-variable-name">z</span> = bhat / se
@@ -1451,9 +1510,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org4cbfade" class="outline-4">
-<h4 id="org4cbfade">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org4cbfade">
+<div id="outline-container-org70db7ce" class="outline-4">
+<h4 id="org70db7ce">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org70db7ce">
 <p>
 To generate single cells with unequal size factors, combine simulated
 doublets from sorted cells in one group.
@@ -1471,6 +1530,10 @@ doublets from sorted cells in one group.
 <span class="org-variable-name">onehot</span> = ss.block_diag([onehot1, np.ones((100, 1))], <span class="org-builtin">format</span>=<span class="org-string">'csr'</span>)
 </pre>
 </div>
+
+<p>
+0 - 06711880-dce2-448e-9b52-b1b94f6d7c9e
+</p>
 
 <p>
 Fit <code>limma-voom</code>, followed by EB shrinkage of standard errors. Report the
@@ -1825,9 +1888,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org726dc6f" class="outline-4">
-<h4 id="org726dc6f">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org726dc6f">
+<div id="outline-container-org237db72" class="outline-4">
+<h4 id="org237db72">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org237db72">
 <p>
 Generate null data with different size factors by assigning different
 numbers of cells to different donors.
@@ -1949,7 +2012,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-27 Sat 03:45</p>
+<p class="date">Created: 2020-06-29 Mon 18:17</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

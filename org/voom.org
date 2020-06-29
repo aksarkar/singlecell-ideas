@@ -171,7 +171,7 @@
      n_trials = 1000
      n = 100
      s = 1e4
-     theta = -10
+     theta = -11
      thetahat = []
      for i in range(n_trials):
        x = rng.poisson(s * np.exp(theta), size=n)
@@ -181,7 +181,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[121]:
+   # Out[55]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/voom.org/analytic-se-log-link.png
@@ -197,7 +197,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[12]:
+   # Out[50]:
    [[file:figure/voom.org/analytic-se-log-link.png]]
    :END:
 
@@ -231,7 +231,7 @@
 
    #+BEGIN_SRC ipython :async t
      rng = np.random.default_rng(2)
-     n_trials = 500
+     n_trials = 1000
      n = 100
      s = 1e4
      log_mu = -10
@@ -244,7 +244,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[16]:
+   # Out[51]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/voom.org/analytic-se-identity-link.png
@@ -260,7 +260,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[17]:
+   # Out[52]:
    [[file:figure/voom.org/analytic-se-identity-link.png]]
    :END:
 
@@ -271,7 +271,45 @@
      \frac{\hat\theta_{1j} - \hat\theta_{0j}}{\sqrt{s_{1j}^2 + s_{0j}^2}} \sim \N(0, 1)
    \end{align}
 
-   under the null.
+   under the null. However, one clear issue is that the estimator (8) is
+   biased, because
+
+   \begin{equation}
+     \E[\ln \textstyle\sum_i x_{ij}] = \sum_{t=0}^{\infty} \ln(t) \Poi(t; \textstyle\sum_i \xiplus \exp(\theta_j)) = -\infty.
+   \end{equation}
+
+   This issue was previously noted (e.g., Lun 2018) via Taylor expansion
+
+   \begin{equation}
+     \E[\ln x] \approx \ln \E[x] - \frac{\V[x]}{2 \E[x]^2},
+   \end{equation}
+
+   and demonstrates that the bias is worse for lower-expressed genes. To
+   illustrate the issue, plot the theoretical quantiles of the \(\N(\theta_j,
+   s^2_j)\) distribution against the empirical quantiles of the (parametric,
+   oracle) bootstrap distribution of \(\hat\theta_j\).
+
+   #+BEGIN_SRC ipython :ipyfile figure/voom.org/analytic-se-log-link-qq.png
+     grid = np.linspace(0, 1, thetahat.shape[0] + 1)[1:]
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.xscale('log')
+     plt.yscale('log')
+     plt.plot(grid, st.norm(loc=theta, scale=np.sqrt(1 / (np.exp(theta) * n * s))).cdf(np.sort(thetahat)), lw=1, c='k')
+     lim = [5e-7, 1]
+     plt.plot(lim, lim, lw=1, ls=':', c='r')
+     plt.xlim(lim)
+     plt.ylim(lim)
+     plt.xlabel('Theoretical quantile')
+     plt.ylabel('Empirical quantile')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[62]:
+   [[file:figure/voom.org/analytic-se-log-link-qq.png]]
+   :END:
 
 ** Variance of Gamma expression model
 
@@ -437,11 +475,27 @@
        onehot - mapping of cells to groups (dense)
 
        """
+       # Allow -inf
        theta = np.log(onehot.T @ x) - np.log(onehot.T @ x.sum(axis=1, keepdims=True))
        if ss.isspmatrix(theta):
          theta = theta.A
        bhat = theta[0] - theta[1]
-       # Important: allow infinite SE; otherwise this is anti-conservative
+       V = 1 / (onehot.T @ x)
+       se = np.sqrt(V.sum(axis=0))
+       z = bhat / se
+       p = st.norm().sf(abs(z))
+       return pd.DataFrame({'bhat': bhat, 'se': se, 'p': p})
+
+     def estimate_point_rqr(x, onehot, **kwargs):
+       s = x.sum(axis=1, keepdims=True)
+       # Allow -inf
+       theta = np.log(onehot.T @ x) - np.log(onehot.T @ s)
+       if ss.isspmatrix(theta):
+         theta = theta.A
+       F = st.poisson(mu=np.exp(np.log(s) + onehot.T @ theta))
+       u = F.cdf(x - 1) + np.random.uniform(size=x.shape) * F.pmf(x)
+       resid = st.norm().ppf(u)
+       bhat = np.diff((onehot @ resid) / (onehot.sum(axis=0)), axis=0)
        V = 1 / (onehot.T @ x)
        se = np.sqrt(V.sum(axis=0))
        z = bhat / se
@@ -687,7 +741,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[4]:
+   # Out[81]:
    :END:
 
    To generate null data, randomly sample cells from a homogeneous population,
@@ -701,7 +755,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[83]:
    :END:
 
 * Results
@@ -1154,7 +1208,7 @@
 
     #+RESULTS:
     :RESULTS:
-    # Out[229]:
+    0 - 06711880-dce2-448e-9b52-b1b94f6d7c9e
     :END:
 
     Fit ~limma-voom~, followed by EB shrinkage of standard errors. Report the

@@ -13,58 +13,118 @@
 
 * Recurring challenges
 
-  *Varying levels of resolution.* The discussion in this section implicitly
-  assumes that the goal of the scRNA-seq experiment in question is to generate
-  a reference map of cell types. The overarching questions, which remain
-  unstated explicitly here but implicitly motivate which considerations are
-  deemed "important", are:
+  *Varying levels of resolution.* The discussion in this section concerns the
+  problem of unsupervised learning of clusters in the context of scRNA-seq
+  data. The overarching questions, which remain unstated explicitly here but
+  implicitly motivate which considerations are deemed "important", are: (1) how
+  can we identify subsets of cells which make sense to treat as coherent units,
+  (2) how can we choose the "resolution" (degree of coherence on the axis of
+  interest versus degree of heterogeneity elsewhere) for a particular
+  scientific question of interest, and (3) how do we build representations of
+  the data which facilitate extracting coherent subsets of cells at the desired
+  resolution?
 
-  - How can we identify subsets of cells which make sense to treat as coherent
-    units?
-  - How can we choose the "resolution" (degree of coherence on the axis of
-    interest versus degree of heterogeneity elsewhere) for a particular
-    scientific question of interest?
-  - How do we build representations of the data which facilitate extracting
-    coherent subsets of cells at the desired resolution?
+  The highlighted examples of PAGA
+  ([[https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1663-x][Wolf
+  et al. 2019]]) is illustrative in the assumptions that went into the framing
+  of the problem. The example suggests that the challenge should be addressed
+  by building monolithic, hierarchical representations that capture multiple
+  levels of resolution at once, such that exploratory analysis becomes
+  trivial. However, other methods such as HSNE
+  ([[https://onlinelibrary.wiley.com/doi/full/10.1111/cgf.12878][Pezotti et
+  al. 2016]]) or topic models
+  [[https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1006599][Dey
+  et al. 2017]] require a different approach, where higher resolution
+  representations require both a human in the loop, and potentially substantial
+  extra computation.
 
-  The questions underlying this section appear to hinge on the idea that
-  scRNA-seq is being used to create catalogues of cells, e.g., Human Cell
-  Atlas. The most basic question (which subsets can be considered as coherent
-  units) stops being a problem in, e.g., QTL mapping studies, or perturbation
-  screens, where the coherent units are known /a priori/. The problem of
-  resolution depends on the specific scientific question, which is also known
-  /a priori/ for non-atlas experimental designs. For such experiments,
-  multi-resolution views of the data are mostly unnecessary.
+  Building monolithic, hierarchical representations requires developing new
+  statistical models with (likely) complicated inference algorithms. It is not
+  immediately obvious whether such representations would be useful outside of
+  biology, and if so in what way. In contrast, building high quality, efficient
+  software implementations of relatively simple methods could be a much more
+  feasible strategy to make exploratory data analysis at multiple levels of
+  resolution easier. There are two potential objections to the latter strategy:
+  (1) it allows researcher degrees of freedom
+  ([[https://osf.io/n3axs/download][Gelman and Loken 2013]]), and (2) it is
+  difficult to assess uncertainty in the estimated hierarchy. These can be
+  countered by the fact that the methods are used for exploratory data
+  analysis, not confirmatory data analysis (Tukey 1977), and that in many cases
+  the estimated representations and hierarchies can be confirmed by external,
+  independent data.
 
   *Quantifying uncertainty of measurements and analysis results.* There are two
-  issues: (1) the measurement noise is increased (compared to bulk assays),
-  making certain analyses harder/impossible; (2) analyses have uncertainties,
-  which are often not propagated through typical analysis pipelines. The first
-  issue is not properly appreciated in the field, but unfortunately, likely
-  cannot be addressed through clever computation. (For example, accurately
-  estimating gene expression variance from the data appears generally not
-  possible.) The second issue appears more difficult, until considering what a
-  typical analysis pipeline actually does. The primary point where errors are
-  not propagated are cluster assignments.
+  issues: (1) the measurement noise in single cell assays is increased compared
+  to bulk assays, making certain analyses harder/impossible; (2) common
+  analyses have uncertainties that are often not propagated through typical
+  analysis pipelines. The first issue is not properly appreciated in the field,
+  but unfortunately, likely cannot be addressed through clever computation. For
+  example, accurately estimating gene expression variance from scRNA-seq data
+  appears generally not possible. 
+
+  The second issue initially appears more difficult. What does a typical
+  analysis pipeline actually do? (1) filter e.g., low quality cells, and
+  uninformative genes, (2) estimate a low rank representation, which induces a
+  visualization and a clustering, (3) identify genes which are informative
+  about the clusters.
+
+  The robustness of downstream results to filtering choices is not
+  systematically studied. However, it seems clear that existing statistical
+  methods for black box hyperparameter optimization (e.g.,
+  [[http://papers.nips.cc/paper/4522-practical-bayesian-optimization][Snoek et
+  al. 2012]], [[https://dl.acm.org/doi/abs/10.5555/3122009.3242042][Li et
+  al. 2017]]) can be readily adapted to this setting, using metrics such as the
+  [[https://en.wikipedia.org/wiki/Rand_index#Adjusted_Rand_index][Adjusted Rand
+  index]] of the cluster labels, the hold-out prediction accuracy of cluster
+  labels from gene expression, or the correlation of cluster "centroids" to
+  known/previously identified cell types as the optimization criterion.
+
+  Commonly used representations such as PCA have statistical models underlying
+  them ([[https://dx.doi.org/10.1111/1467-9868.00196][Tipping and Bishop
+  1999]]), which could in principle be used to produce uncertainty in the
+  representation. It is clear the propagating that uncertainty in certain
+  models is very difficult. However, propagating uncertainty is easy in
+  generative models which simultaneously estimate representations and
+  downstream tasks of interest (e.g., differential expression analysis in a
+  variational auto-encoder [Lopez et al. 2018]). The drawback of such
+  approaches is that they require either more complex inference algorithms, 
+  require solving more difficult optimization problems, or require more work to
+  interpret the results.
+
+  Identifying genes which are informative about cluster labels while
+  quantifying uncertainty in the identified genes is a variable selection
+  problem, which is well-studied
+  (e.g. [[https://dx.doi.org/10.1101/501114][Wang et al. 2018]]).
 
   *Scaling to higher dimensionalities: more cells, more features, and broader
   coverage.* There are two fundamental questions: (1) do the software
   implementations of common models/methods run with reasonable computational
   budgets on time/space, and (2) do the models/methods support multiple types
-  of measurements, either simultaneously on the same samples or not? The first
-  issue requires the most difficult work, which seems highly unsuited to many
-  research labs. The second issue requires linked models in the case of
-  simultaneous measurements (and likely specialized software implementations),
-  and may have fundamental statistical problems in the case of non-simultaneous
-  measurements.
+  of measurements, either simultaneously on the same samples or not? 
+
+  The first issue requires concentrated effort in software engineering, as
+  opposed to effort in new experimental protocols, data generation, statistical
+  models, or likely even in inference algorithms. This area is one in which
+  there are few major players ([[https://satijalab.org/seurat/][Seurat]],
+  [[https://scanpy.readthedocs.io/en/stable/][scanpy]]), but they have the
+  majority of resources, attention, adoption, and traction. The second issue
+  requires the development of novel, linked statistical models in the case of
+  simultaneous measurements, which in turn likely requires specialized software
+  implementations. Further, there may be fundamental statistical problems in
+  the case of "integrating" non-simultaneous measurements, in the form of
+  un-correctable biases due to systematic technical differences between
+  experiments.
 
 * Challenges in single-cell transcriptomics
 
-  *Handling sparsity in single-cell RNA sequencing.* This discussion is
-  moot. "Dropouts" are not a problem, "imputation" does not make sense, and
+  *Handling sparsity in single-cell RNA sequencing.* This discussion is moot
+  ([[https://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens
+  2020]]). "Dropouts" are not a problem, "imputation" does not make sense, and
   sparsity is a problem only for efficient, robust software
-  implementations. Denoising is mostly an interesting side-effect of fitting
-  generative models for real tasks of interest.
+  implementations. The only open research question here is whether denoising is
+  just an interesting side-effect of fitting generative models for statistical
+  tasks of true interest, or whether denoised estimates of true gene expression
+  can be substituted for the data matrix in a modular approach for those tasks.
 
   *Defining flexible statistical frameworks for discovering complex
   differential patterns in gene expression.* In what sense are current DE
@@ -77,7 +137,14 @@
   second issue relates to the general problem of detecting whether two
   distributions are different from each other in a statistically meaningful
   way, which seems to be a much harder problem, and one which has an unclear
-  biological interpretation.
+  biological interpretation. There has been some work in linking the
+  distribution of gene expression to genetic
+  ([[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4019916/][Yvert 2013]]) and
+  environmental
+  ([[https://link.springer.com/article/10.1186/s13059-016-1077-y][Korthauer et
+  al. 2016]]) perturbations. However, there are still
+  [[file:diff-var.org::#poisson-beta][fundamental disconnects]] between these
+  ideas and e.g., theory of the kinetics of transcriptional regulation.
 
   *Mapping single cells to a reference atlas.* The problems in this section
   boil down to the statistical problem of semi-supervised learning of cell
@@ -86,18 +153,53 @@
   will be systematic differences in measurement error between new data sets and
   reference data sets. This limitation suggests that what is needed is not just
   labeled reference data, but a full generative model for the reference data
-  which can be updated with the new data set. On the one hand, distributing a
-  full generative model could be easier than distributing a high-dimensional
-  cell atlas (c.f., pre-trained ImageNet). On the other hand, it is unclear how
-  to make this sort of framework widely accessible to non-experts.
+  which can be updated with the new data set. Existing methods have already
+  begun to approach this idea
+  ([[https://www.nature.com/articles/s41592-019-0537-1][Wang et al. 2019]]). 
 
-  *Generalizing trajectory inference.* It is unclear what "generalizing" means
-  in this context. The paper instead discusses the problem of performing
-  trajectory inference from different types of measurements, or in parallel
-  over different initial conditions, and making rigorous statistical
-  comparisons between estimated trajectories.
+  On the one hand, distributing a full generative model could be easier than
+  distributing a high-dimensional cell atlas (c.f.,
+  [[https://pytorch.org/docs/stable/torchvision/models.html][pre-trained
+  Inception v3]]). On the other hand, it is unclear how to make this sort of
+  framework widely accessible to non-experts, or even extensible by other
+  expert researchers.
 
-  Why would this be an interesting thing to do?
+  *Generalizing trajectory inference.* What is "trajectory inference"? The
+  paper suggests a model in which cells undergoing some biological process move
+  in a state space described by possible transcriptomes, proteomes, epigenomes,
+  etc. Then, what would it mean to "generalize" trajectory inference? The paper
+  never addresses this question, but instead discusses the problems of: (1)
+  performing trajectory inference from different types of measurements, (2)
+  performing (parallel) trajectory inference from different initial conditions,
+  and (3) making rigorous statistical comparisons between estimated
+  trajectories. 
+
+  The goal of trajectory inference is to learn about critical points,
+  characterized by specific changes in e.g., transcriptomes, in biological
+  processes of interest. Such critical points might correspond to bifurcations
+  in response in a relatively homogeneous population of cells responding to
+  some stimulus
+  ([[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5365145/][Lönnberg et
+  al. 2017]]), or more general branching from an initial pluripotent state
+  ([[https://science.sciencemag.org/content/360/6392/eaar3131.abstract][Farrell
+  et al. 2017]]).
+
+  It is unclear that trajectory inference from single cell epigenomic or
+  proteomic data actually requires new statistical methods. However, this is
+  likely because the generative models for these processes (in particular, the
+  measurement error) has not been rigorously laid out. It is clear that
+  trajectory inference from simultaneous measurements of transcriptome, etc. in
+  each cell is principled, and would require (relatively) simple development of
+  new, linked statistical models. The situation of integrating independent
+  trajectories learned from transcriptome, etc. seems much more difficult, and
+  potentially unsolvable.
+
+  One glaring omission in this discussion is the use of known time points of
+  collection as prior information in trajectory inference. In general, cells do
+  not proceed lock-step through responses to stimuli, and the use of multiple
+  collections seems like the obvious choice to characterize temporal processes
+  at single cell resolution. The statistical problems here seem much more
+  tractable.
 
   *Finding patterns in spatially resolved measurements.* The paper suggests the
   fundamental question is assigning samples to cell types/compartments given

@@ -1938,6 +1938,7 @@
    There are additional deep unsupervised learning methods, which could
    potentially be adapted to this setting (reviewed in
    [[https://dx.doi.org/10.1109/ACCESS.2018.2855437][Min et al. 2018]]).
+
 * Technical stuff                                                  :noexport:
 
    #+BEGIN_SRC ipython

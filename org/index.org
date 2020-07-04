@@ -4,6 +4,7 @@
 A collection of various (often incomplete or broken) ideas for single cell
 analysis plus some related topics.
 
+- [[file:zinb-vae-gmm.org][Deep unsupervised clustering of scRNA-seq data]]
 - [[file:sparse-pois-fa.org][Sparse Poisson Factor Analysis]]
 - [[file:grand-challenges.org][Grand challenges in single-cell data science]]
 - [[file:prior-scaling.org][Scaling priors for regression models]]
@@ -32,4 +33,3 @@ analysis plus some related topics.
 - [[file:pop-structure.org][Population structure in single cell data]]
 - [[file:scvi.org][+SCVI+]]
 - [[file:vae.org][+VAE for single-cell expression+]]
-- [[file:zinb-vae-gmm.org][+ZINB-VAE-GMM+]]

@@ -3,37 +3,223 @@
 
 * Introduction
 
-* Download the data
+  Two major strategies for clustering scRNA-seq data are:
 
-  Use data on differentiated immune cells from 10X Genomics ([[https://www.nature.com/articles/ncomms14049][Zheng et al
-  2018]]). To make the problem tractable, construct a known mixture of XXX CD14+
-  B cells and XXX CD4+/CD25+ Treg cells.
+  1. Building a \(k\)-nearest neighbor graph on the data, and applying a
+     community detection algorithm (e.g.,
+     [[https://doi.org/10.1088/1742-5468/2008/10/P10008][Blondel et al. 2008]],
+     [[https://arxiv.org/abs/1810.08473][Traag et al. 2018]])
+  2. Fitting a topic model to the data
+     (e.g., [[https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1006599][Dey
+     et al. 2017]],
+     [[https://www.nature.com/articles/s41592-019-0367-1][Gonzáles-Blas et
+     al. 2019]])
 
-  #+BEGIN_SRC sh :dir /project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics
-    URLS=("http://cf.10xgenomics.com/samples/cell-exp/1.1.0/b_cells/b_cells_raw_gene_bc_matrices.tar.gz"
-          "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/b_cells/b_cells_metrics_summary.csv"
-          "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/regulatory_t/regulatory_t_raw_gene_bc_matrices.tar.gz"
-          "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/regulatory_t/regulatory_t_metrics_summary.csv")
+  The main disadvantage of strategy (1) is that, as commonly applied to
+  transformed counts, it does not separate measurement error and biological
+  variation of interest. The main disadvantage of strategy (2) is that it does
+  not account for transcriptional noise
+  ([[https://doi.org/10.1016/j.cell.2008.09.050][Raj 2008]]). We
+  [[file:nbmix.org][previously developed a simple mixture model]] which could
+  address this issue. Here, we develop an alternative method based on
+  [[http://ruishu.io/2016/12/25/gmvae/][GMVAE]], which has some practical
+  benefits and can be adapted to this problem.
 
-    for f in ${URLS[@]}
-    do
-        if [[ ! -e $(basename f) ]]
-        then
-            curl -OL $f
-        fi
-    done
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
   #+END_SRC
 
   #+RESULTS:
+  : 1
 
-  #+BEGIN_SRC sh :dir /project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics
-    tar xf b_cells_raw_gene_bc_matrices.tar.gz
-    tar xf regulatory_t_raw_gene_bc_matrices.tar.gz
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+CALL: tensorboard(venv="singlecell")
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import scmodes
+    import torch
   #+END_SRC
 
   #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
 
-* Model specification and inference
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+* Methods
+
+  We assume \(
+  \DeclareMathOperator\E{E}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Mult{Multinomial}
+  \DeclareMathOperator\N{\mathcal{N}}
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\diag{diag}
+  \DeclareMathOperator\KL{\mathcal{KL}}
+  \newcommand\kl[2]{\KL(#1\;\Vert\;#2)}
+  \newcommand\xiplus{x_{i+}}
+  \newcommand\mi{\mathbf{I}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vu{\mathbf{u}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vz{\mathbf{z}}
+  \newcommand\vlambda{\boldsymbol{\lambda}}
+  \newcommand\vmu{\boldsymbol{\mu}}
+  \newcommand\vphi{\boldsymbol{\phi}}
+  \newcommand\vpi{\boldsymbol{\pi}}
+  \)
+
+  \begin{align}
+    x_{ij} \mid \xiplus, \vz_i &\sim \Pois(\xiplus (\lambda(\vz_i))_j)\\
+    \vz_i \mid y_i &\sim \N(\mu(y_i), \sigma^2(y_i))\\
+    y_i \mid \vpi &\sim \Mult(1, \vpi),
+  \end{align}
+
+  where
+
+   - \(x_{ij}\) denotes the number of molecules of gene \(j = 1, \ldots, p\)
+     observed in cell \(i = 1, \ldots, n\)
+   - \(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of molecules
+     observed in cell \(i\)
+   - \(\lambda(\cdot)\) is a fully-connected neural network mapping latent
+     variables to true gene expression
+   - \(\mu(\cdot), \sigma^2(\cdot)\) are fully-connected neural networks
+     mapping observations and latent cluster assignments to latent variables
+
+  In this model, true gene expression can be represented in an
+  \(m\)-dimensional space, and within that space belongs to one of \(k\)
+  clusters, indexed by \(y_i\). In other words, the (marginal) prior on latent
+  variables \(\vz_i\) is a mixture of Gaussians. To perform inference, introduce a
+  variational approximation
+
+  \begin{equation}
+    q(y_i, \vz_i \mid \vx_i) = q(y_i \mid \vx_i)\, q(\vz_i \mid y_i, \vx_i),
+  \end{equation}
+
+  which which are parameterized by neural networks. The ELBO
+
+  \begin{equation}
+    \ell = \sum_{i, j} \E_q\left[\ln p(x_{ij} \mid \xiplus, \vz_i) + \frac{p(y_i)}{q(y_i \mid \vx_i)} + \frac{p(\vz_i \mid y_i)}{q(\vz_i \mid y_i, \vx_i)}\right],
+  \end{equation}
+
+  in which the first term must be approximated as a Monte Carlo integral
+  (Kingma and Welling 2014), the second term is the KL divergence between two
+  Multinomials (which is analytic), and the final term term is the KL
+  divergence between a Gaussian and a mixture of Gaussians (which is analytic).
+
+  #+BEGIN_SRC ipython
+    class FC(torch.nn.Module):
+      """Fully connected layers"""
+      def __init__(self, input_dim, hidden_dim=128):
+        super().__init__()
+        self.net = torch.nn.Sequential(
+          torch.nn.Linear(input_dim, hidden_dim),
+          torch.nn.ReLU(),
+          torch.nn.BatchNorm1d(hidden_dim),
+          torch.nn.Linear(hidden_dim, hidden_dim),
+          torch.nn.ReLU(),
+          torch.nn.BatchNorm1d(hidden_dim),
+        )
+
+      def forward(self, x):
+        return self.net(x)
+
+    class DeepGaussian(torch.nn.Module):
+      """Gaussian distribution parameterized by FC networks for mean and scale"""
+      def __init__(self, input_dim, output_dim, hidden_dim=128):
+        super().__init__()
+        self.net = FC(input_dim, hidden_dim)
+        self.mean = torch.nn.Linear(self.hidden_dim, output_dim)
+        self.scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, output_dim), torch.nn.Softplus())
+
+      def forward(self, x):
+        q = self.net(x)
+        return self.mean(q), self.scale(q)
+
+    class DeepCategorical(torch.nn.Module):
+      """Categorical distribution parameterized by FC network for logits"""
+      def __init__(self, input_dim, output_dim, hidden_dim=128):
+        super().__init__()
+        self.net = FC(input_dim, hidden_dim)
+        self.logits = torch.nn.Linear(hidden_dim, output_dim)
+
+      def forward(self, x):
+        q = self.net(x)
+        return self.logits(q)
+
+    class PGMVAE(torch.nn.Module):
+      def __init__(self, input_dim, latent_dim, n_clusters, hidden_dim=128):
+        self.n_clusters = n_clusters
+        self.encoder_y = DeepCategorical(input_dim, n_clusters, hidden_dim)
+        self.encoder_z = DeepGaussian(input_dim + n_clusters, latent_dim, hidden_dim)
+        self.decoder_z = DeepGaussian(n_clusters, latent_dim, hidden_dim)
+        self.decoder_x = torch.nn.Sequential(
+          FC(latent_dim),
+          torch.nn.Softplus()
+        )
+
+      def forward(self, x, s, writer=None, global_step=None):
+        # [batch_size, n_clusters]
+        logits = self.encoder_y.forward(x)
+        probs = torch.sigmoid(logits)
+        # log(sigmoid(x)) = -softplus(-x)
+        kl_y = probs * (-torch.nn.functional.softplus(-logits) + torch.log(torch.tensor(self.n_clusters)))
+
+        # Important: this isn't precisely a KL divergence
+        kl_z = 0
+        err = 0
+        mean, scale = self.encoder_z.forward(torch.cat([x, probs]))
+        # [n_samples, batch_size, latent_dim]
+        qz = torch.distributions.Normal(mean, scale).rsample(n_samples)
+        for k in range(self.n_clusters):
+          prior_mean, prior_scale = self.decoder_z.forward(torch.eye(self.n_clusters)[k])
+          kl_z += probs[k] * .5 * (2 * torch.log(scale) - 2 * torch.log(prior_scale) + (mean ** 2 + scale ** 2) / prior_scale ** 2)
+          # [n_samples, batch_size]
+          lam = self.decoder_x(qz)
+          err = x * torch.log(s * lam) - s * lam - torch.gammaln(x)
+          elbo += 
+
+        elbo = err - kl_z - kl_y
+        return -elbo
+
+      def fit(self, data, n_epochs=100, n_samples=1, log_dir=None, **kwargs):
+        if torch.cuda.is_available():
+          self.cuda()
+        if log_dir is not None:
+          writer = tb.SummaryWriter(log_dir)
+        n_samples = torch.Size([n_samples])
+        opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+        global_step = 0
+        for epoch in range(n_epochs):
+          for x, s in data:
+            opt.zero_grad()
+            loss = self.forward(x, s, n_samples=n_samples, writer=writer, global_step=global_step)
+            if torch.isnan(loss):
+              raise RuntimeError('nan loss')
+            loss.backward()
+            opt.step()
+            global_step += 1
+        return self
+
+  #+END_SRC
 
 * Results
 

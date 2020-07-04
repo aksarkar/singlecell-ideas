@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-14 Thu 23:52 -->
+<!-- 2020-07-03 Fri 23:46 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ZINB-VAE-GMM</title>
@@ -227,6 +227,28 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
@@ -236,8 +258,8 @@ for the JavaScript code in this tag.
 <div id="text-table-of-contents">
 <ul>
 <li><a href="#orgf40b2f7">Introduction</a></li>
-<li><a href="#org5db2a42">Download the data</a></li>
-<li><a href="#org931cd37">Model specification and inference</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org1b5c4f4">Methods</a></li>
 <li><a href="#org6e57704">Results</a></li>
 </ul>
 </div>
@@ -245,43 +267,233 @@ for the JavaScript code in this tag.
 
 <div id="outline-container-orgf40b2f7" class="outline-2">
 <h2 id="orgf40b2f7">Introduction</h2>
+<div class="outline-text-2" id="text-orgf40b2f7">
+<p>
+Two major strategies for clustering scRNA-seq data are:
+</p>
+
+<ol class="org-ol">
+<li>Building a \(k\)-nearest neighbor graph on the data, and applying a
+community detection algorithm (e.g.,
+<a href="https://doi.org/10.1088/1742-5468/2008/10/P10008">Blondel et al. 2008</a>,
+<a href="https://arxiv.org/abs/1810.08473">Traag et al. 2018</a>)</li>
+<li>Fitting a topic model to the data
+(e.g., <a href="https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1006599">Dey
+et al. 2017</a>,
+<a href="https://www.nature.com/articles/s41592-019-0367-1">Gonzáles-Blas et
+al. 2019</a>)</li>
+</ol>
+
+<p>
+The main disadvantage of strategy (1) is that, as commonly applied to
+transformed counts, it does not separate measurement error and biological
+variation of interest. The main disadvantage of strategy (2) is that it does
+not account for transcriptional noise
+(<a href="https://doi.org/10.1016/j.cell.2008.09.050">Raj 2008</a>). We
+<a href="nbmix.html">previously developed a simple mixture model</a> which could
+address this issue. Here, we develop an alternative method based on
+<a href="http://ruishu.io/2016/12/25/gmvae/">GMVAE</a>, which has some practical
+benefits and can be adapted to this problem.
+</p>
+</div>
 </div>
 
-<div id="outline-container-org5db2a42" class="outline-2">
-<h2 id="org5db2a42">Download the data</h2>
-<div class="outline-text-2" id="text-org5db2a42">
+<div id="outline-container-orgbbadc60" class="outline-2">
+<h2 id="setup"><a id="orgbbadc60"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> scmodes
+<span class="org-keyword">import</span> torch
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org1b5c4f4" class="outline-2">
+<h2 id="org1b5c4f4">Methods</h2>
+<div class="outline-text-2" id="text-org1b5c4f4">
 <p>
-Use data on differentiated immune cells from 10X Genomics (<a href="https://www.nature.com/articles/ncomms14049">Zheng et al
-2018</a>). To make the problem tractable, construct a known mixture of XXX CD14+
-B cells and XXX CD4+/CD25+ Treg cells.
+We assume \(
+  \DeclareMathOperator\E{E}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\Mult{Multinomial}
+  \DeclareMathOperator\N{\mathcal{N}}
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\diag{diag}
+  \DeclareMathOperator\KL{\mathcal{KL}}
+  \newcommand\kl[2]{\KL(#1\;\Vert\;#2)}
+  \newcommand\xiplus{x_{i+}}
+  \newcommand\mi{\mathbf{I}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vu{\mathbf{u}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vz{\mathbf{z}}
+  \newcommand\vlambda{\boldsymbol{\lambda}}
+  \newcommand\vmu{\boldsymbol{\mu}}
+  \newcommand\vphi{\boldsymbol{\phi}}
+  \newcommand\vpi{\boldsymbol{\pi}}
+  \)
+</p>
+
+\begin{align}
+  x_{ij} \mid \xiplus, \vz_i &\sim \Pois(\xiplus (\lambda(\vz_i))_j)\\
+  \vz_i \mid y_i &\sim \N(\mu(y_i), \sigma^2(y_i))\\
+  y_i \mid \vpi &\sim \Mult(1, \vpi),
+\end{align}
+
+<p>
+where
+</p>
+
+<ul class="org-ul">
+<li>\(x_{ij}\) denotes the number of molecules of gene \(j = 1, \ldots, p\)
+observed in cell \(i = 1, \ldots, n\)</li>
+<li>\(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of molecules
+observed in cell \(i\)</li>
+<li>\(\lambda(\cdot)\) is a fully-connected neural network mapping latent
+variables to true gene expression</li>
+<li>\(\mu(\cdot), \sigma^2(\cdot)\) are fully-connected neural networks
+mapping observations and latent cluster assignments to latent variables</li>
+</ul>
+
+<p>
+In this model, true gene expression can be represented in an
+\(m\)-dimensional space, and within that space belongs to one of \(k\)
+clusters, indexed by \(y_i\). In other words, the (marginal) prior on latent
+variables \(\vz_i\) is a mixture of Gaussians. To perform inference, introduce a
+variational approximation
+</p>
+
+\begin{equation}
+  q(y_i, \vz_i \mid \vx_i) = q(y_i \mid \vx_i)\, q(\vz_i \mid y_i, \vx_i),
+\end{equation}
+
+<p>
+which which are parameterized by neural networks. The ELBO
+</p>
+
+\begin{equation}
+  \ell = \sum_{i, j} \E_q\left[\ln p(x_{ij} \mid \xiplus, \vz_i) + \frac{p(y_i)}{q(y_i \mid \vx_i)} + \frac{p(\vz_i \mid y_i)}{q(\vz_i \mid y_i, \vx_i)}\right],
+\end{equation}
+
+<p>
+in which the first term must be approximated as a Monte Carlo integral
+(Kingma and Welling 2014), the second term is the KL divergence between two
+Multinomials (which is analytic), and the final term term is the KL
+divergence between a Gaussian and a mixture of Gaussians (which is analytic).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-sh"><span class="org-variable-name">URLS</span>=(<span class="org-string">"http://cf.10xgenomics.com/samples/cell-exp/1.1.0/b_cells/b_cells_raw_gene_bc_matrices.tar.gz"</span>
-      <span class="org-string">"http://cf.10xgenomics.com/samples/cell-exp/1.1.0/b_cells/b_cells_metrics_summary.csv"</span>
-      <span class="org-string">"http://cf.10xgenomics.com/samples/cell-exp/1.1.0/regulatory_t/regulatory_t_raw_gene_bc_matrices.tar.gz"</span>
-      <span class="org-string">"http://cf.10xgenomics.com/samples/cell-exp/1.1.0/regulatory_t/regulatory_t_metrics_summary.csv"</span>)
+<pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">FC</span>(torch.nn.Module):
+  <span class="org-doc">"""Fully connected layers"""</span>
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, hidden_dim=128):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.net = torch.nn.Sequential(
+      torch.nn.Linear(input_dim, hidden_dim),
+      torch.nn.ReLU(),
+      torch.nn.BatchNorm1d(hidden_dim),
+      torch.nn.Linear(hidden_dim, hidden_dim),
+      torch.nn.ReLU(),
+      torch.nn.BatchNorm1d(hidden_dim),
+    )
 
-<span class="org-keyword">for</span> f<span class="org-keyword"> in</span> ${<span class="org-variable-name">URLS</span>[@]}
-<span class="org-keyword">do</span>
-    <span class="org-keyword">if</span> [[ <span class="org-negation-char">!</span> -e $(<span class="org-sh-quoted-exec">basename</span> f) ]]
-    <span class="org-keyword">then</span>
-        curl -OL $<span class="org-variable-name">f</span>
-    <span class="org-keyword">fi</span>
-<span class="org-keyword">done</span>
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.net(x)
+
+<span class="org-keyword">class</span> <span class="org-type">DeepGaussian</span>(torch.nn.Module):
+  <span class="org-doc">"""Gaussian distribution parameterized by FC networks for mean and scale"""</span>
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, output_dim, hidden_dim=128):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.net = FC(input_dim, hidden_dim)
+    <span class="org-keyword">self</span>.mean = torch.nn.Linear(<span class="org-keyword">self</span>.hidden_dim, output_dim)
+    <span class="org-keyword">self</span>.scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, output_dim), torch.nn.Softplus())
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-variable-name">q</span> = <span class="org-keyword">self</span>.net(x)
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.mean(q), <span class="org-keyword">self</span>.scale(q)
+
+<span class="org-keyword">class</span> <span class="org-type">DeepCategorical</span>(torch.nn.Module):
+  <span class="org-doc">"""Categorical distribution parameterized by FC network for logits"""</span>
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, output_dim, hidden_dim=128):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.net = FC(input_dim, hidden_dim)
+    <span class="org-keyword">self</span>.logits = torch.nn.Linear(hidden_dim, output_dim)
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-variable-name">q</span> = <span class="org-keyword">self</span>.net(x)
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.logits(q)
+
+<span class="org-keyword">class</span> <span class="org-type">PGMVAE</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, latent_dim, n_clusters, hidden_dim=128):
+    <span class="org-keyword">self</span>.n_clusters = n_clusters
+    <span class="org-keyword">self</span>.encoder_y = DeepCategorical(input_dim, n_clusters, hidden_dim)
+    <span class="org-keyword">self</span>.encoder_z = DeepGaussian(input_dim + n_clusters, latent_dim, hidden_dim)
+    <span class="org-keyword">self</span>.decoder_z = DeepGaussian(n_clusters, latent_dim, hidden_dim)
+    <span class="org-keyword">self</span>.decoder_x = torch.nn.Sequential(
+      FC(latent_dim),
+      torch.nn.Softplus()
+    )
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, s, writer=<span class="org-constant">None</span>, global_step=<span class="org-constant">None</span>):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[batch_size, n_clusters]</span>
+    <span class="org-variable-name">logits</span> = <span class="org-keyword">self</span>.encoder_y.forward(x)
+    <span class="org-variable-name">probs</span> = torch.sigmoid(logits)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">log(sigmoid(x)) = -softplus(-x)</span>
+    <span class="org-variable-name">kl_y</span> = probs * (-torch.nn.functional.softplus(-logits) + torch.log(torch.tensor(<span class="org-keyword">self</span>.n_clusters)))
+
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this isn't precisely a KL divergence</span>
+    <span class="org-variable-name">kl_z</span> = 0
+    <span class="org-variable-name">err</span> = 0
+    <span class="org-variable-name">mean</span>, <span class="org-variable-name">scale</span> = <span class="org-keyword">self</span>.encoder_z.forward(torch.cat([x, probs]))
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size, latent_dim]</span>
+    <span class="org-variable-name">qz</span> = torch.distributions.Normal(mean, scale).rsample(n_samples)
+    <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(<span class="org-keyword">self</span>.n_clusters):
+      <span class="org-variable-name">prior_mean</span>, <span class="org-variable-name">prior_scale</span> = <span class="org-keyword">self</span>.decoder_z.forward(torch.eye(<span class="org-keyword">self</span>.n_clusters)[k])
+      <span class="org-variable-name">kl_z</span> += probs[k] * .5 * (2 * torch.log(scale) - 2 * torch.log(prior_scale) + (mean ** 2 + scale ** 2) / prior_scale ** 2)
+      <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size]</span>
+      <span class="org-variable-name">lam</span> = <span class="org-keyword">self</span>.decoder_x(qz)
+      <span class="org-variable-name">err</span> = x * torch.log(s * lam) - s * lam - torch.gammaln(x)
+      <span class="org-variable-name">elbo</span> += 
+
+    <span class="org-variable-name">elbo</span> = err - kl_z - kl_y
+    <span class="org-keyword">return</span> -elbo
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, data, n_epochs=100, n_samples=1, log_dir=<span class="org-constant">None</span>, **kwargs):
+    <span class="org-keyword">if</span> torch.cuda.is_available():
+      <span class="org-keyword">self</span>.cuda()
+    <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">writer</span> = tb.SummaryWriter(log_dir)
+    <span class="org-variable-name">n_samples</span> = torch.Size([n_samples])
+    <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), **kwargs)
+    <span class="org-variable-name">global_step</span> = 0
+    <span class="org-keyword">for</span> epoch <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
+      <span class="org-keyword">for</span> x, s <span class="org-keyword">in</span> data:
+        opt.zero_grad()
+        <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, s, n_samples=n_samples, writer=writer, global_step=global_step)
+        <span class="org-keyword">if</span> torch.isnan(loss):
+          <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'nan loss'</span>)
+        loss.backward()
+        opt.step()
+        <span class="org-variable-name">global_step</span> += 1
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+
 </pre>
 </div>
-
-<div class="org-src-container">
-<pre class="src src-sh">tar xf b_cells_raw_gene_bc_matrices.tar.gz
-tar xf regulatory_t_raw_gene_bc_matrices.tar.gz
-</pre>
 </div>
-</div>
-</div>
-
-<div id="outline-container-org931cd37" class="outline-2">
-<h2 id="org931cd37">Model specification and inference</h2>
 </div>
 
 <div id="outline-container-org6e57704" class="outline-2">
@@ -290,7 +502,7 @@ tar xf regulatory_t_raw_gene_bc_matrices.tar.gz
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-14 Thu 23:52</p>
+<p class="date">Created: 2020-07-03 Fri 23:46</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

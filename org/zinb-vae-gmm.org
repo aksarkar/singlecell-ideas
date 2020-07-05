@@ -51,11 +51,12 @@
     import torch
     import torch.utils.data as td
     import torch.utils.tensorboard as tb
+    import umap
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[185]:
+  # Out[58]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -255,15 +256,33 @@
             opt.step()
             global_step += 1
         return self
+
+      @torch.no_grad()
+      def get_labels(self, data):
+        with torch.no_grad():
+          yhat = []
+          for x, *_ in data:
+            yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
+        return np.vstack(yhat)
+
+      @torch.no_grad()
+      def get_latent(self, data):
+        with torch.no_grad():
+          zhat = []
+          y = torch.eye(self.n_clusters).cuda()
+          for x, *_ in data:
+            yhat = torch.nn.functional.softmax(self.encoder_y.forward(x), dim=1)
+            zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0] for k in range(fit.n_clusters)]).sum(dim=0).cpu().numpy())
+        return np.vstack(zhat)
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[191]:
+  # Out[56]:
   :END:
 
 * Results
-** Two-way-example
+** Two-way example
 
    Read sorted immune cell scRNA-seq data
    ([[https://dx.doi.org/10.1038/ncomms14049][Zheng et al. 2017]]).
@@ -274,7 +293,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
+   # Out[5]:
    :END:
 
    We [[file:nbmix.org::*(Full) 2-way example][previously applied the standard
@@ -292,7 +311,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
+   # Out[6]:
    #+BEGIN_EXAMPLE
      AnnData object with n_obs × n_vars = 20294 × 17808
      obs: 'barcode', 'cell_type', 'leiden'
@@ -325,26 +344,27 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[200]:
+   # Out[7]:
    :END:
 
    #+BEGIN_SRC ipython :async t
      k = 2
-     seed = 5
+     seed = 0
      lr = 1e-2
      n_epochs = 2
+     latent_dim = 10
      torch.manual_seed(seed)
-     fit = (PGMVAE(input_dim=mix2.shape[1], latent_dim=10, n_clusters=2)
+     fit = (PGMVAE(input_dim=mix2.shape[1], latent_dim=latent_dim, n_clusters=2)
             .fit(data,
                  lr=lr,
                  n_epochs=n_epochs,
-                 log_dir=f'runs/pgmvae/mix2-{k}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}')
+                 log_dir=f'runs/pgmvae/mix2-{latent_dim}-{k}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}')
      )
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[202]:
+   # Out[68]:
    :END:
 
    Get the approximate posterior labels.
@@ -352,17 +372,13 @@
    #+BEGIN_SRC ipython :async t
      data = td.DataLoader(sparse_data, batch_size=batch_size, shuffle=False,
                           collate_fn=collate_fn)
-     with torch.no_grad():
-       yhat = []
-       for x, *_ in data:
-         yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
-       yhat = np.vstack(yhat)
+     yhat = fit.get_labels(data)
      mix2.obs['comp'] = np.argmax(yhat, axis=1)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[205]:
+   # Out[69]:
    :END:
 
    Plot the result.
@@ -385,8 +401,58 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[206]:
+   # Out[73]:
    [[file:figure/zinb-vae-gmm.org/mix2-pgmvae.png]]
+   :END:
+
+   Get the latent representation.
+
+   #+BEGIN_SRC ipython :async t
+     with torch.no_grad():
+       zhat = []
+       y = torch.eye(fit.n_clusters).cuda()
+       for x, *_ in data:
+         yhat = torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1)
+         zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0] for k in range(fit.n_clusters)]).sum(dim=0).cpu().numpy())
+       zhat = np.vstack(zhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[70]:
+   :END:
+
+   Plot a UMAP of the learned representation.
+
+   #+BEGIN_SRC ipython :async t
+     u = umap.UMAP(n_neighbors=5, n_components=2, metric='euclidean').fit_transform(zhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[71]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/mix2-zhat.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     fig.set_size_inches(5, 3)
+     for a, k, t, cm in zip(ax, ['cell_type', 'comp'], ['Ground truth', 'PGMVAE'], ['Paired', 'Dark2']):
+       for i, c in enumerate(mix2.obs[k].unique()):
+         a.plot(*u[mix2.obs[k] == c].T, c=plt.get_cmap(cm)(i), marker='.', ms=1, lw=0, alpha=0.1, label=f'{k}_{i}')
+       leg = a.legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+       for h in leg.legendHandles:
+         h._legmarker.set_alpha(1)
+       a.set_xlabel('UMAP 1 ($\hat{z}$)')
+       a.set_title(t)
+     ax[0].set_ylabel('UMAP 2 ($\hat{z}$)')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[72]:
+   [[file:figure/zinb-vae-gmm.org/mix2-zhat.png]]
    :END:
 
 * Related work

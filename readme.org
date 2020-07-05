@@ -18,7 +18,7 @@
     pyplink
     pytest
     python
-    tensorflow-gpu==1.15.0
+    pytorch
     r-ashr
     r-fasttopics
     r-flashr
@@ -27,6 +27,8 @@
     scipy
     scmodes
     scqtl
+    tensorflow-gpu==1.15.0
+    torchvision
     EOF
   #+END_SRC
 

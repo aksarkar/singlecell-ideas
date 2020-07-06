@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-07-05 Sun 15:27 -->
+<!-- 2020-07-06 Mon 04:19 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deep unsupervised clustering of scRNA-seq data</title>
@@ -380,10 +380,14 @@ observed in cell \(i = 1, \ldots, n\)</li>
 observed in cell \(i\)</li>
 <li>\(\lambda(\cdot)\) is a fully-connected neural network mapping latent
 variables to true gene expression</li>
+<li>\(\vz_i \in \mathbb{R}^d\) denotes the \(d\)-dimensional latent variable
+corresponding to observation \(\vx_i\)</li>
 <li>\(m(\cdot), s^2(\cdot)\) are fully-connected neural networks mapping
 latent labels to latent variables (in particular, \(m\) gives the cluster
 centroids)</li>
-<li>\(\va\) is the vector of prior probabilities for each cluster assignment.</li>
+<li>\(y_i \in \{1, \ldots, k\}\) denotes the latent cluster assignment</li>
+<li>\(\va\) is the \(k\)-vector of prior probabilities for each cluster
+assignment.</li>
 </ul>
 
 <p>
@@ -417,7 +421,7 @@ Gaussian, not a mixture of Gaussians. The ELBO
 </p>
 
 \begin{equation}
-  \ell = \sum_{i, j} \E_{q(y_i, \vz_i \mid \vx_i)}\left[\ln p(x_{ij} \mid \xiplus, \vz_i) + \ln\frac{p(y_i)}{q(y_i \mid \vx_i)} + \ln\frac{p(\vz_i \mid y_i)}{q(\vz_i \mid y_i, \vx_i)}\right].
+  \ell = \sum_i \E_{q(y_i, \vz_i \mid \vx_i)}\left[\sum_j \left[\ln p(x_{ij} \mid \xiplus, \vz_i)\right] + \ln\frac{p(y_i)}{q(y_i \mid \vx_i)} + \ln\frac{p(\vz_i \mid y_i)}{q(\vz_i \mid \vx_i, y_i)}\right].
 \end{equation}
 
 <p>
@@ -581,6 +585,7 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
     <span class="org-keyword">if</span> writer <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span> <span class="org-keyword">and</span> labels <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
       <span class="org-keyword">with</span> torch.no_grad():
         writer.add_scalar(<span class="org-string">'loss/cross_entropy'</span>, torch.nn.functional.binary_cross_entropy(probs, labels), global_step)
+        writer.add_scalar(<span class="org-string">'loss/cond_entropy'</span>, (probs * torch.log(probs + 1e-16)).mean(), global_step)
     <span class="org-comment-delimiter"># </span><span class="org-comment">Assume cuda</span>
     <span class="org-variable-name">y</span> = torch.eye(<span class="org-keyword">self</span>.n_clusters).cuda()
     <span class="org-comment-delimiter"># </span><span class="org-comment">[n_clusters, latent_dim]</span>
@@ -655,15 +660,20 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
 <h3 id="orgda964e9">MNIST sanity check</h3>
 <div class="outline-text-3" id="text-orgda964e9">
 <p>
-Replicate Rui Shu&rsquo;s results, modeling handwritten digits as binarized pixel
-vectors.
+Replicate Rui Shu&rsquo;s results, modeling grayscale images of handwritten digits
+as binarized, flattened pixel vectors. Assume
 </p>
 
 \begin{align}
-  x_{ij} \mid \vz_i &\sim \Bern((\pi(\vz_i))_j)\\
+  x_{ij} \mid \vz_i &\sim \Bern((r(\vz_i))_j)\\
   \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
   y_i \mid \va &\sim \Mult(1, \va),
 \end{align}
+
+<p>
+where \(r\) is a fully-connected neural network mapping latent variables to
+pixel probabilities.
+</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">batch_size</span> = 32
@@ -971,7 +981,7 @@ inference and implementation.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-07-05 Sun 15:27</p>
+<p class="date">Created: 2020-07-06 Mon 04:19</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

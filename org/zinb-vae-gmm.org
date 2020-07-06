@@ -119,10 +119,14 @@
      observed in cell \(i\)
    - \(\lambda(\cdot)\) is a fully-connected neural network mapping latent
      variables to true gene expression
+   - \(\vz_i \in \mathbb{R}^d\) denotes the \(d\)-dimensional latent variable
+     corresponding to observation \(\vx_i\)
    - \(m(\cdot), s^2(\cdot)\) are fully-connected neural networks mapping
      latent labels to latent variables (in particular, \(m\) gives the cluster
      centroids)
-   - \(\va\) is the vector of prior probabilities for each cluster assignment.
+   - \(y_i \in \{1, \ldots, k\}\) denotes the latent cluster assignment
+   - \(\va\) is the \(k\)-vector of prior probabilities for each cluster
+     assignment.
 
   In this model, true gene expression can be represented in a \(d\)-dimensional
   space, \(d \ll p\), and within that space belongs to one of \(k\) clusters,
@@ -147,7 +151,7 @@
   Gaussian, not a mixture of Gaussians. The ELBO
 
   \begin{equation}
-    \ell = \sum_{i, j} \E_{q(y_i, \vz_i \mid \vx_i)}\left[\ln p(x_{ij} \mid \xiplus, \vz_i) + \ln\frac{p(y_i)}{q(y_i \mid \vx_i)} + \ln\frac{p(\vz_i \mid y_i)}{q(\vz_i \mid y_i, \vx_i)}\right].
+    \ell = \sum_i \E_{q(y_i, \vz_i \mid \vx_i)}\left[\sum_j \left[\ln p(x_{ij} \mid \xiplus, \vz_i)\right] + \ln\frac{p(y_i)}{q(y_i \mid \vx_i)} + \ln\frac{p(\vz_i \mid y_i)}{q(\vz_i \mid \vx_i, y_i)}\right].
   \end{equation}
 
   In general, computing expectations over \(q(y_i \mid \vx_i)\) requires
@@ -309,6 +313,7 @@
         if writer is not None and labels is not None:
           with torch.no_grad():
             writer.add_scalar('loss/cross_entropy', torch.nn.functional.binary_cross_entropy(probs, labels), global_step)
+            writer.add_scalar('loss/cond_entropy', (probs * torch.log(probs + 1e-16)).mean(), global_step)
         # Assume cuda
         y = torch.eye(self.n_clusters).cuda()
         # [n_clusters, latent_dim]
@@ -380,14 +385,17 @@
 * Results
 ** MNIST sanity check
 
-   Replicate Rui Shu's results, modeling handwritten digits as binarized pixel
-   vectors.
+   Replicate Rui Shu's results, modeling grayscale images of handwritten digits
+   as binarized, flattened pixel vectors. Assume
 
    \begin{align}
-     x_{ij} \mid \vz_i &\sim \Bern((\pi(\vz_i))_j)\\
+     x_{ij} \mid \vz_i &\sim \Bern((r(\vz_i))_j)\\
      \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
      y_i \mid \va &\sim \Mult(1, \va),
    \end{align}
+
+   where \(r\) is a fully-connected neural network mapping latent variables to
+   pixel probabilities.
 
    #+BEGIN_SRC ipython :async t
      batch_size = 32

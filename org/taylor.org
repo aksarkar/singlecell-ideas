@@ -1,0 +1,50 @@
+#+TITLE: Taylor expansions for single cell transforms
+#+SETUPFILE: setup.org
+
+scRNA-seq count data can be understood as noisy observations of true gene
+expression (Sarkar and Stephens 2020) \(
+\DeclareMathOperator\E{E}
+\DeclareMathOperator\Poi{Poisson}
+\DeclareMathOperator\V{V}
+\newcommand\xiplus{x_{i+}}
+\)
+
+\begin{equation}
+  x_{ij} \mid \xiplus, \lambda_{ij} \sim \Poi(\xiplus \lambda_{ij}).
+\end{equation}
+
+However, analyzing observations according to this measurement model can be
+difficult. A common strategy is to instead analyze log-transformed values,
+which can be understood as MLEs of (1) assuming a log link \(\theta_{ij} =
+\ln\lambda_{ij}\).
+
+\begin{align}
+  x_{ij} \mid \xiplus, \theta_{ij} &\sim \Poi(\xiplus \exp(\theta_{ij}))\\
+  \hat\theta_{ij} &= \ln\left(\frac{x_{ij}}{\xiplus}\right).
+\end{align}
+
+Lun 2018 characterized a bias in using log-transformed values to estimate the
+mean of log true gene expression
+
+\begin{equation}
+  y_{ij} = \ln\left(\frac{x_{ij} + \epsilon}{\xiplus}\right),
+\end{equation}
+
+where \(\epsilon\) is a pseudocount to handle the case \(x_{ij} =
+0\). Absorbing \(\epsilon\) into \(x\) and taking a Taylor expansion,
+
+\begin{align}
+  \ln x &\approx \ln \E[x] + \frac{x - \E[x]}{\E[x]} - \frac{(x - \E[x])^2}{2 \E[x]^2}\\
+  \E[\ln x] &\approx \ln \E[x] - \frac{\V[x]}{2 \E[x]^2}.
+\end{align}
+
+Sarkar et al. 2019 characterized a bias in using log-transformed values to
+estimate the variance of log true gene expression
+
+\begin{align}
+  \E[\ln x]^2 &\approx (\ln \E[x])^2 - \ln \E[x] \frac{\V[x]}{\E[x]^2} + \frac{\V[x]^2}{4 \E[x]^4}\\
+  (\ln x)^2 &\approx (\ln \E[x])^2 + 2 \ln \E[x] (x - \E[x]) + \frac{(x - \E[x])^2}{\E[x]}\\
+  \E[(\ln x)^2] &\approx (\ln \E[x])^2 + \frac{\V[x]}{\E[x]}\\
+  \V[\ln x] &= \E[(\ln x)^2] - \E[\ln x]^2\\
+  &\approx \frac{\V[x]}{\E[x]} + \ln \E[x] \frac{\V[x]}{\E[x]^2} - \frac{\V[x]^2}{4 \E[x]^4}.
+\end{align}

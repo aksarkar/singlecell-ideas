@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-07-09 Thu 13:03 -->
+<!-- 2020-07-09 Thu 13:28 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Taylor expansions for single cell transforms</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,51 +227,93 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">Taylor expansions for single cell transforms</h1>
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+scRNA-seq count data can be understood as noisy observations of true gene
+expression (Sarkar and Stephens 2020) \(
+\DeclareMathOperator\E{E}
+\DeclareMathOperator\Poi{Poisson}
+\DeclareMathOperator\V{V}
+\newcommand\xiplus{x_{i+}}
+\)
 </p>
 
-<ul class="org-ul">
-<li><a href="taylor.html">Taylor expansions for single cell transforms</a></li>
-<li><a href="zinb-vae-gmm.html">Deep unsupervised clustering of scRNA-seq data</a></li>
-<li><a href="sparse-pois-fa.html">Sparse Poisson Factor Analysis</a></li>
-<li><a href="grand-challenges.html">Grand challenges in single-cell data science</a></li>
-<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
-<li><a href="voom.html">An improved voom transform for scRNA-seq data</a></li>
-<li><a href="experimental-finemapping.html">Experimental fine-mapping of QTLs from
-scRNA-seq data</a></li>
-<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
-<li><a href="pseudobulk.html">Alternative approaches to scRNA-seq pseudobulk models</a></li>
-<li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
-</ul>
+\begin{equation}
+  x_{ij} \mid \xiplus, \lambda_{ij} \sim \Poi(\xiplus \lambda_{ij}).
+\end{equation}
+
+<p>
+However, analyzing observations according to this measurement model can be
+difficult. A common strategy is to instead analyze log-transformed values,
+which can be understood as MLEs of (1) assuming a log link \(\theta_{ij} =
+\ln\lambda_{ij}\).
+</p>
+
+\begin{align}
+  x_{ij} \mid \xiplus, \theta_{ij} &\sim \Poi(\xiplus \exp(\theta_{ij}))\\
+  \hat\theta_{ij} &= \ln\left(\frac{x_{ij}}{\xiplus}\right).
+\end{align}
+
+<p>
+Lun 2018 characterized a bias in using log-transformed values to estimate the
+mean of log true gene expression
+</p>
+
+\begin{equation}
+  y_{ij} = \ln\left(\frac{x_{ij} + \epsilon}{\xiplus}\right)
+\end{equation}
+
+<p>
+where \(\epsilon\) is a pseudocount to handle the case \(x_{ij} =
+0\). Absorbing \(\epsilon\) into \(x\) and taking a Taylor expansion,
+</p>
+
+\begin{align}
+  \ln x &\approx \ln \E[x] + \frac{x - \E[x]}{\E[x]} - \frac{(x - \E[x])^2}{2 \E[x]^2}\\
+  \E[\ln x] &\approx \ln \E[x] - \frac{\V[x]}{2 \E[x]^2}.
+\end{align}
+
+<p>
+Sarkar et al. 2019 characterized a bias in using log-transformed values to
+estimate the variance of log true gene expression
+</p>
+
+\begin{align}
+  \E[\ln x]^2 &\approx (\ln \E[x])^2 - \ln \E[x] \frac{\V[x]}{\E[x]^2} + \frac{\V[x]^2}{4 \E[x]^4}\\
+  (\ln x)^2 &\approx (\ln \E[x])^2 + 2 \ln \E[x] (x - \E[x]) + \frac{(x - \E[x])^2}{\E[x]}\\
+  \E[(\ln x)^2] &\approx (\ln \E[x])^2 + \frac{\V[x]}{\E[x]}\\
+  \V[\ln x] &= \E[(\ln x)^2] - \E[\ln x]^2\\
+  &\approx \frac{\V[x]}{\E[x]} + \ln \E[x] \frac{\V[x]}{\E[x]^2} - \frac{\V[x]^2}{4 \E[x]^4}.
+\end{align}
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-07-09 Thu 13:03</p>
+<p class="date">Created: 2020-07-09 Thu 13:28</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

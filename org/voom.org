@@ -123,7 +123,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[46]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -486,16 +486,52 @@
        p = st.norm().sf(abs(z))
        return pd.DataFrame({'bhat': bhat, 'se': se, 'p': p})
 
-     def estimate_point_rqr(x, onehot, **kwargs):
+     def estimate_rqr(x, onehot, **kwargs):
+       """Return DataFrame of (bhat, se, p)
+
+       Assume cells are units, estimate an expression model for each group, and then
+       estimate randomized quantile residuals for each observation (Dunn and Smyth
+       1996). Perform a z-test using the residuals as the data.
+
+       This method is related to the sctransform method (Hafemeister and Satija
+       2019), which uses Pearson residuals of a GLM. The advantage of using RQRs is
+       that they can be computed for expression models which do not give rise to
+       observation models which can be fit using GLMs (e.g., Gamma expression models
+       with different variances per group).
+
+       Dunn and Smyth, "Randomized Quantile Residuals". J Comput Graph Stat 1996.
+       http://www.jstor.org/stable/1390802
+
+       Hafemeister and Satija, "Normalization and variance stabilization of
+       single-cell RNA-seq data using regularized negative binomial
+       regression". Genome Biol 2020.
+       https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1874-1
+
+       x - count matrix (dense)
+       onehot - mapping of cells to groups (dense)
+
+       """
+       n, p = x.shape
+       _, m = onehot.shape
        s = x.sum(axis=1, keepdims=True)
-       # Allow -inf
-       theta = np.log(onehot.T @ x) - np.log(onehot.T @ s)
-       if ss.isspmatrix(theta):
-         theta = theta.A
-       F = st.poisson(mu=np.exp(np.log(s) + onehot.T @ theta))
-       u = F.cdf(x - 1) + np.random.uniform(size=x.shape) * F.pmf(x)
-       resid = st.norm().ppf(u)
-       bhat = np.diff((onehot @ resid) / (onehot.sum(axis=0)), axis=0)
+       # TODO: don't fix expression model?
+       # Heuristic: fix total number of updates
+       num_epochs = 6000 * 32 // x.shape[0]
+       log_mean, log_inv_disp, logodds = mpebpm.ebpm_point_gamma(x, s, onehot=onehot, batch_size=32, num_epochs=num_epochs, shuffle=True)
+
+       n = onehot @ np.exp(log_inv_disp)
+       p = 1 / (1 + (s * (onehot @ np.exp(log_mean - log_inv_disp))))
+       pi0 = onehot @ sp.expit(logodds)
+       F = st.nbinom(n, p).cdf(x - 1)
+       F = np.where(x - 1 >= 0, pi0 + (1 - pi0) * F, F)
+       f = st.nbinom(n, p).pmf(x)
+       f *= (1 - pi0)
+       f[x == 0] += pi0[x == 0]
+       u = np.random.uniform(size=F.shape)
+       rpp = F + u * f
+       resid = st.norm().ppf(rpp)
+
+       bhat = np.diff((onehot.T @ resid) / (onehot.sum(axis=0).reshape(-1, 1)), axis=0).ravel()
        V = 1 / (onehot.T @ x)
        se = np.sqrt(V.sum(axis=0))
        z = bhat / se
@@ -586,7 +622,7 @@
        """
        result = []
        for i in range(n_trials):
-         x, onehot = simulate_null(dat, b=b, n_donors=2, n_cells=n_cells, min_cells=min_cells, seed=i)
+         x, onehot = simulate_null(dat, b=b, n_donors=1, n_cells=n_cells, min_cells=min_cells, seed=i)
          if ss.isspmatrix(x.X):
            x = x.X.A
          else:
@@ -599,7 +635,7 @@
            for test in ('moderated_t', 'z'):
              pval = globals()[f'estimate_{test}'](fit)
              result.append((b, n_cells, method, test, i, (pval < alpha).mean()))
-         for method in ('point',):
+         for method in ('point', 'rqr'):
            fit = globals()[f'estimate_{method}'](x, onehot, batch_size=64, num_epochs=num_epochs)
            result.append((b, n_cells, method, 'z', i, (fit['p'] < alpha).mean()))
        result = pd.DataFrame(result, columns=['b', 'n_cells', 'method', 'test', 'trial', 'fdp'])
@@ -692,7 +728,7 @@
              fdp = ((score < fdr) & np.isclose(lfc, 0)).mean()
              power = (score[~np.isclose(lfc, 0)] < fdr).mean()
              result.append((fdr, n_cells, method, fdr_method, i, fdp, power))
-         for method in ('point',):
+         for method in ('point', 'rqr',):
            fit = globals()[f'estimate_{method}'](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
            score = rpy2.robjects.r['p.adjust'](fit['p'], method='BH')
            fdp = ((score < fdr) & np.isclose(lfc, 0)).mean()
@@ -741,7 +777,7 @@
 
    #+RESULTS: simulation
    :RESULTS:
-   # Out[81]:
+   # Out[63]:
    :END:
 
    To generate null data, randomly sample cells from a homogeneous population,
@@ -755,7 +791,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[83]:
+   # Out[5]:
    :END:
 
 * Results

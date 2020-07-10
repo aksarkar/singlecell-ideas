@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-07-03 Fri 23:22 -->
+<!-- 2020-07-09 Thu 23:44 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>An improved voom transform for scRNA-seq data</title>
@@ -795,16 +795,52 @@ Implement a simplified
   <span class="org-variable-name">p</span> = st.norm().sf(<span class="org-builtin">abs</span>(z))
   <span class="org-keyword">return</span> pd.DataFrame({<span class="org-string">'bhat'</span>: bhat, <span class="org-string">'se'</span>: se, <span class="org-string">'p'</span>: p})
 
-<span class="org-keyword">def</span> <span class="org-function-name">estimate_point_rqr</span>(x, onehot, **kwargs):
+<span class="org-keyword">def</span> <span class="org-function-name">estimate_rqr</span>(x, onehot, **kwargs):
+  <span class="org-doc">"""Return DataFrame of (bhat, se, p)</span>
+
+<span class="org-doc">  Assume cells are units, estimate an expression model for each group, and then</span>
+<span class="org-doc">  estimate randomized quantile residuals for each observation (Dunn and Smyth</span>
+<span class="org-doc">  1996). Perform a z-test using the residuals as the data.</span>
+
+<span class="org-doc">  This method is related to the sctransform method (Hafemeister and Satija</span>
+<span class="org-doc">  2019), which uses Pearson residuals of a GLM. The advantage of using RQRs is</span>
+<span class="org-doc">  that they can be computed for expression models which do not give rise to</span>
+<span class="org-doc">  observation models which can be fit using GLMs (e.g., Gamma expression models</span>
+<span class="org-doc">  with different variances per group).</span>
+
+<span class="org-doc">  Dunn and Smyth, "Randomized Quantile Residuals". J Comput Graph Stat 1996.</span>
+<span class="org-doc">  http://www.jstor.org/stable/1390802</span>
+
+<span class="org-doc">  Hafemeister and Satija, "Normalization and variance stabilization of</span>
+<span class="org-doc">  single-cell RNA-seq data using regularized negative binomial</span>
+<span class="org-doc">  regression". Genome Biol 2020.</span>
+<span class="org-doc">  https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1874-1</span>
+
+<span class="org-doc">  x - count matrix (dense)</span>
+<span class="org-doc">  onehot - mapping of cells to groups (dense)</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">n</span>, <span class="org-variable-name">p</span> = x.shape
+  <span class="org-variable-name">_</span>, <span class="org-variable-name">m</span> = onehot.shape
   <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">Allow -inf</span>
-  <span class="org-variable-name">theta</span> = np.log(onehot.T @ x) - np.log(onehot.T @ s)
-  <span class="org-keyword">if</span> ss.isspmatrix(theta):
-    <span class="org-variable-name">theta</span> = theta.A
-  <span class="org-variable-name">F</span> = st.poisson(mu=np.exp(np.log(s) + onehot.T @ theta))
-  <span class="org-variable-name">u</span> = F.cdf(x - 1) + np.random.uniform(size=x.shape) * F.pmf(x)
-  <span class="org-variable-name">resid</span> = st.norm().ppf(u)
-  <span class="org-variable-name">bhat</span> = np.diff((onehot @ resid) / (onehot.<span class="org-builtin">sum</span>(axis=0)), axis=0)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: don't fix expression model?</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Heuristic: fix total number of updates</span>
+  <span class="org-variable-name">num_epochs</span> = 6000 * 32 // x.shape[0]
+  <span class="org-variable-name">log_mean</span>, <span class="org-variable-name">log_inv_disp</span>, <span class="org-variable-name">logodds</span> = mpebpm.ebpm_point_gamma(x, s, onehot=onehot, batch_size=32, num_epochs=num_epochs, shuffle=<span class="org-constant">True</span>)
+
+  <span class="org-variable-name">n</span> = onehot @ np.exp(log_inv_disp)
+  <span class="org-variable-name">p</span> = 1 / (1 + (s * (onehot @ np.exp(log_mean - log_inv_disp))))
+  <span class="org-variable-name">pi0</span> = onehot @ sp.expit(logodds)
+  <span class="org-variable-name">F</span> = st.nbinom(n, p).cdf(x - 1)
+  <span class="org-variable-name">F</span> = np.where(x - 1 &gt;= 0, pi0 + (1 - pi0) * F, F)
+  <span class="org-variable-name">f</span> = st.nbinom(n, p).pmf(x)
+  <span class="org-variable-name">f</span> *= (1 - pi0)
+  <span class="org-variable-name">f</span>[x == 0] += pi0[x == 0]
+  <span class="org-variable-name">u</span> = np.random.uniform(size=F.shape)
+  <span class="org-variable-name">rpp</span> = F + u * f
+  <span class="org-variable-name">resid</span> = st.norm().ppf(rpp)
+
+  <span class="org-variable-name">bhat</span> = np.diff((onehot.T @ resid) / (onehot.<span class="org-builtin">sum</span>(axis=0).reshape(-1, 1)), axis=0).ravel()
   <span class="org-variable-name">V</span> = 1 / (onehot.T @ x)
   <span class="org-variable-name">se</span> = np.sqrt(V.<span class="org-builtin">sum</span>(axis=0))
   <span class="org-variable-name">z</span> = bhat / se
@@ -895,7 +931,7 @@ Implement a simplified
 <span class="org-doc">  """</span>
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, b=b, n_donors=2, n_cells=n_cells, min_cells=min_cells, seed=i)
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">onehot</span> = simulate_null(dat, b=b, n_donors=1, n_cells=n_cells, min_cells=min_cells, seed=i)
     <span class="org-keyword">if</span> ss.isspmatrix(x.X):
       <span class="org-variable-name">x</span> = x.X.A
     <span class="org-keyword">else</span>:
@@ -908,7 +944,7 @@ Implement a simplified
       <span class="org-keyword">for</span> test <span class="org-keyword">in</span> (<span class="org-string">'moderated_t'</span>, <span class="org-string">'z'</span>):
         <span class="org-variable-name">pval</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{test}'</span>](fit)
         result.append((b, n_cells, method, test, i, (pval &lt; alpha).mean()))
-    <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'point'</span>,):
+    <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'point'</span>, <span class="org-string">'rqr'</span>):
       <span class="org-variable-name">fit</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot, batch_size=64, num_epochs=num_epochs)
       result.append((b, n_cells, method, <span class="org-string">'z'</span>, i, (fit[<span class="org-string">'p'</span>] &lt; alpha).mean()))
   <span class="org-variable-name">result</span> = pd.DataFrame(result, columns=[<span class="org-string">'b'</span>, <span class="org-string">'n_cells'</span>, <span class="org-string">'method'</span>, <span class="org-string">'test'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'fdp'</span>])
@@ -1001,7 +1037,7 @@ Implement a simplified
         <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(lfc, 0)).mean()
         <span class="org-variable-name">power</span> = (score[~np.isclose(lfc, 0)] &lt; fdr).mean()
         result.append((fdr, n_cells, method, fdr_method, i, fdp, power))
-    <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'point'</span>,):
+    <span class="org-keyword">for</span> method <span class="org-keyword">in</span> (<span class="org-string">'point'</span>, <span class="org-string">'rqr'</span>,):
       <span class="org-variable-name">fit</span> = <span class="org-builtin">globals</span>()[f<span class="org-string">'estimate_{method}'</span>](x, onehot, design=design, batch_size=64, num_epochs=num_epochs)
       <span class="org-variable-name">score</span> = rpy2.robjects.r[<span class="org-string">'p.adjust'</span>](fit[<span class="org-string">'p'</span>], method=<span class="org-string">'BH'</span>)
       <span class="org-variable-name">fdp</span> = ((score &lt; fdr) &amp; np.isclose(lfc, 0)).mean()
@@ -1510,9 +1546,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org237db72" class="outline-4">
-<h4 id="org237db72">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org237db72">
+<div id="outline-container-org6116287" class="outline-4">
+<h4 id="org6116287">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org6116287">
 <p>
 To generate single cells with unequal size factors, combine simulated
 doublets from sorted cells in one group.
@@ -1888,9 +1924,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org6116287" class="outline-4">
-<h4 id="org6116287">Unequal size factors</h4>
-<div class="outline-text-4" id="text-org6116287">
+<div id="outline-container-org4d5f185" class="outline-4">
+<h4 id="org4d5f185">Unequal size factors</h4>
+<div class="outline-text-4" id="text-org4d5f185">
 <p>
 Generate null data with different size factors by assigning different
 numbers of cells to different donors.
@@ -2012,7 +2048,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-07-03 Fri 23:22</p>
+<p class="date">Created: 2020-07-09 Thu 23:44</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

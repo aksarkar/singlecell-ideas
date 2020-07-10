@@ -10,28 +10,31 @@ expression (Sarkar and Stephens 2020) \(
 \)
 
 \begin{equation}
-  x_{ij} \mid \xiplus, \lambda_{ij} \sim \Poi(\xiplus \lambda_{ij}).
+  x_{ij} \mid \xiplus, \lambda_{ij} \sim \Poi(\xiplus \lambda_{ij}),
 \end{equation}
 
-However, analyzing observations according to this measurement model can be
-difficult. A common strategy is to instead analyze log-transformed values,
-which can be understood as MLEs of (1) assuming a log link \(\theta_{ij} =
-\ln\lambda_{ij}\).
+where \(x_{ij}\) denotes the number of molecules of gene \(j\) observed in cell
+\(i\), \(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of
+molecules observed in cell \(i\), and \(\lambda_{ij}\) denotes the true
+(relative) gene expression of gene \(j\) in cell \(i\). However, analyzing
+observations according to this measurement model can be difficult. A common
+strategy is to instead analyze log-transformed values, which can be understood
+as MLEs of (1) assuming a log link \(\theta_{ij} = \ln\lambda_{ij}\).
 
 \begin{align}
   x_{ij} \mid \xiplus, \theta_{ij} &\sim \Poi(\xiplus \exp(\theta_{ij}))\\
   \hat\theta_{ij} &= \ln\left(\frac{x_{ij}}{\xiplus}\right).
 \end{align}
 
-Lun 2018 characterized a bias in using log-transformed values to estimate the
-mean of log true gene expression
+Lun 2018 characterized a bias in using log-transformed values
 
 \begin{equation}
   y_{ij} = \ln\left(\frac{x_{ij} + \epsilon}{\xiplus}\right),
 \end{equation}
 
-where \(\epsilon\) is a pseudocount to handle the case \(x_{ij} =
-0\). Absorbing \(\epsilon\) into \(x\) and taking a Taylor expansion,
+where \(\epsilon\) is a pseudocount to handle the case \(x_{ij} = 0\), to
+estimate the mean of log true gene expression. Absorbing \(\epsilon\) into
+\(x\) and taking a Taylor expansion,
 
 \begin{align}
   \ln x &\approx \ln \E[x] + \frac{x - \E[x]}{\E[x]} - \frac{(x - \E[x])^2}{2 \E[x]^2}\\
@@ -39,7 +42,7 @@ where \(\epsilon\) is a pseudocount to handle the case \(x_{ij} =
 \end{align}
 
 Sarkar et al. 2019 characterized a bias in using log-transformed values to
-estimate the variance of log true gene expression
+estimate the variance of log true gene expression. Taking Taylor expansions,
 
 \begin{align}
   \E[\ln x]^2 &\approx (\ln \E[x])^2 - \ln \E[x] \frac{\V[x]}{\E[x]^2} + \frac{\V[x]^2}{4 \E[x]^4}\\

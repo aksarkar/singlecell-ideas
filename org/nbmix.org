@@ -68,7 +68,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -78,7 +78,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[3]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -91,7 +91,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[4]:
   :END:
 
 * Methods
@@ -231,7 +231,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[5]:
    :END:
 
    Get 256 B cells and 256 cytotoxic T cells.
@@ -1020,7 +1020,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[7]:
    #+BEGIN_EXAMPLE
      AnnData object with n_obs × n_vars = 33169 × 19241
      obs: 'barcode', 'cell_type', 'leiden'
@@ -1028,6 +1028,7 @@
      uns: 'pca', 'neighbors', 'leiden', 'umap'
      obsm: 'X_pca', 'X_umap'
      varm: 'PCs'
+     obsp: 'distances', 'connectivities'
    #+END_EXAMPLE
    :END:
 
@@ -1037,7 +1038,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[155]:
+   # Out[8]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -1046,7 +1047,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[6]:
    :END:
 
    Plot the data, colored by ground truth label.
@@ -1068,7 +1069,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[170]:
+   # Out[54]:
    [[file:figure/nbmix.org/mix4.png]]
    :END:
 
@@ -1081,7 +1082,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[10]:
    #+BEGIN_EXAMPLE
      b_cells           320
      cytotoxic_t       315
@@ -1130,10 +1131,10 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[16]:
    :END:
 
-   Run batch EM.
+   Run batch EM, starting from a random \(E[z]\).
 
    #+BEGIN_SRC ipython :async t
      import imp; imp.reload(mpebpm.gam_mix)
@@ -1156,7 +1157,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[102]:
+   # Out[13]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -1201,11 +1202,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[104]:
+   # Out[14]:
    [[file:figure/nbmix.org/mix4-init.png]]
    :END:
 
-   Compare the expected log joint of the fitted model to the oracle.
+   Compare the expected log joint of the fitted model to the oracle log joint.
 
    #+BEGIN_SRC ipython :async t
      pi = torch.ones(4) / 4.
@@ -1230,7 +1231,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[124]:
+   # Out[17]:
    #+BEGIN_EXAMPLE
      oracle    455.64493
      em        467.37347
@@ -1265,6 +1266,236 @@
    :RESULTS:
    # Out[115]:
    [[file:figure/nbmix.org/mix4-cd74.png]]
+   :END:
+
+   Fit NMF with \(k=4\).
+
+   #+BEGIN_SRC ipython
+     import rpy2.robjects.packages
+     import rpy2.robjects.pandas2ri
+     rpy2.robjects.pandas2ri.activate()
+
+     ft = rpy2.robjects.packages.importr('fastTopics')
+     matrix = rpy2.robjects.packages.importr('Matrix')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     temp = mix4sub.X.tocoo()
+     y = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+     fit = ft.fit_poisson_nmf(y, k=4, numiter=100, method='scd', control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
+     fit = {k: v for k, v in zip(fit.names, fit)}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[48]:
+   :END:
+
+   Normalize the loadings/factors to get a topic model.
+
+   #+BEGIN_SRC ipython
+     l = fit['L']
+     f = fit['F']
+     weights = l * f.sum(axis=0)
+     scale = weights.sum(axis=1, keepdims=True)
+     weights /= scale
+     topics = f / f.sum(axis=0, keepdims=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[49]:
+   :END:
+
+   Plot the correlation of the estimated topic weights against the ground truth
+   labels.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4-nmf.png
+     r = np.corrcoef(pd.get_dummies(mix4sub.obs['cell_type']).T, weights.T)[:4,4:]
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.imshow(r, cmap=colorcet.cm['coolwarm'], vmin=-1, vmax=1)
+     plt.xticks(range(4), mix4sub.obs['cell_type'].unique(), rotation=90)
+     plt.xlabel('Cell type')
+     plt.yticks(range(4), range(4))
+     plt.ylabel('Topic')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[50]:
+   [[file:figure/nbmix.org/mix4-nmf.png]]
+   :END:
+
+   Fit batch EM on the subset, initializing \(E[z]\) using the topic weights.
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     k = 4
+     seed = 0
+     lr = 1e-2
+     num_epochs = 50
+     max_em_iters = 10
+     torch.manual_seed(seed)
+     fit_init_z = mpebpm.gam_mix.ebpm_gam_mix_em(
+       x=mix4sub.X.A,
+       s=mix4sub.X.sum(axis=1),
+       z=weights,
+       k=k,
+       lr=lr,
+       num_epochs=num_epochs,
+       max_em_iters=max_em_iters,
+       log_dir=f'runs/nbmix/mix4-init-z-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[52]:
+   :END:
+
+   Plot the MAP cluster assignments.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4-init-z.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     plt.gcf().set_size_inches(5, 3.5)
+
+     cm = plt.get_cmap('Paired')
+     for i, c in enumerate(mix4sub.obs['cell_type'].unique()):
+       ax[0].plot(*mix4sub[mix4sub.obs['cell_type'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'{c}')
+     ax[0].set_title('Ground truth')
+     leg = ax[0].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     z = pd.get_dummies(np.argmax(fit_init_z[-1], axis=1)).values.astype(bool)
+     cm = plt.get_cmap('Dark2')
+     for i in range(z.shape[1]):
+       ax[1].plot(*mix4sub[z[:,i]].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'Cluster {i}')
+     ax[1].set_title('Batch EM (initial $\mathrm{E}[z]$)')
+     leg = ax[1].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
+   [[file:figure/nbmix.org/mix4-init-z.png]]
+   :END:
+
+   Fit batch EM on the subset, initializing \(\mu\) using the topics.
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     k = 4
+     seed = 0
+     lr = 1e-2
+     num_epochs = 50
+     max_em_iters = 10
+     torch.manual_seed(seed)
+     fit_init_mu = mpebpm.gam_mix.ebpm_gam_mix_em(
+       x=mix4sub.X.A,
+       s=mix4sub.X.sum(axis=1),
+       log_mean=np.log(topics).T,
+       k=k,
+       lr=lr,
+       num_epochs=num_epochs,
+       max_em_iters=max_em_iters,
+       log_dir=f'runs/nbmix/mix4-init-mu-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[55]:
+   :END:
+
+   Plot the MAP cluster assignments.
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4-init-mu.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     plt.gcf().set_size_inches(5, 3.5)
+
+     cm = plt.get_cmap('Paired')
+     for i, c in enumerate(mix4sub.obs['cell_type'].unique()):
+       ax[0].plot(*mix4sub[mix4sub.obs['cell_type'] == c].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'{c}')
+     ax[0].set_title('Ground truth')
+     leg = ax[0].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     z = pd.get_dummies(np.argmax(fit_init_mu[-1], axis=1)).values.astype(bool)
+     cm = plt.get_cmap('Dark2')
+     for i in range(z.shape[1]):
+       ax[1].plot(*mix4sub[z[:,i]].obsm["X_umap"].T, c=cm(i), marker='.', ms=2, lw=0, label=f'Cluster {i}')
+     ax[1].set_title('Batch EM (initial $\mu$)')
+     leg = ax[1].legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+     for h in leg.legendHandles:
+       h._legmarker.set_alpha(1)
+
+     for a in ax:
+       a.set_xlabel('UMAP 1')
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[56]:
+   [[file:figure/nbmix.org/mix4-init-mu.png]]
+   :END:
+
+   Fit a logistic regression predicting cytotoxic T vs. Treg from gene
+   expression. Report the validation set prediction accuracy.
+
+   #+BEGIN_SRC ipython :async t
+     import sklearn.linear_model as sklm
+     import sklearn.model_selection as skms
+
+     query = dat[dat.obs['cell_type'].isin(['cytotoxic_t', 'regulatory_t'])]
+     x_train, x_val, y_train, y_val = skms.train_test_split(
+       query.X,
+       (query.obs['cell_type'] == 'cytotoxic_t').astype(float),
+       test_size=.1)
+     m = sklm.SGDClassifier(loss='log').fit(x_train, y_train)
+     m.score(x_val, y_val)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[71]:
+   : 0.9990234375
+   :END:
+
+   For reference, fit a logistic regression using size factor as the predictor,
+   and report the validation set prediction accuracy.
+
+   #+BEGIN_SRC ipython
+     query = dat[dat.obs['cell_type'].isin(['cytotoxic_t', 'regulatory_t'])]
+     x_train, x_val, y_train, y_val = skms.train_test_split(
+       query.X.sum(axis=1),
+       (query.obs['cell_type'] == 'cytotoxic_t').astype(float),
+       test_size=.1)
+     m = sklm.SGDClassifier(loss='log').fit(x_train, y_train)
+     m.score(x_val, y_val)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[72]:
+   : 0.64501953125
    :END:
 
 *** Placeholder                                                    :noexport:

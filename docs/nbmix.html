@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-07-16 Thu 10:10 -->
+<!-- 2020-07-16 Thu 14:19 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Model-based clustering of scRNA-seq data</title>
@@ -264,10 +264,12 @@ for the JavaScript code in this tag.
 <li><a href="#model">Model specification</a></li>
 <li><a href="#em-nbmix">EM for Poisson&#x2013;Gamma-mixture</a></li>
 <li><a href="#ai">Amortized inference</a></li>
+<li><a href="#orge1585a2">Simulation</a></li>
 </ul>
 </li>
 <li><a href="#results">Results</a>
 <ul>
+<li><a href="#orgc1db78e">Simulated example</a></li>
 <li><a href="#example">Real data example</a></li>
 <li><a href="#leiden">Leiden algorithm</a></li>
 <li><a href="#mpebpm">MPEBPM</a></li>
@@ -334,13 +336,23 @@ issues.
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> scmodes
-<span class="org-keyword">import</span> sklearn.linear_model
-<span class="org-keyword">import</span> sklearn.model_selection
-<span class="org-keyword">import</span> sklearn.preprocessing
+<span class="org-keyword">import</span> sklearn.linear_model <span class="org-keyword">as</span> sklm
+<span class="org-keyword">import</span> sklearn.metrics <span class="org-keyword">as</span> skm
+<span class="org-keyword">import</span> sklearn.model_selection <span class="org-keyword">as</span> skms
 <span class="org-keyword">import</span> time
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 <span class="org-keyword">import</span> umap
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> rpy2.robjects.packages
+<span class="org-keyword">import</span> rpy2.robjects.pandas2ri
+rpy2.robjects.pandas2ri.activate()
+
+<span class="org-variable-name">ft</span> = rpy2.robjects.packages.importr(<span class="org-string">'fastTopics'</span>)
+<span class="org-variable-name">matrix</span> = rpy2.robjects.packages.importr(<span class="org-string">'Matrix'</span>)
 </pre>
 </div>
 
@@ -457,8 +469,8 @@ can improve the expected log joint probability, e.g. by
 </div>
 </div>
 
-<div id="outline-container-orge001295" class="outline-3">
-<h3 id="ai"><a id="orge001295"></a>Amortized inference</h3>
+<div id="outline-container-org92f8c63" class="outline-3">
+<h3 id="ai"><a id="org92f8c63"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-ai">
 <p>
 An alternative algorithm, which is amenable to stochastic gradient descent
@@ -501,12 +513,95 @@ and can be optimized using SGD.
 </p>
 </div>
 </div>
+
+<div id="outline-container-orge1585a2" class="outline-3">
+<h3 id="orge1585a2">Simulation</h3>
+<div class="outline-text-3" id="text-orge1585a2">
+<p>
+Simulate from the model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate</span>(n, p, k, s=1e4, seed=0):
+  <span class="org-variable-name">rng</span> = np.random.default_rng(seed)
+  <span class="org-variable-name">z</span> = pd.get_dummies(np.argmax(rng.uniform(size=(n, k)), axis=1)).values
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Values from Sarkar et al. 2019</span>
+  <span class="org-variable-name">log_mean</span> = rng.uniform(-12, -6, size=(p, k))
+  <span class="org-variable-name">log_inv_disp</span> = rng.uniform(0, 4, size=(p, k))
+  <span class="org-variable-name">lam</span> = rng.negative_binomial(n=np.exp(z @ log_inv_disp.T), p=1 / (1 + s * (z @ np.exp(log_mean - log_inv_disp).T)))
+  <span class="org-variable-name">x</span> = rng.poisson(lam)
+  <span class="org-keyword">return</span> x, z, log_mean, log_inv_disp
+</pre>
+</div>
+</div>
+</div>
 </div>
 
 <div id="outline-container-org3b8829f" class="outline-2">
 <h2 id="results"><a id="org3b8829f"></a>Results</h2>
 <div class="outline-text-2" id="text-results">
 </div>
+<div id="outline-container-orgc1db78e" class="outline-3">
+<h3 id="orgc1db78e">Simulated example</h3>
+<div class="outline-text-3" id="text-orgc1db78e">
+<p>
+Simulate from the model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">z</span>, <span class="org-variable-name">log_mean</span>, <span class="org-variable-name">log_inv_disp</span> = simulate(n=100, p=500, k=4, seed=1)
+</pre>
+</div>
+
+<p>
+Fit EM, starting from a random initialization.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> imp; imp.<span class="org-builtin">reload</span>(mpebpm.gam_mix)
+<span class="org-variable-name">k</span> = 4
+<span class="org-variable-name">seed</span> = 0
+<span class="org-variable-name">lr</span> = 1e-2
+<span class="org-variable-name">num_epochs</span> = 50
+<span class="org-variable-name">max_em_iters</span> = 10
+torch.manual_seed(seed)
+<span class="org-variable-name">fit</span> = mpebpm.gam_mix.ebpm_gam_mix_em(
+  x=x,
+  s=x.<span class="org-builtin">sum</span>(axis=1, keepdims=<span class="org-constant">True</span>),
+  k=k,
+  lr=lr,
+  num_epochs=num_epochs,
+  max_em_iters=max_em_iters,
+  log_dir=f<span class="org-string">'runs/nbmix/sim-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}'</span>)
+</pre>
+</div>
+
+<p>
+Evaluate the clustering accuracy.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">zhat</span> = pd.get_dummies(np.argmax(fit[-1], axis=1)).values.astype(<span class="org-builtin">bool</span>)
+<span class="org-variable-name">idx</span> = np.array([np.argmax(z[zhat[:,k]].<span class="org-builtin">sum</span>(axis=0)) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(4)])
+pd.Series({
+  <span class="org-string">'accuracy'</span>: (np.argmax(z, axis=1) == idx[np.argmax(zhat, axis=1)]).mean(),
+  <span class="org-string">'log_loss'</span>: np.where(z[:,idx], -np.log(fit[-1]), 0).<span class="org-builtin">sum</span>(),
+  <span class="org-string">'nmi'</span>: skm.normalized_mutual_info_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)]),
+  <span class="org-string">'ari'</span>: skm.adjusted_rand_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+})
+</pre>
+</div>
+
+<pre class="example">
+accuracy    1.0
+log_loss    0.0
+nmi         1.0
+ari         1.0
+dtype: float64
+</pre>
+</div>
+</div>
+
 <div id="outline-container-org54ab750" class="outline-3">
 <h3 id="example"><a id="org54ab750"></a>Real data example</h3>
 <div class="outline-text-3" id="text-example">
@@ -871,8 +966,8 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org7e906ae" class="outline-3">
-<h3 id="amortized"><a id="org7e906ae"></a>Amortized inference</h3>
+<div id="outline-container-orgce984ca" class="outline-3">
+<h3 id="amortized"><a id="orgce984ca"></a>Amortized inference</h3>
 <div class="outline-text-3" id="text-amortized">
 <p>
 Construct the amortized inference model, initializing \(\vmu_k, \vphi_k\)
@@ -1343,6 +1438,25 @@ fig.tight_layout()
 </div>
 
 <p>
+Assign each community detected by the Leiden algorithm to a ground truth
+label, based on the maximally represented label in each community, then
+assess the accuracy of the clustering.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">z</span> = pd.get_dummies(mix4.obs[<span class="org-string">'cell_type'</span>]).values.astype(<span class="org-builtin">bool</span>)
+<span class="org-variable-name">zhat</span> = pd.get_dummies(mix4.obs[<span class="org-string">'leiden'</span>]).values.astype(<span class="org-builtin">bool</span>)
+<span class="org-variable-name">idx</span> = np.array([np.argmax(z[zhat[:,k]].<span class="org-builtin">sum</span>(axis=0)) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(zhat.shape[1])])
+(np.argmax(z, axis=1) == idx[np.argmax(zhat, axis=1)]).mean()
+</pre>
+</div>
+
+<pre class="example">
+0.9918900177876934
+
+</pre>
+
+<p>
 Use a subset of the data to run batch EM.
 </p>
 
@@ -1358,6 +1472,51 @@ cytotoxic_t       315
 regulatory_t      290
 cd14_monocytes     75
 Name: cell_type, dtype: int64
+</pre>
+
+<p>
+Evaluate the accuracy of Leiden clustering in this subset.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">z</span> = pd.get_dummies(mix4sub.obs[<span class="org-string">'cell_type'</span>]).values.astype(<span class="org-builtin">bool</span>)
+<span class="org-variable-name">zhat</span> = pd.get_dummies(mix4sub.obs[<span class="org-string">'leiden'</span>]).values.astype(<span class="org-builtin">bool</span>)
+<span class="org-variable-name">idx</span> = np.array([np.argmax(z[zhat[:,k]].<span class="org-builtin">sum</span>(axis=0)) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(zhat.shape[1])])
+(np.argmax(z, axis=1) == idx[np.argmax(zhat, axis=1)]).mean()
+</pre>
+</div>
+
+<pre class="example">
+0.996
+
+</pre>
+
+<p>
+Evaluate the normalized mutual information.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">skm.normalized_mutual_info_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+</pre>
+</div>
+
+<pre class="example">
+0.9613444754486798
+
+</pre>
+
+<p>
+Evaluate the adjusted Rand index.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">skm.adjusted_rand_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+</pre>
+</div>
+
+<pre class="example">
+0.9779140374557265
+
 </pre>
 
 <p>
@@ -1538,16 +1697,6 @@ Fit NMF with \(k=4\).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> rpy2.robjects.packages
-<span class="org-keyword">import</span> rpy2.robjects.pandas2ri
-rpy2.robjects.pandas2ri.activate()
-
-<span class="org-variable-name">ft</span> = rpy2.robjects.packages.importr(<span class="org-string">'fastTopics'</span>)
-<span class="org-variable-name">matrix</span> = rpy2.robjects.packages.importr(<span class="org-string">'Matrix'</span>)
-</pre>
-</div>
-
-<div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">temp</span> = mix4sub.X.tocoo()
 <span class="org-variable-name">y</span> = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
 <span class="org-variable-name">fit</span> = ft.fit_poisson_nmf(y, k=4, numiter=100, method=<span class="org-string">'scd'</span>, control=rpy2.robjects.ListVector({<span class="org-string">'extrapolate'</span>: <span class="org-constant">True</span>}), verbose=<span class="org-constant">True</span>)
@@ -1600,13 +1749,14 @@ labels. Assign topics to labels based on the maximum weight.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">z</span> = pd.get_dummies(mix4sub.obs[<span class="org-string">'cell_type'</span>]).values.astype(<span class="org-builtin">bool</span>)
-<span class="org-variable-name">idx</span> = [np.argmax(weights[z[:,k]].<span class="org-builtin">sum</span>(axis=0)) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(4)]
+<span class="org-variable-name">zhat</span> = pd.get_dummies(np.argmax(weights, axis=1)).values.astype(<span class="org-builtin">bool</span>)
+<span class="org-variable-name">idx</span> = np.array([np.argmax(z[zhat[:,k]].<span class="org-builtin">sum</span>(axis=0)) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(zhat.shape[1])])
 -(z * np.log(weights[:,idx])).<span class="org-builtin">sum</span>()
 </pre>
 </div>
 
 <pre class="example">
--349.1997991270244
+26991.17997391195
 
 </pre>
 
@@ -1616,12 +1766,56 @@ compute the accuracy against the ground truth labels.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">(np.argmax(weights[:,idx], axis=1) == np.argmax(z, axis=1)).mean()
+<pre class="src src-ipython">(np.argmax(z, axis=1) == idx[np.argmax(zhat, axis=1)]).mean()
 </pre>
 </div>
 
 <pre class="example">
 0.813
+
+</pre>
+
+<p>
+Evaluate the normalized mutual information.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">skm.normalized_mutual_info_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+</pre>
+</div>
+
+<pre class="example">
+0.729630650183215
+
+</pre>
+
+<p>
+Evaluate the adjusted Rand index.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">skm.adjusted_rand_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+</pre>
+</div>
+
+<pre class="example">
+0.6346534587723618
+
+</pre>
+
+<p>
+Look at the entropy of the topic weights, for samples which were (not)
+assigned to the correct cluster.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = np.argmax(z, axis=1) != idx[np.argmax(zhat, axis=1)]
+-(weights[query] * np.log(weights[query])).mean(), -(weights[~query] * np.log(weights[~query])).mean()
+</pre>
+</div>
+
+<pre class="example">
+(0.16659664113615175, 0.07020479818554375)
 
 </pre>
 
@@ -1650,13 +1844,45 @@ torch.manual_seed(seed)
 </div>
 
 <p>
-Estimate the log loss of topic weights against the ground truth
-labels. Assign topics to labels based on the maximum weight.
+For reference, compute the initial E step, given the topic weight
+initialization.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">L</span> = mpebpm.gam_mix._nb_mix_llik(
+    x=torch.tensor(mix4sub.X.A, dtype=torch.<span class="org-builtin">float</span>), 
+    s=torch.tensor(mix4sub.X.<span class="org-builtin">sum</span>(axis=1), dtype=torch.<span class="org-builtin">float</span>),
+    log_mean=torch.tensor(np.log(topics).T, dtype=torch.<span class="org-builtin">float</span>),
+    log_inv_disp=torch.zeros(topics.T.shape, dtype=torch.<span class="org-builtin">float</span>)).numpy()
+</pre>
+</div>
+
+<p>
+Compute the average log likelihood difference between the maximum component
+and the others.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = np.<span class="org-builtin">max</span>(L, axis=1, keepdims=<span class="org-constant">True</span>) - L
+query[np.where(~np.isclose(query, 0))].mean()
+</pre>
+</div>
+
+<pre class="example">
+2329.182
+
+</pre>
+
+<p>
+Estimate the log loss of cluster weights against the ground truth
+labels. Assign labels to clusters based on the maximum weight.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">z</span> = pd.get_dummies(mix4sub.obs[<span class="org-string">'cell_type'</span>]).values.astype(<span class="org-builtin">bool</span>)
-<span class="org-variable-name">idx</span> = [np.argmax(fit_init_z[-1][z[:,k]].<span class="org-builtin">sum</span>(axis=0)) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(4)]
+<span class="org-variable-name">zhat</span> = pd.get_dummies(np.argmax(fit_init_z[-1], axis=1)).values.astype(<span class="org-builtin">bool</span>)
+<span class="org-variable-name">idx</span> = np.array([np.argmax(z[zhat[:,k]].<span class="org-builtin">sum</span>(axis=0)) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(4)])
 np.where(z, -np.log(fit_init_z[-1][:,idx]), 0).<span class="org-builtin">sum</span>()
 </pre>
 </div>
@@ -1672,12 +1898,40 @@ compute the accuracy against the ground truth labels.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">(np.argmax(fit_init_z[-1][:,idx], axis=1) == np.argmax(z, axis=1)).mean()
+<pre class="src src-ipython">(idx[np.argmax(zhat, axis=1)] == np.argmax(z, axis=1)).mean()
 </pre>
 </div>
 
 <pre class="example">
 0.854
+
+</pre>
+
+<p>
+Evaluate the normalized mutual information.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">skm.normalized_mutual_info_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+</pre>
+</div>
+
+<pre class="example">
+0.7343759402985899
+
+</pre>
+
+<p>
+Evaluate the adjusted Rand index.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">skm.adjusted_rand_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+</pre>
+</div>
+
+<pre class="example">
+0.6751367652638485
 
 </pre>
 
@@ -1804,10 +2058,7 @@ expression. Report the validation set prediction accuracy.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> sklearn.linear_model <span class="org-keyword">as</span> sklm
-<span class="org-keyword">import</span> sklearn.model_selection <span class="org-keyword">as</span> skms
-
-<span class="org-variable-name">query</span> = dat[dat.obs[<span class="org-string">'cell_type'</span>].isin([<span class="org-string">'cytotoxic_t'</span>, <span class="org-string">'regulatory_t'</span>])]
+<pre class="src src-ipython"><span class="org-variable-name">query</span> = dat[dat.obs[<span class="org-string">'cell_type'</span>].isin([<span class="org-string">'cytotoxic_t'</span>, <span class="org-string">'regulatory_t'</span>])]
 <span class="org-variable-name">x_train</span>, <span class="org-variable-name">x_val</span>, <span class="org-variable-name">y_train</span>, <span class="org-variable-name">y_val</span> = skms.train_test_split(
   query.X,
   (query.obs[<span class="org-string">'cell_type'</span>] == <span class="org-string">'cytotoxic_t'</span>).astype(<span class="org-builtin">float</span>),
@@ -1868,7 +2119,6 @@ fit1.fit(
   shuffle=<span class="org-constant">True</span>,
   num_epochs=10,
   log_dir=f<span class="org-string">'runs/nbmix/mix2-full-{seed}-{lr:.1g}-{num_epochs}'</span>)
-
 </pre>
 </div>
 </div>
@@ -2436,7 +2686,7 @@ potentially be adapted to this setting (reviewed in
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-07-16 Thu 10:10</p>
+<p class="date">Created: 2020-07-16 Thu 14:19</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

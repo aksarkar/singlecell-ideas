@@ -57,13 +57,27 @@
     import scipy.special as sp
     import scipy.stats as st
     import scmodes
-    import sklearn.linear_model
-    import sklearn.model_selection
-    import sklearn.preprocessing
+    import sklearn.linear_model as sklm
+    import sklearn.metrics as skm
+    import sklearn.model_selection as skms
     import time
     import torch
     import torch.utils.data as td
     import umap
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import rpy2.robjects.packages
+    import rpy2.robjects.pandas2ri
+    rpy2.robjects.pandas2ri.activate()
+
+    ft = rpy2.robjects.packages.importr('fastTopics')
+    matrix = rpy2.robjects.packages.importr('Matrix')
   #+END_SRC
 
   #+RESULTS:
@@ -213,10 +227,94 @@
 
    and can be optimized using SGD.
 
+** Simulation
+
+   Simulate from the model.
+
+   #+BEGIN_SRC ipython
+     def simulate(n, p, k, s=1e4, seed=0):
+       rng = np.random.default_rng(seed)
+       z = pd.get_dummies(np.argmax(rng.uniform(size=(n, k)), axis=1)).values
+       # Values from Sarkar et al. 2019
+       log_mean = rng.uniform(-12, -6, size=(p, k))
+       log_inv_disp = rng.uniform(0, 4, size=(p, k))
+       lam = rng.negative_binomial(n=np.exp(z @ log_inv_disp.T), p=1 / (1 + s * (z @ np.exp(log_mean - log_inv_disp).T)))
+       x = rng.poisson(lam)
+       return x, z, log_mean, log_inv_disp
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[58]:
+   :END:
+
 * Results
   :PROPERTIES:
   :CUSTOM_ID: results
   :END:
+** Simulated example
+
+   Simulate from the model.
+
+   #+BEGIN_SRC ipython
+     x, z, log_mean, log_inv_disp = simulate(n=100, p=500, k=4, seed=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[85]:
+   :END:
+
+   Fit EM, starting from a random initialization.
+
+   #+BEGIN_SRC ipython :async t
+     import imp; imp.reload(mpebpm.gam_mix)
+     k = 4
+     seed = 0
+     lr = 1e-2
+     num_epochs = 50
+     max_em_iters = 10
+     torch.manual_seed(seed)
+     fit = mpebpm.gam_mix.ebpm_gam_mix_em(
+       x=x,
+       s=x.sum(axis=1, keepdims=True),
+       k=k,
+       lr=lr,
+       num_epochs=num_epochs,
+       max_em_iters=max_em_iters,
+       log_dir=f'runs/nbmix/sim-{k}-{seed}-{lr:.1g}-{num_epochs}-{max_em_iters}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[86]:
+   :END:
+
+   Evaluate the clustering accuracy.
+
+   #+BEGIN_SRC ipython
+     zhat = pd.get_dummies(np.argmax(fit[-1], axis=1)).values.astype(bool)
+     idx = np.array([np.argmax(z[zhat[:,k]].sum(axis=0)) for k in range(4)])
+     pd.Series({
+       'accuracy': (np.argmax(z, axis=1) == idx[np.argmax(zhat, axis=1)]).mean(),
+       'log_loss': np.where(z[:,idx], -np.log(fit[-1]), 0).sum(),
+       'nmi': skm.normalized_mutual_info_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)]),
+       'ari': skm.adjusted_rand_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[88]:
+   #+BEGIN_EXAMPLE
+     accuracy    1.0
+     log_loss    0.0
+     nmi         1.0
+     ari         1.0
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
 ** Real data example
    :PROPERTIES:
    :CUSTOM_ID: example
@@ -1073,6 +1171,23 @@
    [[file:figure/nbmix.org/mix4.png]]
    :END:
 
+   Assign each community detected by the Leiden algorithm to a ground truth
+   label, based on the maximally represented label in each community, then
+   assess the accuracy of the clustering.
+
+   #+BEGIN_SRC ipython
+     z = pd.get_dummies(mix4.obs['cell_type']).values.astype(bool)
+     zhat = pd.get_dummies(mix4.obs['leiden']).values.astype(bool)
+     idx = np.array([np.argmax(z[zhat[:,k]].sum(axis=0)) for k in range(zhat.shape[1])])
+     (np.argmax(z, axis=1) == idx[np.argmax(zhat, axis=1)]).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[110]:
+   : 0.9918900177876934
+   :END:
+
    Use a subset of the data to run batch EM.
 
    #+BEGIN_SRC ipython
@@ -1090,6 +1205,45 @@
      cd14_monocytes     75
      Name: cell_type, dtype: int64
    #+END_EXAMPLE
+   :END:
+
+   Evaluate the accuracy of Leiden clustering in this subset.
+
+   #+BEGIN_SRC ipython
+     z = pd.get_dummies(mix4sub.obs['cell_type']).values.astype(bool)
+     zhat = pd.get_dummies(mix4sub.obs['leiden']).values.astype(bool)
+     idx = np.array([np.argmax(z[zhat[:,k]].sum(axis=0)) for k in range(zhat.shape[1])])
+     (np.argmax(z, axis=1) == idx[np.argmax(zhat, axis=1)]).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[101]:
+   : 0.996
+   :END:
+
+   Evaluate the normalized mutual information.
+
+   #+BEGIN_SRC ipython
+     skm.normalized_mutual_info_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[120]:
+   : 0.9613444754486798
+   :END:
+
+   Evaluate the adjusted Rand index.
+
+   #+BEGIN_SRC ipython
+     skm.adjusted_rand_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[121]:
+   : 0.9779140374557265
    :END:
 
    As a sanity check, estimate the components given the ground truth labels,
@@ -1270,20 +1424,6 @@
 
    Fit NMF with \(k=4\).
 
-   #+BEGIN_SRC ipython
-     import rpy2.robjects.packages
-     import rpy2.robjects.pandas2ri
-     rpy2.robjects.pandas2ri.activate()
-
-     ft = rpy2.robjects.packages.importr('fastTopics')
-     matrix = rpy2.robjects.packages.importr('Matrix')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[8]:
-   :END:
-
    #+BEGIN_SRC ipython :async t
      temp = mix4sub.X.tocoo()
      y = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
@@ -1293,7 +1433,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[8]:
    :END:
 
    Normalize the loadings/factors to get a topic model.
@@ -1309,7 +1449,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
+   # Out[9]:
    :END:
 
    Plot the correlation of the estimated topic weights against the ground truth
@@ -1338,27 +1478,66 @@
 
    #+BEGIN_SRC ipython
      z = pd.get_dummies(mix4sub.obs['cell_type']).values.astype(bool)
-     idx = [np.argmax(weights[z[:,k]].sum(axis=0)) for k in range(4)]
+     zhat = pd.get_dummies(np.argmax(weights, axis=1)).values.astype(bool)
+     idx = np.array([np.argmax(z[zhat[:,k]].sum(axis=0)) for k in range(zhat.shape[1])])
      -(z * np.log(weights[:,idx])).sum()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[23]:
-   : -349.1997991270244
+   # Out[122]:
+   : 26991.17997391195
    :END:
 
    Use the maximal topic weight as the cluster assignment for each sample, and
    compute the accuracy against the ground truth labels.
 
    #+BEGIN_SRC ipython
-     (np.argmax(weights[:,idx], axis=1) == np.argmax(z, axis=1)).mean()
+     (np.argmax(z, axis=1) == idx[np.argmax(zhat, axis=1)]).mean()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[26]:
+   # Out[123]:
    : 0.813
+   :END:
+
+   Evaluate the normalized mutual information.
+
+   #+BEGIN_SRC ipython
+     skm.normalized_mutual_info_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[124]:
+   : 0.729630650183215
+   :END:
+
+   Evaluate the adjusted Rand index.
+
+   #+BEGIN_SRC ipython
+     skm.adjusted_rand_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[125]:
+   : 0.6346534587723618
+   :END:
+
+   Look at the entropy of the topic weights, for samples which were (not)
+   assigned to the correct cluster.
+
+   #+BEGIN_SRC ipython
+     query = np.argmax(z, axis=1) != idx[np.argmax(zhat, axis=1)]
+     -(weights[query] * np.log(weights[query])).mean(), -(weights[~query] * np.log(weights[~query])).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[109]:
+   : (0.16659664113615175, 0.07020479818554375)
    :END:
 
    Fit batch EM on the subset, initializing \(E[z]\) using the topic weights.
@@ -1387,18 +1566,50 @@
    # Out[27]:
    :END:
 
-   Estimate the log loss of topic weights against the ground truth
-   labels. Assign topics to labels based on the maximum weight.
+   For reference, compute the initial E step, given the topic weight
+   initialization.
+
+   #+BEGIN_SRC ipython :async t
+     with torch.no_grad():
+       L = mpebpm.gam_mix._nb_mix_llik(
+         x=torch.tensor(mix4sub.X.A, dtype=torch.float), 
+         s=torch.tensor(mix4sub.X.sum(axis=1), dtype=torch.float),
+         log_mean=torch.tensor(np.log(topics).T, dtype=torch.float),
+         log_inv_disp=torch.zeros(topics.T.shape, dtype=torch.float)).numpy()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[14]:
+   :END:
+
+   Compute the average log likelihood difference between the maximum component
+   and the others.
+
+   #+BEGIN_SRC ipython
+     query = np.max(L, axis=1, keepdims=True) - L
+     query[np.where(~np.isclose(query, 0))].mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[18]:
+   : 2329.182
+   :END:
+
+   Estimate the log loss of cluster weights against the ground truth
+   labels. Assign labels to clusters based on the maximum weight.
 
    #+BEGIN_SRC ipython
      z = pd.get_dummies(mix4sub.obs['cell_type']).values.astype(bool)
-     idx = [np.argmax(fit_init_z[-1][z[:,k]].sum(axis=0)) for k in range(4)]
+     zhat = pd.get_dummies(np.argmax(fit_init_z[-1], axis=1)).values.astype(bool)
+     idx = np.array([np.argmax(z[zhat[:,k]].sum(axis=0)) for k in range(4)])
      np.where(z, -np.log(fit_init_z[-1][:,idx]), 0).sum()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[41]:
+   # Out[129]:
    : inf
    :END:
 
@@ -1406,13 +1617,37 @@
    compute the accuracy against the ground truth labels.
 
    #+BEGIN_SRC ipython
-     (np.argmax(fit_init_z[-1][:,idx], axis=1) == np.argmax(z, axis=1)).mean()
+     (idx[np.argmax(zhat, axis=1)] == np.argmax(z, axis=1)).mean()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[39]:
+   # Out[100]:
    : 0.854
+   :END:
+
+   Evaluate the normalized mutual information.
+
+   #+BEGIN_SRC ipython
+     skm.normalized_mutual_info_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[127]:
+   : 0.7343759402985899
+   :END:
+
+   Evaluate the adjusted Rand index.
+
+   #+BEGIN_SRC ipython
+     skm.adjusted_rand_score(np.argmax(z, axis=1), idx[np.argmax(zhat, axis=1)])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[128]:
+   : 0.6751367652638485
    :END:
 
    Compare the cluster assignments from NMF to the cluster assignments from the
@@ -1530,9 +1765,6 @@
    expression. Report the validation set prediction accuracy.
 
    #+BEGIN_SRC ipython :async t
-     import sklearn.linear_model as sklm
-     import sklearn.model_selection as skms
-
      query = dat[dat.obs['cell_type'].isin(['cytotoxic_t', 'regulatory_t'])]
      x_train, x_val, y_train, y_val = skms.train_test_split(
        query.X,
@@ -1590,7 +1822,6 @@
        shuffle=True,
        num_epochs=10,
        log_dir=f'runs/nbmix/mix2-full-{seed}-{lr:.1g}-{num_epochs}')
-
    #+END_SRC
 
 *** Placeholder                                                    :noexport:

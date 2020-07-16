@@ -1082,7 +1082,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
+   # Out[7]:
    #+BEGIN_EXAMPLE
      b_cells           320
      cytotoxic_t       315
@@ -1281,7 +1281,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[19]:
+   # Out[8]:
    :END:
 
    #+BEGIN_SRC ipython :async t
@@ -1293,7 +1293,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[48]:
+   # Out[9]:
    :END:
 
    Normalize the loadings/factors to get a topic model.
@@ -1309,7 +1309,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[49]:
+   # Out[10]:
    :END:
 
    Plot the correlation of the estimated topic weights against the ground truth
@@ -1331,6 +1331,34 @@
    :RESULTS:
    # Out[50]:
    [[file:figure/nbmix.org/mix4-nmf.png]]
+   :END:
+
+   Estimate the log loss of topic weights against the ground truth
+   labels. Assign topics to labels based on the maximum weight.
+
+   #+BEGIN_SRC ipython
+     z = pd.get_dummies(mix4sub.obs['cell_type']).values.astype(bool)
+     idx = [np.argmax(weights[z[:,k]].sum(axis=0)) for k in range(4)]
+     -(z * np.log(weights[:,idx])).sum()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[23]:
+   : -349.1997991270244
+   :END:
+
+   Use the maximal topic weight as the cluster assignment for each sample, and
+   compute the accuracy against the ground truth labels.
+
+   #+BEGIN_SRC ipython
+     (np.argmax(weights[:,idx], axis=1) == np.argmax(z, axis=1)).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[26]:
+   : 0.813
    :END:
 
    Fit batch EM on the subset, initializing \(E[z]\) using the topic weights.
@@ -1356,7 +1384,48 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[52]:
+   # Out[27]:
+   :END:
+
+   Estimate the log loss of topic weights against the ground truth
+   labels. Assign topics to labels based on the maximum weight.
+
+   #+BEGIN_SRC ipython
+     z = pd.get_dummies(mix4sub.obs['cell_type']).values.astype(bool)
+     idx = [np.argmax(fit_init_z[-1][z[:,k]].sum(axis=0)) for k in range(4)]
+     np.where(z, -np.log(fit_init_z[-1][:,idx]), 0).sum()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[41]:
+   : inf
+   :END:
+
+   Use the maximal topic weight as the cluster assignment for each sample, and
+   compute the accuracy against the ground truth labels.
+
+   #+BEGIN_SRC ipython
+     (np.argmax(fit_init_z[-1][:,idx], axis=1) == np.argmax(z, axis=1)).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[39]:
+   : 0.854
+   :END:
+
+   Compare the cluster assignments from NMF to the cluster assignments from the
+   mixture of NBs.
+
+   #+BEGIN_SRC ipython
+     (np.argmax(fit_init_z[-1][:,idx], axis=1) == np.argmax(weights[:,idx], axis=1)).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   : 0.913
    :END:
 
    Plot the MAP cluster assignments.
@@ -1497,6 +1566,32 @@
    # Out[72]:
    : 0.64501953125
    :END:
+
+   Try amortized inference on the full data set directly, initialized from the
+   NMF solution on the subset.
+
+   #+BEGIN_SRC ipython
+     import imp; imp.reload(mpebpm.gam_mix)
+     seed = 0
+     lr = 1e-3
+     num_epochs = 10
+     torch.manual_seed(0)
+     fit1 = mpebpm.gam_mix.EBPMGammaMix(
+       p=mix4.shape[1],
+       k=2,
+       log_mean=fit[0],
+       log_inv_disp=fit[1])
+     fit1.fit(
+       x=mix2.X.A,
+       s=mix2.X.sum(axis=1),
+       y=pd.get_dummies(mix2.obs['cell_type']).values,
+       lr=1e-3,
+       batch_size=64,
+       shuffle=True,
+       num_epochs=10,
+       log_dir=f'runs/nbmix/mix2-full-{seed}-{lr:.1g}-{num_epochs}')
+
+   #+END_SRC
 
 *** Placeholder                                                    :noexport:
 

@@ -1,10 +1,13 @@
-ALL = immune-cell-census adult-retina
+ALL = immune-cell-census adult-retina liver-caudate-lobe kidney
 CURL = curl -o $@ -L
 
 all: $(ALL)
 
 %: %.mtx.zip
 	unzip -d $* $<
+
+kidney.mtx.zip:
+	$(CURL) "https://data.humancellatlas.org/project-assets/project-matrices/abe1a013-af7a-45ed-8c26-f3793c24a1f4.homo_sapiens.mtx.zip"
 
 liver-caudate-lobe.mtx.zip:
 	$(CURL) "https://data.humancellatlas.org/project-assets/project-matrices/4d6f6c96-2a83-43d8-8fe1-0f53bffd4674.homo_sapiens.mtx.zip"

@@ -900,7 +900,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[6]:
    #+BEGIN_EXAMPLE
      AnnData object with n_obs × n_vars = 20294 × 17808
      obs: 'barcode', 'cell_type', 'leiden'
@@ -908,6 +908,7 @@
      uns: 'pca', 'neighbors', 'leiden', 'umap'
      obsm: 'X_pca', 'X_umap'
      varm: 'PCs'
+     obsp: 'distances', 'connectivities'
    #+END_EXAMPLE
    :END:
 
@@ -943,7 +944,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
+   # Out[7]:
    #+BEGIN_EXAMPLE
      cytotoxic_t    513
      b_cells        487
@@ -1145,7 +1146,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[8]:
    :END:
 
    Plot the data, colored by ground truth label.
@@ -1197,7 +1198,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[9]:
    #+BEGIN_EXAMPLE
      b_cells           320
      cytotoxic_t       315
@@ -1433,7 +1434,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
+   # Out[10]:
    :END:
 
    Normalize the loadings/factors to get a topic model.
@@ -1449,7 +1450,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[11]:
    :END:
 
    Plot the correlation of the estimated topic weights against the ground truth
@@ -1802,27 +1803,63 @@
    Try amortized inference on the full data set directly, initialized from the
    NMF solution on the subset.
 
-   #+BEGIN_SRC ipython
+   #+BEGIN_SRC ipython :async t
      import imp; imp.reload(mpebpm.gam_mix)
-     seed = 0
+     seed = 3
      lr = 1e-3
      num_epochs = 10
      torch.manual_seed(0)
      fit1 = mpebpm.gam_mix.EBPMGammaMix(
        p=mix4.shape[1],
-       k=2,
-       log_mean=fit[0],
-       log_inv_disp=fit[1])
+       k=4,
+       log_mean=np.log(topics).T)
      fit1.fit(
-       x=mix2.X.A,
-       s=mix2.X.sum(axis=1),
-       y=pd.get_dummies(mix2.obs['cell_type']).values,
+       x=mix4.X.A,
+       s=mix4.X.sum(axis=1),
        lr=1e-3,
        batch_size=64,
        shuffle=True,
        num_epochs=10,
-       log_dir=f'runs/nbmix/mix2-full-{seed}-{lr:.1g}-{num_epochs}')
+       log_dir=f'runs/nbmix/mix4-full-{seed}-{lr:.1g}-{num_epochs}')
+     x = mix4.X
+     data = mpebpm.sparse.SparseDataset(
+       mpebpm.sparse.CSRTensor(x.data, x.indices, x.indptr, x.shape, dtype=torch.float).cuda(),
+       torch.tensor(mix4.X.sum(axis=1), dtype=torch.float).cuda())
+     collate_fn = getattr(data, 'collate_fn', td.dataloader.default_collate)
+     data = td.DataLoader(data, batch_size=64, shuffle=False, collate_fn=data.collate_fn)
+     zhat = []
+     with torch.no_grad():
+       for x, s in data:
+         zhat.append(fit1.forward(x).cpu().numpy())
+     mix4.obs['comp'] = np.argmax(np.vstack(zhat), axis=1)
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[65]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/nbmix.org/mix4-full.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     fig.set_size_inches(4.5, 3)
+     for a, k, t, cm in zip(ax, ['cell_type', 'comp'], ['Ground truth', 'Online'], ['Paired', 'Dark2']):
+       for i, c in enumerate(mix4.obs[k].unique()):
+         a.plot(*mix4[mix4.obs[k] == c].obsm["X_umap"].T, c=plt.get_cmap(cm)(i), marker='.', ms=1, lw=0, alpha=0.1, label=f'{k}_{i}')
+       leg = a.legend(frameon=False, markerscale=8, handletextpad=0, loc='upper center', bbox_to_anchor=(.5, -.25), ncol=2)
+       for h in leg.legendHandles:
+         h._legmarker.set_alpha(1)
+       a.set_xlabel('UMAP 1')
+       a.set_title(t)
+     ax[0].set_ylabel('UMAP 2')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[66]:
+   [[file:figure/nbmix.org/mix4-full.png]]
+   :END:
 
 *** Placeholder                                                    :noexport:
 

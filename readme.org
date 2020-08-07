@@ -27,6 +27,7 @@
     scipy
     scmodes
     scqtl
+    sphinx
     tensorflow-gpu==1.15.0
     torchvision
     EOF

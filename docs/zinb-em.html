@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-08-06 Thu 19:22 -->
+<!-- 2020-08-07 Fri 11:55 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>EM algorithm for point-Gamma expression model</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,52 +227,138 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">EM algorithm for point-Gamma expression model</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org00f5b9e">Introduction</a></li>
+<li><a href="#orged6139c">EM algorithm</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org00f5b9e" class="outline-2">
+<h2 id="org00f5b9e">Introduction</h2>
+<div class="outline-text-2" id="text-org00f5b9e">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+Assume a point-Gamma expression model for scRNA-seq observations at some gene
+\(j\) (Sarkar and Stephens 2020) \(
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\Bern{Bernoulli}
+  \DeclareMathOperator\Gam{Gamma}
+  \newcommand\const{\mathrm{const}}
+  \newcommand\lnb{l_{\mathrm{NB}}}
+  \newcommand\E[1]{\left\langle #1 \right\rangle}
+  \)
 </p>
 
-<ul class="org-ul">
-<li><a href="zinb-em.html">EM algorithm for point-Gamma expression model</a></li>
-<li><a href="taylor.html">Taylor expansions for single cell transforms</a></li>
-<li><a href="zinb-vae-gmm.html">Deep unsupervised clustering of scRNA-seq data</a></li>
-<li><a href="sparse-pois-fa.html">Sparse Poisson Factor Analysis</a></li>
-<li><a href="grand-challenges.html">Grand challenges in single-cell data science</a></li>
-<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
-<li><a href="voom.html">An improved voom transform for scRNA-seq data</a></li>
-<li><a href="experimental-finemapping.html">Experimental fine-mapping of QTLs from
-scRNA-seq data</a></li>
-<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
-<li><a href="pseudobulk.html">Alternative approaches to scRNA-seq pseudobulk models</a></li>
-<li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
-</ul>
+\begin{align}
+  x_{i} \mid s_i, \lambda_{i} &\sim \Pois(s_i \lambda_{i})\\
+  \lambda_{i} \mid z_i = 1, a, b &\sim \Gam(a, b)\\
+  \lambda_{i} \mid z_i = 0 &= 0\\
+  z_i &\sim \Bern(p),
+\end{align}
+
+<p>
+where the Gamma distribution is parameterized by shape and rate. Here, we
+derive an EM algorithm to maximize the marginal log likelihood with respect
+to \((a, b, p)\).
+</p>
+</div>
+</div>
+
+<div id="outline-container-orged6139c" class="outline-2">
+<h2 id="orged6139c">EM algorithm</h2>
+<div class="outline-text-2" id="text-orged6139c">
+<p>
+If \(x_i = 0\), the log joint probability
+</p>
+
+\begin{multline}
+  \ln p(x_i, \lambda_i, z_i \mid s_i, a, b, p) = (1 - z_i) \ln (1 - p)\\
+  + z_i \left(\ln p + x_i \ln (s_i \lambda_i) - s_i \lambda_i - \ln\Gamma(x + 1) + a \ln b + (a - 1) \ln \lambda_i - b \lambda_i - \ln \Gamma(a)\right).
+\end{multline}
+
+<p>
+Otherwise,
+</p>
+
+\begin{equation}
+  \ln p(x_i, \lambda_i, z_i \mid s_i, a, b, p) = x_i \ln (s_i \lambda_i) - s_i \lambda_i - \ln\Gamma(x + 1) + a \ln b + (a - 1) \ln \lambda_i - b \lambda_i - \ln \Gamma(a).
+\end{equation}
+
+<p>
+The posteriors
+</p>
+
+\begin{align}
+  q(z_i \mid x_i = 0) \triangleq \ln p(z_i \mid x_i = 0, \cdot) &= (1 - z_i) \ln (1 - p) + z_i \ln (p \exp(\lnb)) + \const\\
+  &= \Bern\left(\frac{p \exp(\lnb)}{1 - p + p \exp(\lnb)}\right)\\
+  q(z_i \mid x_i > 0) &= \Bern(1)\\
+  q(\lambda_i \mid z_i = 1) \triangleq \ln p(\lambda_i \mid z_i = 1, \cdot) &= x_i \ln (s_i \lambda_i) - s_i \lambda_i + (a - 1) \ln \lambda_i - b \lambda_i + \const\\
+  &= \Gam(a + x_i, b + s_i),
+\end{align}
+
+<p>
+where \(\lnb\) denotes the negative binomial log likelihood (given \(a,
+  b\)). The expected log joint with respect to \(q\)
+</p>
+
+\begin{multline}
+  h \triangleq \E{\ln p(x_i, \lambda_i, z_i \mid s_i, a, b, p)} = \sum_i \left[\E{1 - z_i} \ln (1 - p)\right.\\
+    + \left.\E{z_i} \left(\ln p + x_i \ln s_i + x_i \E{\ln \lambda_i} - s_i \E{\lambda_i} + a \ln b + (a - 1) \E{\ln \lambda_i} - b \E{\lambda_i} - \ln \Gamma(a)\right)\right],
+\end{multline}
+
+<p>
+yielding M step updates
+</p>
+
+\begin{align}
+  \frac{\partial h}{\partial p} &= \sum_i -\frac{\E{1 - z_i}}{1 - p} + \frac{\E{z_i}}{p}\\
+  \ln\left(\frac{p}{1 - p}\right) &:= \ln\left(\frac{\sum_i \E{z_i}}{\sum_i \E{1 - z_i}}\right)\\
+  \frac{\partial h}{\partial b} &= \sum_i \E{z_i}\left(\frac{a}{b} - \E{\lambda_i}\right)\\
+  b &:= a \frac{\sum_i \E{z_i}}{\sum_i \E{z_i} \E{\lambda_i}}\\
+  \frac{\partial h}{\partial a} &= \sum_i \E{z_i} (\ln b + \E{\ln \lambda_i} - \psi(a))\\
+  \frac{\partial^2 h}{\partial a^2} &= -\sum_i \E{z_i} \psi^{(1)}(a),
+\end{align}
+
+<p>
+where \(\psi\) denotes the digamma function, \(\psi^{(1)}\) denotes the
+trigamma function, and the log likelihood is improved by making a
+Newton-Raphson update to \(a\).
+</p>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-08-06 Thu 19:22</p>
+<p class="date">Created: 2020-08-07 Fri 11:55</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -6,7 +6,7 @@
   The minimal description of the working environment is:
 
   #+BEGIN_SRC sh :results none
-    srun --partition=build --mem=4G xargs -L100 conda create -y -c aksarkar -c bioconda -n singlecell <<EOF
+    xargs -L100 conda create -y -c aksarkar -c bioconda -n singlecell <<EOF
     bioconductor-limma
     colorcet
     ipython
@@ -20,15 +20,16 @@
     python
     pytorch
     r-ashr
+    r-base=3.6.1
     r-fasttopics
     r-flashr
+    r-mrash
     r-susier
     scikit-learn
     scipy
     scmodes
     scqtl
     sphinx
-    tensorflow-gpu==1.15.0
     torchvision
     EOF
   #+END_SRC

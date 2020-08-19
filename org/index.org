@@ -4,6 +4,7 @@
 A collection of various (often incomplete or broken) ideas for single cell
 analysis plus some related topics.
 
+- [[file:spatial-vae.org][Convolutional VAE for spatial transcriptomic data]]
 - [[file:zinb-em.org][EM algorithm for point-Gamma expression model]]
 - [[file:taylor.org][Taylor expansions for single cell transforms]]
 - [[file:zinb-vae-gmm.org][Deep unsupervised clustering of scRNA-seq data]]

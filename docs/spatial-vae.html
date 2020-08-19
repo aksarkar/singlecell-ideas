@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-08-19 Wed 14:03 -->
+<!-- 2020-08-19 Wed 15:47 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Convolutional VAE for spatial transcriptomic data</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,53 +227,200 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">Convolutional VAE for spatial transcriptomic data</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org396fcc7">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org2363802">Methods</a>
+<ul>
+<li><a href="#org0f8899d">Data</a></li>
+</ul>
+</li>
+<li><a href="#org054560c">Results</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org396fcc7" class="outline-2">
+<h2 id="org396fcc7">Introduction</h2>
+<div class="outline-text-2" id="text-org396fcc7">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+There is great interest in analyzing transcriptomic profiles in complex
+tissues measured at single (or few) cell resolution jointly with associated
+spatial information
+(<a href="https://science.sciencemag.org/content/353/6294/78">Ståhl et al. 2016</a>,
+<a href="https://www.nature.com/articles/s41592-019-0548-y">Vikovic et al. 2019</a>,
+<a href="https://science.sciencemag.org/content/353/6294/78">Rodriques et
+al. 2019</a>). Such analysis could elucidate the molecular basis for the
+spatial organization of cell types/states
+(<a href="https://dx.doi.org/10.1016/j.copbio.2017.02.004">Moor and Itzkovitz
+2017</a>, <a href="https://science.sciencemag.org/content/358/6359/64">Lein et
+al. 2017</a>), and could be useful for genomics-based histology. Existing
+statistical methods for analyzing spatial transcriptomic data are largely
+based on Gaussian processes
+(<a href="https://dx.doi.org/10.1038/nmeth.4636">Svensson et al. 2018</a>,
+<a href="https://www.nature.com/articles/nmeth.4634">Edsgärd et al. 2018</a>,
+<a href="https://doi.org/10.1038/s41592-019-0701-7">Sun et al. 2020</a>). These
+methods have proven to be successful in identifying genes that exhibit
+statistically significant spatial patterns of gene expression (compared to a
+null model of no structured spatial variation). However, these methods
+analyze one gene at a time, and therefore lose information on gene
+co-expression within and between samples. Further, they rely on a statistical
+test to prioritize genes that could be relevant to observed spatial
+structures (e.g., in associated imaging data).
 </p>
 
+<p>
+For spatial transcriptomic data that are collected on a regular grid, we can
+instead use convolutional neural networks (CNNs; Denker et al. 1989, LeCun et
+al. 1989) to learn spatial structure. There are several advantages to the
+convolutional approach. 
+</p>
+
+<ol class="org-ol">
+<li>A single model can be learned on all genes, and therefore can exploit
+covariance of gene expression induced by the gene regulatory network.</li>
+<li>The model can learn a lower-dimensional representation of spatial
+expression patterns, which can be used to identify genes with highly
+similar spatial expression patterns</li>
+<li>With associated imaging data, the convolutional filters can be jointly
+learned between image features and gene expression features, which can
+more directly associate cell type/state differences at the expression
+level with e.g., differences in morphology.</li>
+</ol>
+
+<p>
+The key idea of our approach is to combine a Poisson measurement model
+(<a href="https://dx.doi.org/10.1101/2020.04.07.030007">Sarkar and Stephens 2020</a>),
+</p>
+
+\begin{equation}
+  \newcommand\Pois{\operatorname{Pois}}
+  \newcommand\N{\mathcal{N}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vz{\mathbf{z}}
+  x_{ij} \mid s_i, \lambda_{ij} \sim \Pois(s_i \lambda_{ij})
+\end{equation}
+
+<p>
+with a <i>spatial expression model</i>,
+</p>
+
+\begin{equation}
+  \lambda_{ij} \mid \vz_j = (h(\vz_j))_i,
+\end{equation}
+
+<p>
+where \(h\) denotes a CNN. To perform approximate Bayesian inference (on
+\(\vz_j\)), we treat \(h\) as a decoder network in a variational autoencoder
+(Kingma and Welling 2014) and introduce an encoder network
+</p>
+
+\begin{equation}
+  \vz_j \mid \vx_{\cdot j} \sim \N(\mu(\vx_{\cdot j}), \sigma^2(\vx_{\cdot j})),
+\end{equation}
+
+<p>
+where \(\mu, \sigma^2\) are also CNNs (Salimans et al. 2014). Unlike existing
+application of VAEs to scRNA-seq data (e.g., Lopez et al. 2018), in the
+spatial transcriptomics setting, inference is done over minibatches of genes
+rather than samples.
+</p>
+
+<p>
+The learned VAE can be used to answer several questions of interest:
+</p>
+
+<ol class="org-ol">
+<li><i>What are the predominant patterns of spatial gene expression?</i> These are
+learned as the low dimensional spatial representations of each gene
+\(\vz_j\).</li>
+<li><i>Which spatial structures define those patterns?</i> These can be recovered
+using e.g., saliency maps to associate learned convolutional filters with
+the specific latent variable \(\vz_j\) of interest.</li>
+<li><i>Which genes co-vary spatially?</i> These can be recovered by clustering the
+learned \(\vz_j\).</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-orgb67d462" class="outline-2">
+<h2 id="setup"><a id="orgb67d462"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2363802" class="outline-2">
+<h2 id="org2363802">Methods</h2>
+<div class="outline-text-2" id="text-org2363802">
+</div>
+<div id="outline-container-org0f8899d" class="outline-3">
+<h3 id="org0f8899d">Data</h3>
+<div class="outline-text-3" id="text-org0f8899d">
 <ul class="org-ul">
-<li><a href="spatial-vae.html">Convolutional VAE for spatial transcriptomic data</a></li>
-<li><a href="zinb-em.html">EM algorithm for point-Gamma expression model</a></li>
-<li><a href="taylor.html">Taylor expansions for single cell transforms</a></li>
-<li><a href="zinb-vae-gmm.html">Deep unsupervised clustering of scRNA-seq data</a></li>
-<li><a href="sparse-pois-fa.html">Sparse Poisson Factor Analysis</a></li>
-<li><a href="grand-challenges.html">Grand challenges in single-cell data science</a></li>
-<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
-<li><a href="voom.html">An improved voom transform for scRNA-seq data</a></li>
-<li><a href="experimental-finemapping.html">Experimental fine-mapping of QTLs from
-scRNA-seq data</a></li>
-<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
-<li><a href="pseudobulk.html">Alternative approaches to scRNA-seq pseudobulk models</a></li>
-<li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
+<li><a href="https://support.10xgenomics.com/spatial-gene-expression/datasets/1.1.0/V1_Breast_Cancer_Block_A_Section_1">Breast
+cancer</a> (10X Genomics Visium v1.1.0)</li>
+<li>Mouse olfactory bulb
+(ST; <a href="https://science.sciencemag.org/content/353/6294/78">Ståhl et al. 2016</a>)</li>
+<li><a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130682">Mouse
+olfactory bulb</a> (HDST;
+<a href="https://www.nature.com/articles/s41592-019-0548-y">Vikovic et
+al. 2019</a>)</li>
+<li>Mouse cerebellum (SLIDE-Seq;
+<a href="https://science.sciencemag.org/content/353/6294/78">Rodriques et
+al. 2019</a>)</li>
 </ul>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org054560c" class="outline-2">
+<h2 id="org054560c">Results</h2>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-08-19 Wed 14:03</p>
+<p class="date">Created: 2020-08-19 Wed 15:47</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -1,0 +1,127 @@
+#+TITLE: Convolutional VAE for spatial transcriptomic data
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  There is great interest in analyzing transcriptomic profiles in complex
+  tissues measured at single (or few) cell resolution jointly with associated
+  spatial information
+  ([[https://science.sciencemag.org/content/353/6294/78][Ståhl et al. 2016]],
+  [[https://www.nature.com/articles/s41592-019-0548-y][Vikovic et al. 2019]],
+  [[https://science.sciencemag.org/content/353/6294/78][Rodriques et
+  al. 2019]]). Such analysis could elucidate the molecular basis for the
+  spatial organization of cell types/states
+  ([[https://dx.doi.org/10.1016/j.copbio.2017.02.004][Moor and Itzkovitz
+  2017]], [[https://science.sciencemag.org/content/358/6359/64][Lein et
+  al. 2017]]), and could be useful for genomics-based histology. Existing
+  statistical methods for analyzing spatial transcriptomic data are largely
+  based on Gaussian processes
+  ([[https://dx.doi.org/10.1038/nmeth.4636][Svensson et al. 2018]],
+  [[https://www.nature.com/articles/nmeth.4634][Edsgärd et al. 2018]],
+  [[https://doi.org/10.1038/s41592-019-0701-7][Sun et al. 2020]]). These
+  methods have proven to be successful in identifying genes that exhibit
+  statistically significant spatial patterns of gene expression (compared to a
+  null model of no structured spatial variation). However, these methods
+  analyze one gene at a time, and therefore lose information on gene
+  co-expression within and between samples. Further, they rely on a statistical
+  test to prioritize genes that could be relevant to observed spatial
+  structures (e.g., in associated imaging data).
+
+  For spatial transcriptomic data that are collected on a regular grid, we can
+  instead use convolutional neural networks (CNNs; Denker et al. 1989, LeCun et
+  al. 1989) to learn spatial structure. There are several advantages to the
+  convolutional approach. 
+
+  1. A single model can be learned on all genes, and therefore can exploit
+     covariance of gene expression induced by the gene regulatory network.
+  2. The model can learn a lower-dimensional representation of spatial
+     expression patterns, which can be used to identify genes with highly
+     similar spatial expression patterns
+  3. With associated imaging data, the convolutional filters can be jointly
+     learned between image features and gene expression features, which can
+     more directly associate cell type/state differences at the expression
+     level with e.g., differences in morphology.
+
+  The key idea of our approach is to combine a Poisson measurement model
+  ([[https://dx.doi.org/10.1101/2020.04.07.030007][Sarkar and Stephens 2020]]),
+
+  \begin{equation}
+    \newcommand\Pois{\operatorname{Pois}}
+    \newcommand\N{\mathcal{N}}
+    \newcommand\vx{\mathbf{x}}
+    \newcommand\vz{\mathbf{z}}
+    x_{ij} \mid s_i, \lambda_{ij} \sim \Pois(s_i \lambda_{ij})
+  \end{equation}
+
+  with a /spatial expression model/,
+
+  \begin{equation}
+    \lambda_{ij} \mid \vz_j = (h(\vz_j))_i,
+  \end{equation}
+
+  where \(h\) denotes a CNN. To perform approximate Bayesian inference (on
+  \(\vz_j\)), we treat \(h\) as a decoder network in a variational autoencoder
+  (Kingma and Welling 2014) and introduce an encoder network
+
+  \begin{equation}
+    \vz_j \mid \vx_{\cdot j} \sim \N(\mu(\vx_{\cdot j}), \sigma^2(\vx_{\cdot j})),
+  \end{equation}
+
+  where \(\mu, \sigma^2\) are also CNNs (Salimans et al. 2014). Unlike existing
+  application of VAEs to scRNA-seq data (e.g., Lopez et al. 2018), in the
+  spatial transcriptomics setting, inference is done over minibatches of genes
+  rather than samples.
+
+  The learned VAE can be used to answer several questions of interest:
+
+  1. /What are the predominant patterns of spatial gene expression?/ These are
+     learned as the low dimensional spatial representations of each gene
+     \(\vz_j\).
+  2. /Which spatial structures define those patterns?/ These can be recovered
+     using e.g., saliency maps to associate learned convolutional filters with
+     the specific latent variable \(\vz_j\) of interest.
+  3. /Which genes co-vary spatially?/ These can be recovered by clustering the
+     learned \(\vz_j\).
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3() :exports none :dir /scratch/midway2/aksarkar
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+* Methods
+** Data
+
+   - [[https://support.10xgenomics.com/spatial-gene-expression/datasets/1.1.0/V1_Breast_Cancer_Block_A_Section_1][Breast
+     cancer]] (10X Genomics Visium v1.1.0)
+   - Mouse olfactory bulb
+     (ST; [[https://science.sciencemag.org/content/353/6294/78][Ståhl et al. 2016]])
+   - [[https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130682][Mouse
+     olfactory bulb]] (HDST;
+     [[https://www.nature.com/articles/s41592-019-0548-y][Vikovic et
+     al. 2019]])
+   - Mouse cerebellum (SLIDE-Seq;
+     [[https://science.sciencemag.org/content/353/6294/78][Rodriques et
+     al. 2019]])
+
+* Results

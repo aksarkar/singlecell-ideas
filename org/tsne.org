@@ -1,0 +1,104 @@
+#+TITLE: Pathological input to t-SNE
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Peter Carbonetto reported an issue where t-SNE learns clusters from a topic
+  model embedding where it shouldn't. We give a simple example with
+  continuously varying data where t-SNE invents clusters.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/modes
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import sklearn.manifold as skm
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[6]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[16]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import colorcet
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[19]:
+  :END:
+
+* Example
+
+  Generate data varying in one dimension only
+
+  #+BEGIN_SRC ipython
+    n = 500
+    x = np.linspace(0, 1, n)
+    c = colorcet.cm['bmy'](x)
+    y = np.zeros(n)
+    dat = np.vstack([x, y]).T
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[11]:
+  :END:
+
+  #+BEGIN_SRC ipython :async t
+    embeds = dict()
+    for perp in np.logspace(0, 2, 9):
+      print(f'fitting {perp:.3g}')
+      # Important: seed the random initialization
+      embeds[perp] = skm.TSNE(perplexity=perp, random_state=10).fit_transform(dat)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[31]:
+  :END:
+
+  #+BEGIN_SRC ipython :ipyfile figure/tsne.org/line.png
+    plt.clf()
+    fig, ax = plt.subplots(2, 5)
+    fig.set_size_inches(8, 3.5)
+    ax[0,0].scatter(dat[:,0], dat[:,1], s=1, c=c)
+    ax[0,0].set_title('Original data')
+    for k, a in zip(embeds, ax.ravel()[1:]):
+      temp = embeds[k]
+      a.scatter(temp[:,0], temp[:,1], s=1, c=c)
+      a.set_title(f'perplexity = {k:.3g}')
+    fig.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[32]:
+  [[file:figure/tsne.org/line.png]]
+  :END:

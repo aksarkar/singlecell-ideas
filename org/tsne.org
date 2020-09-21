@@ -25,11 +25,12 @@
   #+BEGIN_SRC ipython
     import numpy as np
     import sklearn.manifold as skm
+    import umap
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[6]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -39,7 +40,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[16]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -51,7 +52,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[19]:
+  # Out[3]:
   :END:
 
 * Example
@@ -68,7 +69,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[11]:
+  # Out[4]:
   :END:
 
   #+BEGIN_SRC ipython :async t
@@ -101,4 +102,40 @@
   :RESULTS:
   # Out[32]:
   [[file:figure/tsne.org/line.png]]
+  :END:
+
+  UMAP solves a different optimization problem. See what it does on this
+  example.
+
+  #+BEGIN_SRC ipython :async t
+    umap_embeds = dict()
+    for n_neighbors in (2, 5, 10, 20, 50, 100):
+      print(f'fitting {n_neighbors}')
+      # Important: seed the random initialization
+      umap_embeds[n_neighbors] = umap.UMAP(n_neighbors=n_neighbors, min_dist=0, metric='euclidean', random_state=1).fit_transform(dat)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[6]:
+  :END:
+
+  #+BEGIN_SRC ipython :ipyfile figure/tsne.org/line-umap.png
+    plt.clf()
+    fig, ax = plt.subplots(2, 4)
+    fig.set_size_inches(6.5, 3.5)
+    ax[0,0].scatter(dat[:,0], dat[:,1], s=1, c=c)
+    ax[0,0].set_title('Original data')
+    for k, a in zip(umap_embeds, ax.ravel()[1:]):
+      temp = umap_embeds[k]
+      a.scatter(temp[:,0], temp[:,1], s=1, c=c)
+      a.set_title(f'neighbors = {k}')
+    ax[-1,-1].set_axis_off()
+    fig.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[12]:
+  [[file:figure/tsne.org/line-umap.png]]
   :END:

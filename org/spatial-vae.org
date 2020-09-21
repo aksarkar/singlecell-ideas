@@ -114,14 +114,30 @@
 
    - [[https://support.10xgenomics.com/spatial-gene-expression/datasets/1.1.0/V1_Breast_Cancer_Block_A_Section_1][Breast
      cancer]] (10X Genomics Visium v1.1.0)
-   - Mouse olfactory bulb
-     (ST; [[https://science.sciencemag.org/content/353/6294/78][Ståhl et al. 2016]])
    - [[https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130682][Mouse
      olfactory bulb]] (HDST;
      [[https://www.nature.com/articles/s41592-019-0548-y][Vikovic et
      al. 2019]])
+   - Human spinal cord
+     ([[https://science.sciencemag.org/content/364/6435/89.full][Maniatis et
+     al. 2019]])
    - Mouse cerebellum (SLIDE-Seq;
      [[https://science.sciencemag.org/content/353/6294/78][Rodriques et
      al. 2019]])
+   - Human gingival tissue (ST;
+     [[https://www.nature.com/articles/s41598-018-27627-3][Lundmark et
+     al. 2018]])
+   - Human prostate cancer (ST;
+     [[https://www.nature.com/articles/s41467-018-04724-5][Berglund et
+     al. 2018]])
+   - Human melanoma (ST;
+     [[https://cancerres.aacrjournals.org/content/78/20/5970.short][Thrane et
+     al. 2018]])
+   - Human heart (ST; [[https://www.nature.com/articles/s41598-018-27627-3][Asp
+     et al. 2017]])
+   - Human breast cancer (ST;
+     [[https://science.sciencemag.org/content/353/6294/78][Ståhl et al. 2016]])
+   - Mouse olfactory bulb
+     (ST; [[https://science.sciencemag.org/content/353/6294/78][Ståhl et al. 2016]])
 
 * Results

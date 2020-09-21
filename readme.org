@@ -20,7 +20,7 @@
     python
     pytorch
     r-ashr
-    r-base=3.6.1
+    r-base
     r-fasttopics
     r-flashr
     r-mrash

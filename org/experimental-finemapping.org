@@ -79,6 +79,7 @@
     import torch.utils.data as td
 
     rpy2.robjects.pandas2ri.activate()
+    mrash = rpy2.robjects.packages.importr('mr.ash.alpha')
     susie = rpy2.robjects.packages.importr('susieR')
   #+END_SRC
 

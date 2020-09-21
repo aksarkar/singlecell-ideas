@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-06-22 Mon 14:20 -->
+<!-- 2020-09-18 Fri 12:46 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Experimental fine-mapping of QTLs from scRNA-seq data</title>
@@ -350,6 +350,7 @@ cell-cell interactions.
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 
 rpy2.robjects.pandas2ri.activate()
+<span class="org-variable-name">mrash</span> = rpy2.robjects.packages.importr(<span class="org-string">'mr.ash.alpha'</span>)
 <span class="org-variable-name">susie</span> = rpy2.robjects.packages.importr(<span class="org-string">'susieR'</span>)
 </pre>
 </div>
@@ -558,7 +559,7 @@ tabix -s 2 -b 3 -e 4 motif-matches.txt.gz
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-06-22 Mon 14:20</p>
+<p class="date">Created: 2020-09-18 Fri 12:46</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

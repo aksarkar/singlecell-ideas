@@ -94,20 +94,46 @@
   #+END_SRC
 
   #+RESULTS:
-  : 1
+  : 2
 
-  #+CALL: ipython3() :exports none :dir /scratch/midway2/aksarkar
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+CALL: tensorboard(venv="singlecell",partition="broadwl") :dir /scratch/midway2/aksarkar/singlecell
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import torch
+    import torch.utils.data as td
+    import torch.utils.tensorboard as tb
+    import torchvision as tv
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
 
   #+BEGIN_SRC ipython
     %matplotlib inline
     %config InlineBackend.figure_formats = set(['retina'])
   #+END_SRC
 
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
   #+BEGIN_SRC ipython
+    import colorcet
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
     plt.rcParams['font.family'] = 'Nimbus Sans'
   #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[22]:
+  :END:
 
 * Methods
 ** Data
@@ -141,3 +167,203 @@
      (ST; [[https://science.sciencemag.org/content/353/6294/78][Ståhl et al. 2016]])
 
 * Results
+** MNIST
+
+   Implement a VAE using convolutional layers instead of fully connected
+   layers.
+
+   #+BEGIN_SRC ipython
+     class Encoder(torch.nn.Module):
+       def __init__(self, input_h, input_w, output_dim):
+         super().__init__()
+         self.net = torch.nn.Sequential(
+           torch.nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1),
+           torch.nn.ReLU(),
+           torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
+           torch.nn.ReLU(),
+           torch.nn.Flatten(),
+           torch.nn.Linear(64 * input_h * input_w, 1024),
+           torch.nn.ReLU(),
+           torch.nn.Linear(1024, 512),
+           torch.nn.ReLU(),
+         )
+         self.mean = torch.nn.Linear(512, output_dim)
+         self.scale = torch.nn.Sequential(
+           torch.nn.Linear(512, output_dim),
+           torch.nn.Softplus())
+
+       def forward(self, x):
+         h = self.net(x)
+         return self.mean(h), self.scale(h)
+
+     class Decoder(torch.nn.Module):
+       def __init__(self, input_dim, output_h, output_w):
+         super().__init__()
+         self.net1 = torch.nn.Sequential(
+           torch.nn.Linear(input_dim, 512),
+           torch.nn.ReLU(),
+           torch.nn.Linear(512, 1024),
+           torch.nn.ReLU(),
+           torch.nn.Linear(1024, 64 * output_h * output_w),
+           torch.nn.ReLU(),
+         )
+         self.net2 = torch.nn.Sequential(
+           torch.nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3, padding=1),
+           torch.nn.ReLU(),
+           torch.nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=3, padding=1),
+           torch.nn.Sigmoid(),
+         )
+         self.output_h = output_h
+         self.output_w = output_w
+
+       def forward(self, x):
+         h = self.net1(x).reshape([-1, 64, self.output_h, self.output_w])
+         return self.net2(h)
+
+     class ConvVAE(torch.nn.Module):
+       def __init__(self, input_h, input_w, latent_dim):
+         super().__init__()
+         self.encoder = Encoder(input_h, input_w, latent_dim)
+         self.decoder = Decoder(latent_dim, input_h, input_w)
+
+       def forward(self, x, n_samples, writer=None, global_step=None):
+         mean, scale = self.encoder(x)
+         kl = torch.sum(.5 * (1 - 2 * torch.log(scale) + (mean * mean + scale * scale)), dim=1)
+         qz = torch.distributions.Normal(mean, scale).rsample(n_samples)
+         probs = self.decoder.forward(qz)
+         error = torch.sum(torch.mean(x * torch.log(probs) + (1 - x) * torch.log(1 - probs), dim=1), dim=[1, 2])
+         if writer is not None:
+           writer.add_scalar('loss/error', torch.sum(error), global_step)
+           writer.add_scalar('loss/kl', torch.sum(kl), global_step)
+         loss = -torch.sum(error - kl)
+         if torch.isnan(loss):
+           raise RuntimeError
+         return loss
+
+       def fit(self, data, n_epochs=5, n_samples=None, log_dir=None, **kwargs):
+         if log_dir is None:
+           writer = None
+         else:
+           writer = tb.SummaryWriter(log_dir)
+         if n_samples is None:
+           n_samples = torch.Size([1])
+         if torch.cuda.is_available():
+           self.cuda()
+         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         global_step = 0
+         for epoch in range(n_epochs):
+           for x, y in data:
+             if torch.cuda.is_available():
+               x = x.cuda()
+             opt.zero_grad()
+             loss = self.forward(x, n_samples, writer, global_step)
+             loss.backward()
+             opt.step()
+             global_step += 1
+         return self
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     batch_size = 32
+     mnist_train = td.DataLoader(
+       tv.datasets.MNIST(
+         root='/scratch/midway2/aksarkar/singlecell/',
+         transform=lambda x: (np.frombuffer(x.tobytes(), dtype='uint8') > 0).astype(np.float32).reshape((1, x.size[0], x.size[1]))),
+       batch_size=batch_size,
+       shuffle=True,
+       pin_memory=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     latent_dim = 4
+     n_epochs = 2
+     run = 5
+     model = ConvVAE(input_h=28, input_w=28, latent_dim=latent_dim)
+     model.fit(mnist_train,
+               n_epochs=n_epochs,
+               lr=1e-5,
+               log_dir=f'runs/convvae/mnist/latent_{latent_dim}_epochs_{n_epochs}_run_{run}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[49]:
+   #+BEGIN_EXAMPLE
+     ConvVAE(
+     (encoder): Encoder(
+     (net): Sequential(
+     (0): Conv2d(1, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+     (1): ReLU()
+     (2): Conv2d(32, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+     (3): ReLU()
+     (4): Flatten()
+     (5): Linear(in_features=50176, out_features=1024, bias=True)
+     (6): ReLU()
+     (7): Linear(in_features=1024, out_features=512, bias=True)
+     (8): ReLU()
+     )
+     (mean): Linear(in_features=512, out_features=4, bias=True)
+     (scale): Sequential(
+     (0): Linear(in_features=512, out_features=4, bias=True)
+     (1): Softplus(beta=1, threshold=20)
+     )
+     )
+     (decoder): Decoder(
+     (net1): Sequential(
+     (0): Linear(in_features=4, out_features=512, bias=True)
+     (1): ReLU()
+     (2): Linear(in_features=512, out_features=1024, bias=True)
+     (3): ReLU()
+     (4): Linear(in_features=1024, out_features=50176, bias=True)
+     (5): ReLU()
+     )
+     (net2): Sequential(
+     (0): ConvTranspose2d(64, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+     (1): ReLU()
+     (2): ConvTranspose2d(32, 1, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+     (3): Sigmoid()
+     )
+     )
+     )
+   #+END_EXAMPLE
+   :END:
+
+   Draw some samples.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     with torch.no_grad():
+       z = rng.normal(size=(10, latent_dim))
+       xh = model.decoder.forward(torch.tensor(z, dtype=torch.float, device='cuda')).squeeze().cpu().numpy()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-vae.org/mnist-ex.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 5)
+     for i, a in enumerate(ax.ravel()):
+       a.imshow(xh[i], cmap=colorcet.cm['gray'])
+       a.set_xticks([])
+       a.set_yticks([])
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[54]:
+   [[file:figure/spatial-vae.org/mnist-ex.png]]
+   :END:

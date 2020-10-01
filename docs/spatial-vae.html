@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-09-18 Fri 12:46 -->
+<!-- 2020-10-01 Thu 17:04 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Convolutional VAE for spatial transcriptomic data</title>
@@ -264,7 +264,11 @@ for the JavaScript code in this tag.
 <li><a href="#org0f8899d">Data</a></li>
 </ul>
 </li>
-<li><a href="#org054560c">Results</a></li>
+<li><a href="#org054560c">Results</a>
+<ul>
+<li><a href="#orge61c045">MNIST</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -376,13 +380,23 @@ learned \(\vz_j\).</li>
 <h2 id="setup"><a id="orgb67d462"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> torch
+<span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
+<span class="org-keyword">import</span> torch.utils.tensorboard <span class="org-keyword">as</span> tb
+<span class="org-keyword">import</span> torchvision <span class="org-keyword">as</span> tv
+</pre>
+</div>
+
+<div class="org-src-container">
 <pre class="src src-ipython">%matplotlib inline
 %config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
 </pre>
@@ -432,11 +446,206 @@ et al. 2017</a>)</li>
 
 <div id="outline-container-org054560c" class="outline-2">
 <h2 id="org054560c">Results</h2>
+<div class="outline-text-2" id="text-org054560c">
+</div>
+<div id="outline-container-orge61c045" class="outline-3">
+<h3 id="orge61c045">MNIST</h3>
+<div class="outline-text-3" id="text-orge61c045">
+<p>
+Implement a VAE using convolutional layers instead of fully connected
+layers.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">Encoder</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_h, input_w, output_dim):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.net = torch.nn.Sequential(
+      torch.nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1),
+      torch.nn.ReLU(),
+      torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
+      torch.nn.ReLU(),
+      torch.nn.Flatten(),
+      torch.nn.Linear(64 * input_h * input_w, 1024),
+      torch.nn.ReLU(),
+      torch.nn.Linear(1024, 512),
+      torch.nn.ReLU(),
+    )
+    <span class="org-keyword">self</span>.mean = torch.nn.Linear(512, output_dim)
+    <span class="org-keyword">self</span>.scale = torch.nn.Sequential(
+      torch.nn.Linear(512, output_dim),
+      torch.nn.Softplus())
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-variable-name">h</span> = <span class="org-keyword">self</span>.net(x)
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.mean(h), <span class="org-keyword">self</span>.scale(h)
+
+<span class="org-keyword">class</span> <span class="org-type">Decoder</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, output_h, output_w):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.net1 = torch.nn.Sequential(
+      torch.nn.Linear(input_dim, 512),
+      torch.nn.ReLU(),
+      torch.nn.Linear(512, 1024),
+      torch.nn.ReLU(),
+      torch.nn.Linear(1024, 64 * output_h * output_w),
+      torch.nn.ReLU(),
+    )
+    <span class="org-keyword">self</span>.net2 = torch.nn.Sequential(
+      torch.nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3, padding=1),
+      torch.nn.ReLU(),
+      torch.nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=3, padding=1),
+      torch.nn.Sigmoid(),
+    )
+    <span class="org-keyword">self</span>.output_h = output_h
+    <span class="org-keyword">self</span>.output_w = output_w
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-variable-name">h</span> = <span class="org-keyword">self</span>.net1(x).reshape([-1, 64, <span class="org-keyword">self</span>.output_h, <span class="org-keyword">self</span>.output_w])
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.net2(h)
+
+<span class="org-keyword">class</span> <span class="org-type">ConvVAE</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_h, input_w, latent_dim):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.encoder = Encoder(input_h, input_w, latent_dim)
+    <span class="org-keyword">self</span>.decoder = Decoder(latent_dim, input_h, input_w)
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, n_samples, writer=<span class="org-constant">None</span>, global_step=<span class="org-constant">None</span>):
+    <span class="org-variable-name">mean</span>, <span class="org-variable-name">scale</span> = <span class="org-keyword">self</span>.encoder(x)
+    <span class="org-variable-name">kl</span> = torch.<span class="org-builtin">sum</span>(.5 * (1 - 2 * torch.log(scale) + (mean * mean + scale * scale)), dim=1)
+    <span class="org-variable-name">qz</span> = torch.distributions.Normal(mean, scale).rsample(n_samples)
+    <span class="org-variable-name">probs</span> = <span class="org-keyword">self</span>.decoder.forward(qz)
+    <span class="org-variable-name">error</span> = torch.<span class="org-builtin">sum</span>(torch.mean(x * torch.log(probs) + (1 - x) * torch.log(1 - probs), dim=1), dim=[1, 2])
+    <span class="org-keyword">if</span> writer <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      writer.add_scalar(<span class="org-string">'loss/error'</span>, torch.<span class="org-builtin">sum</span>(error), global_step)
+      writer.add_scalar(<span class="org-string">'loss/kl'</span>, torch.<span class="org-builtin">sum</span>(kl), global_step)
+    <span class="org-variable-name">loss</span> = -torch.<span class="org-builtin">sum</span>(error - kl)
+    <span class="org-keyword">if</span> torch.isnan(loss):
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>
+    <span class="org-keyword">return</span> loss
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, data, n_epochs=5, n_samples=<span class="org-constant">None</span>, log_dir=<span class="org-constant">None</span>, **kwargs):
+    <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">writer</span> = <span class="org-constant">None</span>
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">writer</span> = tb.SummaryWriter(log_dir)
+    <span class="org-keyword">if</span> n_samples <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">n_samples</span> = torch.Size([1])
+    <span class="org-keyword">if</span> torch.cuda.is_available():
+      <span class="org-keyword">self</span>.cuda()
+    <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), **kwargs)
+    <span class="org-variable-name">global_step</span> = 0
+    <span class="org-keyword">for</span> epoch <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
+      <span class="org-keyword">for</span> x, y <span class="org-keyword">in</span> data:
+        <span class="org-keyword">if</span> torch.cuda.is_available():
+          <span class="org-variable-name">x</span> = x.cuda()
+        opt.zero_grad()
+        <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, n_samples, writer, global_step)
+        loss.backward()
+        opt.step()
+        <span class="org-variable-name">global_step</span> += 1
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">batch_size</span> = 32
+<span class="org-variable-name">mnist_train</span> = td.DataLoader(
+  tv.datasets.MNIST(
+    root=<span class="org-string">'/scratch/midway2/aksarkar/singlecell/'</span>,
+    transform=<span class="org-keyword">lambda</span> x: (np.frombuffer(x.tobytes(), dtype=<span class="org-string">'uint8'</span>) &gt; 0).astype(np.float32).reshape((1, x.size[0], x.size[1]))),
+  batch_size=batch_size,
+  shuffle=<span class="org-constant">True</span>,
+  pin_memory=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">latent_dim</span> = 4
+<span class="org-variable-name">n_epochs</span> = 2
+<span class="org-variable-name">run</span> = 5
+<span class="org-variable-name">model</span> = ConvVAE(input_h=28, input_w=28, latent_dim=latent_dim)
+model.fit(mnist_train,
+          n_epochs=n_epochs,
+          lr=1e-5,
+          log_dir=f<span class="org-string">'runs/convvae/mnist/latent_{latent_dim}_epochs_{n_epochs}_run_{run}'</span>)
+</pre>
+</div>
+
+<pre class="example">
+ConvVAE(
+(encoder): Encoder(
+(net): Sequential(
+(0): Conv2d(1, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+(1): ReLU()
+(2): Conv2d(32, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+(3): ReLU()
+(4): Flatten()
+(5): Linear(in_features=50176, out_features=1024, bias=True)
+(6): ReLU()
+(7): Linear(in_features=1024, out_features=512, bias=True)
+(8): ReLU()
+)
+(mean): Linear(in_features=512, out_features=4, bias=True)
+(scale): Sequential(
+(0): Linear(in_features=512, out_features=4, bias=True)
+(1): Softplus(beta=1, threshold=20)
+)
+)
+(decoder): Decoder(
+(net1): Sequential(
+(0): Linear(in_features=4, out_features=512, bias=True)
+(1): ReLU()
+(2): Linear(in_features=512, out_features=1024, bias=True)
+(3): ReLU()
+(4): Linear(in_features=1024, out_features=50176, bias=True)
+(5): ReLU()
+)
+(net2): Sequential(
+(0): ConvTranspose2d(64, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+(1): ReLU()
+(2): ConvTranspose2d(32, 1, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+(3): Sigmoid()
+)
+)
+)
+</pre>
+
+<p>
+Draw some samples.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">z</span> = rng.normal(size=(10, latent_dim))
+  <span class="org-variable-name">xh</span> = model.decoder.forward(torch.tensor(z, dtype=torch.<span class="org-builtin">float</span>, device=<span class="org-string">'cuda'</span>)).squeeze().cpu().numpy()
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 5)
+<span class="org-keyword">for</span> i, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax.ravel()):
+  a.imshow(xh[i], cmap=colorcet.cm[<span class="org-string">'gray'</span>])
+  a.set_xticks([])
+  a.set_yticks([])
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/spatial-vae.org/mnist-ex.png" alt="mnist-ex.png">
+</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-09-18 Fri 12:46</p>
+<p class="date">Created: 2020-10-01 Thu 17:04</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

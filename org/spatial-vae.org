@@ -96,9 +96,9 @@
   #+RESULTS:
   : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="32G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
-  #+CALL: tensorboard(venv="singlecell",partition="broadwl") :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: tensorboard(venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/singlecell
 
   #+BEGIN_SRC ipython
     import numpy as np
@@ -106,6 +106,7 @@
     import torch.utils.data as td
     import torch.utils.tensorboard as tb
     import torchvision as tv
+    import umap
   #+END_SRC
 
   #+RESULTS:
@@ -120,7 +121,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[3]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -132,7 +133,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[22]:
+  # Out[4]:
   :END:
 
 * Methods
@@ -144,7 +145,8 @@
      olfactory bulb]] (HDST;
      [[https://www.nature.com/articles/s41592-019-0548-y][Vikovic et
      al. 2019]])
-   - Human spinal cord
+   - [[https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE120374][Human
+     spinal cord]]
      ([[https://science.sciencemag.org/content/364/6435/89.full][Maniatis et
      al. 2019]])
    - Mouse cerebellum (SLIDE-Seq;
@@ -159,7 +161,7 @@
    - Human melanoma (ST;
      [[https://cancerres.aacrjournals.org/content/78/20/5970.short][Thrane et
      al. 2018]])
-   - Human heart (ST; [[https://www.nature.com/articles/s41598-018-27627-3][Asp
+   - Human heart (ST; [[https://www.nature.com/articles/s41598-017-13462-5][Asp
      et al. 2017]])
    - Human breast cancer (ST;
      [[https://science.sciencemag.org/content/353/6294/78][Ståhl et al. 2016]])
@@ -170,19 +172,23 @@
 ** MNIST
 
    Implement a VAE using convolutional layers instead of fully connected
-   layers.
+   layers. Refer to
+   [[https://www.jeremyjordan.me/convnet-architectures/]["Common architectures
+   in convolutional neural networks"]].
+
+   # http://deeplearning.net/software/theano/tutorial/conv_arithmetic.html#transposed-convolution-arithmetic
 
    #+BEGIN_SRC ipython
      class Encoder(torch.nn.Module):
        def __init__(self, input_h, input_w, output_dim):
          super().__init__()
          self.net = torch.nn.Sequential(
-           torch.nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1),
+           torch.nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, padding=1, stride=2),
            torch.nn.ReLU(),
-           torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
+           torch.nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=1, stride=2),
            torch.nn.ReLU(),
            torch.nn.Flatten(),
-           torch.nn.Linear(64 * input_h * input_w, 1024),
+           torch.nn.Linear(32 * input_h * input_w // 16, 1024),
            torch.nn.ReLU(),
            torch.nn.Linear(1024, 512),
            torch.nn.ReLU(),
@@ -196,29 +202,35 @@
          h = self.net(x)
          return self.mean(h), self.scale(h)
 
+     class Reshape(torch.nn.Module):
+       def __init__(self, shape):
+         super().__init__()
+         self.shape = shape
+
+       def forward(self, x):
+         return torch.reshape(x, self.shape)
+
      class Decoder(torch.nn.Module):
        def __init__(self, input_dim, output_h, output_w):
          super().__init__()
-         self.net1 = torch.nn.Sequential(
+         self.net = torch.nn.Sequential(
            torch.nn.Linear(input_dim, 512),
            torch.nn.ReLU(),
            torch.nn.Linear(512, 1024),
            torch.nn.ReLU(),
-           torch.nn.Linear(1024, 64 * output_h * output_w),
+           torch.nn.Linear(1024, 32 * output_h * output_w // 16),
            torch.nn.ReLU(),
-         )
-         self.net2 = torch.nn.Sequential(
-           torch.nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3, padding=1),
+           Reshape([-1, 32, output_h // 4, output_w // 4]),
+           torch.nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, stride=2, padding=1, output_padding=1),
            torch.nn.ReLU(),
-           torch.nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=3, padding=1),
+           torch.nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=3, stride=2, padding=1, output_padding=1),
            torch.nn.Sigmoid(),
          )
          self.output_h = output_h
          self.output_w = output_w
 
        def forward(self, x):
-         h = self.net1(x).reshape([-1, 64, self.output_h, self.output_w])
-         return self.net2(h)
+         return self.net(x)
 
      class ConvVAE(torch.nn.Module):
        def __init__(self, input_h, input_w, latent_dim):
@@ -249,7 +261,7 @@
            n_samples = torch.Size([1])
          if torch.cuda.is_available():
            self.cuda()
-         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         opt = torch.optim.Adam(self.parameters(), **kwargs)
          global_step = 0
          for epoch in range(n_epochs):
            for x, y in data:
@@ -265,7 +277,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[44]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -281,33 +293,34 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[6]:
    :END:
 
    #+BEGIN_SRC ipython :async t
      latent_dim = 4
      n_epochs = 2
-     run = 5
+     run = 3
+     torch.manual_seed(run)
      model = ConvVAE(input_h=28, input_w=28, latent_dim=latent_dim)
      model.fit(mnist_train,
                n_epochs=n_epochs,
-               lr=1e-5,
-               log_dir=f'runs/convvae/mnist/latent_{latent_dim}_epochs_{n_epochs}_run_{run}')
+               lr=1e-4,
+               log_dir=f'runs/convvae/mnist/stride_latent_{latent_dim}_epochs_{n_epochs}_run_{run}')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[49]:
+   # Out[7]:
    #+BEGIN_EXAMPLE
      ConvVAE(
      (encoder): Encoder(
      (net): Sequential(
-     (0): Conv2d(1, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+     (0): Conv2d(1, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
      (1): ReLU()
-     (2): Conv2d(32, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+     (2): Conv2d(16, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
      (3): ReLU()
      (4): Flatten()
-     (5): Linear(in_features=50176, out_features=1024, bias=True)
+     (5): Linear(in_features=1568, out_features=1024, bias=True)
      (6): ReLU()
      (7): Linear(in_features=1024, out_features=512, bias=True)
      (8): ReLU()
@@ -319,23 +332,33 @@
      )
      )
      (decoder): Decoder(
-     (net1): Sequential(
+     (net): Sequential(
      (0): Linear(in_features=4, out_features=512, bias=True)
      (1): ReLU()
      (2): Linear(in_features=512, out_features=1024, bias=True)
      (3): ReLU()
-     (4): Linear(in_features=1024, out_features=50176, bias=True)
+     (4): Linear(in_features=1024, out_features=1568, bias=True)
      (5): ReLU()
-     )
-     (net2): Sequential(
-     (0): ConvTranspose2d(64, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-     (1): ReLU()
-     (2): ConvTranspose2d(32, 1, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-     (3): Sigmoid()
+     (6): Reshape()
+     (7): ConvTranspose2d(32, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+     (8): ReLU()
+     (9): ConvTranspose2d(16, 1, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+     (10): Sigmoid()
      )
      )
      )
    #+END_EXAMPLE
+   :END:
+
+   Serialize the fitted model parameters.
+
+   #+BEGIN_SRC ipython
+     torch.save(model.state_dict(), f'/scratch/midway2/aksarkar/singlecell/mnist-stride_latent_{latent_dim}_epochs_{n_epochs}_run_{run}.pt')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
    :END:
 
    Draw some samples.
@@ -349,7 +372,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[53]:
+   # Out[9]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/spatial-vae.org/mnist-ex.png
@@ -364,6 +387,90 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[54]:
+   # Out[10]:
    [[file:figure/spatial-vae.org/mnist-ex.png]]
+   :END:
+
+   Plot the latent space.
+
+   #+BEGIN_SRC ipython :async t
+     with torch.no_grad():
+       temp = [(y.numpy(), model.encoder(x.cuda())[0].cpu().numpy()) for x, y in mnist_train]
+     labels = np.hstack([y for y, _ in temp])
+     embed = np.vstack([z for _, z in temp])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     u, d, vt = np.linalg.svd(embed, full_matrices=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[12]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-vae.org/mnist-cvae-latent-pca.png
+     cm = plt.get_cmap('Set3')
+     plt.clf()
+     fig, ax = plt.subplots(1, 3, sharey=True)
+     fig.set_size_inches(7.5, 2.5)
+     for k, a in enumerate(ax):
+       for y in range(10):
+         idx = labels == y
+         a.scatter(embed[idx,k + 1], embed[idx,0], s=1, alpha=0.25, c=np.array(cm(y)).reshape(1, -1), label=y)
+       a.set_xlabel(f'PC {k + 2}')
+     ax[0].set_ylabel('PC 1')
+     leg = ax[-1].legend(frameon=False, markerscale=4, handletextpad=0, loc='center left', bbox_to_anchor=(1, .5))
+     for h in leg.legendHandles:
+       h.set_alpha(1)
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   [[file:figure/spatial-vae.org/mnist-cvae-latent-pca.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     umaps = dict()
+     for n_neighbors in (5, 10, 25, 50):
+       print(f'fitting {n_neighbors}')
+       umaps[n_neighbors] = umap.UMAP(n_neighbors=n_neighbors, min_dist=0, metric='euclidean', random_state=1).fit_transform(embed)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[15]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-vae.org/mnist-cvae-latent-umap.png
+     cm = plt.get_cmap('Set3')
+     plt.clf()
+     fig, ax = plt.subplots(1, 4, sharex=True, sharey=True)
+     fig.set_size_inches(7.5, 2.5)
+     for k, a in zip(umaps, ax):
+       for y in range(10):
+         idx = labels == y
+         a.scatter(umaps[k][idx,0], umaps[k][idx,1], s=1, alpha=0.25, c=np.array(cm(y)).reshape(1, -1), label=y)
+       a.set_title(f'k = {k}')
+       a.set_xlabel('UMAP 1')
+       a.set_xticks([])
+       a.set_yticks([])
+     ax[0].set_ylabel('UMAP 2')
+     leg = ax[-1].legend(frameon=False, markerscale=4, handletextpad=0, loc='center left', bbox_to_anchor=(1, .5))
+     for h in leg.legendHandles:
+       h.set_alpha(1)
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[17]:
+   [[file:figure/spatial-vae.org/mnist-cvae-latent-umap.png]]
    :END:

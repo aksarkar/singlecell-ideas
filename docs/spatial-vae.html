@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-10-01 Thu 17:04 -->
+<!-- 2020-10-06 Tue 13:50 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Convolutional VAE for spatial transcriptomic data</title>
@@ -385,6 +385,7 @@ learned \(\vz_j\).</li>
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 <span class="org-keyword">import</span> torch.utils.tensorboard <span class="org-keyword">as</span> tb
 <span class="org-keyword">import</span> torchvision <span class="org-keyword">as</span> tv
+<span class="org-keyword">import</span> umap
 </pre>
 </div>
 
@@ -418,7 +419,8 @@ cancer</a> (10X Genomics Visium v1.1.0)</li>
 olfactory bulb</a> (HDST;
 <a href="https://www.nature.com/articles/s41592-019-0548-y">Vikovic et
 al. 2019</a>)</li>
-<li>Human spinal cord
+<li><a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE120374">Human
+spinal cord</a>
 (<a href="https://science.sciencemag.org/content/364/6435/89.full">Maniatis et
 al. 2019</a>)</li>
 <li>Mouse cerebellum (SLIDE-Seq;
@@ -433,7 +435,7 @@ al. 2018</a>)</li>
 <li>Human melanoma (ST;
 <a href="https://cancerres.aacrjournals.org/content/78/20/5970.short">Thrane et
 al. 2018</a>)</li>
-<li>Human heart (ST; <a href="https://www.nature.com/articles/s41598-018-27627-3">Asp
+<li>Human heart (ST; <a href="https://www.nature.com/articles/s41598-017-13462-5">Asp
 et al. 2017</a>)</li>
 <li>Human breast cancer (ST;
 <a href="https://science.sciencemag.org/content/353/6294/78">Ståhl et al. 2016</a>)</li>
@@ -453,7 +455,9 @@ et al. 2017</a>)</li>
 <div class="outline-text-3" id="text-orge61c045">
 <p>
 Implement a VAE using convolutional layers instead of fully connected
-layers.
+layers. Refer to
+<a href="https://www.jeremyjordan.me/convnet-architectures/">&ldquo;Common architectures
+in convolutional neural networks&rdquo;</a>.
 </p>
 
 <div class="org-src-container">
@@ -461,12 +465,12 @@ layers.
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_h, input_w, output_dim):
     <span class="org-builtin">super</span>().__init__()
     <span class="org-keyword">self</span>.net = torch.nn.Sequential(
-      torch.nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1),
+      torch.nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, padding=1, stride=2),
       torch.nn.ReLU(),
-      torch.nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
+      torch.nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=1, stride=2),
       torch.nn.ReLU(),
       torch.nn.Flatten(),
-      torch.nn.Linear(64 * input_h * input_w, 1024),
+      torch.nn.Linear(32 * input_h * input_w // 16, 1024),
       torch.nn.ReLU(),
       torch.nn.Linear(1024, 512),
       torch.nn.ReLU(),
@@ -480,29 +484,35 @@ layers.
     <span class="org-variable-name">h</span> = <span class="org-keyword">self</span>.net(x)
     <span class="org-keyword">return</span> <span class="org-keyword">self</span>.mean(h), <span class="org-keyword">self</span>.scale(h)
 
+<span class="org-keyword">class</span> <span class="org-type">Reshape</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, shape):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.shape = shape
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-keyword">return</span> torch.reshape(x, <span class="org-keyword">self</span>.shape)
+
 <span class="org-keyword">class</span> <span class="org-type">Decoder</span>(torch.nn.Module):
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, output_h, output_w):
     <span class="org-builtin">super</span>().__init__()
-    <span class="org-keyword">self</span>.net1 = torch.nn.Sequential(
+    <span class="org-keyword">self</span>.net = torch.nn.Sequential(
       torch.nn.Linear(input_dim, 512),
       torch.nn.ReLU(),
       torch.nn.Linear(512, 1024),
       torch.nn.ReLU(),
-      torch.nn.Linear(1024, 64 * output_h * output_w),
+      torch.nn.Linear(1024, 32 * output_h * output_w // 16),
       torch.nn.ReLU(),
-    )
-    <span class="org-keyword">self</span>.net2 = torch.nn.Sequential(
-      torch.nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3, padding=1),
+      Reshape([-1, 32, output_h // 4, output_w // 4]),
+      torch.nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, stride=2, padding=1, output_padding=1),
       torch.nn.ReLU(),
-      torch.nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=3, padding=1),
+      torch.nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=3, stride=2, padding=1, output_padding=1),
       torch.nn.Sigmoid(),
     )
     <span class="org-keyword">self</span>.output_h = output_h
     <span class="org-keyword">self</span>.output_w = output_w
 
   <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
-    <span class="org-variable-name">h</span> = <span class="org-keyword">self</span>.net1(x).reshape([-1, 64, <span class="org-keyword">self</span>.output_h, <span class="org-keyword">self</span>.output_w])
-    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.net2(h)
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.net(x)
 
 <span class="org-keyword">class</span> <span class="org-type">ConvVAE</span>(torch.nn.Module):
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_h, input_w, latent_dim):
@@ -533,7 +543,7 @@ layers.
       <span class="org-variable-name">n_samples</span> = torch.Size([1])
     <span class="org-keyword">if</span> torch.cuda.is_available():
       <span class="org-keyword">self</span>.cuda()
-    <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), **kwargs)
+    <span class="org-variable-name">opt</span> = torch.optim.Adam(<span class="org-keyword">self</span>.parameters(), **kwargs)
     <span class="org-variable-name">global_step</span> = 0
     <span class="org-keyword">for</span> epoch <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
       <span class="org-keyword">for</span> x, y <span class="org-keyword">in</span> data:
@@ -563,12 +573,13 @@ layers.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">latent_dim</span> = 4
 <span class="org-variable-name">n_epochs</span> = 2
-<span class="org-variable-name">run</span> = 5
+<span class="org-variable-name">run</span> = 3
+torch.manual_seed(run)
 <span class="org-variable-name">model</span> = ConvVAE(input_h=28, input_w=28, latent_dim=latent_dim)
 model.fit(mnist_train,
           n_epochs=n_epochs,
-          lr=1e-5,
-          log_dir=f<span class="org-string">'runs/convvae/mnist/latent_{latent_dim}_epochs_{n_epochs}_run_{run}'</span>)
+          lr=1e-4,
+          log_dir=f<span class="org-string">'runs/convvae/mnist/stride_latent_{latent_dim}_epochs_{n_epochs}_run_{run}'</span>)
 </pre>
 </div>
 
@@ -576,12 +587,12 @@ model.fit(mnist_train,
 ConvVAE(
 (encoder): Encoder(
 (net): Sequential(
-(0): Conv2d(1, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+(0): Conv2d(1, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
 (1): ReLU()
-(2): Conv2d(32, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+(2): Conv2d(16, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
 (3): ReLU()
 (4): Flatten()
-(5): Linear(in_features=50176, out_features=1024, bias=True)
+(5): Linear(in_features=1568, out_features=1024, bias=True)
 (6): ReLU()
 (7): Linear(in_features=1024, out_features=512, bias=True)
 (8): ReLU()
@@ -593,23 +604,31 @@ ConvVAE(
 )
 )
 (decoder): Decoder(
-(net1): Sequential(
+(net): Sequential(
 (0): Linear(in_features=4, out_features=512, bias=True)
 (1): ReLU()
 (2): Linear(in_features=512, out_features=1024, bias=True)
 (3): ReLU()
-(4): Linear(in_features=1024, out_features=50176, bias=True)
+(4): Linear(in_features=1024, out_features=1568, bias=True)
 (5): ReLU()
-)
-(net2): Sequential(
-(0): ConvTranspose2d(64, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-(1): ReLU()
-(2): ConvTranspose2d(32, 1, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-(3): Sigmoid()
+(6): Reshape()
+(7): ConvTranspose2d(32, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+(8): ReLU()
+(9): ConvTranspose2d(16, 1, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+(10): Sigmoid()
 )
 )
 )
 </pre>
+
+<p>
+Serialize the fitted model parameters.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">torch.save(model.state_dict(), f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/mnist-stride_latent_{latent_dim}_epochs_{n_epochs}_run_{run}.pt'</span>)
+</pre>
+</div>
 
 <p>
 Draw some samples.
@@ -639,13 +658,89 @@ fig.tight_layout()
 <p><img src="figure/spatial-vae.org/mnist-ex.png" alt="mnist-ex.png">
 </p>
 </div>
+
+<p>
+Plot the latent space.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">temp</span> = [(y.numpy(), model.encoder(x.cuda())[0].cpu().numpy()) <span class="org-keyword">for</span> x, y <span class="org-keyword">in</span> mnist_train]
+<span class="org-variable-name">labels</span> = np.hstack([y <span class="org-keyword">for</span> y, _ <span class="org-keyword">in</span> temp])
+<span class="org-variable-name">embed</span> = np.vstack([z <span class="org-keyword">for</span> _, z <span class="org-keyword">in</span> temp])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">u</span>, <span class="org-variable-name">d</span>, <span class="org-variable-name">vt</span> = np.linalg.svd(embed, full_matrices=<span class="org-constant">False</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Set3'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7.5, 2.5)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax):
+  <span class="org-keyword">for</span> y <span class="org-keyword">in</span> <span class="org-builtin">range</span>(10):
+    <span class="org-variable-name">idx</span> = labels == y
+    a.scatter(embed[idx,k + 1], embed[idx,0], s=1, alpha=0.25, c=np.array(cm(y)).reshape(1, -1), label=y)
+  a.set_xlabel(f<span class="org-string">'PC {k + 2}'</span>)
+ax[0].set_ylabel(<span class="org-string">'PC 1'</span>)
+<span class="org-variable-name">leg</span> = ax[-1].legend(frameon=<span class="org-constant">False</span>, markerscale=4, handletextpad=0, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+<span class="org-keyword">for</span> h <span class="org-keyword">in</span> leg.legendHandles:
+  h.set_alpha(1)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/spatial-vae.org/mnist-cvae-latent-pca.png" alt="mnist-cvae-latent-pca.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">umaps</span> = <span class="org-builtin">dict</span>()
+<span class="org-keyword">for</span> n_neighbors <span class="org-keyword">in</span> (5, 10, 25, 50):
+  <span class="org-keyword">print</span>(f<span class="org-string">'fitting {n_neighbors}'</span>)
+  <span class="org-variable-name">umaps</span>[n_neighbors] = umap.UMAP(n_neighbors=n_neighbors, min_dist=0, metric=<span class="org-string">'euclidean'</span>, random_state=1).fit_transform(embed)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Set3'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7.5, 2.5)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(umaps, ax):
+  <span class="org-keyword">for</span> y <span class="org-keyword">in</span> <span class="org-builtin">range</span>(10):
+    <span class="org-variable-name">idx</span> = labels == y
+    a.scatter(umaps[k][idx,0], umaps[k][idx,1], s=1, alpha=0.25, c=np.array(cm(y)).reshape(1, -1), label=y)
+  a.set_title(f<span class="org-string">'k = {k}'</span>)
+  a.set_xlabel(<span class="org-string">'UMAP 1'</span>)
+  a.set_xticks([])
+  a.set_yticks([])
+ax[0].set_ylabel(<span class="org-string">'UMAP 2'</span>)
+<span class="org-variable-name">leg</span> = ax[-1].legend(frameon=<span class="org-constant">False</span>, markerscale=4, handletextpad=0, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+<span class="org-keyword">for</span> h <span class="org-keyword">in</span> leg.legendHandles:
+  h.set_alpha(1)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/spatial-vae.org/mnist-cvae-latent-umap.png" alt="mnist-cvae-latent-umap.png">
+</p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-10-01 Thu 17:04</p>
+<p class="date">Created: 2020-10-06 Tue 13:50</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

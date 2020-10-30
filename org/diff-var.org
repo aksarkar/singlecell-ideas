@@ -1,13 +1,6 @@
 #+TITLE: Differential variance analysis
 #+SETUPFILE: setup.org
-\[
-\DeclareMathOperator\Poi{Poisson}
-\DeclareMathOperator\B{Beta}
-\DeclareMathOperator\Gam{Gamma}
-\newcommand\kr{k_r}
-\newcommand\kon{k_{\text{on}}}
-\newcommand\koff{k_{\text{off}}}
-\]
+
 * Introduction
   :PROPERTIES:
   :CUSTOM_ID: intro
@@ -22,7 +15,17 @@
   single individual, independently of altering the mean expression. However, we
   failed to discover such QTLs, and demonstrated that variance QTLs can be
   explained by effects on mean expression
-  ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et al. 2019]]).
+  ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et al. 2019]]). \(
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\B{Beta}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\N{Normal}
+  \DeclareMathOperator\V{V}
+  \newcommand\const{\mathrm{const}}
+  \newcommand\kr{k_r}
+  \newcommand\kon{k_{\text{on}}}
+  \newcommand\koff{k_{\text{off}}}
+  \)
 
   Before attempting to map dQTLs in a followup study, we need to produce
   evidence that there are such effects to find in human cell types.
@@ -61,11 +64,6 @@
   : 1
 
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
-
-  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
-
-  #+RESULTS:
-  : Submitted batch job 66148571
 
   #+BEGIN_SRC ipython
     import anndata
@@ -128,10 +126,10 @@
    The steady state of this model can be characterized as a
    [[file:pois-beta.org][Poisson-Beta distribution]]
 
-   \begin{align*}
+   \begin{align}
      m_i \mid \kr, p_i &\sim \Poi(\kr p_i)\\
      p_i \mid \kon, \koff &\sim \B(\kon, \koff),
-   \end{align*}
+   \end{align}
 
    where:
 
@@ -142,11 +140,11 @@
 
    and rates are scaled by the decay rate. Under this model
 
-   \begin{align*}
+   \begin{align}
      E[m_i] &= \kr \frac{\kon}{\kon + \koff}\\
      V[m_i] &= \kr \frac{\kon}{\kon + \koff} + \kr^2 \frac{\kon\koff}{(\kon + \koff)^2 (\kon + \koff + 1)}\\
      \text{Fano factor} &= 1 + \frac{\kr\koff}{(\kon + \koff) (\kon + \koff + 1)}
-   \end{align*}
+   \end{align}
 
    It follows that an effect which changes variance /while leaving the mean
    unchanged/ must leave \(p_i\) unchanged, i.e. equally scale \(\kon\) and
@@ -177,11 +175,11 @@
    Therefore, observed molecule counts \(x_{ij}\) are generated as Poisson
    sampling on top of a Poisson-Beta generative process
 
-   \begin{align*}
+   \begin{align}
      x_{ij} &\sim \Poi(x_i^+ m_{ij} / m_i^+)\\
      m_{ij} \mid \kr^{(j)}, p_{ij} &\sim \Poi(\kr^{(j)} p_{ij})\\
      p_{ij} \mid \kon^{(j)}, \koff^{(j)} &\sim \B(\kon^{(j)}, \koff^{(j)}).
-   \end{align*}
+   \end{align}
 
    However, focusing on gene \(j\), we have
 
@@ -201,10 +199,10 @@
    meaning we assume variation in \(\lambda_{ij}\) is due to stochastic
    transcription and follows a Gamma distribution
 
-   \begin{align*}
+   \begin{align}
      x_{ij} \mid x_i^+, \lambda_{ij} &\sim \Poi(x_i^+ \lambda_{ij}) \\
      \lambda_{ij} \mid \mu_j, \phi_j &\sim \Gam(\phi_j^{-1}, \phi_j^{-1} \mu_j^{-1})
-   \end{align*}
+   \end{align}
 
    where:
 
@@ -213,11 +211,11 @@
 
    Under the Poisson-Gamma model for gene \(j\):
 
-   \begin{align*}
+   \begin{align}
      E[x_i] &= x_i^+ \mu \\
      V[x_i] &= x_i^+ \mu + (x_i^+ \mu)^2 \phi \\
      \text{Fano factor} &= 1 + \phi
-   \end{align*}
+   \end{align}
 
    These results suggest the mean \(\mu\) and overdispersion \(\phi\) will be
    related to each other, through their dependence on \(\kr, \kon,
@@ -236,14 +234,14 @@
    :CUSTOM_ID: diff-var
    :END:
 
-   We assume the following generative model for the data:
+   The simplest approach begins from a generative model for the data
 
-   \begin{align*}
-     x_{ij} \mid x_i^+ &\sim \operatorname{Poisson}(x_i^+ \lambda_{ij}) \\
-     \lambda_{ij} \mid z_i &\sim g_{z_i}(\cdot)
-   \end{align*}
+   \begin{align}
+     x_{ij} \mid x_i^+ &\sim \Poi(x_i^+ \lambda_{ij}) \\
+     \lambda_{ij} \mid z_i &\sim g_{z_i}(\cdot),
+   \end{align}
 
-   where:
+   where
 
    - \(x_{ij}\) is the number of molecules in sample \(i\) mapping to gene
      \(j\)
@@ -251,28 +249,26 @@
    - \(z_i\) is an indicator variable denoting which group sample \(i\) belongs
      to
 
-   Under this model, the variance in group \(k\) is
-   \(\operatorname{Var}(g_{k})\).
+   Under this model, the variance in group \(k\) is \(\V(g_{k})\). A natural
+   approach would be to estimate likelihood ratios comparing the model above to
+   the null model:
 
-   Although it is possible to estimate likelihood ratios comparing the assumed
-   model to the null model:
-
-   \begin{align*}
+   \begin{align}
      x_{ij} \mid x_i^+ &\sim \operatorname{Poisson}(x_i^+ \lambda_{ij}) \\
-     \lambda_{ij} &\sim g_0(\cdot)
-   \end{align*}
+     \lambda_{ij} &\sim g_0(\cdot);
+   \end{align}
 
-   this model comparison will also be significant for differentially expressed
-   genes which do not have significant changes in variance.
+   however, this model comparison will also be significant for differentially
+   expressed genes which do not have significant changes in variance. One
+   alternative is to assume a parametric form on \(g\), e.g.
 
-   As an alternative, if we assume \(g\) is a mixture of a point mass on zero
-   and a Gamma distribution:
+   \begin{equation}
+     g_{k} = \Gam\left(\frac{1}{\phi_k}, \frac{1}{\mu_k \phi_k}\right),
+   \end{equation}
 
-   \[ g = \pi \delta_0(\cdot) + (1 - \pi) \operatorname{Gamma}(\frac{1}{\phi},
-   \frac{1}{\mu\phi}) \]
-
-   then we can estimate differences in \(\phi\) and bootstrap to get
-   \(p\)-values. There are three challenges in this approach:
+   where the Gamma distribution is parameterized by shape and rate, estimate
+   differences in \(\phi_k\) or \(V[g_k] = \mu_k^2 \phi_k\), and bootstrap to
+   get \(p\)-values. There are three challenges in this approach:
 
    1. /Boundary values/. In real data, we should expect \(\pi = 0\) (Negative Binomial
       marginal distribution), and even \(\phi = \infty\) ([Zero-inflated] Poisson
@@ -285,12 +281,21 @@
    3. /Computational cost/. The bootstraps are expensive, and it is difficult
       to take a hierarchical approach in this setting due to lack of conjugacy.
 
+   #+NAME: bootstrap-impl
    #+BEGIN_SRC ipython
+     def est_var(x, s):
+       if x.max() == 0:
+         return 0
+       else:
+         g = scmodes.ebpm.ebpm_gamma(x, s)
+         if not np.isfinite(g[1]):
+           return np.exp(g[0])
+         else:
+           return np.exp(2 * g[0] + g[1])
+
      def est_diff_var(x, s, z):
-       g1 = scmodes.ebpm.ebpm_gamma(x[z], s[z])
-       var1 = np.exp(2 * g1[0] + g1[1])
-       g2 = scmodes.ebpm.ebpm_gamma(x[~z], s[~z])
-       var2 = np.exp(2 * g2[0] + g2[1])
+       var1 = est_var(x[z], s[z])
+       var2 = est_var(x[~z], s[~z])
        return var2 - var1
 
      def diff_var_bootstrap(x, s, z, random_state=None, n_bootstrap=1000):
@@ -307,19 +312,19 @@
          return theta, (B > theta).mean()
    #+END_SRC
 
-   #+RESULTS:
+   #+RESULTS: bootstrap-impl
    :RESULTS:
-   # Out[69]:
+   # Out[37]:
    :END:
 
    As a second alternative, for each gene \(j\) we can estimate \(g_0\) via
    Empirical Bayes, and then recover the posterior distribution:
 
-   \begin{align*}
+   \begin{align}
      \hat{g} &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}(\frac{1}{\hat\phi}, \frac{1}{\hat\mu \hat\phi})\\
      p(\lambda_i \mid x_1, \ldots, x_n, x_1^+, \ldots, x_n^+, \hat{g}) &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
       \frac{1}{\hat\phi}, x_i^+ + \frac{1}{\hat\mu \hat\phi}\right)
-   \end{align*}
+   \end{align}
 
    We can then take sample variances of latent gene expression values
    \(E[\lambda_i \mid \cdot]\) across groups.
@@ -333,6 +338,125 @@
        lam1 = post_mean(x, s, *g1[:-1])
        g2 = scmodes.ebpm.ebpm_gamma(x[~z], s[~z])
        lam2 = post_mean(x, s, *g2[:-1])
+   #+END_SRC
+
+   As a third alternative, we could re-parameterize the model in terms of
+   differential dispersion, and perform posterior inference on the
+   difference. Fixing gene \(j\),
+
+   \begin{align}
+     x_i \mid s_i, \lambda_i &\sim \Poi(s_i \lambda_i)\\
+     \lambda_i \mid z_i, \mu, \phi, \delta &\sim \Gam(\phi + z_i \delta, \mu(\phi + z_i \delta))\\
+     \ln \mu &\sim \N(0, 10^2)\\
+     \ln \phi &\sim \N(0, 10^2)\\
+     \ln \delta &\sim \N(0, 10^2).
+   \end{align}
+
+   We can estimate the posterior using slice-within-Gibbs sampling
+   ([[https://projecteuclid.org/euclid.aos/1056562461][Neal 2003]]).
+
+   \begin{align}
+     \ln p(\lambda_i \mid \cdot) &= \Gam(x_i + \phi + z_i \delta, s_i + \mu (\phi + z_i \delta))\\
+     \ln p(\mu \mid \cdot) &= \sum_i (\phi + z_i \delta) \ln \mu - \mu (\phi + z_i \delta) \lambda_i - (\ln \mu)^2 / (200 \mu) + \const\\
+     \ln p(\phi \mid \cdot) &= \sum_i \phi \ln (\phi + z_i \delta) + \phi \ln \lambda_i - \mu \phi \lambda_i - \ln\Gamma(\phi + z_i \delta) - (\ln \phi)^2 / (200 \phi) + \const\\
+     \ln p(\delta \mid \cdot) &= \sum_i z_i \delta \ln (\phi + z_i \delta) + z_i \delta \ln \lambda_i - \mu z_i \delta - \ln\Gamma(\phi + z_i \delta) - (\ln \delta)^2 / (200 \delta) + \const
+   \end{align}
+
+   #+NAME: slice-impl
+   #+BEGIN_SRC ipython
+
+     def slice_sample(f, init, width=0.1, max_steps=100, bounds=None, **kwargs):
+       """Return samples from the density proportional to exp(f)
+
+       f - log density (up to a constant)
+       init - initial value
+       width - typical width of f
+       max_steps - maximum number of times to step out
+       bounds - support of f
+       kwargs - additional arguments to f
+
+       """
+       if bounds is None:
+         bounds = (-np.inf, np.inf)
+       # Auxiliary variable defines the slice
+       z = f(init, **kwargs) - np.random.exponential()
+       # Step out
+       left = init - width * np.random.uniform()
+       right = left + width
+       left_steps = int(np.random.uniform() * max_steps)
+       for _ in range(left_steps):
+         if left < bounds[0] or z < f(left, **kwargs):
+           break
+         left -= width
+       left = np.clip(left, *bounds)
+       for _ in range(max_steps - left_steps):
+         if right > bounds[1] or z < f(right, **kwargs):
+           break
+         right += width
+       right = np.clip(right, *bounds)
+       # Step in
+       while right > left:
+         proposal = left + np.random.uniform() * (right - left)
+         if z < f(proposal, **kwargs):
+           return proposal
+         elif proposal < init:
+           left = proposal
+         else:
+           right = proposal
+       raise RuntimeError('failed to find an acceptable sample')
+
+     def _safe_log(x, eps=1e-8):
+       return np.log(x + eps)
+
+     def _cond_logpdf_mu(mu, lam, z, phi, delta, sigma0):
+       t = (phi + z * delta)
+       return (t * _safe_log(mu) - mu * lam * t - _safe_log(mu)^2 / (2 * mu * sigma0 * sigma0)).sum()
+
+     def _cond_logpdf_phi(phi, lam, z, mu, delta, sigma0):
+       t = (phi + z * delta)
+       return (t * _safe_log(t) + phi * _safe_log(lam) - mu * phi * lam - sp.gammaln(t) - _safe_log(phi)^2 / (2 * phi * sigma0 * sigma0)).sum()
+
+     def _cond_logpdf_delta(delta, lam, z, mu, phi, sigma0):
+       t = (phi + z * delta)
+       return (z * delta * _safe_log(t) + z * delta * _safe_log(lam) - mu * z * delta * lam - sp.gammaln(t) - _safe_log(delta)^2 / (2 * delta * sigma0 * sigma0)).sum()
+
+     def diff_var_mcmc(x, s, z, n_samples, sigma0=10, verbose=False, trace=False):
+       assert sigma0 > 0
+       assert n_samples > 0
+       Fmu = st.lognorm(scale=sigma0)
+       Fphi = st.lognorm(scale=sigma0)
+       Fdelta = st.lognorm(scale=sigma0)
+       # Initialize at the MLE
+       fit0 = scmodes.ebpm.ebpm_gamma(x, s)
+       mu = np.exp(fit0[0])
+       if np.isfinite(fit0[1]):
+         phi = np.exp(-fit0[1])
+       else:
+         raise RuntimeError("data are not consistent with non-zero variance")
+       delta = 0
+       lam = x / s
+       samples = []
+       log_joint_trace = []
+       for t in range(n_samples):
+         samples.append((mu, phi, delta))
+         # p(lam | .) is analytic
+         t = phi + z * delta
+         lam = st.gamma(a=x + t, scale=mu * t).rvs()
+         mu = slice_sample(_cond_logpdf_mu, init=mu, lam=lam, z=z, phi=phi, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
+         phi = slice_sample(_cond_logpdf_phi, init=phi, lam=lam, z=z, mu=mu, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
+         delta = slice_sample(_cond_logpdf_delta, init=delta, lam=lam, z=z, mu=mu, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
+         if trace or verbose:
+           log_joint = (st.poisson(mu=s * lam).logpmf(x).sum()
+                        + st.gamma(a=x + t, scale=mu * t).logpdf(lam).sum()
+                        + Fmu.logpdf(mu)
+                        + Fphi.logpdf(phi)
+                        + Fdelta.lgpdf(delta))
+           if trace:
+             log_joint_trace.append(log_joint)
+           if verbose:
+             print(f'sample {t}: {log_joint}')
+       return np.array(samples).reshape(-1, 3), log_joint_trace
+
    #+END_SRC
 
 ** Data sets
@@ -362,10 +486,6 @@
 
    #+RESULTS:
    : Submitted batch job 61624943
-
-   #+BEGIN_SRC ipython
-   
-   #+END_SRC
 
    We then analyze single cell RNA-seq time course data through differentiation
    of iPSCs into cardiomyocytes (Selewa et al. 2019).
@@ -468,78 +588,86 @@
    sets.
 
    #+BEGIN_SRC ipython
-     def null_sim(x, n1, n2, seed=0):
-       np.random.seed(seed)
-       assert n1 + n2 < x.shape[0]
-       x_sub = x.iloc[np.random.choice(x.shape[0], size=n1 + n2, replace=False)].sample(frac=1)
+     def null_sim(dat, n1, n2, seed=0):
+       query = sc.pp.subsample(dat, n_obs=n1 + n2, random_state=seed, copy=True)
        z = np.zeros(n1 + n2).astype(bool)
        z[:n1] = 1
-       return x_sub, z
+       return query, z
 
-     def evaluate_null_type1(data, n=100, n_trials=10):
+     def evaluate_null_type1(dat, n=100, min_detect=0.01, n_bootstrap=1000, n_trials=10):
        result = []
        for trial in range(n_trials):
-         x, z = null_sim(data, n, n, seed=trial)
-         s = x.sum(axis=1)
-         for gene, counts in x.iteritems():
-           try:
-             llr, p = diff_var_bootstrap(counts.values, s, z, n_bootstrap=200)
-           except RuntimeError:
-             llr, p = np.nan, np.nan
-           result.append(pd.Series({'trial': trial, 'gene': gene, 'n': n, 'llr': llr, 'p': p}))
+         x, z = null_sim(dat, n, n, seed=trial)
+         s = x.X.sum(axis=1).A.ravel()
+         for j in range(x.shape[1]):
+           diff, p = diff_var_bootstrap(x.X[:,j].A.ravel(), s, z, n_bootstrap=n_bootstrap)
+           result.append(pd.Series({'trial': trial, 'gene': j, 'n': n, 'diff': diff, 'p': p}))
        result = pd.DataFrame(result)
        return result
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[97]:
+   # Out[40]:
    :END:
 
-   Read the data.
+   Read 10X v3 data, which has higher sequencing depth.
 
    #+BEGIN_SRC ipython
-     cytotoxic_t = scmodes.dataset.read_10x('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cytotoxic_t/filtered_matrices_mex/hg19', min_detect=0.25, return_df=True)
+     dat = anndata.read_h5ad('/scratch/midway2/aksarkar/modes/10k_pbmc_v3.h5ad')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[57]:
+   # Out[6]:
    :END:
 
    First, apply our approach to a single example.
 
    #+BEGIN_SRC ipython :async t
-     x, z = null_sim(cytotoxic_t, n1=200, n2=200, seed=1)
-     s = x.sum(axis=1)
-     diff_var_bootstrap(x.iloc[:,1], s, z, n_bootstrap=200, random_state=1)
+     n1 = 500
+     n2 = 500
+     x, z = null_sim(dat, n1, n2, seed=1)
+     s = x.X.sum(axis=1).A.ravel()
+     sc.pp.filter_genes(x, min_cells=0.01 * (n1 + n2))
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[87]:
-   : (-6.193533177784196e-07, 0.15)
+   # Out[8]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     est_diff_var(x.X[:,0].A.ravel(), s, z)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[17]:
+   : 2.3068812267492158e-11
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     diff_var_bootstrap(x.X[:,0].A.ravel(), s, z, random_state=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[20]:
    :END:
 
    Test the benchmark.
 
    #+BEGIN_SRC ipython :async t
-     test_result = evaluate_null_type1(cytotoxic_t.iloc[:,:5], n=200, n_trials=1)
+     test_result = evaluate_null_type1(dat, n=500, n_trials=1)
      test_result.head()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[98]:
-   #+BEGIN_EXAMPLE
-     trial             gene    n  llr   p
-     0      0  ENSG00000116251  200  NaN NaN
-     1      0  ENSG00000116288  200  NaN NaN
-     2      0  ENSG00000074800  200  NaN NaN
-     3      0  ENSG00000077549  200  NaN NaN
-     4      0  ENSG00000142676  200  NaN NaN
-   #+END_EXAMPLE
+   0 - f39f19f1-0b74-45a9-bb8b-18a9a4a3227b
    :END:
+
 ** Fitting kinetic models directly
 
    Instead of assuming variance of gene expression is driven by stochastic

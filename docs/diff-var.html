@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-14 Thu 23:52 -->
+<!-- 2020-10-30 Fri 16:05 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -277,16 +277,7 @@ for the JavaScript code in this tag.
 </ul>
 </div>
 </div>
-<p>
-\[
-\DeclareMathOperator\Poi{Poisson}
-\DeclareMathOperator\B{Beta}
-\DeclareMathOperator\Gam{Gamma}
-\newcommand\kr{k_r}
-\newcommand\kon{k_{\text{on}}}
-\newcommand\koff{k_{\text{off}}}
-\]
-</p>
+
 <div id="outline-container-org688f67f" class="outline-2">
 <h2 id="intro"><a id="org688f67f"></a>Introduction</h2>
 <div class="outline-text-2" id="text-intro">
@@ -300,7 +291,17 @@ which could alter the variance of gene expression across cells within a
 single individual, independently of altering the mean expression. However, we
 failed to discover such QTLs, and demonstrated that variance QTLs can be
 explained by effects on mean expression
-(<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et al. 2019</a>).
+(<a href="https://dx.doi.org/10.1371/journal.pgen.1008045">Sarkar et al. 2019</a>). \(
+  \DeclareMathOperator\Poi{Poisson}
+  \DeclareMathOperator\B{Beta}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\N{Normal}
+  \DeclareMathOperator\V{V}
+  \newcommand\const{\mathrm{const}}
+  \newcommand\kr{k_r}
+  \newcommand\kon{k_{\text{on}}}
+  \newcommand\koff{k_{\text{off}}}
+  \)
 </p>
 
 <p>
@@ -335,11 +336,6 @@ expression variance <i>independent</i> of altering mean gene expression.
 <div id="outline-container-org07ce98a" class="outline-2">
 <h2 id="setup"><a id="org07ce98a"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
-<pre class="example">
-Submitted batch job 66148571
-
-</pre>
-
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> anndata
 <span class="org-keyword">import</span> itertools <span class="org-keyword">as</span> it
@@ -391,10 +387,10 @@ The steady state of this model can be characterized as a
 <a href="pois-beta.html">Poisson-Beta distribution</a>
 </p>
 
-\begin{align*}
+\begin{align}
   m_i \mid \kr, p_i &\sim \Poi(\kr p_i)\\
   p_i \mid \kon, \koff &\sim \B(\kon, \koff),
-\end{align*}
+\end{align}
 
 <p>
 where:
@@ -411,11 +407,11 @@ where:
 and rates are scaled by the decay rate. Under this model
 </p>
 
-\begin{align*}
+\begin{align}
   E[m_i] &= \kr \frac{\kon}{\kon + \koff}\\
   V[m_i] &= \kr \frac{\kon}{\kon + \koff} + \kr^2 \frac{\kon\koff}{(\kon + \koff)^2 (\kon + \koff + 1)}\\
   \text{Fano factor} &= 1 + \frac{\kr\koff}{(\kon + \koff) (\kon + \koff + 1)}
-\end{align*}
+\end{align}
 
 <p>
 It follows that an effect which changes variance <i>while leaving the mean
@@ -460,11 +456,11 @@ Therefore, observed molecule counts \(x_{ij}\) are generated as Poisson
 sampling on top of a Poisson-Beta generative process
 </p>
 
-\begin{align*}
+\begin{align}
   x_{ij} &\sim \Poi(x_i^+ m_{ij} / m_i^+)\\
   m_{ij} \mid \kr^{(j)}, p_{ij} &\sim \Poi(\kr^{(j)} p_{ij})\\
   p_{ij} \mid \kon^{(j)}, \koff^{(j)} &\sim \B(\kon^{(j)}, \koff^{(j)}).
-\end{align*}
+\end{align}
 
 <p>
 However, focusing on gene \(j\), we have
@@ -494,10 +490,10 @@ meaning we assume variation in \(\lambda_{ij}\) is due to stochastic
 transcription and follows a Gamma distribution
 </p>
 
-\begin{align*}
+\begin{align}
   x_{ij} \mid x_i^+, \lambda_{ij} &\sim \Poi(x_i^+ \lambda_{ij}) \\
   \lambda_{ij} \mid \mu_j, \phi_j &\sim \Gam(\phi_j^{-1}, \phi_j^{-1} \mu_j^{-1})
-\end{align*}
+\end{align}
 
 <p>
 where:
@@ -512,11 +508,11 @@ where:
 Under the Poisson-Gamma model for gene \(j\):
 </p>
 
-\begin{align*}
+\begin{align}
   E[x_i] &= x_i^+ \mu \\
   V[x_i] &= x_i^+ \mu + (x_i^+ \mu)^2 \phi \\
   \text{Fano factor} &= 1 + \phi
-\end{align*}
+\end{align}
 
 <p>
 These results suggest the mean \(\mu\) and overdispersion \(\phi\) will be
@@ -540,16 +536,16 @@ parameters? Why not just test for parameter differences in that model?</li>
 <h3 id="diff-var"><a id="org5b941e7"></a>Differential variance</h3>
 <div class="outline-text-3" id="text-diff-var">
 <p>
-We assume the following generative model for the data:
+The simplest approach begins from a generative model for the data
 </p>
 
-\begin{align*}
-  x_{ij} \mid x_i^+ &\sim \operatorname{Poisson}(x_i^+ \lambda_{ij}) \\
-  \lambda_{ij} \mid z_i &\sim g_{z_i}(\cdot)
-\end{align*}
+\begin{align}
+  x_{ij} \mid x_i^+ &\sim \Poi(x_i^+ \lambda_{ij}) \\
+  \lambda_{ij} \mid z_i &\sim g_{z_i}(\cdot),
+\end{align}
 
 <p>
-where:
+where
 </p>
 
 <ul class="org-ul">
@@ -561,38 +557,30 @@ to</li>
 </ul>
 
 <p>
-Under this model, the variance in group \(k\) is
-\(\operatorname{Var}(g_{k})\).
+Under this model, the variance in group \(k\) is \(\V(g_{k})\). A natural
+approach would be to estimate likelihood ratios comparing the model above to
+the null model:
 </p>
 
-<p>
-Although it is possible to estimate likelihood ratios comparing the assumed
-model to the null model:
-</p>
-
-\begin{align*}
+\begin{align}
   x_{ij} \mid x_i^+ &\sim \operatorname{Poisson}(x_i^+ \lambda_{ij}) \\
-  \lambda_{ij} &\sim g_0(\cdot)
-\end{align*}
+  \lambda_{ij} &\sim g_0(\cdot);
+\end{align}
 
 <p>
-this model comparison will also be significant for differentially expressed
-genes which do not have significant changes in variance.
+however, this model comparison will also be significant for differentially
+expressed genes which do not have significant changes in variance. One
+alternative is to assume a parametric form on \(g\), e.g.
 </p>
 
-<p>
-As an alternative, if we assume \(g\) is a mixture of a point mass on zero
-and a Gamma distribution:
-</p>
+\begin{equation}
+  g_{k} = \Gam\left(\frac{1}{\phi_k}, \frac{1}{\mu_k \phi_k}\right),
+\end{equation}
 
 <p>
-\[ g = \pi \delta_0(\cdot) + (1 - \pi) \operatorname{Gamma}(\frac{1}{\phi},
-   \frac{1}{\mu\phi}) \]
-</p>
-
-<p>
-then we can estimate differences in \(\phi\) and bootstrap to get
-\(p\)-values. There are three challenges in this approach:
+where the Gamma distribution is parameterized by shape and rate, estimate
+differences in \(\phi_k\) or \(V[g_k] = \mu_k^2 \phi_k\), and bootstrap to
+get \(p\)-values. There are three challenges in this approach:
 </p>
 
 <ol class="org-ol">
@@ -609,11 +597,19 @@ to take a hierarchical approach in this setting due to lack of conjugacy.</li>
 </ol>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">est_diff_var</span>(x, s, z):
-  <span class="org-variable-name">g1</span> = scmodes.ebpm.ebpm_gamma(x[z], s[z])
-  <span class="org-variable-name">var1</span> = np.exp(2 * g1[0] + g1[1])
-  <span class="org-variable-name">g2</span> = scmodes.ebpm.ebpm_gamma(x[~z], s[~z])
-  <span class="org-variable-name">var2</span> = np.exp(2 * g2[0] + g2[1])
+<pre class="src src-ipython" id="orgf5fde8e"><span class="org-keyword">def</span> <span class="org-function-name">est_var</span>(x, s):
+  <span class="org-keyword">if</span> x.<span class="org-builtin">max</span>() == 0:
+    <span class="org-keyword">return</span> 0
+  <span class="org-keyword">else</span>:
+    <span class="org-variable-name">g</span> = scmodes.ebpm.ebpm_gamma(x, s)
+    <span class="org-keyword">if</span> <span class="org-keyword">not</span> np.isfinite(g[1]):
+      <span class="org-keyword">return</span> np.exp(g[0])
+    <span class="org-keyword">else</span>:
+      <span class="org-keyword">return</span> np.exp(2 * g[0] + g[1])
+
+<span class="org-keyword">def</span> <span class="org-function-name">est_diff_var</span>(x, s, z):
+  <span class="org-variable-name">var1</span> = est_var(x[z], s[z])
+  <span class="org-variable-name">var2</span> = est_var(x[~z], s[~z])
   <span class="org-keyword">return</span> var2 - var1
 
 <span class="org-keyword">def</span> <span class="org-function-name">diff_var_bootstrap</span>(x, s, z, random_state=<span class="org-constant">None</span>, n_bootstrap=1000):
@@ -636,11 +632,11 @@ As a second alternative, for each gene \(j\) we can estimate \(g_0\) via
 Empirical Bayes, and then recover the posterior distribution:
 </p>
 
-\begin{align*}
+\begin{align}
   \hat{g} &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}(\frac{1}{\hat\phi}, \frac{1}{\hat\mu \hat\phi})\\
   p(\lambda_i \mid x_1, \ldots, x_n, x_1^+, \ldots, x_n^+, \hat{g}) &= \hat\pi \delta_0(\cdot) + (1 - \hat\pi)\operatorname{Gamma}\left(\cdot; x_i +
    \frac{1}{\hat\phi}, x_i^+ + \frac{1}{\hat\mu \hat\phi}\right)
-\end{align*}
+\end{align}
 
 <p>
 We can then take sample variances of latent gene expression values
@@ -656,6 +652,128 @@ We can then take sample variances of latent gene expression values
   <span class="org-variable-name">lam1</span> = post_mean(x, s, *g1[:-1])
   <span class="org-variable-name">g2</span> = scmodes.ebpm.ebpm_gamma(x[~z], s[~z])
   <span class="org-variable-name">lam2</span> = post_mean(x, s, *g2[:-1])
+</pre>
+</div>
+
+<p>
+As a third alternative, we could re-parameterize the model in terms of
+differential dispersion, and perform posterior inference on the
+difference. Fixing gene \(j\),
+</p>
+
+\begin{align}
+  x_i \mid s_i, \lambda_i &\sim \Poi(s_i \lambda_i)\\
+  \lambda_i \mid z_i, \mu, \phi, \delta &\sim \Gam(\phi + z_i \delta, \mu(\phi + z_i \delta))\\
+  \ln \mu &\sim \N(0, 10^2)\\
+  \ln \phi &\sim \N(0, 10^2)\\
+  \ln \delta &\sim \N(0, 10^2).
+\end{align}
+
+<p>
+We can estimate the posterior using slice-within-Gibbs sampling
+(<a href="https://projecteuclid.org/euclid.aos/1056562461">Neal 2003</a>).
+</p>
+
+\begin{align}
+  \ln p(\lambda_i \mid \cdot) &= \Gam(x_i + \phi + z_i \delta, s_i + \mu (\phi + z_i \delta))\\
+  \ln p(\mu \mid \cdot) &= \sum_i (\phi + z_i \delta) \ln \mu - \mu (\phi + z_i \delta) \lambda_i - (\ln \mu)^2 / (200 \mu) + \const\\
+  \ln p(\phi \mid \cdot) &= \sum_i \phi \ln (\phi + z_i \delta) + \phi \ln \lambda_i - \mu \phi \lambda_i - \ln\Gamma(\phi + z_i \delta) - (\ln \phi)^2 / (200 \phi) + \const\\
+  \ln p(\delta \mid \cdot) &= \sum_i z_i \delta \ln (\phi + z_i \delta) + z_i \delta \ln \lambda_i - \mu z_i \delta - \ln\Gamma(\phi + z_i \delta) - (\ln \delta)^2 / (200 \delta) + \const
+\end{align}
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org1871e9b"><span class="org-keyword">def</span> <span class="org-function-name">slice_sample</span>(f, init, width=0.1, max_steps=100, bounds=<span class="org-constant">None</span>, **kwargs):
+  <span class="org-doc">"""Return samples from the density proportional to exp(f)</span>
+
+<span class="org-doc">  f - log density (up to a constant)</span>
+<span class="org-doc">  init - initial value</span>
+<span class="org-doc">  width - typical width of f</span>
+<span class="org-doc">  max_steps - maximum number of times to step out</span>
+<span class="org-doc">  bounds - support of f</span>
+<span class="org-doc">  kwargs - additional arguments to f</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">if</span> bounds <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">bounds</span> = (-np.inf, np.inf)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Auxiliary variable defines the slice</span>
+  <span class="org-variable-name">z</span> = f(init, **kwargs) - np.random.exponential()
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Step out</span>
+  <span class="org-variable-name">left</span> = init - width * np.random.uniform()
+  <span class="org-variable-name">right</span> = left + width
+  <span class="org-variable-name">left_steps</span> = <span class="org-builtin">int</span>(np.random.uniform() * max_steps)
+  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(left_steps):
+    <span class="org-keyword">if</span> left &lt; bounds[0] <span class="org-keyword">or</span> z &lt; f(left, **kwargs):
+      <span class="org-keyword">break</span>
+    <span class="org-variable-name">left</span> -= width
+  <span class="org-variable-name">left</span> = np.clip(left, *bounds)
+  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_steps - left_steps):
+    <span class="org-keyword">if</span> right &gt; bounds[1] <span class="org-keyword">or</span> z &lt; f(right, **kwargs):
+      <span class="org-keyword">break</span>
+    <span class="org-variable-name">right</span> += width
+  <span class="org-variable-name">right</span> = np.clip(right, *bounds)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Step in</span>
+  <span class="org-keyword">while</span> right &gt; left:
+    <span class="org-variable-name">proposal</span> = left + np.random.uniform() * (right - left)
+    <span class="org-keyword">if</span> z &lt; f(proposal, **kwargs):
+      <span class="org-keyword">return</span> proposal
+    <span class="org-keyword">elif</span> proposal &lt; init:
+      <span class="org-variable-name">left</span> = proposal
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">right</span> = proposal
+  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to find an acceptable sample'</span>)
+
+<span class="org-keyword">def</span> <span class="org-function-name">_safe_log</span>(x, eps=1e-8):
+  <span class="org-keyword">return</span> np.log(x + eps)
+
+<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_mu</span>(mu, lam, z, phi, delta, sigma0):
+  <span class="org-variable-name">t</span> = (phi + z * delta)
+  <span class="org-keyword">return</span> (t * _safe_log(mu) - mu * lam * t - _safe_log(mu)^2 / (2 * mu * sigma0 * sigma0)).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_phi</span>(phi, lam, z, mu, delta, sigma0):
+  <span class="org-variable-name">t</span> = (phi + z * delta)
+  <span class="org-keyword">return</span> (t * _safe_log(t) + phi * _safe_log(lam) - mu * phi * lam - sp.gammaln(t) - _safe_log(phi)^2 / (2 * phi * sigma0 * sigma0)).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf_delta</span>(delta, lam, z, mu, phi, sigma0):
+  <span class="org-variable-name">t</span> = (phi + z * delta)
+  <span class="org-keyword">return</span> (z * delta * _safe_log(t) + z * delta * _safe_log(lam) - mu * z * delta * lam - sp.gammaln(t) - _safe_log(delta)^2 / (2 * delta * sigma0 * sigma0)).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">diff_var_mcmc</span>(x, s, z, n_samples, sigma0=10, verbose=<span class="org-constant">False</span>, trace=<span class="org-constant">False</span>):
+  <span class="org-keyword">assert</span> sigma0 &gt; 0
+  <span class="org-keyword">assert</span> n_samples &gt; 0
+  <span class="org-variable-name">Fmu</span> = st.lognorm(scale=sigma0)
+  <span class="org-variable-name">Fphi</span> = st.lognorm(scale=sigma0)
+  <span class="org-variable-name">Fdelta</span> = st.lognorm(scale=sigma0)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Initialize at the MLE</span>
+  <span class="org-variable-name">fit0</span> = scmodes.ebpm.ebpm_gamma(x, s)
+  <span class="org-variable-name">mu</span> = np.exp(fit0[0])
+  <span class="org-keyword">if</span> np.isfinite(fit0[1]):
+    <span class="org-variable-name">phi</span> = np.exp(-fit0[1])
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">"data are not consistent with non-zero variance"</span>)
+  <span class="org-variable-name">delta</span> = 0
+  <span class="org-variable-name">lam</span> = x / s
+  <span class="org-variable-name">samples</span> = []
+  <span class="org-variable-name">log_joint_trace</span> = []
+  <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_samples):
+    samples.append((mu, phi, delta))
+    <span class="org-comment-delimiter"># </span><span class="org-comment">p(lam | .) is analytic</span>
+    <span class="org-variable-name">t</span> = phi + z * delta
+    <span class="org-variable-name">lam</span> = st.gamma(a=x + t, scale=mu * t).rvs()
+    <span class="org-variable-name">mu</span> = slice_sample(_cond_logpdf_mu, init=mu, lam=lam, z=z, phi=phi, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
+    <span class="org-variable-name">phi</span> = slice_sample(_cond_logpdf_phi, init=phi, lam=lam, z=z, mu=mu, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
+    <span class="org-variable-name">delta</span> = slice_sample(_cond_logpdf_delta, init=delta, lam=lam, z=z, mu=mu, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
+    <span class="org-keyword">if</span> trace <span class="org-keyword">or</span> verbose:
+      <span class="org-variable-name">log_joint</span> = (st.poisson(mu=s * lam).logpmf(x).<span class="org-builtin">sum</span>()
+                   + st.gamma(a=x + t, scale=mu * t).logpdf(lam).<span class="org-builtin">sum</span>()
+                   + Fmu.logpdf(mu)
+                   + Fphi.logpdf(phi)
+                   + Fdelta.lgpdf(delta))
+      <span class="org-keyword">if</span> trace:
+        log_joint_trace.append(log_joint)
+      <span class="org-keyword">if</span> verbose:
+        <span class="org-keyword">print</span>(f<span class="org-string">'sample {t}: {log_joint}'</span>)
+  <span class="org-keyword">return</span> np.array(samples).reshape(-1, 3), log_joint_trace
+
 </pre>
 </div>
 </div>
@@ -695,11 +813,6 @@ gzip &lt;raw_data.txt &gt;/project2/mstephens/aksarkar/projects/singlecell-ideas
 Submitted batch job 61624943
 
 </pre>
-
-<div class="org-src-container">
-<pre class="src src-ipython">
-</pre>
-</div>
 
 <p>
 We then analyze single cell RNA-seq time course data through differentiation
@@ -814,36 +927,31 @@ sets.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">null_sim</span>(x, n1, n2, seed=0):
-  np.random.seed(seed)
-  <span class="org-keyword">assert</span> n1 + n2 &lt; x.shape[0]
-  <span class="org-variable-name">x_sub</span> = x.iloc[np.random.choice(x.shape[0], size=n1 + n2, replace=<span class="org-constant">False</span>)].sample(frac=1)
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">null_sim</span>(dat, n1, n2, seed=0):
+  <span class="org-variable-name">query</span> = sc.pp.subsample(dat, n_obs=n1 + n2, random_state=seed, copy=<span class="org-constant">True</span>)
   <span class="org-variable-name">z</span> = np.zeros(n1 + n2).astype(<span class="org-builtin">bool</span>)
   <span class="org-variable-name">z</span>[:n1] = 1
-  <span class="org-keyword">return</span> x_sub, z
+  <span class="org-keyword">return</span> query, z
 
-<span class="org-keyword">def</span> <span class="org-function-name">evaluate_null_type1</span>(data, n=100, n_trials=10):
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_null_type1</span>(dat, n=100, min_detect=0.01, n_bootstrap=1000, n_trials=10):
   <span class="org-variable-name">result</span> = []
   <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
-    <span class="org-variable-name">x</span>, <span class="org-variable-name">z</span> = null_sim(data, n, n, seed=trial)
-    <span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
-    <span class="org-keyword">for</span> gene, counts <span class="org-keyword">in</span> x.iteritems():
-      <span class="org-keyword">try</span>:
-        <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = diff_var_bootstrap(counts.values, s, z, n_bootstrap=200)
-      <span class="org-keyword">except</span> <span class="org-type">RuntimeError</span>:
-        <span class="org-variable-name">llr</span>, <span class="org-variable-name">p</span> = np.nan, np.nan
-      result.append(pd.Series({<span class="org-string">'trial'</span>: trial, <span class="org-string">'gene'</span>: gene, <span class="org-string">'n'</span>: n, <span class="org-string">'llr'</span>: llr, <span class="org-string">'p'</span>: p}))
+    <span class="org-variable-name">x</span>, <span class="org-variable-name">z</span> = null_sim(dat, n, n, seed=trial)
+    <span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1).A.ravel()
+    <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(x.shape[1]):
+      <span class="org-variable-name">diff</span>, <span class="org-variable-name">p</span> = diff_var_bootstrap(x.X[:,j].A.ravel(), s, z, n_bootstrap=n_bootstrap)
+      result.append(pd.Series({<span class="org-string">'trial'</span>: trial, <span class="org-string">'gene'</span>: j, <span class="org-string">'n'</span>: n, <span class="org-string">'diff'</span>: diff, <span class="org-string">'p'</span>: p}))
   <span class="org-variable-name">result</span> = pd.DataFrame(result)
   <span class="org-keyword">return</span> result
 </pre>
 </div>
 
 <p>
-Read the data.
+Read 10X v3 data, which has higher sequencing depth.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cytotoxic_t</span> = scmodes.dataset.read_10x(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/10xgenomics/cytotoxic_t/filtered_matrices_mex/hg19'</span>, min_detect=0.25, return_df=<span class="org-constant">True</span>)
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/modes/10k_pbmc_v3.h5ad'</span>)
 </pre>
 </div>
 
@@ -852,37 +960,45 @@ First, apply our approach to a single example.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">z</span> = null_sim(cytotoxic_t, n1=200, n2=200, seed=1)
-<span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=1)
-diff_var_bootstrap(x.iloc[:,1], s, z, n_bootstrap=200, random_state=1)
+<pre class="src src-ipython"><span class="org-variable-name">n1</span> = 500
+<span class="org-variable-name">n2</span> = 500
+<span class="org-variable-name">x</span>, <span class="org-variable-name">z</span> = null_sim(dat, n1, n2, seed=1)
+<span class="org-variable-name">s</span> = x.X.<span class="org-builtin">sum</span>(axis=1).A.ravel()
+sc.pp.filter_genes(x, min_cells=0.01 * (n1 + n2))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">est_diff_var(x.X[:,0].A.ravel(), s, z)
 </pre>
 </div>
 
 <pre class="example">
-(-6.193533177784196e-07, 0.15)
+2.3068812267492158e-11
 
 </pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">diff_var_bootstrap(x.X[:,0].A.ravel(), s, z, random_state=1)
+</pre>
+</div>
 
 <p>
 Test the benchmark.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">test_result</span> = evaluate_null_type1(cytotoxic_t.iloc[:,:5], n=200, n_trials=1)
+<pre class="src src-ipython"><span class="org-variable-name">test_result</span> = evaluate_null_type1(dat, n=500, n_trials=1)
 test_result.head()
 </pre>
 </div>
 
-<pre class="example">
-trial             gene    n  llr   p
-0      0  ENSG00000116251  200  NaN NaN
-1      0  ENSG00000116288  200  NaN NaN
-2      0  ENSG00000074800  200  NaN NaN
-3      0  ENSG00000077549  200  NaN NaN
-4      0  ENSG00000142676  200  NaN NaN
-</pre>
+<p>
+0 - f39f19f1-0b74-45a9-bb8b-18a9a4a3227b
+</p>
 </div>
 </div>
+
 <div id="outline-container-org8c5fc24" class="outline-3">
 <h3 id="org8c5fc24">Fitting kinetic models directly</h3>
 <div class="outline-text-3" id="text-org8c5fc24">
@@ -1721,7 +1837,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-14 Thu 23:52</p>
+<p class="date">Created: 2020-10-30 Fri 16:05</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

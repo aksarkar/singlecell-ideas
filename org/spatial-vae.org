@@ -101,7 +101,14 @@
   #+CALL: tensorboard(venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/singlecell
 
   #+BEGIN_SRC ipython
+    import anndata
     import numpy as np
+    import pandas as pd
+    import scanpy as sc
+    import scipy.io as si
+    import scipy.sparse as ss
+    import scmodes
+    import sparse
     import torch
     import torch.utils.data as td
     import torch.utils.tensorboard as tb
@@ -112,6 +119,17 @@
   #+RESULTS:
   :RESULTS:
   # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import rpy2.robjects.packages
+    import rpy2.robjects.pandas2ri
+    rpy2.robjects.pandas2ri.activate()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -126,6 +144,7 @@
 
   #+BEGIN_SRC ipython
     import colorcet
+    import matplotlib.colors as mc
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
     plt.rcParams['font.family'] = 'Nimbus Sans'
@@ -168,16 +187,9 @@
    - Mouse olfactory bulb
      (ST; [[https://science.sciencemag.org/content/353/6294/78][Ståhl et al. 2016]])
 
-* Results
-** MNIST
+** Implementation
 
-   Implement a VAE using convolutional layers instead of fully connected
-   layers. Refer to
-   [[https://www.jeremyjordan.me/convnet-architectures/]["Common architectures
-   in convolutional neural networks"]].
-
-   # http://deeplearning.net/software/theano/tutorial/conv_arithmetic.html#transposed-convolution-arithmetic
-
+   #+NAME: convae-impl
    #+BEGIN_SRC ipython
      class Encoder(torch.nn.Module):
        def __init__(self, input_h, input_w, output_dim):
@@ -275,10 +287,93 @@
          return self
    #+END_SRC
 
-   #+RESULTS:
+   #+RESULTS: convae-impl
    :RESULTS:
    # Out[5]:
    :END:
+
+   #+NAME: pois-convae-impl
+   #+BEGIN_SRC ipython
+     class Pois(torch.nn.Module):
+       def __init__(self, input_dim, output_h, output_w):
+         super().__init__()
+         self.net = torch.nn.Sequential(
+           torch.nn.Linear(input_dim, 512),
+           torch.nn.ReLU(),
+           torch.nn.Linear(512, 1024),
+           torch.nn.ReLU(),
+           torch.nn.Linear(1024, 32 * output_h * output_w // 16),
+           torch.nn.ReLU(),
+           Reshape([-1, 32, output_h // 4, output_w // 4]),
+           torch.nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, stride=2, padding=1, output_padding=1),
+           torch.nn.ReLU(),
+           torch.nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=3, stride=2, padding=1, output_padding=1),
+           torch.nn.Softplus(),
+         )
+         self.output_h = output_h
+         self.output_w = output_w
+
+       def forward(self, x):
+         return self.net(x)
+
+     class PoisConvVAE(torch.nn.Module):
+       def __init__(self, input_h, input_w, latent_dim):
+         super().__init__()
+         self.encoder = Encoder(input_h, input_w, latent_dim)
+         self.decoder = Pois(latent_dim, input_h, input_w)
+
+       def forward(self, x, size, writer=None, global_step=None):
+         mean, scale = self.encoder(x)
+         kl = torch.sum(.5 * (1 - 2 * torch.log(scale) + (mean * mean + scale * scale)), dim=1)
+         # TODO: support n_samples
+         qz = torch.distributions.Normal(mean, scale).rsample([1])
+         lam = size.unsqueeze(0) * self.decoder.forward(qz)
+         w = size > 0
+         error = torch.sum(w * torch.mean(x * torch.log(lam + 1e-16) - lam, dim=1), dim=[1, 2])
+         loss = -torch.sum(error - kl)
+         if writer is not None:
+           writer.add_scalar('loss/error', torch.sum(error), global_step)
+           writer.add_scalar('loss/kl', torch.sum(kl), global_step)
+           writer.add_scalar('loss/neg_elbo', loss, global_step)
+         if torch.isnan(loss):
+           raise RuntimeError
+         return loss
+
+       def fit(self, data, size, n_epochs=5, log_dir=None, **kwargs):
+         assert torch.cuda.is_available()
+         if log_dir is None:
+           writer = None
+         else:
+           writer = tb.SummaryWriter(log_dir)
+         if torch.cuda.is_available():
+           self.cuda()
+         opt = torch.optim.Adam(self.parameters(), **kwargs)
+         global_step = 0
+         for epoch in range(n_epochs):
+           for x in data:
+             x = x.cuda()
+             opt.zero_grad()
+             loss = self.forward(x, size, writer, global_step)
+             loss.backward()
+             opt.step()
+             global_step += 1
+         return self
+   #+END_SRC
+
+   #+RESULTS: pois-convae-impl
+   :RESULTS:
+   # Out[112]:
+   :END:
+
+* Results
+** MNIST
+
+   Implement a VAE using convolutional layers instead of fully connected
+   layers. Refer to
+   [[https://www.jeremyjordan.me/convnet-architectures/]["Common architectures
+   in convolutional neural networks"]].
+
+   # http://deeplearning.net/software/theano/tutorial/conv_arithmetic.html#transposed-convolution-arithmetic
 
    #+BEGIN_SRC ipython
      batch_size = 32
@@ -473,4 +568,241 @@
    :RESULTS:
    # Out[17]:
    [[file:figure/spatial-vae.org/mnist-cvae-latent-umap.png]]
+   :END:
+
+** Visium
+
+   Preprocess the data.
+
+   #+BEGIN_SRC ipython
+     x = si.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/filtered_feature_bc_matrix/matrix.mtx.gz')
+     var = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/filtered_feature_bc_matrix/features.tsv.gz', sep='\t', header=None)
+     var.columns = ['gene', 'name', 'featuretype']
+     barcodes = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/filtered_feature_bc_matrix/barcodes.tsv.gz', sep='\t', header=None)
+     coord = pd.read_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/spatial/tissue_positions_list.csv', header=None)
+     obs = (barcodes
+            .merge(coord, on=0)
+            .rename(dict(enumerate(['barcode', 'in_tissue', 'row', 'col', 'pxl_row', 'pxl_col'])), axis=1))
+     idx = np.array(obs.sort_values(['row', 'col']).index)
+     dat = anndata.AnnData(x.T.tocsr()[idx], obs=obs.loc[idx], var=var)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[43]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     dat.write('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/dat.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[70]:
+   :END:
+
+   Read the pre-processed data.
+
+   #+BEGIN_SRC ipython
+     dat = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/dat.h5ad')
+     sc.pp.filter_genes(dat, min_cells=10)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   The data are a (sparse) tensor of positions \(x, y\) and counts
+   \(z\). Convert to a dense tensor.
+
+   *TODO:*
+
+   - sparse 3d tensors
+   - reduce hexagonal convolutions to rectangular convolutions ([[https://dx.doi.org/10.1109/ACCESS.2019.2944766][Luo et
+     al. 2019]], [[https://doi.org/10.1016/j.softx.2019.02.010][Steppa and Holch 2019]])
+
+   #+BEGIN_SRC ipython :async t
+     temp = dat.X.A
+     r = dat[:,0].obs['row'].values
+     c = dat[:,0].obs['col'].values // 2
+     x = np.stack([
+       ss.coo_matrix((temp[:,j], (r, c)),
+                     # Important: we need dimensions to be divisible by 4
+                     shape=(80, 64)).A
+       for j in range(dat.shape[1])])
+     x.shape
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   : (19690, 80, 64)
+   :END:
+
+   Make sure the wrapper worked, by extracting the spatial gene expression of
+   /CD44/.
+
+   #+BEGIN_SRC ipython :async t
+     name = 'HLA-B'
+     z = x[dat.var['name'] == name].squeeze()
+     size = ss.coo_matrix((dat.X.sum(axis=1).A.ravel(), (dat[:,0].obs['row'], dat[:,0].obs['col'].values // 2)), shape=x.shape[1:]).A
+     fit = scmodes.ebpm.ebpm_gamma(z.ravel(), size.ravel())
+     pm = np.where(size.ravel(), (z.ravel() + np.exp(fit[1])) / (size.ravel() + np.exp(-fit[0] + fit[1])), 0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipython :ipyfile figure/spatial-vae.org/visium-ex.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.imshow(pm.reshape(x.shape[1:]), cmap=colorcet.cm['fire'], vmin=pm.min(), vmax=pm.max())
+     plt.colorbar(label='Posterior mean gene expression', shrink=0.5)
+     plt.xticks([])
+     plt.yticks([])
+     plt.title(name)
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[51]:
+   [[file:figure/spatial-vae.org/visium-ex.png]]
+   :END:
+
+   #+BEGIN_SRC ipython
+     train = td.DataLoader(
+       torch.tensor(x, dtype=torch.float).unsqueeze(1),
+       batch_size=64,
+       shuffle=True,
+       pin_memory=True,
+       num_workers=4)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[21]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     latent_dim = 4
+     n_epochs = 40
+     run = 4
+     torch.manual_seed(run)
+     model = PoisConvVAE(input_h=80, input_w=64, latent_dim=latent_dim)
+     model.fit(train,
+               size=torch.tensor(x.sum(axis=0), dtype=torch.float, device='cuda'),
+               n_epochs=n_epochs,
+               lr=5e-7,
+               log_dir=f'runs/convvae/visium/adam_latent_{latent_dim}_epochs_{n_epochs}_run_{run}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[113]:
+   #+BEGIN_EXAMPLE
+     PoisConvVAE(
+     (encoder): Encoder(
+     (net): Sequential(
+     (0): Conv2d(1, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+     (1): ReLU()
+     (2): Conv2d(16, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+     (3): ReLU()
+     (4): Flatten()
+     (5): Linear(in_features=10240, out_features=1024, bias=True)
+     (6): ReLU()
+     (7): Linear(in_features=1024, out_features=512, bias=True)
+     (8): ReLU()
+     )
+     (mean): Linear(in_features=512, out_features=4, bias=True)
+     (scale): Sequential(
+     (0): Linear(in_features=512, out_features=4, bias=True)
+     (1): Softplus(beta=1, threshold=20)
+     )
+     )
+     (decoder): Pois(
+     (net): Sequential(
+     (0): Linear(in_features=4, out_features=512, bias=True)
+     (1): ReLU()
+     (2): Linear(in_features=512, out_features=1024, bias=True)
+     (3): ReLU()
+     (4): Linear(in_features=1024, out_features=10240, bias=True)
+     (5): ReLU()
+     (6): Reshape()
+     (7): ConvTranspose2d(32, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+     (8): ReLU()
+     (9): ConvTranspose2d(16, 1, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+     (10): Softplus(beta=1, threshold=20)
+     )
+     )
+     )
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython
+     torch.save(model.state_dict(), '/scratch/midway2/aksarkar/singlecell/visium-stride_latent_4_epochs_2_run_9.pt')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[85]:
+   :END:
+
+   Encode and decode each gene.
+
+   #+BEGIN_SRC ipython :async t
+     with torch.no_grad():
+       lam = np.stack([
+         model.decoder(
+           model.encoder(
+             torch.tensor(x[j].squeeze(), dtype=torch.float, device='cuda').unsqueeze(0).unsqueeze(0))[0]).cpu().numpy()
+         for j in range(x.shape[0])])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - eacd7eb7-579e-4f23-8b03-17a9620022c9
+   :END:
+
+   Encode and decode /HLA-B/
+
+   #+BEGIN_SRC ipython :async t
+     with torch.no_grad():
+       lam = model.decoder(
+         model.encoder(
+           torch.tensor(x[dat.var['name'] == 'HLA-B'].squeeze(), dtype=torch.float, device='cuda').unsqueeze(0).unsqueeze(0))
+         [0]).cpu().numpy()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[70]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-vae.org/visium-ex2.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+     fig.set_size_inches(6, 3)
+     i = ax[0].imshow(pm.reshape(x.shape[1:]), cmap=colorcet.cm['fire'], vmin=pm.min(), vmax=pm.max())
+     fig.colorbar(i, label='Posterior mean expression', shrink=0.5, orientation='horizontal', ax=ax[0])
+     ax[0].set_title('Non-spatial model')
+
+     temp = lam.squeeze()
+     i = ax[1].imshow(temp, cmap=colorcet.cm['fire'], vmin=temp.min(), vmax=temp.max())
+     fig.colorbar(i, label='Posterior mean expression', shrink=0.5, orientation='horizontal', ax=ax[1])
+     ax[1].set_title('Spatial model')
+
+     for a in ax:
+       a.set_xticks([])
+       a.set_yticks([])
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[56]:
+   [[file:figure/spatial-vae.org/visium-ex2.png]]
    :END:

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-10-06 Tue 13:50 -->
+<!-- 2020-10-30 Fri 15:29 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Convolutional VAE for spatial transcriptomic data</title>
@@ -262,11 +262,13 @@ for the JavaScript code in this tag.
 <li><a href="#org2363802">Methods</a>
 <ul>
 <li><a href="#org0f8899d">Data</a></li>
+<li><a href="#org6ef61f7">Implementation</a></li>
 </ul>
 </li>
 <li><a href="#org054560c">Results</a>
 <ul>
 <li><a href="#orge61c045">MNIST</a></li>
+<li><a href="#orgde57de0">Visium</a></li>
 </ul>
 </li>
 </ul>
@@ -380,12 +382,26 @@ learned \(\vz_j\).</li>
 <h2 id="setup"><a id="orgb67d462"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<pre class="src src-ipython"><span class="org-keyword">import</span> anndata
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
+<span class="org-keyword">import</span> scipy.io <span class="org-keyword">as</span> si
+<span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
+<span class="org-keyword">import</span> scmodes
+<span class="org-keyword">import</span> sparse
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 <span class="org-keyword">import</span> torch.utils.tensorboard <span class="org-keyword">as</span> tb
 <span class="org-keyword">import</span> torchvision <span class="org-keyword">as</span> tv
 <span class="org-keyword">import</span> umap
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> rpy2.robjects.packages
+<span class="org-keyword">import</span> rpy2.robjects.pandas2ri
+rpy2.robjects.pandas2ri.activate()
 </pre>
 </div>
 
@@ -397,6 +413,7 @@ learned \(\vz_j\).</li>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.colors <span class="org-keyword">as</span> mc
 <span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
@@ -444,24 +461,12 @@ et al. 2017</a>)</li>
 </ul>
 </div>
 </div>
-</div>
 
-<div id="outline-container-org054560c" class="outline-2">
-<h2 id="org054560c">Results</h2>
-<div class="outline-text-2" id="text-org054560c">
-</div>
-<div id="outline-container-orge61c045" class="outline-3">
-<h3 id="orge61c045">MNIST</h3>
-<div class="outline-text-3" id="text-orge61c045">
-<p>
-Implement a VAE using convolutional layers instead of fully connected
-layers. Refer to
-<a href="https://www.jeremyjordan.me/convnet-architectures/">&ldquo;Common architectures
-in convolutional neural networks&rdquo;</a>.
-</p>
-
+<div id="outline-container-org6ef61f7" class="outline-3">
+<h3 id="org6ef61f7">Implementation</h3>
+<div class="outline-text-3" id="text-org6ef61f7">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">Encoder</span>(torch.nn.Module):
+<pre class="src src-ipython" id="orga41fa7e"><span class="org-keyword">class</span> <span class="org-type">Encoder</span>(torch.nn.Module):
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_h, input_w, output_dim):
     <span class="org-builtin">super</span>().__init__()
     <span class="org-keyword">self</span>.net = torch.nn.Sequential(
@@ -557,6 +562,91 @@ in convolutional neural networks&rdquo;</a>.
     <span class="org-keyword">return</span> <span class="org-keyword">self</span>
 </pre>
 </div>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org27a6ac7"><span class="org-keyword">class</span> <span class="org-type">Pois</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, output_h, output_w):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.net = torch.nn.Sequential(
+      torch.nn.Linear(input_dim, 512),
+      torch.nn.ReLU(),
+      torch.nn.Linear(512, 1024),
+      torch.nn.ReLU(),
+      torch.nn.Linear(1024, 32 * output_h * output_w // 16),
+      torch.nn.ReLU(),
+      Reshape([-1, 32, output_h // 4, output_w // 4]),
+      torch.nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, stride=2, padding=1, output_padding=1),
+      torch.nn.ReLU(),
+      torch.nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=3, stride=2, padding=1, output_padding=1),
+      torch.nn.Softplus(),
+    )
+    <span class="org-keyword">self</span>.output_h = output_h
+    <span class="org-keyword">self</span>.output_w = output_w
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>.net(x)
+
+<span class="org-keyword">class</span> <span class="org-type">PoisConvVAE</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_h, input_w, latent_dim):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.encoder = Encoder(input_h, input_w, latent_dim)
+    <span class="org-keyword">self</span>.decoder = Pois(latent_dim, input_h, input_w)
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, size, writer=<span class="org-constant">None</span>, global_step=<span class="org-constant">None</span>):
+    <span class="org-variable-name">mean</span>, <span class="org-variable-name">scale</span> = <span class="org-keyword">self</span>.encoder(x)
+    <span class="org-variable-name">kl</span> = torch.<span class="org-builtin">sum</span>(.5 * (1 - 2 * torch.log(scale) + (mean * mean + scale * scale)), dim=1)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: support n_samples</span>
+    <span class="org-variable-name">qz</span> = torch.distributions.Normal(mean, scale).rsample([1])
+    <span class="org-variable-name">lam</span> = size.unsqueeze(0) * <span class="org-keyword">self</span>.decoder.forward(qz)
+    <span class="org-variable-name">w</span> = size &gt; 0
+    <span class="org-variable-name">error</span> = torch.<span class="org-builtin">sum</span>(w * torch.mean(x * torch.log(lam + 1e-16) - lam, dim=1), dim=[1, 2])
+    <span class="org-variable-name">loss</span> = -torch.<span class="org-builtin">sum</span>(error - kl)
+    <span class="org-keyword">if</span> writer <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      writer.add_scalar(<span class="org-string">'loss/error'</span>, torch.<span class="org-builtin">sum</span>(error), global_step)
+      writer.add_scalar(<span class="org-string">'loss/kl'</span>, torch.<span class="org-builtin">sum</span>(kl), global_step)
+      writer.add_scalar(<span class="org-string">'loss/neg_elbo'</span>, loss, global_step)
+    <span class="org-keyword">if</span> torch.isnan(loss):
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>
+    <span class="org-keyword">return</span> loss
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, data, size, n_epochs=5, log_dir=<span class="org-constant">None</span>, **kwargs):
+    <span class="org-keyword">assert</span> torch.cuda.is_available()
+    <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">writer</span> = <span class="org-constant">None</span>
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">writer</span> = tb.SummaryWriter(log_dir)
+    <span class="org-keyword">if</span> torch.cuda.is_available():
+      <span class="org-keyword">self</span>.cuda()
+    <span class="org-variable-name">opt</span> = torch.optim.Adam(<span class="org-keyword">self</span>.parameters(), **kwargs)
+    <span class="org-variable-name">global_step</span> = 0
+    <span class="org-keyword">for</span> epoch <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
+      <span class="org-keyword">for</span> x <span class="org-keyword">in</span> data:
+        <span class="org-variable-name">x</span> = x.cuda()
+        opt.zero_grad()
+        <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, size, writer, global_step)
+        loss.backward()
+        opt.step()
+        <span class="org-variable-name">global_step</span> += 1
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org054560c" class="outline-2">
+<h2 id="org054560c">Results</h2>
+<div class="outline-text-2" id="text-org054560c">
+</div>
+<div id="outline-container-orge61c045" class="outline-3">
+<h3 id="orge61c045">MNIST</h3>
+<div class="outline-text-3" id="text-orge61c045">
+<p>
+Implement a VAE using convolutional layers instead of fully connected
+layers. Refer to
+<a href="https://www.jeremyjordan.me/convnet-architectures/">&ldquo;Common architectures
+in convolutional neural networks&rdquo;</a>.
+</p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">batch_size</span> = 32
@@ -736,11 +826,238 @@ fig.tight_layout()
 </div>
 </div>
 </div>
+
+<div id="outline-container-orgde57de0" class="outline-3">
+<h3 id="orgde57de0">Visium</h3>
+<div class="outline-text-3" id="text-orgde57de0">
+<p>
+Preprocess the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = si.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/filtered_feature_bc_matrix/matrix.mtx.gz'</span>)
+<span class="org-variable-name">var</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/filtered_feature_bc_matrix/features.tsv.gz'</span>, sep=<span class="org-string">'\t'</span>, header=<span class="org-constant">None</span>)
+<span class="org-variable-name">var.columns</span> = [<span class="org-string">'gene'</span>, <span class="org-string">'name'</span>, <span class="org-string">'featuretype'</span>]
+<span class="org-variable-name">barcodes</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/filtered_feature_bc_matrix/barcodes.tsv.gz'</span>, sep=<span class="org-string">'\t'</span>, header=<span class="org-constant">None</span>)
+<span class="org-variable-name">coord</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/spatial/tissue_positions_list.csv'</span>, header=<span class="org-constant">None</span>)
+<span class="org-variable-name">obs</span> = (barcodes
+       .merge(coord, on=0)
+       .rename(<span class="org-builtin">dict</span>(<span class="org-builtin">enumerate</span>([<span class="org-string">'barcode'</span>, <span class="org-string">'in_tissue'</span>, <span class="org-string">'row'</span>, <span class="org-string">'col'</span>, <span class="org-string">'pxl_row'</span>, <span class="org-string">'pxl_col'</span>])), axis=1))
+<span class="org-variable-name">idx</span> = np.array(obs.sort_values([<span class="org-string">'row'</span>, <span class="org-string">'col'</span>]).index)
+<span class="org-variable-name">dat</span> = anndata.AnnData(x.T.tocsr()[idx], obs=obs.loc[idx], var=var)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">dat.write(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/dat.h5ad'</span>)
+</pre>
+</div>
+
+<p>
+Read the pre-processed data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/dat.h5ad'</span>)
+sc.pp.filter_genes(dat, min_cells=10)
+</pre>
+</div>
+
+<p>
+The data are a (sparse) tensor of positions \(x, y\) and counts
+\(z\). Convert to a dense tensor.
+</p>
+
+<p>
+<b>TODO:</b>
+</p>
+
+<ul class="org-ul">
+<li>sparse 3d tensors</li>
+<li>reduce hexagonal convolutions to rectangular convolutions (<a href="https://dx.doi.org/10.1109/ACCESS.2019.2944766">Luo et
+al. 2019</a>, <a href="https://doi.org/10.1016/j.softx.2019.02.010">Steppa and Holch 2019</a>)</li>
+</ul>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">temp</span> = dat.X.A
+<span class="org-variable-name">r</span> = dat[:,0].obs[<span class="org-string">'row'</span>].values
+<span class="org-variable-name">c</span> = dat[:,0].obs[<span class="org-string">'col'</span>].values // 2
+<span class="org-variable-name">x</span> = np.stack([
+  ss.coo_matrix((temp[:,j], (r, c)),
+                <span class="org-comment-delimiter"># </span><span class="org-comment">Important: we need dimensions to be divisible by 4</span>
+                shape=(80, 64)).A
+  <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(dat.shape[1])])
+x.shape
+</pre>
+</div>
+
+<pre class="example">
+(19690, 80, 64)
+
+</pre>
+
+<p>
+Make sure the wrapper worked, by extracting the spatial gene expression of
+<i>CD44</i>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">name</span> = <span class="org-string">'HLA-B'</span>
+<span class="org-variable-name">z</span> = x[dat.var[<span class="org-string">'name'</span>] == name].squeeze()
+<span class="org-variable-name">size</span> = ss.coo_matrix((dat.X.<span class="org-builtin">sum</span>(axis=1).A.ravel(), (dat[:,0].obs[<span class="org-string">'row'</span>], dat[:,0].obs[<span class="org-string">'col'</span>].values // 2)), shape=x.shape[1:]).A
+<span class="org-variable-name">fit</span> = scmodes.ebpm.ebpm_gamma(z.ravel(), size.ravel())
+<span class="org-variable-name">pm</span> = np.where(size.ravel(), (z.ravel() + np.exp(fit[1])) / (size.ravel() + np.exp(-fit[0] + fit[1])), 0)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.imshow(pm.reshape(x.shape[1:]), cmap=colorcet.cm[<span class="org-string">'fire'</span>], vmin=pm.<span class="org-builtin">min</span>(), vmax=pm.<span class="org-builtin">max</span>())
+plt.colorbar(label=<span class="org-string">'Posterior mean gene expression'</span>, shrink=0.5)
+plt.xticks([])
+plt.yticks([])
+plt.title(name)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/spatial-vae.org/visium-ex.png" alt="visium-ex.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">train</span> = td.DataLoader(
+  torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>).unsqueeze(1),
+  batch_size=64,
+  shuffle=<span class="org-constant">True</span>,
+  pin_memory=<span class="org-constant">True</span>,
+  num_workers=4)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">latent_dim</span> = 4
+<span class="org-variable-name">n_epochs</span> = 40
+<span class="org-variable-name">run</span> = 4
+torch.manual_seed(run)
+<span class="org-variable-name">model</span> = PoisConvVAE(input_h=80, input_w=64, latent_dim=latent_dim)
+model.fit(train,
+          size=torch.tensor(x.<span class="org-builtin">sum</span>(axis=0), dtype=torch.<span class="org-builtin">float</span>, device=<span class="org-string">'cuda'</span>),
+          n_epochs=n_epochs,
+          lr=5e-7,
+          log_dir=f<span class="org-string">'runs/convvae/visium/adam_latent_{latent_dim}_epochs_{n_epochs}_run_{run}'</span>)
+</pre>
+</div>
+
+<pre class="example">
+PoisConvVAE(
+(encoder): Encoder(
+(net): Sequential(
+(0): Conv2d(1, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+(1): ReLU()
+(2): Conv2d(16, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+(3): ReLU()
+(4): Flatten()
+(5): Linear(in_features=10240, out_features=1024, bias=True)
+(6): ReLU()
+(7): Linear(in_features=1024, out_features=512, bias=True)
+(8): ReLU()
+)
+(mean): Linear(in_features=512, out_features=4, bias=True)
+(scale): Sequential(
+(0): Linear(in_features=512, out_features=4, bias=True)
+(1): Softplus(beta=1, threshold=20)
+)
+)
+(decoder): Pois(
+(net): Sequential(
+(0): Linear(in_features=4, out_features=512, bias=True)
+(1): ReLU()
+(2): Linear(in_features=512, out_features=1024, bias=True)
+(3): ReLU()
+(4): Linear(in_features=1024, out_features=10240, bias=True)
+(5): ReLU()
+(6): Reshape()
+(7): ConvTranspose2d(32, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+(8): ReLU()
+(9): ConvTranspose2d(16, 1, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+(10): Softplus(beta=1, threshold=20)
+)
+)
+)
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">torch.save(model.state_dict(), <span class="org-string">'/scratch/midway2/aksarkar/singlecell/visium-stride_latent_4_epochs_2_run_9.pt'</span>)
+</pre>
+</div>
+
+<p>
+Encode and decode each gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">lam</span> = np.stack([
+    model.decoder(
+      model.encoder(
+        torch.tensor(x[j].squeeze(), dtype=torch.<span class="org-builtin">float</span>, device=<span class="org-string">'cuda'</span>).unsqueeze(0).unsqueeze(0))[0]).cpu().numpy()
+    <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(x.shape[0])])
+</pre>
+</div>
+
+<p>
+0 - eacd7eb7-579e-4f23-8b03-17a9620022c9
+</p>
+
+<p>
+Encode and decode <i>HLA-B</i>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">lam</span> = model.decoder(
+    model.encoder(
+      torch.tensor(x[dat.var[<span class="org-string">'name'</span>] == <span class="org-string">'HLA-B'</span>].squeeze(), dtype=torch.<span class="org-builtin">float</span>, device=<span class="org-string">'cuda'</span>).unsqueeze(0).unsqueeze(0))
+    [0]).cpu().numpy()
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(6, 3)
+<span class="org-variable-name">i</span> = ax[0].imshow(pm.reshape(x.shape[1:]), cmap=colorcet.cm[<span class="org-string">'fire'</span>], vmin=pm.<span class="org-builtin">min</span>(), vmax=pm.<span class="org-builtin">max</span>())
+fig.colorbar(i, label=<span class="org-string">'Posterior mean expression'</span>, shrink=0.5, orientation=<span class="org-string">'horizontal'</span>, ax=ax[0])
+ax[0].set_title(<span class="org-string">'Non-spatial model'</span>)
+
+<span class="org-variable-name">temp</span> = lam.squeeze()
+<span class="org-variable-name">i</span> = ax[1].imshow(temp, cmap=colorcet.cm[<span class="org-string">'fire'</span>], vmin=temp.<span class="org-builtin">min</span>(), vmax=temp.<span class="org-builtin">max</span>())
+fig.colorbar(i, label=<span class="org-string">'Posterior mean expression'</span>, shrink=0.5, orientation=<span class="org-string">'horizontal'</span>, ax=ax[1])
+ax[1].set_title(<span class="org-string">'Spatial model'</span>)
+
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_xticks([])
+  a.set_yticks([])
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/spatial-vae.org/visium-ex2.png" alt="visium-ex2.png">
+</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-10-06 Tue 13:50</p>
+<p class="date">Created: 2020-10-30 Fri 15:29</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

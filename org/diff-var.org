@@ -18,9 +18,13 @@
   ([[https://dx.doi.org/10.1371/journal.pgen.1008045][Sarkar et al. 2019]]). \(
   \DeclareMathOperator\Poi{Poisson}
   \DeclareMathOperator\B{Beta}
+  \DeclareMathOperator\E{E}
   \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\KL{\mathcal{KL}}
   \DeclareMathOperator\N{Normal}
   \DeclareMathOperator\V{V}
+  \newcommand\delmu{\delta_{\mu}}
+  \newcommand\delphi{\delta_{\phi}}
   \newcommand\const{\mathrm{const}}
   \newcommand\kr{k_r}
   \newcommand\kon{k_{\text{on}}}
@@ -63,7 +67,9 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+CALL: tensorboard(venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/singlecell
 
   #+BEGIN_SRC ipython
     import anndata
@@ -79,6 +85,8 @@
     import scmodes
     import sklearn.decomposition as skd
     import sqlite3
+    import torch
+    import torch.utils.tensorboard as tb
   #+END_SRC
 
   #+RESULTS:
@@ -229,7 +237,7 @@
    - Will this approach find something other than differences in kinetic
      parameters? Why not just test for parameter differences in that model?
 
-** Differential variance
+** Frequentist approaches to detect differential variance
    :PROPERTIES:
    :CUSTOM_ID: diff-var
    :END:
@@ -340,16 +348,34 @@
        lam2 = post_mean(x, s, *g2[:-1])
    #+END_SRC
 
-   As a third alternative, we could re-parameterize the model in terms of
-   differential dispersion, and perform posterior inference on the
-   difference. Fixing gene \(j\),
+** Bayesian approaches to detect differential variance
+
+   In a Bayesian framework, we re-parameterize the model in terms of the
+   difference in mean and dispersion, and estimate the posterior distribution
+   of the difference. Using all of the data to estimate a Gamma expression
+   model \(\hat\mu, \hat\phi\), we can form informative priors on \(\mu, \phi,
+   \delta_{\mu}, \delta_{\phi}\).
+
+   \begin{align}
+     x_i \mid s_i, \lambda_i &\sim \Poi(s_i \lambda_i)\\
+     \lambda_i \mid z_i, \mu, \phi, \delmu, \delphi &\sim \Gam(\exp(-\ln\phi - z_i \delphi), \exp(-\ln\mu - \ln\phi - z_i (\delmu + \delphi)))\\
+     \ln \mu &\sim \N(\ln\hat\mu, 1)\\
+     \ln \phi &\sim \N(\ln\hat\phi, 1)\\
+     \delmu &\sim \N(0, 1)\\
+     \delphi &\sim \N(0, 1).
+   \end{align}
+
+*** Slice-within-Gibbs sampling                                    :noexport:
+
+   We could re-parameterize the model in terms of differential dispersion, and
+   perform posterior inference on the difference. Fixing gene \(j\),
 
    \begin{align}
      x_i \mid s_i, \lambda_i &\sim \Poi(s_i \lambda_i)\\
      \lambda_i \mid z_i, \mu, \phi, \delta &\sim \Gam(\phi + z_i \delta, \mu(\phi + z_i \delta))\\
      \ln \mu &\sim \N(0, 10^2)\\
      \ln \phi &\sim \N(0, 10^2)\\
-     \ln \delta &\sim \N(0, 10^2).
+     \delta &\sim \N(0, 10^2).
    \end{align}
 
    We can estimate the posterior using slice-within-Gibbs sampling
@@ -364,7 +390,6 @@
 
    #+NAME: slice-impl
    #+BEGIN_SRC ipython
-
      def slice_sample(f, init, width=0.1, max_steps=100, bounds=None, **kwargs):
        """Return samples from the density proportional to exp(f)
 
@@ -409,23 +434,23 @@
        return np.log(x + eps)
 
      def _cond_logpdf_mu(mu, lam, z, phi, delta, sigma0):
-       t = (phi + z * delta)
-       return (t * _safe_log(mu) - mu * lam * t - _safe_log(mu)^2 / (2 * mu * sigma0 * sigma0)).sum()
+       t = np.fmax(phi + z * delta, 1e-8)
+       return (t * _safe_log(mu) - mu * lam * t - _safe_log(mu) ** 2 / (2 * mu * sigma0 * sigma0)).sum()
 
      def _cond_logpdf_phi(phi, lam, z, mu, delta, sigma0):
-       t = (phi + z * delta)
-       return (t * _safe_log(t) + phi * _safe_log(lam) - mu * phi * lam - sp.gammaln(t) - _safe_log(phi)^2 / (2 * phi * sigma0 * sigma0)).sum()
+       t = np.fmax(phi + z * delta, 1e-8)
+       return (t * _safe_log(t) + phi * _safe_log(lam) - mu * phi * lam - sp.gammaln(t) - _safe_log(phi) ** 2 / (2 * phi * sigma0 * sigma0)).sum()
 
      def _cond_logpdf_delta(delta, lam, z, mu, phi, sigma0):
-       t = (phi + z * delta)
-       return (z * delta * _safe_log(t) + z * delta * _safe_log(lam) - mu * z * delta * lam - sp.gammaln(t) - _safe_log(delta)^2 / (2 * delta * sigma0 * sigma0)).sum()
+       t = np.fmax(phi + z * delta, 1e-8)
+       return (z * delta * _safe_log(t) + z * delta * _safe_log(lam) - mu * z * delta * lam - sp.gammaln(t) - delta ** 2 / (2 * sigma0 * sigma0)).sum()
 
      def diff_var_mcmc(x, s, z, n_samples, sigma0=10, verbose=False, trace=False):
        assert sigma0 > 0
        assert n_samples > 0
-       Fmu = st.lognorm(scale=sigma0)
-       Fphi = st.lognorm(scale=sigma0)
-       Fdelta = st.lognorm(scale=sigma0)
+       Fmu = st.lognorm(s=sigma0, scale=1)
+       Fphi = st.lognorm(s=sigma0, scale=1)
+       Fdelta = st.norm(scale=sigma0)
        # Initialize at the MLE
        fit0 = scmodes.ebpm.ebpm_gamma(x, s)
        mu = np.exp(fit0[0])
@@ -437,27 +462,185 @@
        lam = x / s
        samples = []
        log_joint_trace = []
-       for t in range(n_samples):
+       for i in range(n_samples):
          samples.append((mu, phi, delta))
          # p(lam | .) is analytic
-         t = phi + z * delta
-         lam = st.gamma(a=x + t, scale=mu * t).rvs()
+         t = np.fmax(phi + z * delta, 1e-8)
+         lam = np.fmax(st.gamma(a=x + t, scale=1 / (s + mu * t)).rvs(), 1e-8)
          mu = slice_sample(_cond_logpdf_mu, init=mu, lam=lam, z=z, phi=phi, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
          phi = slice_sample(_cond_logpdf_phi, init=phi, lam=lam, z=z, mu=mu, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
-         delta = slice_sample(_cond_logpdf_delta, init=delta, lam=lam, z=z, mu=mu, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
+         delta = slice_sample(_cond_logpdf_delta, init=delta, lam=lam, z=z, mu=mu, phi=phi, sigma0=sigma0)
          if trace or verbose:
            log_joint = (st.poisson(mu=s * lam).logpmf(x).sum()
-                        + st.gamma(a=x + t, scale=mu * t).logpdf(lam).sum()
+                        + st.gamma(a=t, scale=mu * t).logpdf(lam).sum()
                         + Fmu.logpdf(mu)
                         + Fphi.logpdf(phi)
-                        + Fdelta.lgpdf(delta))
+                        + Fdelta.logpdf(delta))
+           assert np.isfinite(log_joint)
            if trace:
              log_joint_trace.append(log_joint)
            if verbose:
-             print(f'sample {t}: {log_joint}')
+             print(f'sample {i}: {log_joint}')
        return np.array(samples).reshape(-1, 3), log_joint_trace
-
    #+END_SRC
+
+   #+RESULTS: slice-impl
+   :RESULTS:
+   # Out[65]:
+   :END:
+
+*** Variational inference
+
+   We can use variational inference to obtain an approximate posterior
+   \(q(\delphi) \approx p(\delphi \mid x, s)\), assuming 
+
+   \begin{equation}
+     q(\cdot) = q(\mu)q(\phi)q(\delmu)q(\delphi)
+   \end{equation}
+
+   It is easy to show that the optimal \(q\) are (a product of) non-standard
+   distributions, so we will instead assume each \(q\) is in the same family as
+   the corresponding prior.
+
+   /Remark 1:/ The exact posterior \(q(\lambda_i) = p(\lambda_i \mid x, s,
+   \cdot)\) is analytic due to Poisson-Gamma conjugacy, so it is handled
+   separately from the approximation.
+
+   /Remark 2:/ Assuming each factor \(q\) is in some simple parametric family
+   might lead to underestimates of the posterior variance, which will need to
+   be verified.
+
+   To address the fact that the prior is non-conjugate, we can optimize a
+   stochastic objective whose expectation is the ELBO,
+
+   \begin{multline}
+     \ell = \E_{q(\mu, \phi, \delta)}\left[\sum_i \E_{q(\lambda_i)}[\ln p(x_i \mid s_i, \lambda_i)] - \KL(q(\lambda_i) \Vert p(\lambda_i \mid z_i, \mu, \phi, \delta))\right]\\
+     - \KL(q(\mu) \Vert p(\mu)) - \KL(q(\phi) \Vert p(\phi)) - \KL(q(\delmu) \Vert p(\delmu)) - \KL(q(\delphi) \Vert p(\delphi)),
+   \end{multline}
+
+   where the KL terms, \(q(\lambda_i)\), and expectations with respect to
+   \(q(\lambda_i)\) are all analytic, and the first expectation is computed
+   using a Monte Carlo integral and a differentiable re-parameterization
+   (Kingma and Welling 2014).
+
+   #+NAME: vi-impl
+   #+BEGIN_SRC ipython
+     class DiffVarExprModel(torch.nn.Module):
+       def __init__(self, prior_log_mean, prior_log_inv_disp, prior_scale=1.):
+         assert prior_scale > 0
+         super().__init__()
+         self.prior_log_mean = prior_log_mean
+         self.prior_log_inv_disp = prior_log_inv_disp
+         self.prior_diff = torch.distributions.Normal(loc=0., scale=prior_scale)
+
+         self.q_log_mean_mean = torch.nn.Parameter(self.prior_log_mean.loc)
+         self.q_log_mean_raw_scale = torch.nn.Parameter(torch.zeros([1]))
+         self.q_log_inv_disp_mean = torch.nn.Parameter(self.prior_log_inv_disp.loc)
+         self.q_log_inv_disp_raw_scale = torch.nn.Parameter(torch.zeros([1]))
+
+         # Important: this is actually N(0, ln(2))
+         self.q_diff_mean_mean = torch.nn.Parameter(torch.zeros([1]))
+         self.q_diff_mean_raw_scale = torch.nn.Parameter(torch.zeros([1]))
+         self.q_diff_inv_disp_mean = torch.nn.Parameter(torch.zeros([1]))
+         self.q_diff_inv_disp_raw_scale = torch.nn.Parameter(torch.zeros([1]))
+
+       def forward(self, x, s, z, n_samples, writer=None, global_step=None):
+         softplus = torch.nn.functional.softplus
+         _kl = torch.distributions.kl.kl_divergence
+
+         # We need to keep these around to draw samples
+         q_log_mean = torch.distributions.Normal(loc=self.q_log_mean_mean, scale=softplus(self.q_log_mean_raw_scale))
+         q_log_inv_disp = torch.distributions.Normal(loc=self.q_log_inv_disp_mean, scale=softplus(self.q_log_inv_disp_raw_scale))
+         q_diff_mean = torch.distributions.Normal(loc=self.q_diff_mean_mean, scale=softplus(self.q_diff_mean_raw_scale))
+         q_diff_inv_disp = torch.distributions.Normal(loc=self.q_diff_inv_disp_mean, scale=softplus(self.q_diff_inv_disp_raw_scale))
+
+         # These can be computed without sampling
+         kl_mean = _kl(q_log_mean, self.prior_log_mean)
+         kl_inv_disp = _kl(q_log_inv_disp, self.prior_log_inv_disp)
+         kl_diff_mean = _kl(q_diff_mean, self.prior_diff)
+         kl_diff_inv_disp = _kl(q_diff_inv_disp, self.prior_diff)
+
+         # [n_samples, 1]
+         log_mean = q_log_mean.rsample([n_samples])
+         log_inv_disp = q_log_inv_disp.rsample([n_samples])
+         diff_mean = q_diff_mean.rsample([n_samples])
+         diff_inv_disp = q_diff_inv_disp.rsample([n_samples])
+         a = torch.exp(log_inv_disp.T - z @ diff_mean.T)
+         b = torch.exp(-log_mean.T + log_inv_disp.T - z @ (diff_mean + diff_inv_disp).T)
+         assert torch.isfinite(a).all()
+         assert torch.isfinite(b).all()
+         # E[λ], [x.shape[0], n_samples]
+         pm = (x + a) / (s + b)
+         # E[ln λ], [x.shape[0], n_samples]
+         plm = torch.digamma(x + a) - torch.log(s + b)
+         assert plm.shape == torch.Size([x.shape[0], n_samples])
+         kl_lam = _kl(torch.distributions.Gamma(x + a, s + b), torch.distributions.Gamma(a, b)).mean(dim=1).sum()
+         assert kl_lam >= 0
+         err = (x * (torch.log(s) + plm) - s * pm - torch.lgamma(x + 1)).mean(dim=1).sum()
+         assert err <= 0
+         elbo = err - kl_lam - kl_mean - kl_inv_disp - kl_diff_mean - kl_diff_inv_disp
+         if writer is not None:
+           writer.add_scalar('loss/err', err, global_step)
+           writer.add_scalar('loss/kl_lam', kl_lam, global_step)
+           writer.add_scalar('loss/kl_mean', kl_mean, global_step)
+           writer.add_scalar('loss/kl_inv_disp', kl_inv_disp, global_step)
+           writer.add_scalar('loss/kl_diff_mean', kl_diff_mean, global_step)
+           writer.add_scalar('loss/kl_diff_inv_disp', kl_diff_inv_disp, global_step)
+         return -elbo
+
+       def fit(self, x, s, z, n_epochs, n_samples=1, log_dir=None, **kwargs):
+         n = x.shape[0]
+         assert x.shape == (n, 1)
+         assert s.shape == x.shape
+         assert z.shape == x.shape
+         assert n_samples >= 1
+         if log_dir is not None:
+           writer = tb.SummaryWriter(log_dir)
+         else:
+           writer = None
+         global_step = 0
+         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         for epoch in range(n_epochs):
+           opt.zero_grad()
+           loss = self.forward(x, s, z, n_samples, writer, global_step)
+           if torch.isnan(loss):
+             raise RuntimeError('nan loss')
+           loss.backward()
+           opt.step()
+           global_step += 1
+         return self
+
+       @property
+       def log_mean(self):
+         return self.q_log_mean_mean.detach().numpy(), np.log1p(np.exp(self.q_log_mean_raw_scale.detach().numpy()))
+
+       @property
+       def diff_mean(self):
+         return self.q_diff_mean_mean.detach().numpy(), np.log1p(np.exp(self.q_diff_mean_raw_scale.detach().numpy()))
+
+       @property
+       def lfsr_diff_mean(self):
+         loc, scale = self.diff_mean
+         return min(st.norm(loc, scale).cdf(0), st.norm(loc, scale).sf(0))
+
+       @property
+       def log_inv_disp(self):
+         return self.q_log_inv_disp_mean.detach().numpy(), np.log1p(np.exp(self.q_log_inv_disp_raw_scale.detach().numpy()))
+
+       @property
+       def diff_inv_disp(self):
+         return self.q_diff_inv_disp_mean.detach().numpy(), np.log1p(np.exp(self.q_diff_inv_disp_raw_scale.detach().numpy()))
+
+       @property
+       def lfsr_diff_inv_disp(self):
+         loc, scale = self.diff_inv_disp
+         return min(st.norm(loc, scale).cdf(0), st.norm(loc, scale).sf(0))
+   #+END_SRC
+
+   #+RESULTS: vi-impl
+   :RESULTS:
+   # Out[96]:
+   :END:
 
 ** Data sets
    :PROPERTIES:
@@ -1538,3 +1721,211 @@
     # Out[73]:
     [[file:figure/diff-var.org/ipsc-cm-COMMD6.png]]
     :END:
+** Slice within Gibbs                                              :noexport:
+
+   Simulate from the model.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 500
+     log_mean = -10
+     log_inv_disp = -0.5
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=2 * n)
+     s = 1e5
+     x = rng.poisson(s * lam)
+     z = np.zeros(2 * n, dtype=bool)
+     z[:n] = 1
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[103]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/mcmc-ex0.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s * np.exp(log_mean - log_inv_disp))).pmf(grid), c='k', lw=1)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[104]:
+   [[file:figure/diff-var.org/mcmc-ex0.png]]
+   :END:
+
+   Draw samples from the posterior.
+
+   #+BEGIN_SRC ipython :async t
+     samples, trace = diff_var_mcmc(x, s, z, n_samples=2000, trace=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   :END:
+
+   Plot the log joint over the Markov chain.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/mcmc-ex0-trace.png
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     plt.plot(trace, lw=1, c='k')
+     plt.xlabel('Sample')
+     plt.ylabel('Log joint prob')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[107]:
+   [[file:figure/diff-var.org/mcmc-ex0-trace.png]]
+   :END:
+
+   Plot the estimated posterior distribution.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/mcmc-ex0-post.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(6, 2.5)
+     for i, a in enumerate(ax):
+       a.hist(samples[-500:,i], bins=7, density=True, color='0.7')
+     ax[0].axvline(x=np.exp(log_mean), lw=1, c='k')
+     ax[1].axvline(x=np.exp(log_inv_disp), lw=1, c='k')
+     ax[2].axvline(x=0, lw=1, c='k')
+     for a in ax[:-1]:
+       lim = a.get_xlim()
+       grid = np.linspace(lim[0], lim[1], 1000)
+       a.plot(grid, st.lognorm(s=1, scale=1).pdf(grid), lw=1, ls='--', c='k')
+     ax[0].set_xlabel(r'$\mu$')
+     ax[0].set_ylabel('Density')
+     ax[1].set_xlabel(r'$\phi$')
+     ax[2].set_xlabel(r'$\delta$')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[109]:
+   [[file:figure/diff-var.org/mcmc-ex0-post.png]]
+   :END:
+
+** Variational inference
+
+   Simulate from the model, fixing \(\delta = 0\).
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 500
+     log_mean = -10
+     log_inv_disp = -0.5
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=2 * n)
+     s = np.full(2 * n, 1e5)
+     x = rng.poisson(s * lam)
+     z = np.zeros(2 * n, dtype=bool)
+     z[:n] = 1
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex0.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s * np.exp(log_mean - log_inv_disp))).pmf(grid), c='k', lw=1)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[17]:
+   [[file:figure/diff-var.org/vi-ex0.png]]
+   :END:
+
+   Fit the model.
+
+   #+BEGIN_SRC ipython :async t
+     n_epochs = 2000
+     n_samples = 10
+     run = 4
+     fit0 = scmodes.ebpm.ebpm_gamma(x, s)
+     torch.manual_seed(run)
+     m = DiffVarExprModel(
+       prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
+       prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
+     m.fit(
+       torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(z.reshape(-1, 1), dtype=torch.float),
+       n_epochs=n_epochs,
+       n_samples=n_samples,
+       log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_{n_epochs}_{n_samples}_{run}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[82]:
+   : DiffVarExprModel()
+   :END:
+
+   Plot the fit.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex0-fit.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(m.log_inv_disp[0]), p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(m.log_inv_disp[0] - m.diff_inv_disp[0]), p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] - m.diff_mean[0] - m.diff_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls='--')
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[93]:
+   [[file:figure/diff-var.org/vi-ex0-fit.png]]
+   :END:
+
+   Compute the lfsr for DE and DV.
+
+   #+BEGIN_SRC ipython
+     min(st.norm(*m.diff_mean).cdf(0), st.norm(*m.diff_mean).sf(0))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[94]:
+   : array([0.33308655])
+   :END:
+
+   #+BEGIN_SRC ipython
+     min(st.norm(*m.diff_inv_disp).cdf(0), st.norm(*m.diff_inv_disp).sf(0))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[95]:
+   : array([0.28662401])
+   :END:

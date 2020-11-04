@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-11-02 Mon 16:31 -->
+<!-- 2020-11-03 Tue 15:29 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -273,7 +273,7 @@ for the JavaScript code in this tag.
 <li><a href="#mean-disp-rel">Mean-dispersion relationship</a></li>
 <li><a href="#null-sim">Null simulation</a></li>
 <li><a href="#org8c5fc24">Fitting kinetic models directly</a></li>
-<li><a href="#orgd4f1a45">Variational inference</a></li>
+<li><a href="#orge513a1d">Variational inference</a></li>
 </ul>
 </li>
 </ul>
@@ -307,6 +307,10 @@ explained by effects on mean expression
   \newcommand\kr{k_r}
   \newcommand\kon{k_{\text{on}}}
   \newcommand\koff{k_{\text{off}}}
+  \newcommand\vtheta{\boldsymbol{\theta}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vs{\mathbf{s}}
+  \newcommand\vz{\mathbf{z}}
   \)
 </p>
 
@@ -670,38 +674,38 @@ We can then take sample variances of latent gene expression values
 <div class="outline-text-3" id="text-org9a9b5ea">
 <p>
 In a Bayesian framework, we re-parameterize the model in terms of the
-difference in mean and dispersion, and estimate the posterior distribution
-of the difference. Using all of the data to estimate a Gamma expression
-model \(\hat\mu, \hat\phi\), we can form informative priors on \(\mu, \phi,
-   \delta_{\mu}, \delta_{\phi}\).
+difference in mean \(\delmu\) and dispersion \(\delphi\), and estimate the
+posterior distribution \(p(\delmu, \delphi \mid \vx, \vs, \vz)\). Using all
+of the data to estimate a Gamma expression model \(\mu_0, \phi_0\), we can
+form informative priors on \(\vtheta = (\mu, \phi, \delmu, \delphi)\).
 </p>
 
 \begin{align}
   x_i \mid s_i, \lambda_i &\sim \Poi(s_i \lambda_i)\\
   \lambda_i \mid z_i, \mu, \phi, \delmu, \delphi &\sim \Gam(\exp(-\ln\phi - z_i \delphi), \exp(-\ln\mu - \ln\phi - z_i (\delmu + \delphi)))\\
-  \ln \mu &\sim \N(\ln\hat\mu, 1)\\
-  \ln \phi &\sim \N(\ln\hat\phi, 1)\\
+  \ln \mu &\sim \N(\ln\hat\mu_0, 1)\\
+  \ln \phi &\sim \N(\ln\hat\phi_0, 1)\\
   \delmu &\sim \N(0, 1)\\
   \delphi &\sim \N(0, 1).
 \end{align}
 </div>
 
-<div id="outline-container-org4b9e79d" class="outline-4">
-<h4 id="org4b9e79d">Variational inference</h4>
-<div class="outline-text-4" id="text-org4b9e79d">
+<div id="outline-container-org19c04eb" class="outline-4">
+<h4 id="org19c04eb">Variational inference</h4>
+<div class="outline-text-4" id="text-org19c04eb">
 <p>
 We can use variational inference to obtain an approximate posterior
-\(q(\delphi) \approx p(\delphi \mid x, s)\), assuming 
+\(q(\delphi) \approx p(\delphi \mid \vx, \vs)\), assuming 
 </p>
 
 \begin{equation}
-  q(\cdot) = q(\mu)q(\phi)q(\delmu)q(\delphi)
+  q(\vtheta) = q(\mu)q(\phi)q(\delmu)q(\delphi)
 \end{equation}
 
 <p>
-It is easy to show that the optimal \(q\) are (a product of) non-standard
-distributions, so we will instead assume each \(q\) is in the same family as
-the corresponding prior.
+It is easy to show that the optimal \(q\) &#x2013; assuming no constraints &#x2013; are
+non-standard distributions, so we will instead assume each \(q\) is in the
+same family as the corresponding prior.
 </p>
 
 <p>
@@ -727,10 +731,9 @@ stochastic objective whose expectation is the ELBO,
 \end{multline}
 
 <p>
-where the KL terms, \(q(\lambda_i)\), and expectations with respect to
-\(q(\lambda_i)\) are all analytic, and the first expectation is computed
-using a Monte Carlo integral and a differentiable re-parameterization
-(Kingma and Welling 2014).
+where the KL terms and expectations with respect to \(q(\lambda_i)\) are all
+analytic, and the first (outer) expectation is computed using a Monte Carlo
+integral and a differentiable re-parameterization (Kingma and Welling 2014).
 </p>
 
 <div class="org-src-container">
@@ -774,7 +777,7 @@ using a Monte Carlo integral and a differentiable re-parameterization
     <span class="org-variable-name">log_inv_disp</span> = q_log_inv_disp.rsample([n_samples])
     <span class="org-variable-name">diff_mean</span> = q_diff_mean.rsample([n_samples])
     <span class="org-variable-name">diff_inv_disp</span> = q_diff_inv_disp.rsample([n_samples])
-    <span class="org-variable-name">a</span> = torch.exp(log_inv_disp.T - z @ diff_mean.T)
+    <span class="org-variable-name">a</span> = torch.exp(log_inv_disp.T - z @ diff_inv_disp.T)
     <span class="org-variable-name">b</span> = torch.exp(-log_mean.T + log_inv_disp.T - z @ (diff_mean + diff_inv_disp).T)
     <span class="org-keyword">assert</span> torch.isfinite(a).<span class="org-builtin">all</span>()
     <span class="org-keyword">assert</span> torch.isfinite(b).<span class="org-builtin">all</span>()
@@ -1904,11 +1907,15 @@ fig.tight_layout()
 </div>
 </div>
 </div>
-<div id="outline-container-orgd4f1a45" class="outline-3">
-<h3 id="orgd4f1a45">Variational inference</h3>
-<div class="outline-text-3" id="text-orgd4f1a45">
+<div id="outline-container-orge513a1d" class="outline-3">
+<h3 id="orge513a1d">Variational inference</h3>
+<div class="outline-text-3" id="text-orge513a1d">
+</div>
+<div id="outline-container-orge79fa9c" class="outline-4">
+<h4 id="orge79fa9c">Null simulation</h4>
+<div class="outline-text-4" id="text-orge79fa9c">
 <p>
-Simulate from the model, fixing \(\delta = 0\).
+Simulate from the model, fixing \(\delmu = \delphi = 0\).
 </p>
 
 <div class="org-src-container">
@@ -2002,7 +2009,7 @@ plt.tight_layout()
 </div>
 
 <p>
-Compute the lfsr for DE and DV.
+Report the LFSR for DE/DD.
 </p>
 
 <div class="org-src-container">
@@ -2026,11 +2033,260 @@ array([0.28662401])
 </pre>
 </div>
 </div>
+
+<div id="outline-container-orgd43e5d6" class="outline-4">
+<h4 id="orgd43e5d6">DE</h4>
+<div class="outline-text-4" id="text-orgd43e5d6">
+<p>
+Simulate data under differential expression, but not differential
+dispersion.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 500
+<span class="org-variable-name">z</span> = np.zeros(2 * n, dtype=<span class="org-builtin">bool</span>)
+<span class="org-variable-name">z</span>[:n] = 1
+<span class="org-variable-name">log_mean</span> = -10
+<span class="org-variable-name">log_inv_disp</span> = -0.5
+<span class="org-variable-name">diff_mean</span> = np.log(2)
+<span class="org-variable-name">lam</span> = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp - z * diff_mean), size=2 * n)
+<span class="org-variable-name">s</span> = np.full(2 * n, 1e5)
+<span class="org-variable-name">x</span> = rng.poisson(s * lam)
+</pre>
+</div>
+
+<p>
+Plot the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(4, 2)
+<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 2)
+plt.hist(x[z], bins=grid, color=cm(0), density=<span class="org-constant">True</span>, alpha=0.35)
+plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp - diff_mean))).pmf(grid), c=cm(0), lw=1)
+plt.hist(x[~z], bins=grid, color=cm(1), density=<span class="org-constant">True</span>, alpha=0.25)
+plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c=cm(1), lw=1)
+plt.xlabel(<span class="org-string">'Number of molecules'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/vi-ex1.png" alt="vi-ex1.png">
+</p>
+</div>
+
+<p>
+Fit the model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_epochs</span> = 2000
+<span class="org-variable-name">n_samples</span> = 10
+<span class="org-variable-name">run</span> = 1
+<span class="org-variable-name">fit0</span> = scmodes.ebpm.ebpm_gamma(x, s)
+torch.manual_seed(run)
+<span class="org-variable-name">m</span> = DiffVarExprModel(
+  prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
+  prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
+m.fit(
+  torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+  torch.tensor(s.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+  torch.tensor(z.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+  n_epochs=n_epochs,
+  n_samples=n_samples,
+  log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_2fold_{n_epochs}_{n_samples}_{run}'</span>)
+</pre>
+</div>
+
+<pre class="example">
+DiffVarExprModel()
+
+</pre>
+
+<p>
+Plot the fit.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(4, 2)
+<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 2)
+plt.hist(x[z], bins=grid, color=cm(0), density=<span class="org-constant">True</span>, alpha=0.35)
+plt.plot(grid + .5, st.nbinom(
+  n=np.exp(m.log_inv_disp[0] + m.diff_inv_disp[0]),
+  p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] + m.diff_mean[0] + m.diff_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
+plt.hist(x[~z], bins=grid, color=cm(1), density=<span class="org-constant">True</span>, alpha=0.25)
+plt.plot(grid + .5, st.nbinom(
+  n=np.exp(m.log_inv_disp[0]),
+  p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls=<span class="org-string">'--'</span>)
+plt.xlabel(<span class="org-string">'Number of molecules'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/vi-ex1-fit.png" alt="vi-ex1-fit.png">
+</p>
+</div>
+
+<p>
+Report the lfsr for DE/DD.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series({
+  <span class="org-string">'de'</span>: m.lfsr_diff_mean[0],
+  <span class="org-string">'dd'</span>: m.lfsr_diff_inv_disp[0]
+})
+</pre>
+</div>
+
+<pre class="example">
+de    2.649849e-25
+dd    2.186703e-01
+dtype: float64
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org4b0df7e" class="outline-4">
+<h4 id="org4b0df7e">DD</h4>
+<div class="outline-text-4" id="text-org4b0df7e">
+<p>
+Simulate data under differential dispersion, but not differential
+expression.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 500
+<span class="org-variable-name">z</span> = np.zeros(2 * n, dtype=<span class="org-builtin">bool</span>)
+<span class="org-variable-name">z</span>[:n] = 1
+<span class="org-variable-name">log_mean</span> = -10
+<span class="org-variable-name">log_inv_disp</span> = -0.5
+<span class="org-variable-name">diff_inv_disp</span> = np.log(2)
+<span class="org-variable-name">lam</span> = rng.gamma(shape=np.exp(log_inv_disp + z * diff_inv_disp), scale=np.exp(log_mean - log_inv_disp - z * diff_inv_disp), size=2 * n)
+<span class="org-variable-name">s</span> = np.full(2 * n, 1e5)
+<span class="org-variable-name">x</span> = rng.poisson(s * lam)
+</pre>
+</div>
+
+<p>
+Plot the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(4, 2)
+<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 2)
+plt.hist(x[z], bins=grid, color=cm(0), density=<span class="org-constant">True</span>, alpha=0.35)
+plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp + diff_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp - diff_inv_disp))).pmf(grid), c=cm(0), lw=1)
+plt.hist(x[~z], bins=grid, color=cm(1), density=<span class="org-constant">True</span>, alpha=0.25)
+plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c=cm(1), lw=1)
+plt.xlabel(<span class="org-string">'Number of molecules'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/vi-ex2.png" alt="vi-ex2.png">
+</p>
+</div>
+
+<p>
+Fit the model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_epochs</span> = 2000
+<span class="org-variable-name">n_samples</span> = 10
+<span class="org-variable-name">run</span> = 0
+<span class="org-variable-name">fit0</span> = scmodes.ebpm.ebpm_gamma(x, s)
+torch.manual_seed(run)
+<span class="org-variable-name">m</span> = DiffVarExprModel(
+  prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
+  prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
+m.fit(
+  torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+  torch.tensor(s.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+  torch.tensor(z.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+  n_epochs=n_epochs,
+  n_samples=n_samples,
+  log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_dd_2fold_{n_epochs}_{n_samples}_{run}'</span>)
+</pre>
+</div>
+
+<pre class="example">
+DiffVarExprModel()
+
+</pre>
+
+<p>
+Plot the fit.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(4, 2)
+<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 2)
+plt.hist(x[z], bins=grid, color=cm(0), density=<span class="org-constant">True</span>, alpha=0.35)
+plt.plot(grid + .5, st.nbinom(
+  n=np.exp(m.log_inv_disp[0] - m.diff_inv_disp[0]),
+  p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] + m.diff_mean[0] + m.diff_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
+plt.hist(x[~z], bins=grid, color=cm(1), density=<span class="org-constant">True</span>, alpha=0.25)
+plt.plot(grid + .5, st.nbinom(
+  n=np.exp(m.log_inv_disp[0]),
+  p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls=<span class="org-string">'--'</span>)
+plt.xlabel(<span class="org-string">'Number of molecules'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/vi-ex2-fit.png" alt="vi-ex2-fit.png">
+</p>
+</div>
+
+<p>
+Report the lfsr for DE/DD.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series({
+  <span class="org-string">'de'</span>: m.lfsr_diff_mean[0],
+  <span class="org-string">'dd'</span>: m.lfsr_diff_inv_disp[0]
+})
+</pre>
+</div>
+
+<pre class="example">
+de    3.532351e-01
+dd    6.212617e-22
+dtype: float64
+</pre>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-11-02 Mon 16:31</p>
+<p class="date">Created: 2020-11-03 Tue 15:29</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

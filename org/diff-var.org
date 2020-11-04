@@ -29,6 +29,10 @@
   \newcommand\kr{k_r}
   \newcommand\kon{k_{\text{on}}}
   \newcommand\koff{k_{\text{off}}}
+  \newcommand\vtheta{\boldsymbol{\theta}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vs{\mathbf{s}}
+  \newcommand\vz{\mathbf{z}}
   \)
 
   Before attempting to map dQTLs in a followup study, we need to produce
@@ -351,156 +355,32 @@
 ** Bayesian approaches to detect differential variance
 
    In a Bayesian framework, we re-parameterize the model in terms of the
-   difference in mean and dispersion, and estimate the posterior distribution
-   of the difference. Using all of the data to estimate a Gamma expression
-   model \(\hat\mu, \hat\phi\), we can form informative priors on \(\mu, \phi,
-   \delta_{\mu}, \delta_{\phi}\).
+   difference in mean \(\delmu\) and dispersion \(\delphi\), and estimate the
+   posterior distribution \(p(\delmu, \delphi \mid \vx, \vs, \vz)\). Using all
+   of the data to estimate a Gamma expression model \(\mu_0, \phi_0\), we can
+   form informative priors on \(\vtheta = (\mu, \phi, \delmu, \delphi)\).
 
    \begin{align}
      x_i \mid s_i, \lambda_i &\sim \Poi(s_i \lambda_i)\\
      \lambda_i \mid z_i, \mu, \phi, \delmu, \delphi &\sim \Gam(\exp(-\ln\phi - z_i \delphi), \exp(-\ln\mu - \ln\phi - z_i (\delmu + \delphi)))\\
-     \ln \mu &\sim \N(\ln\hat\mu, 1)\\
-     \ln \phi &\sim \N(\ln\hat\phi, 1)\\
+     \ln \mu &\sim \N(\ln\hat\mu_0, 1)\\
+     \ln \phi &\sim \N(\ln\hat\phi_0, 1)\\
      \delmu &\sim \N(0, 1)\\
      \delphi &\sim \N(0, 1).
    \end{align}
 
-*** Slice-within-Gibbs sampling                                    :noexport:
-
-   We could re-parameterize the model in terms of differential dispersion, and
-   perform posterior inference on the difference. Fixing gene \(j\),
-
-   \begin{align}
-     x_i \mid s_i, \lambda_i &\sim \Poi(s_i \lambda_i)\\
-     \lambda_i \mid z_i, \mu, \phi, \delta &\sim \Gam(\phi + z_i \delta, \mu(\phi + z_i \delta))\\
-     \ln \mu &\sim \N(0, 10^2)\\
-     \ln \phi &\sim \N(0, 10^2)\\
-     \delta &\sim \N(0, 10^2).
-   \end{align}
-
-   We can estimate the posterior using slice-within-Gibbs sampling
-   ([[https://projecteuclid.org/euclid.aos/1056562461][Neal 2003]]).
-
-   \begin{align}
-     \ln p(\lambda_i \mid \cdot) &= \Gam(x_i + \phi + z_i \delta, s_i + \mu (\phi + z_i \delta))\\
-     \ln p(\mu \mid \cdot) &= \sum_i (\phi + z_i \delta) \ln \mu - \mu (\phi + z_i \delta) \lambda_i - (\ln \mu)^2 / (200 \mu) + \const\\
-     \ln p(\phi \mid \cdot) &= \sum_i \phi \ln (\phi + z_i \delta) + \phi \ln \lambda_i - \mu \phi \lambda_i - \ln\Gamma(\phi + z_i \delta) - (\ln \phi)^2 / (200 \phi) + \const\\
-     \ln p(\delta \mid \cdot) &= \sum_i z_i \delta \ln (\phi + z_i \delta) + z_i \delta \ln \lambda_i - \mu z_i \delta - \ln\Gamma(\phi + z_i \delta) - (\ln \delta)^2 / (200 \delta) + \const
-   \end{align}
-
-   #+NAME: slice-impl
-   #+BEGIN_SRC ipython
-     def slice_sample(f, init, width=0.1, max_steps=100, bounds=None, **kwargs):
-       """Return samples from the density proportional to exp(f)
-
-       f - log density (up to a constant)
-       init - initial value
-       width - typical width of f
-       max_steps - maximum number of times to step out
-       bounds - support of f
-       kwargs - additional arguments to f
-
-       """
-       if bounds is None:
-         bounds = (-np.inf, np.inf)
-       # Auxiliary variable defines the slice
-       z = f(init, **kwargs) - np.random.exponential()
-       # Step out
-       left = init - width * np.random.uniform()
-       right = left + width
-       left_steps = int(np.random.uniform() * max_steps)
-       for _ in range(left_steps):
-         if left < bounds[0] or z < f(left, **kwargs):
-           break
-         left -= width
-       left = np.clip(left, *bounds)
-       for _ in range(max_steps - left_steps):
-         if right > bounds[1] or z < f(right, **kwargs):
-           break
-         right += width
-       right = np.clip(right, *bounds)
-       # Step in
-       while right > left:
-         proposal = left + np.random.uniform() * (right - left)
-         if z < f(proposal, **kwargs):
-           return proposal
-         elif proposal < init:
-           left = proposal
-         else:
-           right = proposal
-       raise RuntimeError('failed to find an acceptable sample')
-
-     def _safe_log(x, eps=1e-8):
-       return np.log(x + eps)
-
-     def _cond_logpdf_mu(mu, lam, z, phi, delta, sigma0):
-       t = np.fmax(phi + z * delta, 1e-8)
-       return (t * _safe_log(mu) - mu * lam * t - _safe_log(mu) ** 2 / (2 * mu * sigma0 * sigma0)).sum()
-
-     def _cond_logpdf_phi(phi, lam, z, mu, delta, sigma0):
-       t = np.fmax(phi + z * delta, 1e-8)
-       return (t * _safe_log(t) + phi * _safe_log(lam) - mu * phi * lam - sp.gammaln(t) - _safe_log(phi) ** 2 / (2 * phi * sigma0 * sigma0)).sum()
-
-     def _cond_logpdf_delta(delta, lam, z, mu, phi, sigma0):
-       t = np.fmax(phi + z * delta, 1e-8)
-       return (z * delta * _safe_log(t) + z * delta * _safe_log(lam) - mu * z * delta * lam - sp.gammaln(t) - delta ** 2 / (2 * sigma0 * sigma0)).sum()
-
-     def diff_var_mcmc(x, s, z, n_samples, sigma0=10, verbose=False, trace=False):
-       assert sigma0 > 0
-       assert n_samples > 0
-       Fmu = st.lognorm(s=sigma0, scale=1)
-       Fphi = st.lognorm(s=sigma0, scale=1)
-       Fdelta = st.norm(scale=sigma0)
-       # Initialize at the MLE
-       fit0 = scmodes.ebpm.ebpm_gamma(x, s)
-       mu = np.exp(fit0[0])
-       if np.isfinite(fit0[1]):
-         phi = np.exp(-fit0[1])
-       else:
-         raise RuntimeError("data are not consistent with non-zero variance")
-       delta = 0
-       lam = x / s
-       samples = []
-       log_joint_trace = []
-       for i in range(n_samples):
-         samples.append((mu, phi, delta))
-         # p(lam | .) is analytic
-         t = np.fmax(phi + z * delta, 1e-8)
-         lam = np.fmax(st.gamma(a=x + t, scale=1 / (s + mu * t)).rvs(), 1e-8)
-         mu = slice_sample(_cond_logpdf_mu, init=mu, lam=lam, z=z, phi=phi, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
-         phi = slice_sample(_cond_logpdf_phi, init=phi, lam=lam, z=z, mu=mu, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
-         delta = slice_sample(_cond_logpdf_delta, init=delta, lam=lam, z=z, mu=mu, phi=phi, sigma0=sigma0)
-         if trace or verbose:
-           log_joint = (st.poisson(mu=s * lam).logpmf(x).sum()
-                        + st.gamma(a=t, scale=mu * t).logpdf(lam).sum()
-                        + Fmu.logpdf(mu)
-                        + Fphi.logpdf(phi)
-                        + Fdelta.logpdf(delta))
-           assert np.isfinite(log_joint)
-           if trace:
-             log_joint_trace.append(log_joint)
-           if verbose:
-             print(f'sample {i}: {log_joint}')
-       return np.array(samples).reshape(-1, 3), log_joint_trace
-   #+END_SRC
-
-   #+RESULTS: slice-impl
-   :RESULTS:
-   # Out[65]:
-   :END:
-
 *** Variational inference
 
    We can use variational inference to obtain an approximate posterior
-   \(q(\delphi) \approx p(\delphi \mid x, s)\), assuming 
+   \(q(\delphi) \approx p(\delphi \mid \vx, \vs)\), assuming 
 
    \begin{equation}
-     q(\cdot) = q(\mu)q(\phi)q(\delmu)q(\delphi)
+     q(\vtheta) = q(\mu)q(\phi)q(\delmu)q(\delphi)
    \end{equation}
 
-   It is easy to show that the optimal \(q\) are (a product of) non-standard
-   distributions, so we will instead assume each \(q\) is in the same family as
-   the corresponding prior.
+   It is easy to show that the optimal \(q\) -- assuming no constraints -- are
+   non-standard distributions, so we will instead assume each \(q\) is in the
+   same family as the corresponding prior.
 
    /Remark 1:/ The exact posterior \(q(\lambda_i) = p(\lambda_i \mid x, s,
    \cdot)\) is analytic due to Poisson-Gamma conjugacy, so it is handled
@@ -518,10 +398,9 @@
      - \KL(q(\mu) \Vert p(\mu)) - \KL(q(\phi) \Vert p(\phi)) - \KL(q(\delmu) \Vert p(\delmu)) - \KL(q(\delphi) \Vert p(\delphi)),
    \end{multline}
 
-   where the KL terms, \(q(\lambda_i)\), and expectations with respect to
-   \(q(\lambda_i)\) are all analytic, and the first expectation is computed
-   using a Monte Carlo integral and a differentiable re-parameterization
-   (Kingma and Welling 2014).
+   where the KL terms and expectations with respect to \(q(\lambda_i)\) are all
+   analytic, and the first (outer) expectation is computed using a Monte Carlo
+   integral and a differentiable re-parameterization (Kingma and Welling 2014).
 
    #+NAME: vi-impl
    #+BEGIN_SRC ipython
@@ -565,7 +444,7 @@
          log_inv_disp = q_log_inv_disp.rsample([n_samples])
          diff_mean = q_diff_mean.rsample([n_samples])
          diff_inv_disp = q_diff_inv_disp.rsample([n_samples])
-         a = torch.exp(log_inv_disp.T - z @ diff_mean.T)
+         a = torch.exp(log_inv_disp.T - z @ diff_inv_disp.T)
          b = torch.exp(-log_mean.T + log_inv_disp.T - z @ (diff_mean + diff_inv_disp).T)
          assert torch.isfinite(a).all()
          assert torch.isfinite(b).all()
@@ -639,8 +518,146 @@
 
    #+RESULTS: vi-impl
    :RESULTS:
-   # Out[96]:
+   # Out[63]:
    :END:
+
+*** MCMC                                                           :noexport:
+
+    To check whether VI understates the posterior variance, or if the posterior
+    is actually multi-modal and VI only captures one mode, we can compare
+    against a collapsed Gibbs sampler, using slice sampling to sample from
+    non-standard conditional densities
+    ([[https://projecteuclid.org/euclid.aos/1056562461][Neal 2003]]).
+
+    Letting
+
+    \begin{align}
+      a_i &\triangleq \exp(-\ln\phi - z_i \delphi)\\
+      b_i &\triangleq \exp(-\ln\mu - \ln\phi - z_i (\delmu + \delphi)),
+    \end{align}
+
+    and marginalizing over \(\lambda_i\), the log joint probability
+
+    \begin{equation}
+      \ln p(x_i, a_i, b_i, \delmu, \delphi \mid s_i, z_i) = x_i \ln \left(\frac{s_i}{s_i + b_i}\right) + a_i \ln \left(\frac{b_i}{s_i + b_i}\right) + \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i) - \ln\Gamma(x_i + 1) - \frac{(\ln\mu - \ln\mu_0)^2}{2\mu} - \frac{(\ln\phi - \ln\phi_0)^2}{2\phi},
+    \end{equation}
+
+    and the log conditional probabilities (up to a constant) are
+
+    \begin{align}
+      \ln p(\mu \mid \cdot) &= \sum_i u_i - (\ln \mu - \ln\mu_0)^2 / (2 \mu) + \const\\
+      \ln p(\phi \mid \cdot) &= \sum_i u_i + v_i - (\ln \phi - \ln\phi_0)^2 / (200 \phi) + \const\\
+      \ln p(\delmu \mid \cdot) &= \sum_i u_i - \delmu^2 / 2 + \const\\
+      \ln p(\delphi \mid \cdot) &= \sum_i u_i + v_i - \delphi^2 / 2 + \const,
+    \end{align}
+
+    where
+
+    \begin{align}
+      u_i &\triangleq -x_i \ln (s_i + b_i) + a_i \ln \b_i - a_i \ln (s_i + b_i)\\
+      v_i &\triangleq \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i)
+    \end{align}
+
+    #+NAME: slice-impl
+    #+BEGIN_SRC ipython
+      def slice_sample(f, init, width=0.1, max_steps=100, bounds=None, **kwargs):
+        """Return samples from the density proportional to exp(f)
+
+        f - log density (up to a constant)
+        init - initial value
+        width - typical width of f
+        max_steps - maximum number of times to step out
+        bounds - support of f
+        kwargs - additional arguments to f
+
+        """
+        if bounds is None:
+          bounds = (-np.inf, np.inf)
+        # Auxiliary variable defines the slice
+        z = f(init, **kwargs) - np.random.exponential()
+        # Step out
+        left = init - width * np.random.uniform()
+        right = left + width
+        left_steps = int(np.random.uniform() * max_steps)
+        for _ in range(left_steps):
+          if left < bounds[0] or z < f(left, **kwargs):
+            break
+          left -= width
+        left = np.clip(left, *bounds)
+        for _ in range(max_steps - left_steps):
+          if right > bounds[1] or z < f(right, **kwargs):
+            break
+          right += width
+        right = np.clip(right, *bounds)
+        # Step in
+        while right > left:
+          proposal = left + np.random.uniform() * (right - left)
+          if z < f(proposal, **kwargs):
+            return proposal
+          elif proposal < init:
+            left = proposal
+          else:
+            right = proposal
+        raise RuntimeError('failed to find an acceptable sample')
+
+      def _safe_log(x, eps=1e-8):
+        return np.log(x + eps)
+
+      def _cond_logpdf_mu(mu, lam, z, phi, delta, sigma0):
+        t = np.fmax(phi + z * delta, 1e-8)
+        return (t * _safe_log(mu) - mu * lam * t - _safe_log(mu) ** 2 / (2 * mu * sigma0 * sigma0)).sum()
+
+      def _cond_logpdf_phi(phi, lam, z, mu, delta, sigma0):
+        t = np.fmax(phi + z * delta, 1e-8)
+        return (t * _safe_log(t) + phi * _safe_log(lam) - mu * phi * lam - sp.gammaln(t) - _safe_log(phi) ** 2 / (2 * phi * sigma0 * sigma0)).sum()
+
+      def _cond_logpdf_delta(delta, lam, z, mu, phi, sigma0):
+        t = np.fmax(phi + z * delta, 1e-8)
+        return (z * delta * _safe_log(t) + z * delta * _safe_log(lam) - mu * z * delta * lam - sp.gammaln(t) - delta ** 2 / (2 * sigma0 * sigma0)).sum()
+
+      def diff_var_mcmc(x, s, z, n_samples, sigma0=10, verbose=False, trace=False):
+        assert sigma0 > 0
+        assert n_samples > 0
+        Fmu = st.lognorm(s=sigma0, scale=1)
+        Fphi = st.lognorm(s=sigma0, scale=1)
+        Fdelta = st.norm(scale=sigma0)
+        # Initialize at the MLE
+        fit0 = scmodes.ebpm.ebpm_gamma(x, s)
+        mu = np.exp(fit0[0])
+        if np.isfinite(fit0[1]):
+          phi = np.exp(-fit0[1])
+        else:
+          raise RuntimeError("data are not consistent with non-zero variance")
+        delta = 0
+        lam = x / s
+        samples = []
+        log_joint_trace = []
+        for i in range(n_samples):
+          samples.append((mu, phi, delta))
+          # p(lam | .) is analytic
+          t = np.fmax(phi + z * delta, 1e-8)
+          lam = np.fmax(st.gamma(a=x + t, scale=1 / (s + mu * t)).rvs(), 1e-8)
+          mu = slice_sample(_cond_logpdf_mu, init=mu, lam=lam, z=z, phi=phi, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
+          phi = slice_sample(_cond_logpdf_phi, init=phi, lam=lam, z=z, mu=mu, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
+          delta = slice_sample(_cond_logpdf_delta, init=delta, lam=lam, z=z, mu=mu, phi=phi, sigma0=sigma0)
+          if trace or verbose:
+            log_joint = (st.poisson(mu=s * lam).logpmf(x).sum()
+                         + st.gamma(a=t, scale=mu * t).logpdf(lam).sum()
+                         + Fmu.logpdf(mu)
+                         + Fphi.logpdf(phi)
+                         + Fdelta.logpdf(delta))
+            assert np.isfinite(log_joint)
+            if trace:
+              log_joint_trace.append(log_joint)
+            if verbose:
+              print(f'sample {i}: {log_joint}')
+        return np.array(samples).reshape(-1, 3), log_joint_trace
+    #+END_SRC
+
+    #+RESULTS: slice-impl
+    :RESULTS:
+    # Out[65]:
+    :END:
 
 ** Data sets
    :PROPERTIES:
@@ -1819,8 +1836,9 @@
    :END:
 
 ** Variational inference
+*** Null simulation
 
-   Simulate from the model, fixing \(\delta = 0\).
+   Simulate from the model, fixing \(\delmu = \delphi = 0\).
 
    #+BEGIN_SRC ipython
      rng = np.random.default_rng(1)
@@ -1908,7 +1926,7 @@
    [[file:figure/diff-var.org/vi-ex0-fit.png]]
    :END:
 
-   Compute the lfsr for DE and DV.
+   Report the LFSR for DE/DD.
 
    #+BEGIN_SRC ipython
      min(st.norm(*m.diff_mean).cdf(0), st.norm(*m.diff_mean).sf(0))
@@ -1929,3 +1947,236 @@
    # Out[95]:
    : array([0.28662401])
    :END:
+
+*** DE
+
+   Simulate data under differential expression, but not differential
+   dispersion.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 500
+     z = np.zeros(2 * n, dtype=bool)
+     z[:n] = 1
+     log_mean = -10
+     log_inv_disp = -0.5
+     diff_mean = np.log(2)
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp - z * diff_mean), size=2 * n)
+     s = np.full(2 * n, 1e5)
+     x = rng.poisson(s * lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[46]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex1.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp - diff_mean))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c=cm(1), lw=1)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[48]:
+   [[file:figure/diff-var.org/vi-ex1.png]]
+   :END:
+
+   Fit the model.
+
+   #+BEGIN_SRC ipython :async t
+     n_epochs = 2000
+     n_samples = 10
+     run = 1
+     fit0 = scmodes.ebpm.ebpm_gamma(x, s)
+     torch.manual_seed(run)
+     m = DiffVarExprModel(
+       prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
+       prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
+     m.fit(
+       torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(z.reshape(-1, 1), dtype=torch.float),
+       n_epochs=n_epochs,
+       n_samples=n_samples,
+       log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_2fold_{n_epochs}_{n_samples}_{run}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[64]:
+   : DiffVarExprModel()
+   :END:
+
+   Plot the fit.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex1-fit.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(
+       n=np.exp(m.log_inv_disp[0] + m.diff_inv_disp[0]),
+       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] + m.diff_mean[0] + m.diff_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(
+       n=np.exp(m.log_inv_disp[0]),
+       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls='--')
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[78]:
+   [[file:figure/diff-var.org/vi-ex1-fit.png]]
+   :END:
+
+   Report the lfsr for DE/DD.
+
+   #+BEGIN_SRC ipython
+     pd.Series({
+       'de': m.lfsr_diff_mean[0],
+       'dd': m.lfsr_diff_inv_disp[0]
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[80]:
+   #+BEGIN_EXAMPLE
+     de    2.649849e-25
+     dd    2.186703e-01
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+*** DD
+
+   Simulate data under differential dispersion, but not differential
+   expression.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 500
+     z = np.zeros(2 * n, dtype=bool)
+     z[:n] = 1
+     log_mean = -10
+     log_inv_disp = -0.5
+     diff_inv_disp = np.log(2)
+     lam = rng.gamma(shape=np.exp(log_inv_disp + z * diff_inv_disp), scale=np.exp(log_mean - log_inv_disp - z * diff_inv_disp), size=2 * n)
+     s = np.full(2 * n, 1e5)
+     x = rng.poisson(s * lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[90]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex2.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp + diff_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp - diff_inv_disp))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c=cm(1), lw=1)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[97]:
+   [[file:figure/diff-var.org/vi-ex2.png]]
+   :END:
+
+   Fit the model.
+
+   #+BEGIN_SRC ipython :async t
+     n_epochs = 2000
+     n_samples = 10
+     run = 0
+     fit0 = scmodes.ebpm.ebpm_gamma(x, s)
+     torch.manual_seed(run)
+     m = DiffVarExprModel(
+       prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
+       prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
+     m.fit(
+       torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(z.reshape(-1, 1), dtype=torch.float),
+       n_epochs=n_epochs,
+       n_samples=n_samples,
+       log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_dd_2fold_{n_epochs}_{n_samples}_{run}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[98]:
+   : DiffVarExprModel()
+   :END:
+
+   Plot the fit.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex2-fit.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(
+       n=np.exp(m.log_inv_disp[0] - m.diff_inv_disp[0]),
+       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] + m.diff_mean[0] + m.diff_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(
+       n=np.exp(m.log_inv_disp[0]),
+       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls='--')
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[123]:
+   [[file:figure/diff-var.org/vi-ex2-fit.png]]
+   :END:
+
+   Report the lfsr for DE/DD.
+
+   #+BEGIN_SRC ipython
+     pd.Series({
+       'de': m.lfsr_diff_mean[0],
+       'dd': m.lfsr_diff_inv_disp[0]
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[105]:
+   #+BEGIN_EXAMPLE
+     de    3.532351e-01
+     dd    6.212617e-22
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+

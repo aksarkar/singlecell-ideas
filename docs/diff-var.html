@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-11-05 Thu 13:13 -->
+<!-- 2020-11-05 Thu 13:28 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -273,7 +273,7 @@ for the JavaScript code in this tag.
 <li><a href="#mean-disp-rel">Mean-dispersion relationship</a></li>
 <li><a href="#null-sim">Null simulation</a></li>
 <li><a href="#org8c5fc24">Fitting kinetic models directly</a></li>
-<li><a href="#org60d2b30">Variational inference</a></li>
+<li><a href="#orgdbeda8d">Variational inference</a></li>
 <li><a href="#org7280499">Slice within Gibbs</a></li>
 </ul>
 </li>
@@ -678,7 +678,7 @@ In a Bayesian framework, we re-parameterize the model in terms of the
 difference in mean \(\delmu\) and dispersion \(\delphi\), and estimate the
 posterior distribution \(p(\delmu, \delphi \mid \vx, \vs, \vz)\). Using all
 of the data to estimate a Gamma expression model \(\mu_0, \phi_0\), we can
-form informative priors on \(\vtheta = (\mu, \phi, \delmu, \delphi)\).
+form informative priors on \(\vtheta = (\ln\mu, \ln\phi, \delmu, \delphi)\).
 </p>
 
 \begin{align}
@@ -691,16 +691,16 @@ form informative priors on \(\vtheta = (\mu, \phi, \delmu, \delphi)\).
 \end{align}
 </div>
 
-<div id="outline-container-org1f79f33" class="outline-4">
-<h4 id="org1f79f33">Variational inference</h4>
-<div class="outline-text-4" id="text-org1f79f33">
+<div id="outline-container-org901572d" class="outline-4">
+<h4 id="org901572d">Variational inference</h4>
+<div class="outline-text-4" id="text-org901572d">
 <p>
 We can use variational inference to obtain an approximate posterior
-\(q(\delphi) \approx p(\delphi \mid \vx, \vs)\), assuming 
+\(q(\delphi) \approx p(\delphi \mid \vx, \vs, \vz)\), assuming 
 </p>
 
 \begin{equation}
-  q(\vtheta) = q(\mu)q(\phi)q(\delmu)q(\delphi)
+  q(\vtheta) = q(\ln\mu)q(\ln\phi)q(\delmu)q(\delphi)
 \end{equation}
 
 <p>
@@ -710,13 +710,7 @@ same family as the corresponding prior.
 </p>
 
 <p>
-<i>Remark 1:</i> The exact posterior \(q(\lambda_i) = p(\lambda_i \mid x, s,
-   \cdot)\) is analytic due to Poisson-Gamma conjugacy, so it is handled
-separately from the approximation.
-</p>
-
-<p>
-<i>Remark 2:</i> Assuming each factor \(q\) is in some simple parametric family
+<i>Remark:</i> Assuming each factor \(q\) is in some simple parametric family
 might lead to underestimates of the posterior variance, which will need to
 be verified.
 </p>
@@ -726,10 +720,9 @@ To address the fact that the prior is non-conjugate, we can optimize a
 stochastic objective whose expectation is the ELBO,
 </p>
 
-\begin{multline}
-  \ell = \E_{q(\mu, \phi, \delta)}\left[\sum_i \ln p(x_i \mid s_i, z_i, \mu, \phi, \delta)\right]\\
-  - \KL(q(\mu) \Vert p(\mu)) - \KL(q(\phi) \Vert p(\phi)) - \KL(q(\delmu) \Vert p(\delmu)) - \KL(q(\delphi) \Vert p(\delphi)),
-\end{multline}
+\begin{equation}
+  \ell = \E_{q(\vtheta)}\left[\sum_i \ln p(x_i \mid s_i, z_i, \vtheta)\right] - \sum_{\theta \in \vtheta} \KL(q(\theta) \Vert p(\theta)),
+\end{equation}
 
 <p>
 where the KL terms are analytic, and the first expectation is computed using
@@ -874,9 +867,10 @@ Letting
 and marginalizing over \(\lambda_i\), the log joint probability
 </p>
 
-\begin{equation}
-  \ln p(x_i, \mu, \phi, \delmu, \delphi \mid s_i, z_i) = x_i \ln \left(\frac{s_i}{s_i + b_i}\right) + a_i \ln \left(\frac{b_i}{s_i + b_i}\right) + \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i) - \ln\Gamma(x_i + 1) - \frac{(\ln\mu - \ln\mu_0)^2}{2\mu} - \frac{(\ln\phi - \ln\phi_0)^2}{2\phi},
-\end{equation}
+\begin{multline}
+  \ln p(x_i, \vtheta \mid s_i, z_i) = x_i \ln \left(\frac{s_i}{s_i + b_i}\right) + a_i \ln \left(\frac{b_i}{s_i + b_i}\right) + \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i) - \ln\Gamma(x_i + 1)\\
+  - \frac{(\ln\mu - \ln\mu_0)^2}{2} - \frac{(\ln\phi - \ln\phi_0)^2}{2} - \frac{\delmu^2}{2} - \frac{\delphi^2}{2} + \const,
+\end{multline}
 
 <p>
 and the log conditional probabilities (up to a constant) are
@@ -894,7 +888,7 @@ where
 </p>
 
 \begin{align}
-  u_i &\triangleq -x_i \ln (s_i + b_i) + a_i \ln \b_i - a_i \ln (s_i + b_i)\\
+  u_i &\triangleq -x_i \ln (s_i + b_i) + a_i \ln b_i - a_i \ln (s_i + b_i)\\
   v_i &\triangleq \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i)
 \end{align}
 
@@ -1129,8 +1123,8 @@ averaging over all 53 individuals.
 </div>
 </div>
 
-<div id="outline-container-org7457c32" class="outline-3">
-<h3 id="null-sim"><a id="org7457c32"></a>Null simulation</h3>
+<div id="outline-container-orgf17ad4f" class="outline-3">
+<h3 id="null-sim"><a id="orgf17ad4f"></a>Null simulation</h3>
 <div class="outline-text-3" id="text-null-sim">
 <p>
 Randomly split a homogeneous sample into two groups to generate null data
@@ -2044,13 +2038,13 @@ fig.tight_layout()
 </div>
 </div>
 </div>
-<div id="outline-container-org60d2b30" class="outline-3">
-<h3 id="org60d2b30">Variational inference</h3>
-<div class="outline-text-3" id="text-org60d2b30">
+<div id="outline-container-orgdbeda8d" class="outline-3">
+<h3 id="orgdbeda8d">Variational inference</h3>
+<div class="outline-text-3" id="text-orgdbeda8d">
 </div>
-<div id="outline-container-orgdd5773c" class="outline-4">
-<h4 id="orgdd5773c">Null simulation</h4>
-<div class="outline-text-4" id="text-orgdd5773c">
+<div id="outline-container-orgfd6ce8b" class="outline-4">
+<h4 id="orgfd6ce8b">Null simulation</h4>
+<div class="outline-text-4" id="text-orgfd6ce8b">
 <p>
 Simulate from the model, fixing \(\delmu = \delphi = 0\).
 </p>
@@ -2598,7 +2592,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-11-05 Thu 13:13</p>
+<p class="date">Created: 2020-11-05 Thu 13:28</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

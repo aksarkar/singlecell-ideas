@@ -358,7 +358,7 @@
    difference in mean \(\delmu\) and dispersion \(\delphi\), and estimate the
    posterior distribution \(p(\delmu, \delphi \mid \vx, \vs, \vz)\). Using all
    of the data to estimate a Gamma expression model \(\mu_0, \phi_0\), we can
-   form informative priors on \(\vtheta = (\mu, \phi, \delmu, \delphi)\).
+   form informative priors on \(\vtheta = (\ln\mu, \ln\phi, \delmu, \delphi)\).
 
    \begin{align}
      x_i \mid s_i, \lambda_i &\sim \Poi(s_i \lambda_i)\\
@@ -372,31 +372,26 @@
 *** Variational inference
 
    We can use variational inference to obtain an approximate posterior
-   \(q(\delphi) \approx p(\delphi \mid \vx, \vs)\), assuming 
+   \(q(\delphi) \approx p(\delphi \mid \vx, \vs, \vz)\), assuming 
 
    \begin{equation}
-     q(\vtheta) = q(\mu)q(\phi)q(\delmu)q(\delphi)
+     q(\vtheta) = q(\ln\mu)q(\ln\phi)q(\delmu)q(\delphi)
    \end{equation}
 
    It is easy to show that the optimal \(q\) -- assuming no constraints -- are
    non-standard distributions, so we will instead assume each \(q\) is in the
    same family as the corresponding prior.
 
-   /Remark 1:/ The exact posterior \(q(\lambda_i) = p(\lambda_i \mid x, s,
-   \cdot)\) is analytic due to Poisson-Gamma conjugacy, so it is handled
-   separately from the approximation.
-
-   /Remark 2:/ Assuming each factor \(q\) is in some simple parametric family
+   /Remark:/ Assuming each factor \(q\) is in some simple parametric family
    might lead to underestimates of the posterior variance, which will need to
    be verified.
 
    To address the fact that the prior is non-conjugate, we can optimize a
    stochastic objective whose expectation is the ELBO,
 
-   \begin{multline}
-     \ell = \E_{q(\mu, \phi, \delta)}\left[\sum_i \ln p(x_i \mid s_i, z_i, \mu, \phi, \delta)\right]\\
-     - \KL(q(\mu) \Vert p(\mu)) - \KL(q(\phi) \Vert p(\phi)) - \KL(q(\delmu) \Vert p(\delmu)) - \KL(q(\delphi) \Vert p(\delphi)),
-   \end{multline}
+   \begin{equation}
+     \ell = \E_{q(\vtheta)}\left[\sum_i \ln p(x_i \mid s_i, z_i, \vtheta)\right] - \sum_{\theta \in \vtheta} \KL(q(\theta) \Vert p(\theta)),
+   \end{equation}
 
    where the KL terms are analytic, and the first expectation is computed using
    a Monte Carlo integral and a differentiable re-parameterization (Kingma and
@@ -535,9 +530,10 @@
 
     and marginalizing over \(\lambda_i\), the log joint probability
 
-    \begin{equation}
-      \ln p(x_i, \mu, \phi, \delmu, \delphi \mid s_i, z_i) = x_i \ln \left(\frac{s_i}{s_i + b_i}\right) + a_i \ln \left(\frac{b_i}{s_i + b_i}\right) + \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i) - \ln\Gamma(x_i + 1) - \frac{(\ln\mu - \ln\mu_0)^2}{2\mu} - \frac{(\ln\phi - \ln\phi_0)^2}{2\phi},
-    \end{equation}
+    \begin{multline}
+      \ln p(x_i, \vtheta \mid s_i, z_i) = x_i \ln \left(\frac{s_i}{s_i + b_i}\right) + a_i \ln \left(\frac{b_i}{s_i + b_i}\right) + \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i) - \ln\Gamma(x_i + 1)\\
+      - \frac{(\ln\mu - \ln\mu_0)^2}{2} - \frac{(\ln\phi - \ln\phi_0)^2}{2} - \frac{\delmu^2}{2} - \frac{\delphi^2}{2} + \const,
+    \end{multline}
 
     and the log conditional probabilities (up to a constant) are
 
@@ -551,7 +547,7 @@
     where
 
     \begin{align}
-      u_i &\triangleq -x_i \ln (s_i + b_i) + a_i \ln \b_i - a_i \ln (s_i + b_i)\\
+      u_i &\triangleq -x_i \ln (s_i + b_i) + a_i \ln b_i - a_i \ln (s_i + b_i)\\
       v_i &\triangleq \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i)
     \end{align}
 

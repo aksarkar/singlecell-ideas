@@ -394,13 +394,13 @@
    stochastic objective whose expectation is the ELBO,
 
    \begin{multline}
-     \ell = \E_{q(\mu, \phi, \delta)}\left[\sum_i \E_{q(\lambda_i)}[\ln p(x_i \mid s_i, \lambda_i)] - \KL(q(\lambda_i) \Vert p(\lambda_i \mid z_i, \mu, \phi, \delta))\right]\\
+     \ell = \E_{q(\mu, \phi, \delta)}\left[\sum_i \ln p(x_i \mid s_i, z_i, \mu, \phi, \delta)\right]\\
      - \KL(q(\mu) \Vert p(\mu)) - \KL(q(\phi) \Vert p(\phi)) - \KL(q(\delmu) \Vert p(\delmu)) - \KL(q(\delphi) \Vert p(\delphi)),
    \end{multline}
 
-   where the KL terms and expectations with respect to \(q(\lambda_i)\) are all
-   analytic, and the first (outer) expectation is computed using a Monte Carlo
-   integral and a differentiable re-parameterization (Kingma and Welling 2014).
+   where the KL terms are analytic, and the first expectation is computed using
+   a Monte Carlo integral and a differentiable re-parameterization (Kingma and
+   Welling 2014).
 
    #+NAME: vi-impl
    #+BEGIN_SRC ipython
@@ -448,19 +448,16 @@
          b = torch.exp(-log_mean.T + log_inv_disp.T - z @ (diff_mean + diff_inv_disp).T)
          assert torch.isfinite(a).all()
          assert torch.isfinite(b).all()
-         # E[λ], [x.shape[0], n_samples]
-         pm = (x + a) / (s + b)
-         # E[ln λ], [x.shape[0], n_samples]
-         plm = torch.digamma(x + a) - torch.log(s + b)
-         assert plm.shape == torch.Size([x.shape[0], n_samples])
-         kl_lam = _kl(torch.distributions.Gamma(x + a, s + b), torch.distributions.Gamma(a, b)).mean(dim=1).sum()
-         assert kl_lam >= 0
-         err = (x * (torch.log(s) + plm) - s * pm - torch.lgamma(x + 1)).mean(dim=1).sum()
+         err = (x * torch.log(s / b)
+                - x * torch.log(1 + s / b)
+                - a * torch.log(1 + s / b)
+                + torch.lgamma(x + a)
+                - torch.lgamma(a)
+                - torch.lgamma(x + 1)).mean(dim=1).sum()
          assert err <= 0
-         elbo = err - kl_lam - kl_mean - kl_inv_disp - kl_diff_mean - kl_diff_inv_disp
+         elbo = err - kl_mean - kl_inv_disp - kl_diff_mean - kl_diff_inv_disp
          if writer is not None:
            writer.add_scalar('loss/err', err, global_step)
-           writer.add_scalar('loss/kl_lam', kl_lam, global_step)
            writer.add_scalar('loss/kl_mean', kl_mean, global_step)
            writer.add_scalar('loss/kl_inv_disp', kl_inv_disp, global_step)
            writer.add_scalar('loss/kl_diff_mean', kl_diff_mean, global_step)
@@ -518,10 +515,10 @@
 
    #+RESULTS: vi-impl
    :RESULTS:
-   # Out[63]:
+   # Out[4]:
    :END:
 
-*** MCMC                                                           :noexport:
+*** MCMC
 
     To check whether VI understates the posterior variance, or if the posterior
     is actually multi-modal and VI only captures one mode, we can compare
@@ -539,14 +536,14 @@
     and marginalizing over \(\lambda_i\), the log joint probability
 
     \begin{equation}
-      \ln p(x_i, a_i, b_i, \delmu, \delphi \mid s_i, z_i) = x_i \ln \left(\frac{s_i}{s_i + b_i}\right) + a_i \ln \left(\frac{b_i}{s_i + b_i}\right) + \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i) - \ln\Gamma(x_i + 1) - \frac{(\ln\mu - \ln\mu_0)^2}{2\mu} - \frac{(\ln\phi - \ln\phi_0)^2}{2\phi},
+      \ln p(x_i, \mu, \phi, \delmu, \delphi \mid s_i, z_i) = x_i \ln \left(\frac{s_i}{s_i + b_i}\right) + a_i \ln \left(\frac{b_i}{s_i + b_i}\right) + \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i) - \ln\Gamma(x_i + 1) - \frac{(\ln\mu - \ln\mu_0)^2}{2\mu} - \frac{(\ln\phi - \ln\phi_0)^2}{2\phi},
     \end{equation}
 
     and the log conditional probabilities (up to a constant) are
 
     \begin{align}
-      \ln p(\mu \mid \cdot) &= \sum_i u_i - (\ln \mu - \ln\mu_0)^2 / (2 \mu) + \const\\
-      \ln p(\phi \mid \cdot) &= \sum_i u_i + v_i - (\ln \phi - \ln\phi_0)^2 / (200 \phi) + \const\\
+      \ln p(\ln\mu \mid \cdot) &= \sum_i u_i - (\ln \mu - \ln\mu_0)^2 / 2 + \const\\
+      \ln p(\ln\phi \mid \cdot) &= \sum_i u_i + v_i - (\ln \phi - \ln\phi_0)^2 / 2 + \const\\
       \ln p(\delmu \mid \cdot) &= \sum_i u_i - \delmu^2 / 2 + \const\\
       \ln p(\delphi \mid \cdot) &= \sum_i u_i + v_i - \delphi^2 / 2 + \const,
     \end{align}
@@ -603,60 +600,53 @@
       def _safe_log(x, eps=1e-8):
         return np.log(x + eps)
 
-      def _cond_logpdf_mu(mu, lam, z, phi, delta, sigma0):
-        t = np.fmax(phi + z * delta, 1e-8)
-        return (t * _safe_log(mu) - mu * lam * t - _safe_log(mu) ** 2 / (2 * mu * sigma0 * sigma0)).sum()
-
-      def _cond_logpdf_phi(phi, lam, z, mu, delta, sigma0):
-        t = np.fmax(phi + z * delta, 1e-8)
-        return (t * _safe_log(t) + phi * _safe_log(lam) - mu * phi * lam - sp.gammaln(t) - _safe_log(phi) ** 2 / (2 * phi * sigma0 * sigma0)).sum()
-
-      def _cond_logpdf_delta(delta, lam, z, mu, phi, sigma0):
-        t = np.fmax(phi + z * delta, 1e-8)
-        return (z * delta * _safe_log(t) + z * delta * _safe_log(lam) - mu * z * delta * lam - sp.gammaln(t) - delta ** 2 / (2 * sigma0 * sigma0)).sum()
+      def _cond_logpdf(init, u, prior_mean=0):
+        return (u - (init - prior_mean) ** 2 / 2).sum()
 
       def diff_var_mcmc(x, s, z, n_samples, sigma0=10, verbose=False, trace=False):
         assert sigma0 > 0
         assert n_samples > 0
-        Fmu = st.lognorm(s=sigma0, scale=1)
-        Fphi = st.lognorm(s=sigma0, scale=1)
-        Fdelta = st.norm(scale=sigma0)
-        # Initialize at the MLE
-        fit0 = scmodes.ebpm.ebpm_gamma(x, s)
-        mu = np.exp(fit0[0])
-        if np.isfinite(fit0[1]):
-          phi = np.exp(-fit0[1])
+        init = scmodes.ebpm.ebpm_gamma(x, s)
+        log_mean = init[0]
+        if np.isfinite(init[1]):
+          log_inv_disp = init[1]
         else:
           raise RuntimeError("data are not consistent with non-zero variance")
-        delta = 0
-        lam = x / s
+        diff_log_mean = 0
+        diff_log_inv_disp = 0
+        F_log_mean = st.norm(loc=init[0])
+        F_log_inv_disp = st.norm(loc=init[1])
+        F_diff_log_mean = st.norm(scale=sigma0)
+        F_diff_log_inv_disp = st.norm(scale=sigma0)
         samples = []
         log_joint_trace = []
         for i in range(n_samples):
-          samples.append((mu, phi, delta))
-          # p(lam | .) is analytic
-          t = np.fmax(phi + z * delta, 1e-8)
-          lam = np.fmax(st.gamma(a=x + t, scale=1 / (s + mu * t)).rvs(), 1e-8)
-          mu = slice_sample(_cond_logpdf_mu, init=mu, lam=lam, z=z, phi=phi, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
-          phi = slice_sample(_cond_logpdf_phi, init=phi, lam=lam, z=z, mu=mu, delta=delta, sigma0=sigma0, bounds=[1e-8, np.inf])
-          delta = slice_sample(_cond_logpdf_delta, init=delta, lam=lam, z=z, mu=mu, phi=phi, sigma0=sigma0)
+          samples.append((log_mean, log_inv_disp, diff_log_mean, diff_log_inv_disp))
+          a = np.exp(log_inv_disp - z * diff_log_inv_disp)
+          b = np.exp(-log_mean + log_inv_disp - z * (diff_log_mean + diff_log_inv_disp))
+          u = -x * _safe_log(s + b) - a * _safe_log(s + b) + a * _safe_log(b)
+          v = sp.gammaln(x + a) - sp.gammaln(a)
+          log_mean = slice_sample(_cond_logpdf, init=log_mean, u=u, prior_mean=F_log_mean.mean())
+          log_inv_disp = slice_sample(_cond_logpdf, init=log_inv_disp, u=u + v, prior_mean=F_log_inv_disp.mean())
+          diff_log_mean = slice_sample(_cond_logpdf, init=diff_log_mean, u=u)
+          diff_log_inv_disp = slice_sample(_cond_logpdf, init=diff_log_inv_disp, u=u + v)
           if trace or verbose:
-            log_joint = (st.poisson(mu=s * lam).logpmf(x).sum()
-                         + st.gamma(a=t, scale=mu * t).logpdf(lam).sum()
-                         + Fmu.logpdf(mu)
-                         + Fphi.logpdf(phi)
-                         + Fdelta.logpdf(delta))
+            log_joint = (st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).sum()
+                         + F_log_mean.logpdf(log_mean)
+                         + F_log_inv_disp.logpdf(log_inv_disp)
+                         + F_diff_log_mean.logpdf(diff_log_mean)
+                         + F_diff_log_inv_disp.logpdf(diff_log_inv_disp))
             assert np.isfinite(log_joint)
             if trace:
               log_joint_trace.append(log_joint)
             if verbose:
               print(f'sample {i}: {log_joint}')
-        return np.array(samples).reshape(-1, 3), log_joint_trace
+        return np.array(samples).reshape(-1, 4), log_joint_trace
     #+END_SRC
 
     #+RESULTS: slice-impl
     :RESULTS:
-    # Out[65]:
+    # Out[37]:
     :END:
 
 ** Data sets
@@ -1738,7 +1728,353 @@
     # Out[73]:
     [[file:figure/diff-var.org/ipsc-cm-COMMD6.png]]
     :END:
-** Slice within Gibbs                                              :noexport:
+** Variational inference
+*** Null simulation
+
+   Simulate from the model, fixing \(\delmu = \delphi = 0\).
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 500
+     log_mean = -10
+     log_inv_disp = -0.5
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=2 * n)
+     s = np.full(2 * n, 1e5)
+     x = rng.poisson(s * lam)
+     z = np.zeros(2 * n, dtype=bool)
+     z[:n] = 1
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex0.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c='k', lw=1)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   [[file:figure/diff-var.org/vi-ex0.png]]
+   :END:
+
+   Fit the model.
+
+   #+BEGIN_SRC ipython :async t
+     n_epochs = 2000
+     n_samples = 10
+     run = 0
+     fit0 = scmodes.ebpm.ebpm_gamma(x, s)
+     torch.manual_seed(run)
+     m = DiffVarExprModel(
+       prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
+       prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
+     m.fit(
+       torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(z.reshape(-1, 1), dtype=torch.float),
+       n_epochs=n_epochs,
+       n_samples=n_samples,
+       log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_nb_{n_epochs}_{n_samples}_{run}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   : DiffVarExprModel()
+   :END:
+
+   Plot the fit.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex0-fit.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(m.log_inv_disp[0]), p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(m.log_inv_disp[0] - m.diff_inv_disp[0]), p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] - m.diff_mean[0] - m.diff_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls='--')
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[9]:
+   [[file:figure/diff-var.org/vi-ex0-fit.png]]
+   :END:
+
+   Report the LFSR for DE/DD.
+
+   #+BEGIN_SRC ipython
+     pd.Series({
+       'de': m.lfsr_diff_mean[0],
+       'dd': m.lfsr_diff_inv_disp[0]
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   #+BEGIN_EXAMPLE
+     de    0.426195
+     dd    0.305537
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+*** DE
+
+   Simulate data under differential expression, but not differential
+   dispersion.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 500
+     z = np.zeros(2 * n, dtype=bool)
+     z[:n] = 1
+     log_mean = -10
+     log_inv_disp = -0.5
+     diff_mean = np.log(2)
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp - z * diff_mean), size=2 * n)
+     s = np.full(2 * n, 1e5)
+     x = rng.poisson(s * lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex1.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp - diff_mean))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c=cm(1), lw=1)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[12]:
+   [[file:figure/diff-var.org/vi-ex1.png]]
+   :END:
+
+   Fit the model.
+
+   #+BEGIN_SRC ipython :async t
+     n_epochs = 2000
+     n_samples = 10
+     run = 0
+     fit0 = scmodes.ebpm.ebpm_gamma(x, s)
+     torch.manual_seed(run)
+     m = DiffVarExprModel(
+       prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
+       prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
+     m.fit(
+       torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(z.reshape(-1, 1), dtype=torch.float),
+       n_epochs=n_epochs,
+       n_samples=n_samples,
+       log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_nb_2fold_{n_epochs}_{n_samples}_{run}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   : DiffVarExprModel()
+   :END:
+
+   Plot the fit.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex1-fit.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(
+       n=np.exp(m.log_inv_disp[0] + m.diff_inv_disp[0]),
+       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] + m.diff_mean[0] + m.diff_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(
+       n=np.exp(m.log_inv_disp[0]),
+       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls='--')
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[14]:
+   [[file:figure/diff-var.org/vi-ex1-fit.png]]
+   :END:
+
+   Report the lfsr for DE/DD.
+
+   #+BEGIN_SRC ipython
+     pd.Series({
+       'de': m.lfsr_diff_mean[0],
+       'dd': m.lfsr_diff_inv_disp[0]
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[15]:
+   #+BEGIN_EXAMPLE
+     de    3.836553e-25
+     dd    3.287435e-01
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+*** DD
+
+   Simulate data under differential dispersion, but not differential
+   expression.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 500
+     z = np.zeros(2 * n, dtype=bool)
+     z[:n] = 1
+     log_mean = -10
+     log_inv_disp = -0.5
+     diff_inv_disp = np.log(2)
+     lam = rng.gamma(shape=np.exp(log_inv_disp + z * diff_inv_disp), scale=np.exp(log_mean - log_inv_disp - z * diff_inv_disp), size=2 * n)
+     s = np.full(2 * n, 1e5)
+     x = rng.poisson(s * lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[16]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex2.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp + diff_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp - diff_inv_disp))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c=cm(1), lw=1)
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[17]:
+   [[file:figure/diff-var.org/vi-ex2.png]]
+   :END:
+
+   Fit the model.
+
+   #+BEGIN_SRC ipython :async t
+     n_epochs = 2000
+     n_samples = 10
+     run = 0
+     fit0 = scmodes.ebpm.ebpm_gamma(x, s)
+     torch.manual_seed(run)
+     m = DiffVarExprModel(
+       prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
+       prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
+     m.fit(
+       torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(z.reshape(-1, 1), dtype=torch.float),
+       n_epochs=n_epochs,
+       n_samples=n_samples,
+       log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_nb_dd_2fold_{n_epochs}_{n_samples}_{run}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[18]:
+   : DiffVarExprModel()
+   :END:
+
+   Plot the fit.
+
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex2-fit.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     grid = np.arange(x.max() + 2)
+     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
+     plt.plot(grid + .5, st.nbinom(
+       n=np.exp(m.log_inv_disp[0] - m.diff_inv_disp[0]),
+       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] + m.diff_mean[0] + m.diff_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
+     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
+     plt.plot(grid + .5, st.nbinom(
+       n=np.exp(m.log_inv_disp[0]),
+       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls='--')
+     plt.xlabel('Number of molecules')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   [[file:figure/diff-var.org/vi-ex2-fit.png]]
+   :END:
+
+   Report the lfsr for DE/DD.
+
+   #+BEGIN_SRC ipython
+     pd.Series({
+       'de': m.lfsr_diff_mean[0],
+       'dd': m.lfsr_diff_inv_disp[0]
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[20]:
+   #+BEGIN_EXAMPLE
+     de    3.532345e-01
+     dd    6.212102e-22
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+*** Simulation study
+
+    Look at 
+** Slice within Gibbs
+*** Null example
 
    Simulate from the model.
 
@@ -1756,7 +2092,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[103]:
+   # Out[22]:
    :END:
 
    Plot the simulated data.
@@ -1776,7 +2112,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[104]:
+   # Out[23]:
    [[file:figure/diff-var.org/mcmc-ex0.png]]
    :END:
 
@@ -1803,380 +2139,95 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[107]:
+   # Out[43]:
    [[file:figure/diff-var.org/mcmc-ex0-trace.png]]
    :END:
 
-   Plot the estimated posterior distribution.
+   Plot the estimated posterior distribution, including reference points at the
+   (pooled) MLE.
+
+   #+BEGIN_SRC ipython
+     mle = scmodes.ebpm.ebpm_gamma(x, s)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[44]:
+   :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/mcmc-ex0-post.png
      plt.clf()
-     fig, ax = plt.subplots(1, 3)
-     fig.set_size_inches(6, 2.5)
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(7.5, 2.5)
      for i, a in enumerate(ax):
        a.hist(samples[-500:,i], bins=7, density=True, color='0.7')
-     ax[0].axvline(x=np.exp(log_mean), lw=1, c='k')
-     ax[1].axvline(x=np.exp(log_inv_disp), lw=1, c='k')
+     ax[0].axvline(x=log_mean, lw=1, c='k')
+     ax[0].axvline(x=mle[0], lw=1, c='r')
+     ax[1].axvline(x=log_inv_disp, lw=1, c='k')
+     ax[1].axvline(x=mle[1], lw=1, c='r')
      ax[2].axvline(x=0, lw=1, c='k')
+     ax[3].axvline(x=0, lw=1, c='k')
      for a in ax[:-1]:
        lim = a.get_xlim()
        grid = np.linspace(lim[0], lim[1], 1000)
-       a.plot(grid, st.lognorm(s=1, scale=1).pdf(grid), lw=1, ls='--', c='k')
-     ax[0].set_xlabel(r'$\mu$')
+     ax[0].set_xlabel(r'$\ln\mu$')
      ax[0].set_ylabel('Density')
-     ax[1].set_xlabel(r'$\phi$')
-     ax[2].set_xlabel(r'$\delta$')
+     ax[1].set_xlabel(r'$\ln\phi$')
+     ax[2].set_xlabel(r'$\delta_{\mu}$')
+     ax[3].set_xlabel(r'$\delta_{\phi}$')
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[109]:
+   # Out[47]:
    [[file:figure/diff-var.org/mcmc-ex0-post.png]]
    :END:
 
-** Variational inference
-*** Null simulation
-
-   Simulate from the model, fixing \(\delmu = \delphi = 0\).
-
-   #+BEGIN_SRC ipython
-     rng = np.random.default_rng(1)
-     n = 500
-     log_mean = -10
-     log_inv_disp = -0.5
-     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=2 * n)
-     s = np.full(2 * n, 1e5)
-     x = rng.poisson(s * lam)
-     z = np.zeros(2 * n, dtype=bool)
-     z[:n] = 1
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[11]:
-   :END:
-
-   Plot the simulated data.
-
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex0.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(4, 2)
-     grid = np.arange(x.max() + 2)
-     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
-     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
-     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s * np.exp(log_mean - log_inv_disp))).pmf(grid), c='k', lw=1)
-     plt.xlabel('Number of molecules')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[17]:
-   [[file:figure/diff-var.org/vi-ex0.png]]
-   :END:
-
-   Fit the model.
+   Fit VI.
 
    #+BEGIN_SRC ipython :async t
-     n_epochs = 2000
-     n_samples = 10
-     run = 4
-     fit0 = scmodes.ebpm.ebpm_gamma(x, s)
-     torch.manual_seed(run)
      m = DiffVarExprModel(
-       prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
-       prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
+       prior_log_mean=torch.distributions.Normal(loc=mle[0], scale=1.),
+       prior_log_inv_disp=torch.distributions.Normal(loc=mle[1], scale=1.))
      m.fit(
        torch.tensor(x.reshape(-1, 1), dtype=torch.float),
-       torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+       torch.tensor(np.ones((x.shape[0], 1)) * s, dtype=torch.float),
        torch.tensor(z.reshape(-1, 1), dtype=torch.float),
-       n_epochs=n_epochs,
-       n_samples=n_samples,
-       log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_{n_epochs}_{n_samples}_{run}')
+       n_epochs=2000,
+       n_samples=10)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[82]:
+   # Out[50]:
    : DiffVarExprModel()
    :END:
 
-   Plot the fit.
+   Compare the approximate posterior to the sampled posterior.
 
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex0-fit.png
-     cm = plt.get_cmap('Dark2')
+   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/mcmc-vs-vi-ex0.png
      plt.clf()
-     plt.gcf().set_size_inches(4, 2)
-     grid = np.arange(x.max() + 2)
-     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
-     plt.plot(grid + .5, st.nbinom(n=np.exp(m.log_inv_disp[0]), p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
-     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
-     plt.plot(grid + .5, st.nbinom(n=np.exp(m.log_inv_disp[0] - m.diff_inv_disp[0]), p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] - m.diff_mean[0] - m.diff_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls='--')
-     plt.xlabel('Number of molecules')
-     plt.ylabel('Density')
-     plt.tight_layout()
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(7.5, 2.5)
+     for i, a in enumerate(ax):
+       a.hist(samples[-1000:,i], bins=9, density=True, color='0.7')
+     for k, a in zip(['log_mean', 'log_inv_disp', 'diff_mean', 'diff_inv_disp'], ax):
+       lim = a.get_xlim()
+       grid = np.linspace(lim[0], lim[1], 1000)
+       f = st.norm(*getattr(m, k)).pdf(grid)
+       a.plot(grid, f, lw=1, c='k')
+     ax[0].set_xlabel(r'$\ln\mu$')
+     ax[0].set_ylabel('Density')
+     ax[1].set_xlabel(r'$\ln\phi$')
+     ax[2].set_xlabel(r'$\delta_{\mu}$')
+     ax[3].set_xlabel(r'$\delta_{\phi}$')
+     fig.tight_layout()
+
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[93]:
-   [[file:figure/diff-var.org/vi-ex0-fit.png]]
+   # Out[57]:
+   [[file:figure/diff-var.org/mcmc-vs-vi-ex0.png]]
    :END:
-
-   Report the LFSR for DE/DD.
-
-   #+BEGIN_SRC ipython
-     min(st.norm(*m.diff_mean).cdf(0), st.norm(*m.diff_mean).sf(0))
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[94]:
-   : array([0.33308655])
-   :END:
-
-   #+BEGIN_SRC ipython
-     min(st.norm(*m.diff_inv_disp).cdf(0), st.norm(*m.diff_inv_disp).sf(0))
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[95]:
-   : array([0.28662401])
-   :END:
-
-*** DE
-
-   Simulate data under differential expression, but not differential
-   dispersion.
-
-   #+BEGIN_SRC ipython
-     rng = np.random.default_rng(1)
-     n = 500
-     z = np.zeros(2 * n, dtype=bool)
-     z[:n] = 1
-     log_mean = -10
-     log_inv_disp = -0.5
-     diff_mean = np.log(2)
-     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp - z * diff_mean), size=2 * n)
-     s = np.full(2 * n, 1e5)
-     x = rng.poisson(s * lam)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[46]:
-   :END:
-
-   Plot the simulated data.
-
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex1.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(4, 2)
-     grid = np.arange(x.max() + 2)
-     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
-     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp - diff_mean))).pmf(grid), c=cm(0), lw=1)
-     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
-     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c=cm(1), lw=1)
-     plt.xlabel('Number of molecules')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[48]:
-   [[file:figure/diff-var.org/vi-ex1.png]]
-   :END:
-
-   Fit the model.
-
-   #+BEGIN_SRC ipython :async t
-     n_epochs = 2000
-     n_samples = 10
-     run = 1
-     fit0 = scmodes.ebpm.ebpm_gamma(x, s)
-     torch.manual_seed(run)
-     m = DiffVarExprModel(
-       prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
-       prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
-     m.fit(
-       torch.tensor(x.reshape(-1, 1), dtype=torch.float),
-       torch.tensor(s.reshape(-1, 1), dtype=torch.float),
-       torch.tensor(z.reshape(-1, 1), dtype=torch.float),
-       n_epochs=n_epochs,
-       n_samples=n_samples,
-       log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_2fold_{n_epochs}_{n_samples}_{run}')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[64]:
-   : DiffVarExprModel()
-   :END:
-
-   Plot the fit.
-
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex1-fit.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(4, 2)
-     grid = np.arange(x.max() + 2)
-     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
-     plt.plot(grid + .5, st.nbinom(
-       n=np.exp(m.log_inv_disp[0] + m.diff_inv_disp[0]),
-       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] + m.diff_mean[0] + m.diff_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
-     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
-     plt.plot(grid + .5, st.nbinom(
-       n=np.exp(m.log_inv_disp[0]),
-       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls='--')
-     plt.xlabel('Number of molecules')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[78]:
-   [[file:figure/diff-var.org/vi-ex1-fit.png]]
-   :END:
-
-   Report the lfsr for DE/DD.
-
-   #+BEGIN_SRC ipython
-     pd.Series({
-       'de': m.lfsr_diff_mean[0],
-       'dd': m.lfsr_diff_inv_disp[0]
-     })
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[80]:
-   #+BEGIN_EXAMPLE
-     de    2.649849e-25
-     dd    2.186703e-01
-     dtype: float64
-   #+END_EXAMPLE
-   :END:
-
-*** DD
-
-   Simulate data under differential dispersion, but not differential
-   expression.
-
-   #+BEGIN_SRC ipython
-     rng = np.random.default_rng(1)
-     n = 500
-     z = np.zeros(2 * n, dtype=bool)
-     z[:n] = 1
-     log_mean = -10
-     log_inv_disp = -0.5
-     diff_inv_disp = np.log(2)
-     lam = rng.gamma(shape=np.exp(log_inv_disp + z * diff_inv_disp), scale=np.exp(log_mean - log_inv_disp - z * diff_inv_disp), size=2 * n)
-     s = np.full(2 * n, 1e5)
-     x = rng.poisson(s * lam)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[90]:
-   :END:
-
-   Plot the simulated data.
-
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex2.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(4, 2)
-     grid = np.arange(x.max() + 2)
-     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
-     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp + diff_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp - diff_inv_disp))).pmf(grid), c=cm(0), lw=1)
-     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
-     plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c=cm(1), lw=1)
-     plt.xlabel('Number of molecules')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[97]:
-   [[file:figure/diff-var.org/vi-ex2.png]]
-   :END:
-
-   Fit the model.
-
-   #+BEGIN_SRC ipython :async t
-     n_epochs = 2000
-     n_samples = 10
-     run = 0
-     fit0 = scmodes.ebpm.ebpm_gamma(x, s)
-     torch.manual_seed(run)
-     m = DiffVarExprModel(
-       prior_log_mean=torch.distributions.Normal(loc=fit0[0], scale=1.),
-       prior_log_inv_disp=torch.distributions.Normal(loc=fit0[1], scale=1.))
-     m.fit(
-       torch.tensor(x.reshape(-1, 1), dtype=torch.float),
-       torch.tensor(s.reshape(-1, 1), dtype=torch.float),
-       torch.tensor(z.reshape(-1, 1), dtype=torch.float),
-       n_epochs=n_epochs,
-       n_samples=n_samples,
-       log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_dd_2fold_{n_epochs}_{n_samples}_{run}')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[98]:
-   : DiffVarExprModel()
-   :END:
-
-   Plot the fit.
-
-   #+BEGIN_SRC ipython :ipyfile figure/diff-var.org/vi-ex2-fit.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(4, 2)
-     grid = np.arange(x.max() + 2)
-     plt.hist(x[z], bins=grid, color=cm(0), density=True, alpha=0.35)
-     plt.plot(grid + .5, st.nbinom(
-       n=np.exp(m.log_inv_disp[0] - m.diff_inv_disp[0]),
-       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0] + m.diff_mean[0] + m.diff_inv_disp[0]))).pmf(grid), c=cm(0), lw=1)
-     plt.hist(x[~z], bins=grid, color=cm(1), density=True, alpha=0.25)
-     plt.plot(grid + .5, st.nbinom(
-       n=np.exp(m.log_inv_disp[0]),
-       p=1 / (1 + s[0] * np.exp(m.log_mean[0] - m.log_inv_disp[0]))).pmf(grid), c=cm(1), lw=1, ls='--')
-     plt.xlabel('Number of molecules')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[123]:
-   [[file:figure/diff-var.org/vi-ex2-fit.png]]
-   :END:
-
-   Report the lfsr for DE/DD.
-
-   #+BEGIN_SRC ipython
-     pd.Series({
-       'de': m.lfsr_diff_mean[0],
-       'dd': m.lfsr_diff_inv_disp[0]
-     })
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[105]:
-   #+BEGIN_EXAMPLE
-     de    3.532351e-01
-     dd    6.212617e-22
-     dtype: float64
-   #+END_EXAMPLE
-   :END:
-

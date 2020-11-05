@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-11-03 Tue 15:29 -->
+<!-- 2020-11-05 Thu 13:13 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -273,7 +273,8 @@ for the JavaScript code in this tag.
 <li><a href="#mean-disp-rel">Mean-dispersion relationship</a></li>
 <li><a href="#null-sim">Null simulation</a></li>
 <li><a href="#org8c5fc24">Fitting kinetic models directly</a></li>
-<li><a href="#orge513a1d">Variational inference</a></li>
+<li><a href="#org60d2b30">Variational inference</a></li>
+<li><a href="#org7280499">Slice within Gibbs</a></li>
 </ul>
 </li>
 </ul>
@@ -690,9 +691,9 @@ form informative priors on \(\vtheta = (\mu, \phi, \delmu, \delphi)\).
 \end{align}
 </div>
 
-<div id="outline-container-org19c04eb" class="outline-4">
-<h4 id="org19c04eb">Variational inference</h4>
-<div class="outline-text-4" id="text-org19c04eb">
+<div id="outline-container-org1f79f33" class="outline-4">
+<h4 id="org1f79f33">Variational inference</h4>
+<div class="outline-text-4" id="text-org1f79f33">
 <p>
 We can use variational inference to obtain an approximate posterior
 \(q(\delphi) \approx p(\delphi \mid \vx, \vs)\), assuming 
@@ -726,14 +727,14 @@ stochastic objective whose expectation is the ELBO,
 </p>
 
 \begin{multline}
-  \ell = \E_{q(\mu, \phi, \delta)}\left[\sum_i \E_{q(\lambda_i)}[\ln p(x_i \mid s_i, \lambda_i)] - \KL(q(\lambda_i) \Vert p(\lambda_i \mid z_i, \mu, \phi, \delta))\right]\\
+  \ell = \E_{q(\mu, \phi, \delta)}\left[\sum_i \ln p(x_i \mid s_i, z_i, \mu, \phi, \delta)\right]\\
   - \KL(q(\mu) \Vert p(\mu)) - \KL(q(\phi) \Vert p(\phi)) - \KL(q(\delmu) \Vert p(\delmu)) - \KL(q(\delphi) \Vert p(\delphi)),
 \end{multline}
 
 <p>
-where the KL terms and expectations with respect to \(q(\lambda_i)\) are all
-analytic, and the first (outer) expectation is computed using a Monte Carlo
-integral and a differentiable re-parameterization (Kingma and Welling 2014).
+where the KL terms are analytic, and the first expectation is computed using
+a Monte Carlo integral and a differentiable re-parameterization (Kingma and
+Welling 2014).
 </p>
 
 <div class="org-src-container">
@@ -781,19 +782,16 @@ integral and a differentiable re-parameterization (Kingma and Welling 2014).
     <span class="org-variable-name">b</span> = torch.exp(-log_mean.T + log_inv_disp.T - z @ (diff_mean + diff_inv_disp).T)
     <span class="org-keyword">assert</span> torch.isfinite(a).<span class="org-builtin">all</span>()
     <span class="org-keyword">assert</span> torch.isfinite(b).<span class="org-builtin">all</span>()
-    <span class="org-comment-delimiter"># </span><span class="org-comment">E[&#955;], [x.shape[0], n_samples]</span>
-    <span class="org-variable-name">pm</span> = (x + a) / (s + b)
-    <span class="org-comment-delimiter"># </span><span class="org-comment">E[ln &#955;], [x.shape[0], n_samples]</span>
-    <span class="org-variable-name">plm</span> = torch.digamma(x + a) - torch.log(s + b)
-    <span class="org-keyword">assert</span> plm.shape == torch.Size([x.shape[0], n_samples])
-    <span class="org-variable-name">kl_lam</span> = _kl(torch.distributions.Gamma(x + a, s + b), torch.distributions.Gamma(a, b)).mean(dim=1).<span class="org-builtin">sum</span>()
-    <span class="org-keyword">assert</span> kl_lam &gt;= 0
-    <span class="org-variable-name">err</span> = (x * (torch.log(s) + plm) - s * pm - torch.lgamma(x + 1)).mean(dim=1).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">err</span> = (x * torch.log(s / b)
+           - x * torch.log(1 + s / b)
+           - a * torch.log(1 + s / b)
+           + torch.lgamma(x + a)
+           - torch.lgamma(a)
+           - torch.lgamma(x + 1)).mean(dim=1).<span class="org-builtin">sum</span>()
     <span class="org-keyword">assert</span> err &lt;= 0
-    <span class="org-variable-name">elbo</span> = err - kl_lam - kl_mean - kl_inv_disp - kl_diff_mean - kl_diff_inv_disp
+    <span class="org-variable-name">elbo</span> = err - kl_mean - kl_inv_disp - kl_diff_mean - kl_diff_inv_disp
     <span class="org-keyword">if</span> writer <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
       writer.add_scalar(<span class="org-string">'loss/err'</span>, err, global_step)
-      writer.add_scalar(<span class="org-string">'loss/kl_lam'</span>, kl_lam, global_step)
       writer.add_scalar(<span class="org-string">'loss/kl_mean'</span>, kl_mean, global_step)
       writer.add_scalar(<span class="org-string">'loss/kl_inv_disp'</span>, kl_inv_disp, global_step)
       writer.add_scalar(<span class="org-string">'loss/kl_diff_mean'</span>, kl_diff_mean, global_step)
@@ -847,6 +845,145 @@ integral and a differentiable re-parameterization (Kingma and Welling 2014).
   <span class="org-keyword">def</span> <span class="org-function-name">lfsr_diff_inv_disp</span>(<span class="org-keyword">self</span>):
     <span class="org-variable-name">loc</span>, <span class="org-variable-name">scale</span> = <span class="org-keyword">self</span>.diff_inv_disp
     <span class="org-keyword">return</span> <span class="org-builtin">min</span>(st.norm(loc, scale).cdf(0), st.norm(loc, scale).sf(0))
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgbe415fd" class="outline-4">
+<h4 id="orgbe415fd">MCMC</h4>
+<div class="outline-text-4" id="text-orgbe415fd">
+<p>
+To check whether VI understates the posterior variance, or if the posterior
+is actually multi-modal and VI only captures one mode, we can compare
+against a collapsed Gibbs sampler, using slice sampling to sample from
+non-standard conditional densities
+(<a href="https://projecteuclid.org/euclid.aos/1056562461">Neal 2003</a>).
+</p>
+
+<p>
+Letting
+</p>
+
+\begin{align}
+  a_i &\triangleq \exp(-\ln\phi - z_i \delphi)\\
+  b_i &\triangleq \exp(-\ln\mu - \ln\phi - z_i (\delmu + \delphi)),
+\end{align}
+
+<p>
+and marginalizing over \(\lambda_i\), the log joint probability
+</p>
+
+\begin{equation}
+  \ln p(x_i, \mu, \phi, \delmu, \delphi \mid s_i, z_i) = x_i \ln \left(\frac{s_i}{s_i + b_i}\right) + a_i \ln \left(\frac{b_i}{s_i + b_i}\right) + \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i) - \ln\Gamma(x_i + 1) - \frac{(\ln\mu - \ln\mu_0)^2}{2\mu} - \frac{(\ln\phi - \ln\phi_0)^2}{2\phi},
+\end{equation}
+
+<p>
+and the log conditional probabilities (up to a constant) are
+</p>
+
+\begin{align}
+  \ln p(\ln\mu \mid \cdot) &= \sum_i u_i - (\ln \mu - \ln\mu_0)^2 / 2 + \const\\
+  \ln p(\ln\phi \mid \cdot) &= \sum_i u_i + v_i - (\ln \phi - \ln\phi_0)^2 / 2 + \const\\
+  \ln p(\delmu \mid \cdot) &= \sum_i u_i - \delmu^2 / 2 + \const\\
+  \ln p(\delphi \mid \cdot) &= \sum_i u_i + v_i - \delphi^2 / 2 + \const,
+\end{align}
+
+<p>
+where
+</p>
+
+\begin{align}
+  u_i &\triangleq -x_i \ln (s_i + b_i) + a_i \ln \b_i - a_i \ln (s_i + b_i)\\
+  v_i &\triangleq \ln\Gamma(x_i + a_i) - \ln\Gamma(a_i)
+\end{align}
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org4079dd5"><span class="org-keyword">def</span> <span class="org-function-name">slice_sample</span>(f, init, width=0.1, max_steps=100, bounds=<span class="org-constant">None</span>, **kwargs):
+  <span class="org-doc">"""Return samples from the density proportional to exp(f)</span>
+
+<span class="org-doc">  f - log density (up to a constant)</span>
+<span class="org-doc">  init - initial value</span>
+<span class="org-doc">  width - typical width of f</span>
+<span class="org-doc">  max_steps - maximum number of times to step out</span>
+<span class="org-doc">  bounds - support of f</span>
+<span class="org-doc">  kwargs - additional arguments to f</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-keyword">if</span> bounds <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">bounds</span> = (-np.inf, np.inf)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Auxiliary variable defines the slice</span>
+  <span class="org-variable-name">z</span> = f(init, **kwargs) - np.random.exponential()
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Step out</span>
+  <span class="org-variable-name">left</span> = init - width * np.random.uniform()
+  <span class="org-variable-name">right</span> = left + width
+  <span class="org-variable-name">left_steps</span> = <span class="org-builtin">int</span>(np.random.uniform() * max_steps)
+  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(left_steps):
+    <span class="org-keyword">if</span> left &lt; bounds[0] <span class="org-keyword">or</span> z &lt; f(left, **kwargs):
+      <span class="org-keyword">break</span>
+    <span class="org-variable-name">left</span> -= width
+  <span class="org-variable-name">left</span> = np.clip(left, *bounds)
+  <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_steps - left_steps):
+    <span class="org-keyword">if</span> right &gt; bounds[1] <span class="org-keyword">or</span> z &lt; f(right, **kwargs):
+      <span class="org-keyword">break</span>
+    <span class="org-variable-name">right</span> += width
+  <span class="org-variable-name">right</span> = np.clip(right, *bounds)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Step in</span>
+  <span class="org-keyword">while</span> right &gt; left:
+    <span class="org-variable-name">proposal</span> = left + np.random.uniform() * (right - left)
+    <span class="org-keyword">if</span> z &lt; f(proposal, **kwargs):
+      <span class="org-keyword">return</span> proposal
+    <span class="org-keyword">elif</span> proposal &lt; init:
+      <span class="org-variable-name">left</span> = proposal
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">right</span> = proposal
+  <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to find an acceptable sample'</span>)
+
+<span class="org-keyword">def</span> <span class="org-function-name">_safe_log</span>(x, eps=1e-8):
+  <span class="org-keyword">return</span> np.log(x + eps)
+
+<span class="org-keyword">def</span> <span class="org-function-name">_cond_logpdf</span>(init, u, prior_mean=0):
+  <span class="org-keyword">return</span> (u - (init - prior_mean) ** 2 / 2).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">diff_var_mcmc</span>(x, s, z, n_samples, sigma0=10, verbose=<span class="org-constant">False</span>, trace=<span class="org-constant">False</span>):
+  <span class="org-keyword">assert</span> sigma0 &gt; 0
+  <span class="org-keyword">assert</span> n_samples &gt; 0
+  <span class="org-variable-name">init</span> = scmodes.ebpm.ebpm_gamma(x, s)
+  <span class="org-variable-name">log_mean</span> = init[0]
+  <span class="org-keyword">if</span> np.isfinite(init[1]):
+    <span class="org-variable-name">log_inv_disp</span> = init[1]
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">"data are not consistent with non-zero variance"</span>)
+  <span class="org-variable-name">diff_log_mean</span> = 0
+  <span class="org-variable-name">diff_log_inv_disp</span> = 0
+  <span class="org-variable-name">F_log_mean</span> = st.norm(loc=init[0])
+  <span class="org-variable-name">F_log_inv_disp</span> = st.norm(loc=init[1])
+  <span class="org-variable-name">F_diff_log_mean</span> = st.norm(scale=sigma0)
+  <span class="org-variable-name">F_diff_log_inv_disp</span> = st.norm(scale=sigma0)
+  <span class="org-variable-name">samples</span> = []
+  <span class="org-variable-name">log_joint_trace</span> = []
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_samples):
+    samples.append((log_mean, log_inv_disp, diff_log_mean, diff_log_inv_disp))
+    <span class="org-variable-name">a</span> = np.exp(log_inv_disp - z * diff_log_inv_disp)
+    <span class="org-variable-name">b</span> = np.exp(-log_mean + log_inv_disp - z * (diff_log_mean + diff_log_inv_disp))
+    <span class="org-variable-name">u</span> = -x * _safe_log(s + b) - a * _safe_log(s + b) + a * _safe_log(b)
+    <span class="org-variable-name">v</span> = sp.gammaln(x + a) - sp.gammaln(a)
+    <span class="org-variable-name">log_mean</span> = slice_sample(_cond_logpdf, init=log_mean, u=u, prior_mean=F_log_mean.mean())
+    <span class="org-variable-name">log_inv_disp</span> = slice_sample(_cond_logpdf, init=log_inv_disp, u=u + v, prior_mean=F_log_inv_disp.mean())
+    <span class="org-variable-name">diff_log_mean</span> = slice_sample(_cond_logpdf, init=diff_log_mean, u=u)
+    <span class="org-variable-name">diff_log_inv_disp</span> = slice_sample(_cond_logpdf, init=diff_log_inv_disp, u=u + v)
+    <span class="org-keyword">if</span> trace <span class="org-keyword">or</span> verbose:
+      <span class="org-variable-name">log_joint</span> = (st.nbinom(n=a, p=1 / (1 + s / b)).logpmf(x).<span class="org-builtin">sum</span>()
+                   + F_log_mean.logpdf(log_mean)
+                   + F_log_inv_disp.logpdf(log_inv_disp)
+                   + F_diff_log_mean.logpdf(diff_log_mean)
+                   + F_diff_log_inv_disp.logpdf(diff_log_inv_disp))
+      <span class="org-keyword">assert</span> np.isfinite(log_joint)
+      <span class="org-keyword">if</span> trace:
+        log_joint_trace.append(log_joint)
+      <span class="org-keyword">if</span> verbose:
+        <span class="org-keyword">print</span>(f<span class="org-string">'sample {i}: {log_joint}'</span>)
+  <span class="org-keyword">return</span> np.array(samples).reshape(-1, 4), log_joint_trace
 </pre>
 </div>
 </div>
@@ -992,8 +1129,8 @@ averaging over all 53 individuals.
 </div>
 </div>
 
-<div id="outline-container-org6f92f80" class="outline-3">
-<h3 id="null-sim"><a id="org6f92f80"></a>Null simulation</h3>
+<div id="outline-container-org7457c32" class="outline-3">
+<h3 id="null-sim"><a id="org7457c32"></a>Null simulation</h3>
 <div class="outline-text-3" id="text-null-sim">
 <p>
 Randomly split a homogeneous sample into two groups to generate null data
@@ -1907,13 +2044,13 @@ fig.tight_layout()
 </div>
 </div>
 </div>
-<div id="outline-container-orge513a1d" class="outline-3">
-<h3 id="orge513a1d">Variational inference</h3>
-<div class="outline-text-3" id="text-orge513a1d">
+<div id="outline-container-org60d2b30" class="outline-3">
+<h3 id="org60d2b30">Variational inference</h3>
+<div class="outline-text-3" id="text-org60d2b30">
 </div>
-<div id="outline-container-orge79fa9c" class="outline-4">
-<h4 id="orge79fa9c">Null simulation</h4>
-<div class="outline-text-4" id="text-orge79fa9c">
+<div id="outline-container-orgdd5773c" class="outline-4">
+<h4 id="orgdd5773c">Null simulation</h4>
+<div class="outline-text-4" id="text-orgdd5773c">
 <p>
 Simulate from the model, fixing \(\delmu = \delphi = 0\).
 </p>
@@ -1942,7 +2079,7 @@ plt.gcf().set_size_inches(4, 2)
 <span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 2)
 plt.hist(x[z], bins=grid, color=cm(0), density=<span class="org-constant">True</span>, alpha=0.35)
 plt.hist(x[~z], bins=grid, color=cm(1), density=<span class="org-constant">True</span>, alpha=0.25)
-plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s * np.exp(log_mean - log_inv_disp))).pmf(grid), c=<span class="org-string">'k'</span>, lw=1)
+plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), c=<span class="org-string">'k'</span>, lw=1)
 plt.xlabel(<span class="org-string">'Number of molecules'</span>)
 plt.ylabel(<span class="org-string">'Density'</span>)
 plt.tight_layout()
@@ -1962,7 +2099,7 @@ Fit the model.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">n_epochs</span> = 2000
 <span class="org-variable-name">n_samples</span> = 10
-<span class="org-variable-name">run</span> = 4
+<span class="org-variable-name">run</span> = 0
 <span class="org-variable-name">fit0</span> = scmodes.ebpm.ebpm_gamma(x, s)
 torch.manual_seed(run)
 <span class="org-variable-name">m</span> = DiffVarExprModel(
@@ -1974,7 +2111,7 @@ m.fit(
   torch.tensor(z.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
   n_epochs=n_epochs,
   n_samples=n_samples,
-  log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_{n_epochs}_{n_samples}_{run}'</span>)
+  log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_nb_{n_epochs}_{n_samples}_{run}'</span>)
 </pre>
 </div>
 
@@ -2013,23 +2150,17 @@ Report the LFSR for DE/DD.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-builtin">min</span>(st.norm(*m.diff_mean).cdf(0), st.norm(*m.diff_mean).sf(0))
+<pre class="src src-ipython">pd.Series({
+  <span class="org-string">'de'</span>: m.lfsr_diff_mean[0],
+  <span class="org-string">'dd'</span>: m.lfsr_diff_inv_disp[0]
+})
 </pre>
 </div>
 
 <pre class="example">
-array([0.33308655])
-
-</pre>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-builtin">min</span>(st.norm(*m.diff_inv_disp).cdf(0), st.norm(*m.diff_inv_disp).sf(0))
-</pre>
-</div>
-
-<pre class="example">
-array([0.28662401])
-
+de    0.426195
+dd    0.305537
+dtype: float64
 </pre>
 </div>
 </div>
@@ -2088,7 +2219,7 @@ Fit the model.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">n_epochs</span> = 2000
 <span class="org-variable-name">n_samples</span> = 10
-<span class="org-variable-name">run</span> = 1
+<span class="org-variable-name">run</span> = 0
 <span class="org-variable-name">fit0</span> = scmodes.ebpm.ebpm_gamma(x, s)
 torch.manual_seed(run)
 <span class="org-variable-name">m</span> = DiffVarExprModel(
@@ -2100,7 +2231,7 @@ m.fit(
   torch.tensor(z.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
   n_epochs=n_epochs,
   n_samples=n_samples,
-  log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_2fold_{n_epochs}_{n_samples}_{run}'</span>)
+  log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_nb_2fold_{n_epochs}_{n_samples}_{run}'</span>)
 </pre>
 </div>
 
@@ -2151,8 +2282,8 @@ Report the lfsr for DE/DD.
 </div>
 
 <pre class="example">
-de    2.649849e-25
-dd    2.186703e-01
+de    3.836553e-25
+dd    3.287435e-01
 dtype: float64
 </pre>
 </div>
@@ -2224,7 +2355,7 @@ m.fit(
   torch.tensor(z.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
   n_epochs=n_epochs,
   n_samples=n_samples,
-  log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_dd_2fold_{n_epochs}_{n_samples}_{run}'</span>)
+  log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/diffvar/dev_nb_dd_2fold_{n_epochs}_{n_samples}_{run}'</span>)
 </pre>
 </div>
 
@@ -2275,10 +2406,191 @@ Report the lfsr for DE/DD.
 </div>
 
 <pre class="example">
-de    3.532351e-01
-dd    6.212617e-22
+de    3.532345e-01
+dd    6.212102e-22
 dtype: float64
 </pre>
+</div>
+</div>
+
+<div id="outline-container-orgfc114a5" class="outline-4">
+<h4 id="orgfc114a5">Simulation study</h4>
+<div class="outline-text-4" id="text-orgfc114a5">
+<p>
+Look at 
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org7280499" class="outline-3">
+<h3 id="org7280499">Slice within Gibbs</h3>
+<div class="outline-text-3" id="text-org7280499">
+</div>
+<div id="outline-container-orgd011c08" class="outline-4">
+<h4 id="orgd011c08">Null example</h4>
+<div class="outline-text-4" id="text-orgd011c08">
+<p>
+Simulate from the model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 500
+<span class="org-variable-name">log_mean</span> = -10
+<span class="org-variable-name">log_inv_disp</span> = -0.5
+<span class="org-variable-name">lam</span> = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=2 * n)
+<span class="org-variable-name">s</span> = 1e5
+<span class="org-variable-name">x</span> = rng.poisson(s * lam)
+<span class="org-variable-name">z</span> = np.zeros(2 * n, dtype=<span class="org-builtin">bool</span>)
+<span class="org-variable-name">z</span>[:n] = 1
+</pre>
+</div>
+
+<p>
+Plot the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(4, 2)
+<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 2)
+plt.hist(x[z], bins=grid, color=cm(0), density=<span class="org-constant">True</span>, alpha=0.35)
+plt.hist(x[~z], bins=grid, color=cm(1), density=<span class="org-constant">True</span>, alpha=0.25)
+plt.plot(grid + .5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s * np.exp(log_mean - log_inv_disp))).pmf(grid), c=<span class="org-string">'k'</span>, lw=1)
+plt.xlabel(<span class="org-string">'Number of molecules'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/mcmc-ex0.png" alt="mcmc-ex0.png">
+</p>
+</div>
+
+<p>
+Draw samples from the posterior.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">samples</span>, <span class="org-variable-name">trace</span> = diff_var_mcmc(x, s, z, n_samples=2000, trace=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+Plot the log joint over the Markov chain.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.plot(trace, lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Sample'</span>)
+plt.ylabel(<span class="org-string">'Log joint prob'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/mcmc-ex0-trace.png" alt="mcmc-ex0-trace.png">
+</p>
+</div>
+
+<p>
+Plot the estimated posterior distribution, including reference points at the
+(pooled) MLE.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mle</span> = scmodes.ebpm.ebpm_gamma(x, s)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
+fig.set_size_inches(7.5, 2.5)
+<span class="org-keyword">for</span> i, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax):
+  a.hist(samples[-500:,i], bins=7, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+ax[0].axvline(x=log_mean, lw=1, c=<span class="org-string">'k'</span>)
+ax[0].axvline(x=mle[0], lw=1, c=<span class="org-string">'r'</span>)
+ax[1].axvline(x=log_inv_disp, lw=1, c=<span class="org-string">'k'</span>)
+ax[1].axvline(x=mle[1], lw=1, c=<span class="org-string">'r'</span>)
+ax[2].axvline(x=0, lw=1, c=<span class="org-string">'k'</span>)
+ax[3].axvline(x=0, lw=1, c=<span class="org-string">'k'</span>)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax[:-1]:
+  <span class="org-variable-name">lim</span> = a.get_xlim()
+  <span class="org-variable-name">grid</span> = np.linspace(lim[0], lim[1], 1000)
+ax[0].set_xlabel(r<span class="org-string">'$\ln\mu$'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+ax[1].set_xlabel(r<span class="org-string">'$\ln\phi$'</span>)
+ax[2].set_xlabel(r<span class="org-string">'$\delta_{\mu}$'</span>)
+ax[3].set_xlabel(r<span class="org-string">'$\delta_{\phi}$'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/mcmc-ex0-post.png" alt="mcmc-ex0-post.png">
+</p>
+</div>
+
+<p>
+Fit VI.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">m</span> = DiffVarExprModel(
+  prior_log_mean=torch.distributions.Normal(loc=mle[0], scale=1.),
+  prior_log_inv_disp=torch.distributions.Normal(loc=mle[1], scale=1.))
+m.fit(
+  torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+  torch.tensor(np.ones((x.shape[0], 1)) * s, dtype=torch.<span class="org-builtin">float</span>),
+  torch.tensor(z.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+  n_epochs=2000,
+  n_samples=10)
+</pre>
+</div>
+
+<pre class="example">
+DiffVarExprModel()
+
+</pre>
+
+<p>
+Compare the approximate posterior to the sampled posterior.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
+fig.set_size_inches(7.5, 2.5)
+<span class="org-keyword">for</span> i, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax):
+  a.hist(samples[-1000:,i], bins=9, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">zip</span>([<span class="org-string">'log_mean'</span>, <span class="org-string">'log_inv_disp'</span>, <span class="org-string">'diff_mean'</span>, <span class="org-string">'diff_inv_disp'</span>], ax):
+  <span class="org-variable-name">lim</span> = a.get_xlim()
+  <span class="org-variable-name">grid</span> = np.linspace(lim[0], lim[1], 1000)
+  <span class="org-variable-name">f</span> = st.norm(*<span class="org-builtin">getattr</span>(m, k)).pdf(grid)
+  a.plot(grid, f, lw=1, c=<span class="org-string">'k'</span>)
+ax[0].set_xlabel(r<span class="org-string">'$\ln\mu$'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+ax[1].set_xlabel(r<span class="org-string">'$\ln\phi$'</span>)
+ax[2].set_xlabel(r<span class="org-string">'$\delta_{\mu}$'</span>)
+ax[3].set_xlabel(r<span class="org-string">'$\delta_{\phi}$'</span>)
+fig.tight_layout()
+
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/diff-var.org/mcmc-vs-vi-ex0.png" alt="mcmc-vs-vi-ex0.png">
+</p>
+</div>
 </div>
 </div>
 </div>
@@ -2286,7 +2598,7 @@ dtype: float64
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-11-03 Tue 15:29</p>
+<p class="date">Created: 2020-11-05 Thu 13:13</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

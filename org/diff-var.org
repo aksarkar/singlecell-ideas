@@ -2068,7 +2068,67 @@
 
 *** Simulation study
 
-    Look at 
+    Look at power at fixed lfsr.
+
+    #+BEGIN_SRC ipython    
+      def simulate(n_samples, n_mols, log_mean, log_inv_disp, diff_log_mean, diff_log_inv_disp, seed):
+        np.random.seed(seed)
+        z = np.zeros(2 * n_samples)
+        z[n_samples:] = 1
+        s = n_mols * np.ones(2 * n_samples)
+        a = np.exp(log_inv_disp - z * diff_log_inv_disp)
+        b = np.exp(-log_mean + log_inv_disp - z * (diff_log_mean + diff_log_inv_disp))
+        x = st.nbinom(n=a, p=1 / (1 + n_mols / b)).rvs(2 * n_samples)
+        return x, s, z
+
+      def fit_dev(x, s, z, n_epochs=2000, n_samples=10):
+        init = scmodes.ebpm.ebpm_gamma(x, s)
+        torch.manual_seed(run)
+        m = DiffVarExprModel(
+          prior_log_mean=torch.distributions.Normal(loc=init[0], scale=1.),
+          prior_log_inv_disp=torch.distributions.Normal(loc=init[1], scale=1.))
+        m.fit(
+          torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+          torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+          torch.tensor(z.reshape(-1, 1), dtype=torch.float),
+          n_epochs=n_epochs,
+          n_samples=n_samples)
+        return m
+
+      def evaluate_lfsr_diff_mean(n_samples, n_mols, n_trials):
+        result = []
+        for log_mean in np.linspace(-12, -6, 7):
+          for log_inv_disp in np.logspace(-4, 0, 5):
+            for diff_log_mean in np.linspace(0, np.log(2), 5):
+              for trial in range(n_trials):
+                x, s, z = simulate(n_samples, n_mols, log_mean, log_inv_disp, diff_log_mean, diff_log_inv_disp=0, seed=trial)
+                m = fit_dev(x, s, z)
+                result.append([n_samples, n_mols, log_mean, log_inv_disp, diff_log_mean, 0., trial, m.lfsr_diff_mean[0]])
+        result = pd.DataFrame(result)
+        result.columns = ['n_samples', 'n_mols', 'log_mean', 'log_inv_disp', 'diff_log_mean', 'diff_log_inv_disp', 'trial', 'lfsr']
+        return result
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[98]:
+    :END:
+
+    #+BEGIN_SRC ipython :async t
+      %%timeit -n1 -r1
+      res = evaluate_lfsr_diff_mean(500, 1e5, 1)
+      res.to_csv('temp.txt.gz', sep='\t')
+    #+END_SRC
+
+    #+RESULTS:
+    :RESULTS:
+    # Out[99]:
+    :END:
+
+    #+BEGIN_SRC ipython
+    
+    #+END_SRC
+
 ** Slice within Gibbs
 *** Null example
 
@@ -2115,11 +2175,13 @@
    Draw samples from the posterior.
 
    #+BEGIN_SRC ipython :async t
+     %%timeit -n1 -r1
      samples, trace = diff_var_mcmc(x, s, z, n_samples=2000, trace=True)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
+   # Out[58]:
    :END:
 
    Plot the log joint over the Markov chain.

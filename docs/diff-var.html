@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-11-05 Thu 13:28 -->
+<!-- 2020-11-05 Thu 17:17 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Differential variance analysis</title>
@@ -273,7 +273,7 @@ for the JavaScript code in this tag.
 <li><a href="#mean-disp-rel">Mean-dispersion relationship</a></li>
 <li><a href="#null-sim">Null simulation</a></li>
 <li><a href="#org8c5fc24">Fitting kinetic models directly</a></li>
-<li><a href="#orgdbeda8d">Variational inference</a></li>
+<li><a href="#org93f7fdd">Variational inference</a></li>
 <li><a href="#org7280499">Slice within Gibbs</a></li>
 </ul>
 </li>
@@ -691,9 +691,9 @@ form informative priors on \(\vtheta = (\ln\mu, \ln\phi, \delmu, \delphi)\).
 \end{align}
 </div>
 
-<div id="outline-container-org901572d" class="outline-4">
-<h4 id="org901572d">Variational inference</h4>
-<div class="outline-text-4" id="text-org901572d">
+<div id="outline-container-orgdbeda8d" class="outline-4">
+<h4 id="orgdbeda8d">Variational inference</h4>
+<div class="outline-text-4" id="text-orgdbeda8d">
 <p>
 We can use variational inference to obtain an approximate posterior
 \(q(\delphi) \approx p(\delphi \mid \vx, \vs, \vz)\), assuming 
@@ -1123,8 +1123,8 @@ averaging over all 53 individuals.
 </div>
 </div>
 
-<div id="outline-container-orgf17ad4f" class="outline-3">
-<h3 id="null-sim"><a id="orgf17ad4f"></a>Null simulation</h3>
+<div id="outline-container-orgfd6ce8b" class="outline-3">
+<h3 id="null-sim"><a id="orgfd6ce8b"></a>Null simulation</h3>
 <div class="outline-text-3" id="text-null-sim">
 <p>
 Randomly split a homogeneous sample into two groups to generate null data
@@ -2038,13 +2038,13 @@ fig.tight_layout()
 </div>
 </div>
 </div>
-<div id="outline-container-orgdbeda8d" class="outline-3">
-<h3 id="orgdbeda8d">Variational inference</h3>
-<div class="outline-text-3" id="text-orgdbeda8d">
+<div id="outline-container-org93f7fdd" class="outline-3">
+<h3 id="org93f7fdd">Variational inference</h3>
+<div class="outline-text-3" id="text-org93f7fdd">
 </div>
-<div id="outline-container-orgfd6ce8b" class="outline-4">
-<h4 id="orgfd6ce8b">Null simulation</h4>
-<div class="outline-text-4" id="text-orgfd6ce8b">
+<div id="outline-container-org9c1ac43" class="outline-4">
+<h4 id="org9c1ac43">Null simulation</h4>
+<div class="outline-text-4" id="text-org9c1ac43">
 <p>
 Simulate from the model, fixing \(\delmu = \delphi = 0\).
 </p>
@@ -2411,11 +2411,64 @@ dtype: float64
 <h4 id="orgfc114a5">Simulation study</h4>
 <div class="outline-text-4" id="text-orgfc114a5">
 <p>
-Look at 
+Look at power at fixed lfsr.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate</span>(n_samples, n_mols, log_mean, log_inv_disp, diff_log_mean, diff_log_inv_disp, seed):
+  np.random.seed(seed)
+  <span class="org-variable-name">z</span> = np.zeros(2 * n_samples)
+  <span class="org-variable-name">z</span>[n_samples:] = 1
+  <span class="org-variable-name">s</span> = n_mols * np.ones(2 * n_samples)
+  <span class="org-variable-name">a</span> = np.exp(log_inv_disp - z * diff_log_inv_disp)
+  <span class="org-variable-name">b</span> = np.exp(-log_mean + log_inv_disp - z * (diff_log_mean + diff_log_inv_disp))
+  <span class="org-variable-name">x</span> = st.nbinom(n=a, p=1 / (1 + n_mols / b)).rvs(2 * n_samples)
+  <span class="org-keyword">return</span> x, s, z
+
+<span class="org-keyword">def</span> <span class="org-function-name">fit_dev</span>(x, s, z, n_epochs=2000, n_samples=10):
+  <span class="org-variable-name">init</span> = scmodes.ebpm.ebpm_gamma(x, s)
+  torch.manual_seed(run)
+  <span class="org-variable-name">m</span> = DiffVarExprModel(
+    prior_log_mean=torch.distributions.Normal(loc=init[0], scale=1.),
+    prior_log_inv_disp=torch.distributions.Normal(loc=init[1], scale=1.))
+  m.fit(
+    torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(s.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(z.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+    n_epochs=n_epochs,
+    n_samples=n_samples)
+  <span class="org-keyword">return</span> m
+
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate_lfsr_diff_mean</span>(n_samples, n_mols, n_trials):
+  <span class="org-variable-name">result</span> = []
+  <span class="org-keyword">for</span> log_mean <span class="org-keyword">in</span> np.linspace(-12, -6, 7):
+    <span class="org-keyword">for</span> log_inv_disp <span class="org-keyword">in</span> np.logspace(-4, 0, 5):
+      <span class="org-keyword">for</span> diff_log_mean <span class="org-keyword">in</span> np.linspace(0, np.log(2), 5):
+        <span class="org-keyword">for</span> trial <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
+          <span class="org-variable-name">x</span>, <span class="org-variable-name">s</span>, <span class="org-variable-name">z</span> = simulate(n_samples, n_mols, log_mean, log_inv_disp, diff_log_mean, diff_log_inv_disp=0, seed=trial)
+          <span class="org-variable-name">m</span> = fit_dev(x, s, z)
+          result.append([n_samples, n_mols, log_mean, log_inv_disp, diff_log_mean, 0., trial, m.lfsr_diff_mean[0]])
+  <span class="org-variable-name">result</span> = pd.DataFrame(result)
+  <span class="org-variable-name">result.columns</span> = [<span class="org-string">'n_samples'</span>, <span class="org-string">'n_mols'</span>, <span class="org-string">'log_mean'</span>, <span class="org-string">'log_inv_disp'</span>, <span class="org-string">'diff_log_mean'</span>, <span class="org-string">'diff_log_inv_disp'</span>, <span class="org-string">'trial'</span>, <span class="org-string">'lfsr'</span>]
+  <span class="org-keyword">return</span> result
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%%timeit -n1 -r1
+<span class="org-variable-name">res</span> = evaluate_lfsr_diff_mean(500, 1e5, 1)
+res.to_csv(<span class="org-string">'temp.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">
+</pre>
 </div>
 </div>
 </div>
+</div>
+
 <div id="outline-container-org7280499" class="outline-3">
 <h3 id="org7280499">Slice within Gibbs</h3>
 <div class="outline-text-3" id="text-org7280499">
@@ -2469,7 +2522,8 @@ Draw samples from the posterior.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">samples</span>, <span class="org-variable-name">trace</span> = diff_var_mcmc(x, s, z, n_samples=2000, trace=<span class="org-constant">True</span>)
+<pre class="src src-ipython">%%timeit -n1 -r1
+<span class="org-variable-name">samples</span>, <span class="org-variable-name">trace</span> = diff_var_mcmc(x, s, z, n_samples=2000, trace=<span class="org-constant">True</span>)
 </pre>
 </div>
 
@@ -2592,7 +2646,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-11-05 Thu 13:28</p>
+<p class="date">Created: 2020-11-05 Thu 17:17</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

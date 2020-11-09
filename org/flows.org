@@ -1,0 +1,70 @@
+#+TITLE: Normalizing flows for EBPM
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Fitting an expression model to observed scRNA-seq data at a single gene can
+  be thought of as solving an empirical Bayes problem (Sarkar and Stephens
+  2020). 
+
+  \begin{align}
+    x_i \mid s_i, \lambda_i &\sim \operatorname{Poisson}(s_i \lambda_i)\\
+    \lambda_i &\sim g(\cdot) \in \mathcal{G},
+  \end{align}
+
+  where \(i = 1, \ldots, n\) indexes samples. Assuming \(\mathcal{G}\) is the
+  family of Gamma distributions yields analytic gradients and admits
+  [[file:mpebpm.org][fast implementation on GPUs]]. However, the fitted model
+  can fail to accurately describe variation at some genes.
+
+  In contrast, the non-parametric family of unimodal distributions
+  (Stephens 2016) could be sufficient for all but a minority of genes. In
+  practice, this family is approximated as the family of mixture of uniform
+  distributions with fixed endpoints, including the common mode. Then,
+  inference in this model can be achieved by a combination of convex
+  optimization (over mixture weights, given the mode) and line search (over the
+  mode, as an outer loop). However, in practice this approach is expensive and
+  cumbersome for large data sets.
+
+  One idea which could bridge the gap between these approaches (in both
+  computational cost and flexibility) is /normalizing flows/ (reviewed in
+  [[https://arxiv.org/abs/1912.02762][Papamakarios et al. 2019]]). The key idea
+  of normalizing flows is to apply a series of invertible, differentiable
+  transformations \(T_1, \ldots, T_K\) to a tractable density, in order to
+  obtain a different density
+
+  \begin{equation}
+    f_x(x) = f_u(u) \prod_{k=1}^{K} \ln\det\left(J_{T_k}(\cdot)\right),
+  \end{equation}
+
+  where \(J_{T_k}\) is the Jacobian of \(T_k\). If the \(T_k\) have free
+  parameters, gradients with respect to those parameters are available,
+  allowing the transformations to be learned from the data. Here, we
+  investigate using flows to define a flexible family of priors, and use that
+  family to fit expression models to scRNA-seq data.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3() :exports none :dir /scratch/midway2/aksarkar
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC

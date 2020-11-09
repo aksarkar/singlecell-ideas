@@ -4,6 +4,7 @@
 A collection of various (often incomplete or broken) ideas for single cell
 analysis plus some related topics.
 
+- [[file:flows.org][Normalizing flows for EBPM]]
 - [[file:tsne.org][Pathological input to t-SNE]]
 - [[file:spatial-vae.org][Convolutional VAE for spatial transcriptomic data]]
 - [[file:zinb-em.org][EM algorithm for point-Gamma expression model]]

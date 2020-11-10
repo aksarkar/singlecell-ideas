@@ -34,14 +34,15 @@
   obtain a different density
 
   \begin{equation}
-    f_x(x) = f_u(u) \prod_{k=1}^{K} \ln\det\left(J_{T_k}(\cdot)\right),
+    f_x(x) = f_u(u) \prod_{k=1}^{K} \ln\det\left(J_{T_k^{-1}}(\cdot)\right),
   \end{equation}
 
-  where \(J_{T_k}\) is the Jacobian of \(T_k\). If the \(T_k\) have free
-  parameters, gradients with respect to those parameters are available,
-  allowing the transformations to be learned from the data. Here, we
-  investigate using flows to define a flexible family of priors, and use that
-  family to fit expression models to scRNA-seq data.
+  where \(J_{T_k^{-1}}\) is the Jacobian of \(T_k^{-1}\). (This choice makes it
+  easy to evaluate the density \(f_x\), but difficult to sample from it.) If
+  the \(T_k\) have free parameters, gradients with respect to those parameters
+  are available, allowing the transformations to be learned from the
+  data. Here, we investigate using flows to define a flexible family of priors,
+  and use that family to fit expression models to scRNA-seq data.
 
 * Setup
   :PROPERTIES:
@@ -56,15 +57,192 @@
   #+RESULTS:
   : 1
 
-  #+CALL: ipython3() :exports none :dir /scratch/midway2/aksarkar
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",mem="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+CALL: tensorboard(venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/singlecell
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import scipy.stats as st
+    import torch
+    import torch.utils.tensorboard as tb
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[56]:
+  :END:
 
   #+BEGIN_SRC ipython
     %matplotlib inline
     %config InlineBackend.figure_formats = set(['retina'])
   #+END_SRC
 
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
   #+BEGIN_SRC ipython
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
     plt.rcParams['font.family'] = 'Nimbus Sans'
   #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* Results
+** Example of normalizing flow
+
+   Draw data from a scale mixture of Gaussians.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 1000
+     pi = np.array([0.3, 0.7])
+     scale = np.array([0.1, 0.4])
+     z = rng.uniform(size=(n, 1)) < pi[0]
+     x = rng.normal(scale=scale @ np.hstack([z, ~z]).T)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ex0.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.hist(x, bins=19, density=True, color='0.7')
+     grid = np.linspace(x.min(), x.max(), 5000)
+     mixcdf = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
+     plt.plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c='k')
+     plt.xlabel('Observation')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[57]:
+   [[file:figure/flows.org/ex0.png]]
+   :END:
+
+   #+BEGIN_SRC ipython
+     class PlanarFlow(torch.nn.Module):
+       # Rezende and Mohamed 2015
+       def __init__(self, n_features):
+         super().__init__()
+         self.weight = torch.nn.Parameter(torch.zeros([n_features, 1]))
+         torch.nn.init.xavier_normal_(self.weight)
+         self.bias = torch.nn.Parameter(torch.zeros([1]))
+         self.post_act = torch.nn.Parameter(torch.zeros([n_features, 1]))
+         torch.nn.init.xavier_normal_(self.post_act)
+
+       def forward(self, x):
+         # x is [batch_size, n_features]
+         pre_act = x @ self.weight + self.bias
+         out = x + torch.sigmoid(pre_act) @ self.post_act.T
+         log_det = torch.log(torch.abs(1 + torch.sigmoid(pre_act) * torch.sigmoid(-pre_act) @ self.weight.T @ self.post_act))
+         assert not torch.isnan(log_det).any()
+         return out, log_det
+
+     class NormalizingFlow(torch.nn.Module):
+       # https://pytorch.org/docs/stable/_modules/torch/nn/modules/container.html#Sequential
+       def __init__(self, flows):
+         super().__init__()
+         self.flows = torch.nn.ModuleList(flows)
+
+       def forward(self, x):
+         log_det = torch.zeros(x.shape)
+         for f in self.flows:
+           x, l = f.forward(x)
+           log_det += l
+         return x, log_det
+
+     class DensityEstimator(torch.nn.Module):
+       def __init__(self, n_features, K):
+         super().__init__()
+         # Important: here the flow maps x in ambient measure to u in base measure
+         self.flow = NormalizingFlow([PlanarFlow(n_features) for _ in range(K)])
+
+       def forward(self, x):
+         loss = -self.log_prob(x).mean()
+         assert loss > 0
+         return loss
+
+       def fit(self, x, n_epochs, log_dir=None, **kwargs):
+         if log_dir is not None:
+           writer = tb.SummaryWriter(log_dir)
+         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         global_step = 0
+         for _ in range(n_epochs):
+           opt.zero_grad()
+           loss = self.forward(x)
+           if log_dir is not None:
+             writer.add_scalar('loss', loss, global_step)
+           if torch.isnan(loss):
+             raise RuntimeError
+           loss.backward()
+           opt.step()
+           global_step += 1
+         return self
+
+       def log_prob(self, x):
+         u, log_det = self.flow.forward(x)
+         l = torch.distributions.Normal(loc=0., scale=1.).log_prob(u) + log_det
+         return l
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[117]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     K = 2
+     run = 0
+     lr = 1e-2
+     n_epochs = 4000
+     torch.manual_seed(run)
+     m = (DensityEstimator(n_features=1, K=K)
+          .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+               n_epochs=n_epochs,
+               lr=lr,
+               log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/nf-{K}-{lr}-{n_epochs}-{run}'))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[121]:
+   :END:
+
+   Plot the fit.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ex0-fit.png
+     grid = np.linspace(x.min(), x.max(), 5000)
+     mixcdf = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
+     with torch.no_grad():
+       flow = np.exp(m.log_prob(torch.tensor(grid.reshape(-1, 1), dtype=torch.float)).numpy())
+
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(3.5, 2.5)
+     plt.hist(x, bins=19, density=True, color='0.7')
+     plt.plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c='k', label='Simulated')
+     plt.plot(grid, flow, lw=1, c='r', label='Fit')
+     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     plt.xlabel('Observation')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[125]:
+   [[file:figure/flows.org/ex0-fit.png]]
+   :END:

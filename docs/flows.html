@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-11-10 Tue 04:08 -->
+<!-- 2020-11-11 Wed 13:46 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Normalizing flows for EBPM</title>
@@ -259,9 +259,15 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#orgdd80782">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#org18ef5d0">Results</a>
+<li><a href="#orgeb9df02">Methods</a>
 <ul>
-<li><a href="#org431f6a8">Example of normalizing flow</a></li>
+<li><a href="#org799ab3c">Normalizing flow for density estimation</a></li>
+<li><a href="#orgef00a68">Normalizing flow for empirical Bayes</a></li>
+</ul>
+</li>
+<li><a href="#org26165be">Results</a>
+<ul>
+<li><a href="#org74ca7c6">Example of normalizing flow</a></li>
 </ul>
 </li>
 </ul>
@@ -274,11 +280,16 @@ for the JavaScript code in this tag.
 <p>
 Fitting an expression model to observed scRNA-seq data at a single gene can
 be thought of as solving an empirical Bayes problem (Sarkar and Stephens
-2020). 
+2020). \(
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\E{E}
+  \DeclareMathOperator\N{\mathcal{N}}
+  \newcommand\abs[1]{\left\vert #1 \right\vert}
+  \)
 </p>
 
 \begin{align}
-  x_i \mid s_i, \lambda_i &\sim \operatorname{Poisson}(s_i \lambda_i)\\
+  x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
   \lambda_i &\sim g(\cdot) \in \mathcal{G},
 \end{align}
 
@@ -310,16 +321,16 @@ obtain a different density
 </p>
 
 \begin{equation}
-  f_x(x) = f_u(u) \prod_{k=1}^{K} \ln\det\left(J_{T_k^{-1}}(\cdot)\right),
+  f_x(x) = f_u(u) \prod_{k=1}^{K} \det \abs{J_k(\cdot)},
 \end{equation}
 
 <p>
-where \(J_{T_k^{-1}}\) is the Jacobian of \(T_k^{-1}\). (This choice makes it
-easy to evaluate the density \(f_x\), but difficult to sample from it.) If
-the \(T_k\) have free parameters, gradients with respect to those parameters
-are available, allowing the transformations to be learned from the
-data. Here, we investigate using flows to define a flexible family of priors,
-and use that family to fit expression models to scRNA-seq data.
+where \(J_k\) is the Jacobian of \(T_k^{-1}\). (This choice makes it easy to
+evaluate the density \(f_x\), but difficult to sample from it.) If the
+\(T_k\) have free parameters, gradients with respect to those parameters are
+available, allowing the transformations to be learned from the data. Here, we
+investigate using flows to define a flexible family of priors, and use that
+family to fit expression models to scRNA-seq data.
 </p>
 </div>
 </div>
@@ -350,13 +361,102 @@ and use that family to fit expression models to scRNA-seq data.
 </div>
 </div>
 
-<div id="outline-container-org18ef5d0" class="outline-2">
-<h2 id="org18ef5d0">Results</h2>
-<div class="outline-text-2" id="text-org18ef5d0">
+<div id="outline-container-orgeb9df02" class="outline-2">
+<h2 id="orgeb9df02">Methods</h2>
+<div class="outline-text-2" id="text-orgeb9df02">
 </div>
-<div id="outline-container-org431f6a8" class="outline-3">
-<h3 id="org431f6a8">Example of normalizing flow</h3>
-<div class="outline-text-3" id="text-org431f6a8">
+<div id="outline-container-org799ab3c" class="outline-3">
+<h3 id="org799ab3c">Normalizing flow for density estimation</h3>
+<div class="outline-text-3" id="text-org799ab3c">
+<p>
+Suppose we have observations \(x_1, \ldots, x_n\) drawn from \(f^*\). One
+can estimate \(f_x\) by maximizing the likelihood of the data
+</p>
+
+\begin{align}
+  &\max_{f_x} \E_{f^*}[\ln f_x(x)]\\
+  = &\max_{T_1, \ldots, T_K} \E_{f^*}\left[\ln f_u(T(x)) + \sum_{k=1}^K \ln\det J_k(\cdot)\right],
+\end{align}
+
+<p>
+where \(T = T_K \circ \cdots \circ T_1\) is the inverse mapping from \(x \in
+   \mathcal{X} \rightarrow u \in \mathcal{U}\). This optimization problem can
+be readily solved using automatic differentiation and gradient descent.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgef00a68" class="outline-3">
+<h3 id="orgef00a68">Normalizing flow for empirical Bayes</h3>
+<div class="outline-text-3" id="text-orgef00a68">
+<p>
+Now consider the EBPM problem
+</p>
+
+\begin{align}
+  x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
+  \lambda_i &\sim g(\cdot) = g_0(\cdot) \prod_k \det \abs{J^g_k}
+\end{align}
+
+<p>
+where \(i = 1, \ldots, n\), and \(g_0(\cdot) = \N(\cdot; 0, 1)\) for
+simplicity. One can estimate \(g\) by maximizing the marginal likelihood
+</p>
+
+\begin{align}
+   &\max_g \sum_i \ln p(x_i \mid s_i, g)\\
+   = &\max_{g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g(\lambda_i) - \ln q(\lambda_i)\right]\\
+   = &\max_{T_g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g_0(T_g(\lambda_i)) + \sum_k \ln\det\abs{J^g_k} - \ln q(\lambda_i)\right]\\
+\end{align}
+
+<p>
+where \(T_g = T^g_K \circ \cdots \circ T^g_1\) maps \(g\) to a base measure
+and \(J^g_k\) denotes the Jacobian of \(T^g_k\). It is straightforward to
+show that, holding \(g\) fixed, the optimal \(q\) is the true posterior
+\(p(\lambda_i \mid x_i, s_i, g)\) (e.g., Neal and Hinton 1998). In order to
+ensure \(q\) is flexible enough to capture the true posterior, suppose it
+too is represened by a normalizing flow
+</p>
+
+\begin{equation}
+  q(\cdot) = q_0(\cdot) \prod_k \det\abs{J^q_k},
+\end{equation}
+
+<p>
+where \(J^q_k\) denotes the Jacobian of the transform \(T^q_k\). In order to
+make sampling easy, suppose \(T_q = T^q_K \circ \cdots \circ T^q_1\) maps
+the base measure \(q_0(\cdot) = \N(\cdot; 0, 1)\) to \(q\). Then, the
+optimization problem is
+</p>
+
+\begin{equation}
+  \max_{T_g, T_q} \E_{u_i \sim q_0}\left[\sum_i \ln p(x_i | s_i, T_q(u_i)) + \ln g_0(T_g(T_q(u_i))) + \sum_k \ln\det\abs{J^g_k} - \ln q_0(u_i) - \sum_k \ln\det\abs{J^q_k}\right].
+\end{equation}
+
+<p>
+Since \(T_g, T_q\) are differentiable, this problem can be solved by
+replacing the expectation with a Monte Carlo integral (e.g., Kingma and
+Welling 2014), and then using automatic differentiation and gradient descent
+to optimize the resulting stochastic objective.
+</p>
+
+<p>
+<i>Remark:</i> When reducing problems in scRNA-seq data analysis to EBPM, we are
+primarily interested in the estimated prior \(\hat{g}\). Depending on the
+choice of flow, obtaining expectations with respect to \(\hat{g}\) might be
+difficult.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org26165be" class="outline-2">
+<h2 id="org26165be">Results</h2>
+<div class="outline-text-2" id="text-org26165be">
+</div>
+<div id="outline-container-org74ca7c6" class="outline-3">
+<h3 id="org74ca7c6">Example of normalizing flow</h3>
+<div class="outline-text-3" id="text-org74ca7c6">
 <p>
 Draw data from a scale mixture of Gaussians.
 </p>
@@ -405,8 +505,10 @@ plt.tight_layout()
   <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
     <span class="org-comment-delimiter"># </span><span class="org-comment">x is [batch_size, n_features]</span>
     <span class="org-variable-name">pre_act</span> = x @ <span class="org-keyword">self</span>.weight + <span class="org-keyword">self</span>.bias
-    <span class="org-variable-name">out</span> = x + torch.sigmoid(pre_act) @ <span class="org-keyword">self</span>.post_act.T
-    <span class="org-variable-name">log_det</span> = torch.log(torch.<span class="org-builtin">abs</span>(1 + torch.sigmoid(pre_act) * torch.sigmoid(-pre_act) @ <span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.post_act))
+    <span class="org-comment-delimiter"># </span><span class="org-comment">This is required to invert the flow</span>
+    <span class="org-variable-name">post_act</span> = <span class="org-keyword">self</span>.post_act + <span class="org-keyword">self</span>.weight / (<span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.weight) * (-1 + torch.nn.functional.softplus(<span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.post_act) - <span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.post_act)
+    <span class="org-variable-name">out</span> = x + torch.sigmoid(pre_act) @ post_act.T
+    <span class="org-variable-name">log_det</span> = torch.log(torch.<span class="org-builtin">abs</span>(1 + torch.sigmoid(pre_act) * torch.sigmoid(-pre_act) @ <span class="org-keyword">self</span>.weight.T @ post_act))
     <span class="org-keyword">assert</span> <span class="org-keyword">not</span> torch.isnan(log_det).<span class="org-builtin">any</span>()
     <span class="org-keyword">return</span> out, log_det
 
@@ -506,7 +608,7 @@ plt.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-11-10 Tue 04:08</p>
+<p class="date">Created: 2020-11-11 Wed 13:46</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -5,10 +5,15 @@
 
   Fitting an expression model to observed scRNA-seq data at a single gene can
   be thought of as solving an empirical Bayes problem (Sarkar and Stephens
-  2020). 
+  2020). \(
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\E{E}
+  \DeclareMathOperator\N{\mathcal{N}}
+  \newcommand\abs[1]{\left\vert #1 \right\vert}
+  \)
 
   \begin{align}
-    x_i \mid s_i, \lambda_i &\sim \operatorname{Poisson}(s_i \lambda_i)\\
+    x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
     \lambda_i &\sim g(\cdot) \in \mathcal{G},
   \end{align}
 
@@ -34,15 +39,15 @@
   obtain a different density
 
   \begin{equation}
-    f_x(x) = f_u(u) \prod_{k=1}^{K} \ln\det\left(J_{T_k^{-1}}(\cdot)\right),
+    f_x(x) = f_u(u) \prod_{k=1}^{K} \det \abs{J_k(\cdot)},
   \end{equation}
 
-  where \(J_{T_k^{-1}}\) is the Jacobian of \(T_k^{-1}\). (This choice makes it
-  easy to evaluate the density \(f_x\), but difficult to sample from it.) If
-  the \(T_k\) have free parameters, gradients with respect to those parameters
-  are available, allowing the transformations to be learned from the
-  data. Here, we investigate using flows to define a flexible family of priors,
-  and use that family to fit expression models to scRNA-seq data.
+  where \(J_k\) is the Jacobian of \(T_k^{-1}\). (This choice makes it easy to
+  evaluate the density \(f_x\), but difficult to sample from it.) If the
+  \(T_k\) have free parameters, gradients with respect to those parameters are
+  available, allowing the transformations to be learned from the data. Here, we
+  investigate using flows to define a flexible family of priors, and use that
+  family to fit expression models to scRNA-seq data.
 
 * Setup
   :PROPERTIES:
@@ -55,7 +60,7 @@
   #+END_SRC
 
   #+RESULTS:
-  : 1
+  : 2
 
   #+CALL: ipython3(venv="singlecell",partition="mstephens",mem="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
@@ -70,7 +75,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[56]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -93,6 +98,69 @@
   :RESULTS:
   # Out[3]:
   :END:
+
+* Methods
+** Normalizing flow for density estimation
+
+   Suppose we have observations \(x_1, \ldots, x_n\) drawn from \(f^*\). One
+   can estimate \(f_x\) by maximizing the likelihood of the data
+
+   \begin{align}
+     &\max_{f_x} \E_{f^*}[\ln f_x(x)]\\
+     = &\max_{T_1, \ldots, T_K} \E_{f^*}\left[\ln f_u(T(x)) + \sum_{k=1}^K \ln\det J_k(\cdot)\right],
+   \end{align}
+
+   where \(T = T_K \circ \cdots \circ T_1\) is the inverse mapping from \(x \in
+   \mathcal{X} \rightarrow u \in \mathcal{U}\). This optimization problem can
+   be readily solved using automatic differentiation and gradient descent.
+
+** Normalizing flow for empirical Bayes
+
+   Now consider the EBPM problem
+
+   \begin{align}
+     x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
+     \lambda_i &\sim g(\cdot) = g_0(\cdot) \prod_k \det \abs{J^g_k}
+   \end{align}
+
+   where \(i = 1, \ldots, n\), and \(g_0(\cdot) = \N(\cdot; 0, 1)\) for
+   simplicity. One can estimate \(g\) by maximizing the marginal likelihood
+
+   \begin{align}
+      &\max_g \sum_i \ln p(x_i \mid s_i, g)\\
+      = &\max_{g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g(\lambda_i) - \ln q(\lambda_i)\right]\\
+      = &\max_{T_g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g_0(T_g(\lambda_i)) + \sum_k \ln\det\abs{J^g_k} - \ln q(\lambda_i)\right]\\
+   \end{align}
+
+   where \(T_g = T^g_K \circ \cdots \circ T^g_1\) maps \(g\) to a base measure
+   and \(J^g_k\) denotes the Jacobian of \(T^g_k\). It is straightforward to
+   show that, holding \(g\) fixed, the optimal \(q\) is the true posterior
+   \(p(\lambda_i \mid x_i, s_i, g)\) (e.g., Neal and Hinton 1998). In order to
+   ensure \(q\) is flexible enough to capture the true posterior, suppose it
+   too is represened by a normalizing flow
+
+   \begin{equation}
+     q(\cdot) = q_0(\cdot) \prod_k \det\abs{J^q_k},
+   \end{equation}
+
+   where \(J^q_k\) denotes the Jacobian of the transform \(T^q_k\). In order to
+   make sampling easy, suppose \(T_q = T^q_K \circ \cdots \circ T^q_1\) maps
+   the base measure \(q_0(\cdot) = \N(\cdot; 0, 1)\) to \(q\). Then, the
+   optimization problem is
+
+   \begin{equation}
+     \max_{T_g, T_q} \E_{u_i \sim q_0}\left[\sum_i \ln p(x_i | s_i, T_q(u_i)) + \ln g_0(T_g(T_q(u_i))) + \sum_k \ln\det\abs{J^g_k} - \ln q_0(u_i) - \sum_k \ln\det\abs{J^q_k}\right].
+   \end{equation}
+
+   Since \(T_g, T_q\) are differentiable, this problem can be solved by
+   replacing the expectation with a Monte Carlo integral (e.g., Kingma and
+   Welling 2014), and then using automatic differentiation and gradient descent
+   to optimize the resulting stochastic objective.
+
+   /Remark:/ When reducing problems in scRNA-seq data analysis to EBPM, we are
+   primarily interested in the estimated prior \(\hat{g}\). Depending on the
+   choice of flow, obtaining expectations with respect to \(\hat{g}\) might be
+   difficult.
 
 * Results
 ** Example of normalizing flow
@@ -146,8 +214,10 @@
        def forward(self, x):
          # x is [batch_size, n_features]
          pre_act = x @ self.weight + self.bias
-         out = x + torch.sigmoid(pre_act) @ self.post_act.T
-         log_det = torch.log(torch.abs(1 + torch.sigmoid(pre_act) * torch.sigmoid(-pre_act) @ self.weight.T @ self.post_act))
+         # This is required to invert the flow
+         post_act = self.post_act + self.weight / (self.weight.T @ self.weight) * (-1 + torch.nn.functional.softplus(self.weight.T @ self.post_act) - self.weight.T @ self.post_act)
+         out = x + torch.sigmoid(pre_act) @ post_act.T
+         log_det = torch.log(torch.abs(1 + torch.sigmoid(pre_act) * torch.sigmoid(-pre_act) @ self.weight.T @ post_act))
          assert not torch.isnan(log_det).any()
          return out, log_det
 

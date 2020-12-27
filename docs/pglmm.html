@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2021-01-04 Mon 01:17 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poisson GLMM for differential expression</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Poisson GLMM for differential expression</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgf5f6189">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org2bd3808">Data</a></li>
+<li><a href="#org12c937b">Results</a>
+<ul>
+<li><a href="#orgaee5bf1">LMM</a></li>
+<li><a href="#orgf9f94c5">Poisson GLMM</a></li>
+<li><a href="#orgf00cb1f">Variational Empirical Bayes</a></li>
+<li><a href="#org53fcbcb">NUTS</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgf5f6189" class="outline-2">
+<h2 id="orgf5f6189">Introduction</h2>
+<div class="outline-text-2" id="text-orgf5f6189">
+<p>
+Valentine Svensson
+<a href="https://www.nxn.se/valent/2020/12/27/disappointing-variational-inference-for-glmms">suggested
+a Poisson GLMM</a> to test for differential expression between scRNA-seq
+samples in two conditions, accounting for inter-individual variation in mean
+gene expression (within conditions) \(
+  \DeclareMathOperator\N{\mathcal{N}}
+  \DeclareMathOperator\E{E}
+  \DeclareMathOperator\KL{\mathcal{KL}}
+  \newcommand\const{\mathrm{const}}
+  \newcommand\md{\mathbf{D}}
+  \newcommand\mi{\mathbf{I}}
+  \newcommand\mh{\mathbf{H}}
+  \newcommand\mk{\mathbf{K}}
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\my{\mathbf{Y}}
+  \newcommand\mz{\mathbf{Z}}
+  \newcommand\su{\sigma_u}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vu{\mathbf{u}}
+  \newcommand\vy{\mathbf{y}}
+  \newcommand\vmu{\boldsymbol{\mu}}
+  \)
+</p>
+
+\begin{align}
+  y_i \mid y_{i+}, \lambda_i &\sim \operatorname{Poisson}(y_{i+} \lambda_i)\\
+  \ln\lambda_i &= (\mx\vb + \mz\vu)_i\\
+  \vb &\sim \N(0, \mi)\\
+  \vu &\sim \N(0, \su^2 \mi),
+\end{align}
+
+<p>
+where
+</p>
+
+<ul class="org-ul">
+<li>\(y_i\) is the observed molecule count (of some gene \(j\)) in cell \(i\)</li>
+<li>\(y_{i+}\) the total molecule count in cell \(i\)</li>
+<li>\(\mx\) is a binary matrix mapping samples to &ldquo;cell groups&rdquo; (cell
+type by tissue by condition)</li>
+<li>\(\vb\) denotes the fixed effects (cell group means)</li>
+<li>\(\mz\) is a binary matrix mapping samples to donors</li>
+<li>\(\vu\) denotes the random effects (donor effects)</li>
+</ul>
+
+<p>
+However, direct application of variational inference to approximate the
+posterior \(p(\vb, \vu \mid \mx, \mz, \vy)\), implemented in Tensorflow
+Probability, is reported to perform poorly. Here, we show that some
+modifications are needed to get reasonable estimates.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org4e5d615" class="outline-2">
+<h2 id="setup"><a id="org4e5d615"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> functools <span class="org-keyword">as</span> ft
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> torch
+<span class="org-comment-delimiter"># </span><span class="org-comment">import torch.utils.tensorboard as tb</span>
+<span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
+<span class="org-keyword">import</span> pyro
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org2bd3808" class="outline-2">
+<h2 id="org2bd3808">Data</h2>
+<div class="outline-text-2" id="text-org2bd3808">
+<p>
+Download the data from
+<a href="https://immunology.sciencemag.org/content/5/50/eabb4432.full">Borland et
+al. 2020</a>
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">curl -O <span class="org-string">"https://raw.githubusercontent.com/vals/Blog/master/201226-glmm-vi/zeb2_table.csv"</span>
+</pre>
+</div>
+
+<p>
+Download the fitted <code>lme4</code> model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">curl -O <span class="org-string">"https://raw.githubusercontent.com/vals/Blog/master/201226-glmm-vi/lme4/fixed_effects.csv"</span>
+curl -O <span class="org-string">"https://raw.githubusercontent.com/vals/Blog/master/201226-glmm-vi/lme4/random_effects.csv"</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org12c937b" class="outline-2">
+<h2 id="org12c937b">Results</h2>
+<div class="outline-text-2" id="text-org12c937b">
+</div>
+<div id="outline-container-orgaee5bf1" class="outline-3">
+<h3 id="orgaee5bf1">LMM</h3>
+<div class="outline-text-3" id="text-orgaee5bf1">
+<p>
+To gain more insight into GLMM inference, first consider an ordinary LMM
+</p>
+
+\begin{align}
+  \vy \mid \mx, \mz, \vb, \vu, \sigma^2 &\sim \N(\mx \vb + \mz \vu, \sigma^2 \mi)\\
+  \vu \mid \sigma^2, \sigma_u^2 &\sim \N(0, \sigma^2 \sigma_u^2 \mi).
+\end{align}
+
+<p>
+Using properties of the Gaussian distribution,
+</p>
+
+\begin{align}
+  \mz \vu \mid \sigma^2, \sigma_u^2 &\sim \N(0, \sigma^2 \sigma_u^2 \mk)\\
+  \vy \mid \mx, \mz, \vb, \sigma^2, \sigma_u^2 &\sim \N(\mx\vb, \sigma^2 \mh),
+\end{align}
+
+<p>
+where \(\mk = \mz\mz'\), \(\mh = \mi + \sigma_u^2 \mk\), and one can
+maximize the marginal likelihood to recover point estimates \(\hat{\vb},
+   \hat\sigma^2, \hat{\sigma_u^2}\). Briefly, for fixed \(\sigma^2 \mh\),
+\(\hat{\vb}\) is the solution to generalized least squares; for fixed
+\(\vb\), gradients with respect to \(\sigma^2, \sigma_u^2\) are
+available. Further,
+</p>
+
+\begin{align}
+  \left[\begin{array}{c} \vy \\ \vu \end{array}\right] \mid \mx, \mz, \vb, \sigma^2, \sigma^2_u &\sim
+  \mathcal{N} \left(
+  \left[\begin{array}{c} \mx\vb \\ \mathbf{0} \end{array}\right],
+  \sigma^2 \left[\begin{array}{cc} \mh & \sigma^2_u \mk \\ \sigma^2_u \mk & \sigma^2_u \mk \end{array}\right]
+  \right)\\
+  \vu \mid \mx, \mz, \vy, \vb, \sigma^2, \sigma^2_u &\sim \mathcal{N}\left(\frac{\sigma^2_u}{\sigma^2} \mk\mh^{-1}(\vy - \mx\vb), \sigma^2_u \mk (\mi - \mh^{-1})\right),
+\end{align}
+
+<p>
+i.e., the posterior of the random effects, given the fixed effects, the
+model hyperparameters, and the data, is analytic and is also Gaussian.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf9f94c5" class="outline-3">
+<h3 id="orgf9f94c5">Poisson GLMM</h3>
+<div class="outline-text-3" id="text-orgf9f94c5">
+<p>
+In the (Poisson) GLMM, the fundamental difficulty in maximum likelihood
+estimation is that the assumed distribution of \(p(\vu)\) is non-conjugate
+to the likelihood. This fact means that even evaluating the likelihood to
+maximize it is difficult. How does <code>lme4</code> perform inference for GLMMs?
+<a href="https://www.rdocumentation.org/packages/lme4/versions/1.1-26/topics/glmer">According
+to the documentation</a>, <code>glmer</code> evaluates the log likelihood by using
+adaptive Gauss-Hermite quadrature, and
+<a href="https://github.com/lme4/lme4/blob/292d7f68dc4bfdfe7405703f730b71983193e5ba/R/modular.R#L782">according
+to the source code</a>, optimizes the log likelihood using a derivative-free
+approach.
+</p>
+
+<p>
+The fundamental difficulty in Bayesian inference is that the priors
+\(p(\vb), p(\vu)\) are non-conjugate. One possibility is to use
+<a href="https://cran.r-project.org/web/packages/MCMCglmm/index.html">MCMCglmm</a>,
+suggested by <a href="https://morgantelab.com/">Fabio Morgante</a>, which uses a
+model-specific sampling algorithm. However, this package appears to be
+superseded by <a href="https://github.com/paul-buerkner/brms">brms</a> (which calls
+into <a href="https://mc-stan.org/">stan</a>). We use NUTS implemented in <code>pyro</code>
+below.
+</p>
+
+<p>
+Another possibility is to use variational inference. However, it is easy to
+show that the optimal variational approximating distribution \(q^*(\vb)\),
+over all distributions, is non-standard. This result follows from examining
+the log joint probability
+</p>
+
+\begin{equation}
+  \ln p(\vy, \vb, \vu \mid \mx, \mz, \sigma_u^2) = \sum_i \left[y_i (\ln y_{i+} + (\mx\vb + \mz\vu)_i) - y_{i+}\exp((\mx\vb + \mz\vu)_i)\right] - \frac{\vb'\vb}{2} - \frac{\vu'\vu}{2\sigma_u^2} + \const,
+\end{equation}
+
+<p>
+and collecting terms that involve \(\vb\) (Blei et al. 2017)
+</p>
+
+\begin{equation}
+  q^*(\vb) \propto \exp\left(\sum_i \left[y_i (\mx\vb)_i - y_{i+}\exp((\mx\vb + \mz\vu)_i)\right] - \frac{\vb'\vb}{2}\right).
+\end{equation}
+
+<p>
+This result suggests that naively assuming a conjugate variational
+approximation (i.e., Gaussian) may not work well (specifically, to
+characterize the posterior variance; it is reasonable to assume that the
+data are very informative about the mean).
+</p>
+
+<p>
+<b>Remark</b> One way to get around this limitation could be
+<a href="flows.html">normalizing flows</a>.
+</p>
+
+<p>
+In the GLMM, the primary inference goal could be to estimate the posterior
+\(p(\vb \mid \mx, \my, \mz)\), i.e., integrating over uncertainty in
+\(\su^2\). However, a simpler approach is to only seek a point estimate for
+\(\su^2\), and estimate the posterior \(p(\vb \mid \mx, \my, \mz,
+   \su^2)\). This simpler problem is an instance of Variational Empirical Bayes
+(Wang et al. 2020), which is a generalization of Variational Bayes
+Expectation Maximization (Beal 2003).
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgf00cb1f" class="outline-3">
+<h3 id="orgf00cb1f">Variational Empirical Bayes</h3>
+<div class="outline-text-3" id="text-orgf00cb1f">
+<p>
+Implement VEB to yield a point estimate for \(\su^2\) and an approximate
+posterior \(p(\vb \mid \mx, \my, \mz, \su^2)\). The ELBO is
+</p>
+
+\begin{equation}
+  \ell = \E_{q(\vb, \vu)}\left[\left[\sum_i \ln p(y_i \mid y_{i+}, \mx, \mz, \vb, \vu)\right] - \KL(q(\vb) \Vert p(\vb)) - \KL(q(\vu) \Vert p(\vu)),
+\end{equation}
+
+<p>
+where the expectation is replaced by a Monte Carlo integral (Kingma and
+Welling 2014, Rezende et al. 2014, Titsias and Lázaro-Gredilla 2014), and
+the KL divergence is analytic (for the choice of conjugate variational
+approximating family).
+</p>
+
+<p>
+<b>Remark</b> As written, the model is not identifiable when \(\mx\) and \(\mz\)
+are completely confounded, i.e., co-linear. Therefore, an informative prior
+is \(p(\vb)\) is needed. We describe one possibility below.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">PoissonGLMM</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, n_cell_groups, n_donors, init=<span class="org-constant">None</span>, prior_b=<span class="org-constant">None</span>):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">if</span> init <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">init</span> = torch.zeros([n_cell_groups, 1])
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">init</span> = torch.tensor(init, dtype=torch.<span class="org-builtin">float</span>).reshape(-1, 1)
+    <span class="org-keyword">if</span> prior_b <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+      <span class="org-keyword">self</span>.pb_mean = torch.nn.Parameter(torch.zeros([n_cell_groups, 1]))
+    <span class="org-keyword">else</span>:
+      <span class="org-keyword">self</span>.pb_mean = torch.nn.Parameter(torch.tensor(prior_b, dtype=torch.<span class="org-builtin">float</span>).reshape(-1, 1))
+    <span class="org-keyword">self</span>.pb_raw_scale = torch.nn.Parameter(torch.zeros([n_cell_groups, 1]))
+    <span class="org-keyword">self</span>.qb_mean = torch.nn.Parameter(init)
+    <span class="org-keyword">self</span>.qb_raw_scale = torch.nn.Parameter(torch.zeros([n_cell_groups, 1]))
+
+    <span class="org-keyword">self</span>.pu_raw_scale = torch.nn.Parameter(torch.zeros([1]))
+    <span class="org-keyword">self</span>.qu_mean = torch.nn.Parameter(torch.zeros([n_donors, 1]))
+    <span class="org-keyword">self</span>.qu_raw_scale = torch.nn.Parameter(torch.zeros([n_donors, 1]))
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, y, x, s, z, n_samples):
+    <span class="org-variable-name">_s</span> = torch.nn.functional.softplus
+    <span class="org-variable-name">qu</span> = torch.distributions.Normal(
+      loc=<span class="org-keyword">self</span>.qu_mean,
+      scale=_s(<span class="org-keyword">self</span>.qu_raw_scale))
+    <span class="org-variable-name">qb</span> = torch.distributions.Normal(
+      loc=<span class="org-keyword">self</span>.qb_mean,
+      scale=_s(<span class="org-keyword">self</span>.qb_raw_scale))
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size, 1]</span>
+    <span class="org-variable-name">zu</span> = z @ qu.rsample(n_samples)
+    <span class="org-variable-name">xb</span> = x @ qb.rsample(n_samples)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_samples, batch_size]</span>
+    <span class="org-variable-name">mean</span> = s * torch.exp(xb + zu).squeeze(-1)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[1]</span>
+    <span class="org-comment-delimiter">#</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this is analytic</span>
+    <span class="org-variable-name">kl_b</span> = torch.distributions.kl.kl_divergence(
+      qb,
+      torch.distributions.Normal(
+        loc=<span class="org-keyword">self</span>.pb_mean,
+        scale=_s(<span class="org-keyword">self</span>.pb_raw_scale))).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">kl_u</span> = torch.distributions.kl.kl_divergence(
+      qu,
+      torch.distributions.Normal(
+        loc=0.,
+        scale=_s(<span class="org-keyword">self</span>.pu_raw_scale))).<span class="org-builtin">sum</span>()
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[batch_size]</span>
+    <span class="org-variable-name">err</span> = torch.distributions.Poisson(rate=mean).log_prob(y).mean(dim=0)
+    <span class="org-variable-name">elbo</span> = (err - kl_b - kl_u).<span class="org-builtin">sum</span>()
+    <span class="org-keyword">return</span> -elbo
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, data, n_samples=1, lr=1e-2, n_epochs=10):
+    <span class="org-variable-name">n_samples</span> = torch.Size([n_samples])
+    <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), lr=lr)
+    <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
+      <span class="org-keyword">for</span> y, x, s, z <span class="org-keyword">in</span> data:
+        opt.zero_grad()
+        <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(y, x, s, z, n_samples)
+        <span class="org-keyword">if</span> torch.isnan(loss):
+          <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'nan loss'</span>)
+        loss.backward()
+        opt.step()
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+</pre>
+</div>
+
+<p>
+Read the observed data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/zeb2_table.csv'</span>, index_col=0)
+</pre>
+</div>
+
+<p>
+Prepare the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = torch.tensor(dat[<span class="org-string">'ZEB2'</span>], dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">x</span> = torch.tensor(pd.get_dummies(dat[<span class="org-string">'cell_group'</span>]).values, dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">s</span> = torch.tensor(dat[<span class="org-string">'total_count'</span>], dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">z</span> = torch.tensor(pd.get_dummies(dat[<span class="org-string">'patient_assignment'</span>]).values, dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">train</span> = td.DataLoader(td.TensorDataset(y, x, s, z), batch_size=32,
+                      shuffle=<span class="org-constant">True</span>, drop_last=<span class="org-constant">True</span>)
+</pre>
+</div>
+
+<p>
+First,
+<a href="https://users.rcc.uchicago.edu/~aksarkar/singlecell-ideas/voom.html#orga658581">fit
+a point mass expression model</a> to each cell group, ignoring donor
+effects. This approach assumes that there is no variability between donors
+within conditions.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">t</span> = (torch.log(y @ x) - torch.log(s @ x)).cpu().numpy()
+<span class="org-variable-name">std</span> = np.exp(-torch.log(s @ x).cpu().numpy() - t)
+<span class="org-variable-name">lme4_fe</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/fixed_effects.csv'</span>)
+<span class="org-variable-name">lme4_re</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/random_effects.csv'</span>)
+</pre>
+</div>
+
+<p>
+Compare the <code>lme4</code> MLE to the naive estimates. Error bars denote 95%
+confidence intervals.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.errorbar(t, lme4_fe[<span class="org-string">'mean'</span>], xerr=1.96 * std, yerr=1.96 * lme4_fe[<span class="org-string">'std'</span>], fmt=<span class="org-string">'.'</span>, c=<span class="org-string">'k'</span>, lw=0, ms=2, elinewidth=0.5)
+<span class="org-variable-name">lim</span> = [-12, -7]
+plt.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+plt.xlim(lim)
+plt.ylim(lim)
+plt.xlabel(<span class="org-string">'Point mass expression model estimate'</span>)
+plt.ylabel(<span class="org-string">'lme4 cell group effect estimate'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pglmm.org/pglmm-init.png" alt="pglmm-init.png">
+</p>
+</div>
+
+<p>
+The result suggests that the observed data are very informative about mean
+gene expression, and that ignoring the variability within conditions (due to
+donor) may be justified. (Preliminary results in Lu 2018 suggest more
+generally that making the wrong assumption about expression variation in
+scRNA-seq data does not greatly impact inferences about mean gene
+expression). The result also suggests that naively assuming a standard
+Gaussian prior on \(\vb\) is not justified, since the data clearly indicate
+\(\vb\) is very different from 0. Further, our preliminary experiments show
+that assuming variance one in the prior leads to problems, since the
+approximate posterior is optimized by matching the prior variance. Instead,
+assume a prior
+</p>
+
+\begin{equation}
+  \vb \sim \N(\vmu, \md),
+\end{equation}
+
+<p>
+where \(\md\) is a diagonal matrix, and estimate \(\vmu, \md\) from the data
+via VEB.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">run</span> = 14
+torch.manual_seed(run)
+<span class="org-variable-name">m</span> = PoissonGLMM(x.shape[1], z.shape[1], init=t, prior_b=t).fit(train, lr=1e-2, n_epochs=2)
+</pre>
+</div>
+
+<p>
+Plot the model fit against the <code>lme4</code> fit. Error bars denote 95%
+credible/confidence intervals.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">pm</span> = m.qb_mean.detach().cpu().numpy()
+<span class="org-variable-name">psd</span> = torch.nn.functional.softplus(m.qb_raw_scale).squeeze().detach().cpu().numpy()
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
+fig.set_size_inches(5, 2.5)
+ax[0].errorbar(pm,
+               lme4_fe[<span class="org-string">'mean'</span>],
+               xerr=1.96 * psd,
+               yerr=1.96 * lme4_fe[<span class="org-string">'std'</span>], fmt=<span class="org-string">'.'</span>, c=<span class="org-string">'k'</span>, lw=0, ms=2, elinewidth=0.5)
+<span class="org-variable-name">lim</span> = [-14, -7]
+ax[0].plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[0].set_xlim(lim)
+ax[0].set_ylim(lim)
+ax[0].set_xlabel(<span class="org-string">'PGLMM-VI cell group effect'</span>)
+ax[0].set_ylabel(<span class="org-string">'lme4 cell group effect'</span>)
+
+<span class="org-variable-name">pm</span> = m.qu_mean.detach().cpu().numpy()
+<span class="org-variable-name">psd</span> = torch.nn.functional.softplus(m.qu_raw_scale).squeeze().detach().cpu().numpy()
+ax[1].errorbar(pm,
+               lme4_re[<span class="org-string">'mean'</span>],
+               xerr=1.96 * psd,fmt=<span class="org-string">'.'</span>, c=<span class="org-string">'k'</span>, lw=0, ms=2, elinewidth=0.5)
+ax[1].set_xlabel(<span class="org-string">'PGLMM-VI donor effect'</span>)
+ax[1].set_ylabel(<span class="org-string">'lme4 donor effect'</span>)
+<span class="org-variable-name">lim</span> = [-1, 1]
+ax[1].plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[1].set_xlim(lim)
+ax[1].set_ylim(lim)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pglmm.org/pglmm-vi.png" alt="pglmm-vi.png">
+</p>
+</div>
+
+<p>
+<b>Remark</b> How is <code>lme4</code> computing the posterior mean of the random effects,
+given the data and the fixed effects?
+</p>
+
+<p>
+Look at the posterior standard deviation against the number of cells in each
+cell group.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">psd</span> = torch.nn.functional.softplus(m.qb_raw_scale).squeeze().detach().cpu().numpy()
+plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.scatter(x.<span class="org-builtin">sum</span>(dim=0).cpu().numpy(), psd, s=2, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Number of cells'</span>)
+plt.ylabel(<span class="org-string">'PGLMM-VI estimated\n posterior standard deviation'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pglmm.org/pglmm-vi-psd-vs-n-cells.png" alt="pglmm-vi-psd-vs-n-cells.png">
+</p>
+</div>
+
+<p>
+The result suggests that the largest error bars do reflect the estimates
+with the greatest uncertainty, due to being supported by the fewest
+observations.
+</p>
+
+<p>
+Next, look at the variability across multiple runs, starting from a
+deterministic initialization. Even with a deterministic initialization, one
+should expect each run to terminate at a different value since the gradient
+used in each update is (doubly) stochastic (due to using a Monte Carlo
+integral over the variational approximation to construct the stochastic
+computation graph for the ELBO, and due to using a minibatch of data to
+evaluate the ELBO).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_trials</span> = 10
+<span class="org-variable-name">fits</span> = []
+<span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
+  <span class="org-keyword">print</span>(f<span class="org-string">'fitting {i}'</span>)
+  torch.manual_seed(i)
+  <span class="org-variable-name">m</span> = PoissonGLMM(x.shape[1], z.shape[1], init=t, prior_mean_cell_group=t)
+  m.fit(train, lr=1e-2, n_epochs=2)
+  fits.append(m)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">temp</span> = np.array([[m.q_mean_cell_group_mean.squeeze().detach().cpu().numpy()] <span class="org-keyword">for</span> m <span class="org-keyword">in</span> fits]).squeeze()
+plt.clf()
+plt.gcf().set_size_inches(6, 2)
+<span class="org-keyword">for</span> j, pm <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(temp.T):
+  plt.scatter(j + np.random.normal(size=pm.shape[0], scale=0.1), pm, s=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Cell group'</span>)
+plt.ylabel(<span class="org-string">'PGLMM-VI estimated mean'</span>)
+plt.xticks(<span class="org-builtin">range</span>(temp.shape[1]))
+plt.grid(axis=<span class="org-string">'x'</span>, c=<span class="org-string">'0.7'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pglmm.org/pglmm-vi-runs.png" alt="pglmm-vi-runs.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org53fcbcb" class="outline-3">
+<h3 id="org53fcbcb">NUTS</h3>
+<div class="outline-text-3" id="text-org53fcbcb">
+<p>
+It is unlikely that the posterior standard deviations are estimated
+correctly, since the true posterior is non-standard. Read the observed data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/zeb2_table.csv'</span>, index_col=0)
+</pre>
+</div>
+
+<p>
+Prepare the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">y</span> = torch.tensor(dat[<span class="org-string">'ZEB2'</span>], dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">x</span> = torch.tensor(pd.get_dummies(dat[<span class="org-string">'cell_group'</span>]).values, dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">s</span> = torch.tensor(dat[<span class="org-string">'total_count'</span>], dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">z</span> = torch.tensor(pd.get_dummies(dat[<span class="org-string">'patient_assignment'</span>]).values, dtype=torch.<span class="org-builtin">float</span>)
+</pre>
+</div>
+
+<p>
+Use NUTS to sample from the true posterior.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">pglmm</span>(y, s, x, z, prior_mean_b):
+  <span class="org-variable-name">psb</span> = pyro.distributions.HalfNormal(1.)
+  <span class="org-variable-name">sb</span> = pyro.sample(<span class="org-string">'sb'</span>, psb)
+  <span class="org-variable-name">pb</span> = pyro.distributions.Normal(prior_mean_b, sb)
+  <span class="org-variable-name">b</span> = pyro.sample(<span class="org-string">'b'</span>, pb)
+  <span class="org-variable-name">psu</span> = pyro.distributions.HalfNormal(1.)
+  <span class="org-variable-name">su</span> = pyro.sample(<span class="org-string">'su'</span>, psu)
+  <span class="org-variable-name">pu</span> = pyro.distributions.Normal(torch.zeros([z.shape[1]]), su)
+  <span class="org-variable-name">u</span> = pyro.sample(<span class="org-string">'u'</span>, pu)
+  <span class="org-variable-name">lam</span> = s * torch.exp(x @ b + z @ u)
+  <span class="org-keyword">return</span> pyro.sample(<span class="org-string">'y'</span>, pyro.distributions.Poisson(lam), obs=y)
+
+<span class="org-variable-name">nuts</span> = pyro.infer.mcmc.NUTS(ft.partial(pglmm, prior_mean_b=torch.tensor(t)))
+<span class="org-variable-name">samples</span> = pyro.infer.mcmc.MCMC(nuts, num_samples=500, warmup_steps=500)
+samples.run(y, s, x, z)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">pb_post</span> = samples.get_samples()[<span class="org-string">'b'</span>].numpy()
+<span class="org-variable-name">pu_post</span> = samples.get_samples()[<span class="org-string">'u'</span>].numpy()
+</pre>
+</div>
+
+<p>
+Compare the posterior mean to the <code>lme4</code> fit.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
+fig.set_size_inches(5, 2.5)
+ax[0].errorbar(pb_post.mean(axis=0),
+               lme4_fe[<span class="org-string">'mean'</span>],
+               xerr=<span class="org-builtin">abs</span>(pb_post.mean(axis=0) - np.percentile(pb_post, [5, 95], axis=0)),
+               yerr=1.96 * lme4_fe[<span class="org-string">'std'</span>], fmt=<span class="org-string">'.'</span>, c=<span class="org-string">'k'</span>, lw=0, ms=2, elinewidth=0.5)
+<span class="org-variable-name">lim</span> = [-14, -7]
+ax[0].plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[0].set_xlim(lim)
+ax[0].set_ylim(lim)
+ax[0].set_xlabel(<span class="org-string">'PGLMM-NUTS cell group effect'</span>)
+ax[0].set_ylabel(<span class="org-string">'lme4 cell group effect'</span>)
+
+ax[1].errorbar(pu_post.mean(axis=0),
+               lme4_re[<span class="org-string">'mean'</span>],
+               xerr=<span class="org-builtin">abs</span>(pu_post.mean(axis=0) - np.percentile(pu_post, [5, 95], axis=0)),
+               fmt=<span class="org-string">'.'</span>, c=<span class="org-string">'k'</span>, lw=0, ms=2, elinewidth=0.5)
+ax[1].set_xlabel(<span class="org-string">'PGLMM-NUTS donor effect'</span>)
+ax[1].set_ylabel(<span class="org-string">'lme4 donor effect'</span>)
+<span class="org-variable-name">lim</span> = [-.5, .5]
+ax[1].plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[1].set_xlim(lim)
+ax[1].set_ylim(lim)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pglmm.org/pglmm-nuts-lme4.png" alt="pglmm-nuts-lme4.png">
+</p>
+</div>
+
+<p>
+Compare the posterior samples to the variational approximation.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">pm</span> = m.qb_mean.detach().cpu().numpy()
+<span class="org-variable-name">psd</span> = torch.nn.functional.softplus(m.qb_raw_scale).squeeze().detach().cpu().numpy()
+
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
+fig.set_size_inches(5, 2.5)
+ax[0].errorbar(pb_post.mean(axis=0),
+               pm,
+               xerr=<span class="org-builtin">abs</span>(pb_post.mean(axis=0) - np.percentile(pb_post, [5, 95], axis=0)),
+               yerr=1.96 * psd, fmt=<span class="org-string">'.'</span>, c=<span class="org-string">'k'</span>, lw=0, ms=2, elinewidth=0.5)
+<span class="org-variable-name">lim</span> = [-14, -7]
+ax[0].plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[0].set_xlim(lim)
+ax[0].set_ylim(lim)
+ax[0].set_xlabel(<span class="org-string">'PGLMM-NUTS cell group effect'</span>)
+ax[0].set_ylabel(<span class="org-string">'PGLMM-VI cell group effect'</span>)
+
+<span class="org-variable-name">pm</span> = m.qu_mean.detach().cpu().numpy()
+<span class="org-variable-name">psd</span> = torch.nn.functional.softplus(m.qu_raw_scale).squeeze().detach().cpu().numpy()
+
+ax[1].errorbar(pu_post.mean(axis=0),
+               pm,
+               xerr=<span class="org-builtin">abs</span>(pu_post.mean(axis=0) - np.percentile(pu_post, [5, 95], axis=0)),
+               yerr=1.96 * psd,
+               fmt=<span class="org-string">'.'</span>, c=<span class="org-string">'k'</span>, lw=0, ms=2, elinewidth=0.5)
+ax[1].set_xlabel(<span class="org-string">'PGLMM-NUTS donor effect'</span>)
+ax[1].set_ylabel(<span class="org-string">'PGLMM-VI donor effect'</span>)
+<span class="org-variable-name">lim</span> = [-2, 2]
+ax[1].plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+ax[1].set_xlim(lim)
+ax[1].set_ylim(lim)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pglmm.org/pglmm-vi-nuts.png" alt="pglmm-vi-nuts.png">
+</p>
+</div>
+
+<p>
+The results suggest that the fully factored variational approximation is not
+a good approximation to the true posterior.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2021-01-04 Mon 01:17</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

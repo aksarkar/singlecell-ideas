@@ -153,11 +153,12 @@
      \left[\begin{array}{c} \mx\vb \\ \mathbf{0} \end{array}\right],
      \sigma^2 \left[\begin{array}{cc} \mh & \sigma^2_u \mk \\ \sigma^2_u \mk & \sigma^2_u \mk \end{array}\right]
      \right)\\
-     \vu \mid \mx, \mz, \vy, \vb, \sigma^2, \sigma^2_u &\sim \mathcal{N}\left(\frac{\sigma^2_u}{\sigma^2} \mk\mh^{-1}(\vy - \mx\vb), \sigma^2_u \mk (\mi - \mh^{-1})\right),
+     \vu \mid \mx, \mz, \vy, \vb, \sigma^2, \sigma^2_u &\sim \mathcal{N}\left(\frac{\sigma^2_u}{\sigma^2} \mk\mh^{-1}(\vy - \mx\vb), \sigma^2_u \mk (\mi - \mh^{-1})\right).
    \end{align}
 
-   i.e., the posterior of the random effects, given the fixed effects, the
-   model hyperparameters, and the data, is analytic and is also Gaussian.
+   In words, the posterior of the random effects (given the fixed effects, the
+   model hyperparameters, and the data) is analytic, Gaussian, and dependent on
+   the fixed effects.
 
 ** Poisson GLMM
 
@@ -181,7 +182,8 @@
    into [[https://mc-stan.org/][stan]]). We use NUTS implemented in ~pyro~
    below.
 
-   Another possibility is to use variational inference. However, it is easy to
+   Another possibility is to use variational inference, assuming a factorized
+   approximating family \(q(\vb, vu) = q(\vb)q(\vu)\). However, it is easy to
    show that the optimal variational approximating distribution \(q^*(\vb)\),
    over all distributions, is non-standard. This result follows from examining
    the log joint probability
@@ -193,15 +195,17 @@
    and collecting terms that involve \(\vb\) (Blei et al. 2017)
 
    \begin{equation}
-     q^*(\vb) \propto \exp\left(\sum_i \left[y_i (\mx\vb)_i - y_{i+}\exp((\mx\vb + \mz\vu)_i)\right] - \frac{\vb'\vb}{2}\right).
+     q^*(\vb) \propto \exp\left(\sum_i \Big[y_i (\mx\vb)_i - y_{i+} \E[\exp((\mx\vb + \mz\vu)_i)]\Big] - \frac{\vb'\vb}{2}\right).
    \end{equation}
 
    This result suggests that naively assuming a conjugate variational
    approximation (i.e., Gaussian) may not work well (specifically, to
    characterize the posterior variance; it is reasonable to assume that the
-   data are very informative about the mean).
+   data are very informative about the mean). Further, the true posterior
+   \(p(\vb, \vu \mid \cdot)\) does not factorize, so naively assuming a
+   factorized variational approximation might not work well.
 
-   *Remark* One way to get around this limitation could be
+   *Remark* One way to get around the first limitation could be
    [[file:flows.org][normalizing flows]].
 
    In the GLMM, the primary inference goal could be to estimate the posterior
@@ -218,12 +222,12 @@
    posterior \(p(\vb \mid \mx, \my, \mz, \su^2)\). The ELBO is
 
    \begin{equation}
-     \ell = \E_{q(\vb, \vu)}\left[\left[\sum_i \ln p(y_i \mid y_{i+}, \mx, \mz, \vb, \vu)\right] - \KL(q(\vb) \Vert p(\vb)) - \KL(q(\vu) \Vert p(\vu)),
+     \ell = \E_{q(\vb, \vu)}\left[\sum_i \ln p(y_i \mid y_{i+}, \mx, \mz, \vb, \vu)\right] - \KL(q(\vb) \Vert p(\vb)) - \KL(q(\vu) \Vert p(\vu)),
    \end{equation}
 
    where the expectation is replaced by a Monte Carlo integral (Kingma and
    Welling 2014, Rezende et al. 2014, Titsias and Lázaro-Gredilla 2014), and
-   the KL divergence is analytic (for the choice of conjugate variational
+   the KL divergences are analytic (for the choice of conjugate variational
    approximating family).
 
    *Remark* As written, the model is not identifiable when \(\mx\) and \(\mz\)

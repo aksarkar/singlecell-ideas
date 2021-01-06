@@ -6,8 +6,9 @@
   The minimal description of the working environment is:
 
   #+BEGIN_SRC sh :results none
-    xargs -L100 conda create -y -c aksarkar -c bioconda -n singlecell <<EOF
+    xargs -L100 conda create -y -c aksarkar -c bioconda -c pytorch -n singlecell <<EOF
     bioconductor-limma
+    cudatoolkit=10.1.243
     colorcet
     ipython
     jupyter_console
@@ -30,28 +31,28 @@
     scmodes
     scqtl
     sphinx
+    tensorboard
     torchvision
     EOF
   #+END_SRC
 
   #+BEGIN_SRC sh :results none
     source activate singlecell
-    srun --partition=build --mem=8G xargs -L100 python -m pip install <<EOF
+    xargs -L100 python -m pip install <<EOF
     -e /project2/mstephens/aksarkar/projects/anmf/
     -e /project2/mstephens/aksarkar/projects/gtex-pred/
     -e /project2/mstephens/aksarkar/projects/mpebpm/
     -e /project2/mstephens/aksarkar/projects/nbmix/
     -e /project2/mstephens/aksarkar/projects/poisbeta/
-    dash==1.9.0
     dca
     git+https://github.com/aksarkar/scaa.git#egg=scaa
     git+https://github.com/aksarkar/wlra.git#egg=wlra
     h5py==2.10.0
     leidenalg
+    pyro-ppl
     rpy2==3.2.4
     scanpy
     scvi
-    sparse
     EOF
   #+END_SRC
 

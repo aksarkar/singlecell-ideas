@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-01-04 Mon 01:30 -->
+<!-- 2021-01-08 Fri 12:06 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poisson GLMM for differential expression</title>
@@ -257,24 +257,24 @@ for the JavaScript code in this tag.
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orgf5f6189">Introduction</a></li>
+<li><a href="#org0d0e474">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#org2bd3808">Data</a></li>
-<li><a href="#org12c937b">Results</a>
+<li><a href="#orgda6ed4c">Data</a></li>
+<li><a href="#org8ec3a8b">Results</a>
 <ul>
-<li><a href="#orgaee5bf1">LMM</a></li>
-<li><a href="#orgf9f94c5">Poisson GLMM</a></li>
-<li><a href="#orgf00cb1f">Variational Empirical Bayes</a></li>
-<li><a href="#org53fcbcb">NUTS</a></li>
+<li><a href="#orga042750">LMM</a></li>
+<li><a href="#orgc130b7f">Poisson GLMM</a></li>
+<li><a href="#orgafe5eee">Variational Empirical Bayes</a></li>
+<li><a href="#org0117c19">NUTS</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-orgf5f6189" class="outline-2">
-<h2 id="orgf5f6189">Introduction</h2>
-<div class="outline-text-2" id="text-orgf5f6189">
+<div id="outline-container-org0d0e474" class="outline-2">
+<h2 id="org0d0e474">Introduction</h2>
+<div class="outline-text-2" id="text-org0d0e474">
 <p>
 Valentine Svensson
 <a href="https://www.nxn.se/valent/2020/12/27/disappointing-variational-inference-for-glmms">suggested
@@ -330,8 +330,8 @@ modifications are needed to get reasonable estimates.
 </div>
 </div>
 
-<div id="outline-container-org4e5d615" class="outline-2">
-<h2 id="setup"><a id="org4e5d615"></a>Setup</h2>
+<div id="outline-container-orgeecc295" class="outline-2">
+<h2 id="setup"><a id="orgeecc295"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> functools <span class="org-keyword">as</span> ft
@@ -360,9 +360,9 @@ modifications are needed to get reasonable estimates.
 </div>
 </div>
 
-<div id="outline-container-org2bd3808" class="outline-2">
-<h2 id="org2bd3808">Data</h2>
-<div class="outline-text-2" id="text-org2bd3808">
+<div id="outline-container-orgda6ed4c" class="outline-2">
+<h2 id="orgda6ed4c">Data</h2>
+<div class="outline-text-2" id="text-orgda6ed4c">
 <p>
 Download the data from
 <a href="https://immunology.sciencemag.org/content/5/50/eabb4432.full">Borland et
@@ -386,13 +386,13 @@ curl -O <span class="org-string">"https://raw.githubusercontent.com/vals/Blog/ma
 </div>
 </div>
 
-<div id="outline-container-org12c937b" class="outline-2">
-<h2 id="org12c937b">Results</h2>
-<div class="outline-text-2" id="text-org12c937b">
+<div id="outline-container-org8ec3a8b" class="outline-2">
+<h2 id="org8ec3a8b">Results</h2>
+<div class="outline-text-2" id="text-org8ec3a8b">
 </div>
-<div id="outline-container-orgaee5bf1" class="outline-3">
-<h3 id="orgaee5bf1">LMM</h3>
-<div class="outline-text-3" id="text-orgaee5bf1">
+<div id="outline-container-orga042750" class="outline-3">
+<h3 id="orga042750">LMM</h3>
+<div class="outline-text-3" id="text-orga042750">
 <p>
 To gain more insight into GLMM inference, first consider an ordinary LMM
 </p>
@@ -437,9 +437,9 @@ the fixed effects.
 </div>
 </div>
 
-<div id="outline-container-orgf9f94c5" class="outline-3">
-<h3 id="orgf9f94c5">Poisson GLMM</h3>
-<div class="outline-text-3" id="text-orgf9f94c5">
+<div id="outline-container-orgc130b7f" class="outline-3">
+<h3 id="orgc130b7f">Poisson GLMM</h3>
+<div class="outline-text-3" id="text-orgc130b7f">
 <p>
 In the (Poisson) GLMM, the fundamental difficulty in maximum likelihood
 estimation is that the assumed distribution of \(p(\vu)\) is non-conjugate
@@ -510,9 +510,9 @@ Expectation Maximization (Beal 2003).
 </div>
 </div>
 
-<div id="outline-container-orgf00cb1f" class="outline-3">
-<h3 id="orgf00cb1f">Variational Empirical Bayes</h3>
-<div class="outline-text-3" id="text-orgf00cb1f">
+<div id="outline-container-orgafe5eee" class="outline-3">
+<h3 id="orgafe5eee">Variational Empirical Bayes</h3>
+<div class="outline-text-3" id="text-orgafe5eee">
 <p>
 Implement VEB to yield a point estimate for \(\su^2\) and an approximate
 posterior \(p(\vb \mid \mx, \my, \mz, \su^2)\). The ELBO is
@@ -815,9 +815,9 @@ plt.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org53fcbcb" class="outline-3">
-<h3 id="org53fcbcb">NUTS</h3>
-<div class="outline-text-3" id="text-org53fcbcb">
+<div id="outline-container-org0117c19" class="outline-3">
+<h3 id="org0117c19">NUTS</h3>
+<div class="outline-text-3" id="text-org0117c19">
 <p>
 It is unlikely that the posterior standard deviations are estimated
 correctly, since the true posterior is non-standard. Read the observed data.
@@ -964,7 +964,7 @@ a good approximation to the true posterior.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-01-04 Mon 01:30</p>
+<p class="date">Created: 2021-01-08 Fri 12:06</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

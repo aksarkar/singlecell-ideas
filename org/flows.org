@@ -7,6 +7,7 @@
   be thought of as solving an empirical Bayes problem (Sarkar and Stephens
   2020). \(
   \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\Gam{Gamma}
   \DeclareMathOperator\E{E}
   \DeclareMathOperator\N{\mathcal{N}}
   \newcommand\abs[1]{\left\vert #1 \right\vert}
@@ -20,16 +21,16 @@
   where \(i = 1, \ldots, n\) indexes samples. Assuming \(\mathcal{G}\) is the
   family of Gamma distributions yields analytic gradients and admits
   [[file:mpebpm.org][fast implementation on GPUs]]. However, the fitted model
-  can fail to accurately describe variation at some genes.
+  can fail to accurately describe expression variation at some genes.
 
-  In contrast, the non-parametric family of unimodal distributions
+  In contrast, the family of non-parametric unimodal distributions
   (Stephens 2016) could be sufficient for all but a minority of genes. In
   practice, this family is approximated as the family of mixture of uniform
   distributions with fixed endpoints, including the common mode. Then,
   inference in this model can be achieved by a combination of convex
   optimization (over mixture weights, given the mode) and line search (over the
   mode, as an outer loop). However, in practice this approach is expensive and
-  cumbersome for large data sets.
+  cumbersome to parallelize for large data sets.
 
   One idea which could bridge the gap between these approaches (in both
   computational cost and flexibility) is /normalizing flows/ (reviewed in
@@ -38,14 +39,14 @@
   transformations \(T_1, \ldots, T_K\) to a tractable density, in order to
   obtain a different density
 
-  \begin{equation}
-    f_x(x) = f_u(u) \prod_{k=1}^{K} \det \abs{J_k(\cdot)},
-  \end{equation}
+  \begin{align}
+    x &= (T_K \circ \cdots \circ T_1)(u)\\
+    f_x(x) &= f_u(u) \prod_{k=1}^{K} \det \abs{J_k(\cdot)},
+  \end{align}
 
-  where \(J_k\) is the Jacobian of \(T_k^{-1}\). (This choice makes it easy to
-  evaluate the density \(f_x\), but difficult to sample from it.) If the
-  \(T_k\) have free parameters, gradients with respect to those parameters are
-  available, allowing the transformations to be learned from the data. Here, we
+  where \(J_k\) is the Jacobian of \(T_k^{-1}\). If the \(T_k\) have free
+  parameters, gradients with respect to those parameters are available,
+  allowing the transformations to be learned from the data. Here, we
   investigate using flows to define a flexible family of priors, and use that
   family to fit expression models to scRNA-seq data.
 
@@ -62,12 +63,13 @@
   #+RESULTS:
   : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="mstephens",mem="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+CALL: tensorboard(venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/singlecell
 
   #+BEGIN_SRC ipython
     import numpy as np
+    import pandas as pd
     import scipy.stats as st
     import torch
     import torch.utils.tensorboard as tb
@@ -107,98 +109,15 @@
 
    \begin{align}
      &\max_{f_x} \E_{f^*}[\ln f_x(x)]\\
-     = &\max_{T_1, \ldots, T_K} \E_{f^*}\left[\ln f_u(T(x)) + \sum_{k=1}^K \ln\det J_k(\cdot)\right],
+     = &\max_{T_1, \ldots, T_K} \E_{f^*}\left[\ln f_u(T(x)) + \sum_{k=1}^K \ln\det J_k(\cdot)\right]\\
+     = &\max_{T_1, \ldots, T_K} \frac{1}{n} \sum_i\left[\ln f_u(T(x_i)) + \sum_{k=1}^K \ln\det J_k(\cdot)\right],
    \end{align}
 
-   where \(T = T_K \circ \cdots \circ T_1\) is the inverse mapping from \(x \in
-   \mathcal{X} \rightarrow u \in \mathcal{U}\). This optimization problem can
-   be readily solved using automatic differentiation and gradient descent.
-
-** Normalizing flow for empirical Bayes
-
-   Now consider the EBPM problem
-
-   \begin{align}
-     x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
-     \lambda_i &\sim g(\cdot) = g_0(\cdot) \prod_k \det \abs{J^g_k}
-   \end{align}
-
-   where \(i = 1, \ldots, n\), and \(g_0(\cdot) = \N(\cdot; 0, 1)\) for
-   simplicity. One can estimate \(g\) by maximizing the marginal likelihood
-
-   \begin{align}
-      &\max_g \sum_i \ln p(x_i \mid s_i, g)\\
-      = &\max_{g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g(\lambda_i) - \ln q(\lambda_i)\right]\\
-      = &\max_{T_g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g_0(T_g(\lambda_i)) + \sum_k \ln\det\abs{J^g_k} - \ln q(\lambda_i)\right]\\
-   \end{align}
-
-   where \(T_g = T^g_K \circ \cdots \circ T^g_1\) maps \(g\) to a base measure
-   and \(J^g_k\) denotes the Jacobian of \(T^g_k\). It is straightforward to
-   show that, holding \(g\) fixed, the optimal \(q\) is the true posterior
-   \(p(\lambda_i \mid x_i, s_i, g)\) (e.g., Neal and Hinton 1998). In order to
-   ensure \(q\) is flexible enough to capture the true posterior, suppose it
-   too is represened by a normalizing flow
-
-   \begin{equation}
-     q(\cdot) = q_0(\cdot) \prod_k \det\abs{J^q_k},
-   \end{equation}
-
-   where \(J^q_k\) denotes the Jacobian of the transform \(T^q_k\). In order to
-   make sampling easy, suppose \(T_q = T^q_K \circ \cdots \circ T^q_1\) maps
-   the base measure \(q_0(\cdot) = \N(\cdot; 0, 1)\) to \(q\). Then, the
-   optimization problem is
-
-   \begin{equation}
-     \max_{T_g, T_q} \E_{u_i \sim q_0}\left[\sum_i \ln p(x_i | s_i, T_q(u_i)) + \ln g_0(T_g(T_q(u_i))) + \sum_k \ln\det\abs{J^g_k} - \ln q_0(u_i) - \sum_k \ln\det\abs{J^q_k}\right].
-   \end{equation}
-
-   Since \(T_g, T_q\) are differentiable, this problem can be solved by
-   replacing the expectation with a Monte Carlo integral (e.g., Kingma and
-   Welling 2014), and then using automatic differentiation and gradient descent
-   to optimize the resulting stochastic objective.
-
-   /Remark:/ When reducing problems in scRNA-seq data analysis to EBPM, we are
-   primarily interested in the estimated prior \(\hat{g}\). Depending on the
-   choice of flow, obtaining expectations with respect to \(\hat{g}\) might be
-   difficult.
-
-* Results
-** Example of normalizing flow
-
-   Draw data from a scale mixture of Gaussians.
-
-   #+BEGIN_SRC ipython
-     rng = np.random.default_rng(1)
-     n = 1000
-     pi = np.array([0.3, 0.7])
-     scale = np.array([0.1, 0.4])
-     z = rng.uniform(size=(n, 1)) < pi[0]
-     x = rng.normal(scale=scale @ np.hstack([z, ~z]).T)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[4]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ex0.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(2.5, 2.5)
-     plt.hist(x, bins=19, density=True, color='0.7')
-     grid = np.linspace(x.min(), x.max(), 5000)
-     mixcdf = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
-     plt.plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c='k')
-     plt.xlabel('Observation')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[57]:
-   [[file:figure/flows.org/ex0.png]]
-   :END:
+   where \(T = T_K \circ \cdots \circ T_1\) is the mapping from \(x \in
+   \mathcal{X} \rightarrow u \in \mathcal{U}\), and \(f_u\) is the density of
+   some simple distribution (e.g., standard Gaussian). This optimization
+   problem can be readily solved using automatic differentiation and gradient
+   descent.
 
    #+BEGIN_SRC ipython
      class PlanarFlow(torch.nn.Module):
@@ -270,7 +189,210 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[117]:
+   # Out[4]:
+   :END:
+
+** Normalizing flow for empirical Bayes
+
+   Now consider the EBPM problem
+
+   \begin{align}
+     x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
+     \lambda_i &\sim g(\cdot) = g_0(\cdot) \prod_k \det \abs{J^g_k}
+   \end{align}
+
+   where \(i = 1, \ldots, n\), and \(g_0(\cdot) = \N(\cdot; 0, 1)\) for
+   simplicity. One can estimate \(g\) by maximizing the marginal likelihood
+
+   \begin{align}
+      &\max_g \sum_i \ln p(x_i \mid s_i, g)\\
+      \geq &\max_{g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g(\lambda_i) - \ln q(\lambda_i)\right]\\
+      = &\max_{T_g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g_0(T_g(\lambda_i)) + \sum_k \ln\det\abs{J^g_k} - \ln q(\lambda_i)\right]\\
+   \end{align}
+
+   where \(T_g = T^g_K \circ \cdots \circ T^g_1\) maps \(g\) to a base measure
+   and \(J^g_k\) denotes the Jacobian of \(T^g_k\). It is straightforward to
+   show that, holding \(g\) fixed, the optimal \(q\) is the true posterior
+   \(p(\lambda_i \mid x_i, s_i, g)\) (e.g., Neal and Hinton 1998). In order to
+   ensure \(q\) is flexible enough to capture the true posterior, suppose it
+   too is represened by a normalizing flow
+
+   \begin{equation}
+     q(\cdot) = q_0(\cdot) \prod_k \det\abs{J^q_k},
+   \end{equation}
+
+   where \(J^q_k\) denotes the Jacobian of the transform \(T^q_k\). In order to
+   make sampling easy, suppose \(T_q = T^q_K \circ \cdots \circ T^q_1\) maps
+   the base measure \(q_0(u_i \mid x_i)\) to \(q\). Then, the optimization
+   problem is
+
+   \begin{equation}
+     \max_{T_g, T_q} \E_{u_i \sim q_0}\left[\sum_i \ln p(x_i | s_i, T_q(u_i)) + \ln g_0(T_g(T_q(u_i))) + \sum_k \ln\det\abs{J^g_k} - \ln q_0(u_i) + \sum_k \ln\det\abs{J^q_k}\right].
+   \end{equation}
+
+   /Remark/ It is critical that \(u_i \sim q_0\) depends on \(x_i\) in the
+   variational approximation. Rezende and Mohamed 2015 propose using amortized
+   inference; however, in the context of this problem, a simpler alternative
+   could be a log-Gamma posterior.
+
+   /Remark/ Since the transformation \(T_q\) maps \(u_i \in \mathcal{U}\) to
+   \(\lambda_i \in \Lambda\), the sign of the determinants of the Jacobian
+   needs to be inverted.
+
+   Since \(T_g, T_q\) are differentiable, this problem can be solved by
+   replacing the expectation with a Monte Carlo integral (e.g., Kingma and
+   Welling 2014), and then using automatic differentiation and gradient descent
+   to optimize the resulting stochastic objective.
+
+   /Remark/ When reducing problems in scRNA-seq data analysis to EBPM, we are
+   primarily interested in the estimated prior \(\hat{g}\). Depending on the
+   choice of flow, obtaining expectations with respect to \(\hat{g}\) might be
+   difficult. One possibility is to approximate these expectations by
+   discretizing \(\hat{g}\) and taking weighted sums.
+
+   #+BEGIN_SRC ipython
+     class EBNM(torch.nn.Module):
+       def __init__(self, K, scale):
+         super().__init__()
+         self.scale = scale
+         self.p0 = torch.distributions.Normal(loc=0., scale=1.)
+         self.pz = NormalizingFlow([PlanarFlow(1) for _ in range(K)])
+         self.qz = NormalizingFlow([PlanarFlow(1) for _ in range(K)])
+
+       def forward(self, x, n_samples):
+         q0 = torch.distributions.Normal(
+           loc=x / (1 + self.scale ** 2),
+           scale=torch.sqrt(1 / (1 + self.scale ** 2)))
+         u = q0.rsample([1]).squeeze(-1)
+         z, log_det_q = self.qz.forward(u.T)
+         w, log_det_p = self.pz.forward(z)
+         # Important: qz is forward transforms, so we need to invert the sign of
+         # log_det_q
+         elbo = (torch.distributions.Normal(z, self.scale).log_prob(x)
+                 + self.p0.log_prob(w) + log_det_p
+                 - (q0.log_prob(u.T) - log_det_q)).sum()
+         assert elbo <= 0
+         return -elbo
+
+       def fit(self, x, n_epochs, n_samples=1, log_dir=None, **kwargs):
+         if log_dir is not None:
+           writer = tb.SummaryWriter(log_dir)
+         n_samples = torch.Size([n_samples])
+         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         global_step = 0
+         for _ in range(n_epochs):
+           opt.zero_grad()
+           loss = self.forward(x, n_samples)
+           if log_dir is not None:
+             writer.add_scalar('loss', loss, global_step)
+           if torch.isnan(loss):
+             raise RuntimeError
+           loss.backward()
+           opt.step()
+           global_step += 1
+         return self
+
+       @torch.no_grad()
+       def fitted_g(self, z, log=True):
+         u, log_det = self.pz.forward(z)
+         log_prob = self.p0.log_prob(u) + log_det
+         if log:
+           return log_prob.numpy()
+         else:
+           return torch.exp(log_prob).numpy()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     class EBPM(torch.nn.Module):
+       def __init__(self, K):
+         super().__init__()
+         self.pz = NormalizingFlow([PlanarFlow(1) for _ in range(K)])
+         self.qz = NormalizingFlow([PlanarFlow(1) for _ in range(K)])
+
+       def forward(self, x, s, n_samples):
+         u = N.rsample([x.shape[0], 1])
+         log_lam, log_det_q = self.qz.forward(u)
+         lam = torch.exp(log_lam)
+         log_det_q += log_lam
+         w, log_det_p = self.pz.forward(lam)
+         # Important: qz is forward transforms, so we need to invert the sign of
+         # log_det_q
+         kl = N.log_prob(w) + log_det_p - (N.log_prob(u) - log_det_q)
+         assert (kl > 0).all()
+         elbo = (torch.distributions.Poisson(s * lam).log_prob(x) - kl).sum()
+         assert elbo <= 0
+         return -elbo
+
+       def fit(self, x, s, n_epochs, n_samples=1, log_dir=None, **kwargs):
+         if log_dir is not None:
+           writer = tb.SummaryWriter(log_dir)
+         n_samples = torch.Size([n_samples])
+         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         global_step = 0
+         for _ in range(n_epochs):
+           opt.zero_grad()
+           loss = self.forward(x, s, n_samples)
+           if log_dir is not None:
+             writer.add_scalar('loss', loss, global_step)
+           if torch.isnan(loss):
+             raise RuntimeError
+           loss.backward()
+           opt.step()
+           global_step += 1
+         return self
+
+       def fitted_g(self, lam):
+         u, log_det = self.pz.forward(lam)
+         return N.log_prob(u) + log_det
+
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
+
+* Results
+** Example of normalizing flow
+
+   Draw data from a scale mixture of Gaussians.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 1000
+     pi = np.array([0.3, 0.7])
+     scale = np.array([0.1, 0.4])
+     z = rng.uniform(size=(n, 1)) < pi[0]
+     x = rng.normal(scale=scale @ np.hstack([z, ~z]).T)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ex0.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     plt.hist(x, bins=19, density=True, color='0.7')
+     grid = np.linspace(x.min(), x.max(), 5000)
+     mixcdf = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
+     plt.plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c='k')
+     plt.xlabel('Observation')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[57]:
+   [[file:figure/flows.org/ex0.png]]
    :END:
 
    #+BEGIN_SRC ipython :async t
@@ -316,3 +438,224 @@
    # Out[125]:
    [[file:figure/flows.org/ex0-fit.png]]
    :END:
+
+** Example of Empirical Bayes Normal Means
+
+   For EBNM, a simple choice of \(q_0\) is 
+
+   \begin{equation}
+     u_i \mid x_i, s_i^2 \sim \N\left(\frac{1}{1 + s_i^2} x_i, \frac{1}{1 + 1 / s_i^2}\right),
+   \end{equation}
+
+   which is the exact posterior under the simple model
+
+   \begin{align}
+     x_i \mid u_i, s_i^2 &\sim \N(u_i, s_i^2)\\
+     u_i &\sim \N(0, 1).
+   \end{align}
+
+   Draw from a scale mixture of Gaussians convolved with a Gaussian.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 1000
+     s = 1.
+     pi = np.array([0.7, 0.3])
+     scale = np.array([0.1, 0.4])
+     z = rng.uniform(size=(n, 1)) < pi[0]
+     mu = rng.normal(scale=scale @ np.hstack([z, ~z]).T)
+     x = rng.normal(mu, 0.05)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[21]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-ex.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(4, 4)
+     ax[0].hist(x, bins=27, color='0.7', density=True)
+     ax[0].set_xlabel('Observation')
+     ax[0].set_ylabel('Density')
+     grid = np.linspace(mu.min(), mu.max(), 1000)
+     mixcdf = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
+     ax[1].hist(mu, bins=31, color='0.7', density=True)
+     ax[1].plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c='k')
+     ax[1].set_xlabel('Latent variable')
+     ax[1].set_ylabel('Density')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[22]:
+   [[file:figure/flows.org/ebnm-ex.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     K = 3
+     run = 10
+     lr = 1e-2
+     n_epochs = 1600
+     torch.manual_seed(run)
+     m = (EBNM(K=K, scale=torch.tensor(0.05))
+          .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+               n_epochs=n_epochs,
+               lr=lr,
+               log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebnm-nf-{K}-{lr}-{n_epochs}-{run}'))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[54]:
+   :END:
+
+   Plot the fitted prior against the true prior.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-fitted-g.png
+     plt.clf()
+     plt.gcf().set_size_inches(3.5, 2.5)
+     grid = np.linspace(mu.min(), mu.max(), 1000)
+     mixcdf = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
+     plt.plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c='k', label='Simulated')
+     plt.plot(grid, m.fitted_g(torch.tensor(grid, dtype=torch.float).reshape(-1, 1), log=False), lw=1, c='r', label='Fit')
+     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     plt.xlabel('Latent variable')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[55]:
+   [[file:figure/flows.org/ebnm-fitted-g.png]]
+   :END:
+
+   Plot the approximate posterior against the true latent variables.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-q.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     q0 = st.norm(x.reshape(-1, 1) / (1 + .05**2), np.sqrt(1 / (1 + 1 / .05**2)))
+     with torch.no_grad():
+       samples = np.stack([m.qz.forward(torch.tensor(q0.rvs(), dtype=torch.float))[0].numpy() for _ in range(100)]).squeeze()
+       muhat = samples.mean(axis=0)
+     plt.scatter(mu, muhat, s=1, c='k')
+     lim = [mu.min(), mu.max()]
+     plt.plot(lim, lim, lw=1, ls=':', c='r')
+     plt.xlim(lim)
+     plt.ylim(lim)
+     plt.xlabel('Latent variable')
+     plt.ylabel('Estimate')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[56]:
+   [[file:figure/flows.org/ebnm-q.png]]
+   :END:
+
+   Compute the marginal log likelihood of the data under the oracle prior, and
+   under the estimated prior.
+
+   #+BEGIN_SRC ipython
+     pd.Series({
+       'oracle': (st.norm(scale=np.sqrt(1 + scale ** 2)).pdf(x.reshape(-1, 1)) @ pi).sum(),
+       'ebnm-nf': (st.norm(loc=grid).pdf(x.reshape(-1, 1)) @ m.fitted_g(torch.tensor(grid, dtype=torch.float).reshape(-1, 1), log=False)).sum()
+     })
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[75]:
+   #+BEGIN_EXAMPLE
+     oracle       271.383956
+     ebnm-nf    96719.294528
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+** Example of Empirical Bayes Poisson Means
+
+   For EBPM, a simple choice of \(q_0\) is 
+
+   \begin{equation}
+     u_i \mid x_i, s_i \sim \Gam(1 + x_i, 1 + s_i),
+   \end{equation}
+
+   where the Gamma distribution is parameterized by shape and rate, which is
+   the exact posterior under the simple model
+
+   \begin{align}
+     x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
+     u_i &\sim \Gam(1, 1).
+   \end{align}
+
+   For simplicity, it is easier to work with a prior (and approximate
+   posterior) on \(\ln u_i\).
+
+   Draw data from a Poisson convolved with a Gamma.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 1000
+     s = np.full(n, 1e4)
+     log_mean = -8
+     log_inv_disp = 1
+     lam = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+     x = rng.poisson(s * lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   :END:
+
+   Plot the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ex1.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(4, 4)
+     grid = np.arange(x.max() + 1)
+     ax[0].hist(x, bins=grid, color='0.7', density=True)
+     ax[0].plot(grid + 0.5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, c='k')
+     ax[0].set_xlabel('Observed count')
+     ax[0].set_ylabel('Density')
+     grid = np.linspace(0, (x / s).max(), 1000)
+     ax[1].plot(grid, st.gamma(a=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp)).pdf(grid), lw=1, c='k')
+     ax[1].set_xlabel('Latent variable')
+     ax[1].set_ylabel('Density')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[68]:
+   [[file:figure/flows.org/ex1.png]]
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     K = 2
+     run = 2
+     lr = 1e-2
+     n_epochs = 8000
+     torch.manual_seed(run)
+     m = (EBPM(K=K)
+          .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+               torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+               n_epochs=n_epochs,
+               lr=lr,
+               log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-nf-{K}-{lr}-{n_epochs}-{run}'))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - c7f81a67-eafd-460f-90f5-257874e6e1ed
+   :END:
+

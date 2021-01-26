@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-11-11 Wed 13:46 -->
+<!-- 2021-01-26 Tue 13:37 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Normalizing flows for EBPM</title>
@@ -257,7 +257,7 @@ for the JavaScript code in this tag.
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orgdd80782">Introduction</a></li>
+<li><a href="#org788bee6">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
 <li><a href="#orgeb9df02">Methods</a>
 <ul>
@@ -268,20 +268,23 @@ for the JavaScript code in this tag.
 <li><a href="#org26165be">Results</a>
 <ul>
 <li><a href="#org74ca7c6">Example of normalizing flow</a></li>
+<li><a href="#orga548a6a">Example of Empirical Bayes Normal Means</a></li>
+<li><a href="#orgd0277f9">Example of Empirical Bayes Poisson Means</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-orgdd80782" class="outline-2">
-<h2 id="orgdd80782">Introduction</h2>
-<div class="outline-text-2" id="text-orgdd80782">
+<div id="outline-container-org788bee6" class="outline-2">
+<h2 id="org788bee6">Introduction</h2>
+<div class="outline-text-2" id="text-org788bee6">
 <p>
 Fitting an expression model to observed scRNA-seq data at a single gene can
 be thought of as solving an empirical Bayes problem (Sarkar and Stephens
 2020). \(
   \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\Gam{Gamma}
   \DeclareMathOperator\E{E}
   \DeclareMathOperator\N{\mathcal{N}}
   \newcommand\abs[1]{\left\vert #1 \right\vert}
@@ -297,18 +300,18 @@ be thought of as solving an empirical Bayes problem (Sarkar and Stephens
 where \(i = 1, \ldots, n\) indexes samples. Assuming \(\mathcal{G}\) is the
 family of Gamma distributions yields analytic gradients and admits
 <a href="mpebpm.html">fast implementation on GPUs</a>. However, the fitted model
-can fail to accurately describe variation at some genes.
+can fail to accurately describe expression variation at some genes.
 </p>
 
 <p>
-In contrast, the non-parametric family of unimodal distributions
+In contrast, the family of non-parametric unimodal distributions
 (Stephens 2016) could be sufficient for all but a minority of genes. In
 practice, this family is approximated as the family of mixture of uniform
 distributions with fixed endpoints, including the common mode. Then,
 inference in this model can be achieved by a combination of convex
 optimization (over mixture weights, given the mode) and line search (over the
 mode, as an outer loop). However, in practice this approach is expensive and
-cumbersome for large data sets.
+cumbersome to parallelize for large data sets.
 </p>
 
 <p>
@@ -320,15 +323,15 @@ transformations \(T_1, \ldots, T_K\) to a tractable density, in order to
 obtain a different density
 </p>
 
-\begin{equation}
-  f_x(x) = f_u(u) \prod_{k=1}^{K} \det \abs{J_k(\cdot)},
-\end{equation}
+\begin{align}
+  x &= (T_K \circ \cdots \circ T_1)(u)\\
+  f_x(x) &= f_u(u) \prod_{k=1}^{K} \det \abs{J_k(\cdot)},
+\end{align}
 
 <p>
-where \(J_k\) is the Jacobian of \(T_k^{-1}\). (This choice makes it easy to
-evaluate the density \(f_x\), but difficult to sample from it.) If the
-\(T_k\) have free parameters, gradients with respect to those parameters are
-available, allowing the transformations to be learned from the data. Here, we
+where \(J_k\) is the Jacobian of \(T_k^{-1}\). If the \(T_k\) have free
+parameters, gradients with respect to those parameters are available,
+allowing the transformations to be learned from the data. Here, we
 investigate using flows to define a flexible family of priors, and use that
 family to fit expression models to scRNA-seq data.
 </p>
@@ -340,6 +343,7 @@ family to fit expression models to scRNA-seq data.
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.tensorboard <span class="org-keyword">as</span> tb
@@ -375,121 +379,17 @@ can estimate \(f_x\) by maximizing the likelihood of the data
 
 \begin{align}
   &\max_{f_x} \E_{f^*}[\ln f_x(x)]\\
-  = &\max_{T_1, \ldots, T_K} \E_{f^*}\left[\ln f_u(T(x)) + \sum_{k=1}^K \ln\det J_k(\cdot)\right],
+  = &\max_{T_1, \ldots, T_K} \E_{f^*}\left[\ln f_u(T(x)) + \sum_{k=1}^K \ln\det J_k(\cdot)\right]\\
+  = &\max_{T_1, \ldots, T_K} \frac{1}{n} \sum_i\left[\ln f_u(T(x_i)) + \sum_{k=1}^K \ln\det J_k(\cdot)\right],
 \end{align}
 
 <p>
-where \(T = T_K \circ \cdots \circ T_1\) is the inverse mapping from \(x \in
-   \mathcal{X} \rightarrow u \in \mathcal{U}\). This optimization problem can
-be readily solved using automatic differentiation and gradient descent.
+where \(T = T_K \circ \cdots \circ T_1\) is the mapping from \(x \in
+   \mathcal{X} \rightarrow u \in \mathcal{U}\), and \(f_u\) is the density of
+some simple distribution (e.g., standard Gaussian). This optimization
+problem can be readily solved using automatic differentiation and gradient
+descent.
 </p>
-</div>
-</div>
-
-<div id="outline-container-orgef00a68" class="outline-3">
-<h3 id="orgef00a68">Normalizing flow for empirical Bayes</h3>
-<div class="outline-text-3" id="text-orgef00a68">
-<p>
-Now consider the EBPM problem
-</p>
-
-\begin{align}
-  x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
-  \lambda_i &\sim g(\cdot) = g_0(\cdot) \prod_k \det \abs{J^g_k}
-\end{align}
-
-<p>
-where \(i = 1, \ldots, n\), and \(g_0(\cdot) = \N(\cdot; 0, 1)\) for
-simplicity. One can estimate \(g\) by maximizing the marginal likelihood
-</p>
-
-\begin{align}
-   &\max_g \sum_i \ln p(x_i \mid s_i, g)\\
-   = &\max_{g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g(\lambda_i) - \ln q(\lambda_i)\right]\\
-   = &\max_{T_g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g_0(T_g(\lambda_i)) + \sum_k \ln\det\abs{J^g_k} - \ln q(\lambda_i)\right]\\
-\end{align}
-
-<p>
-where \(T_g = T^g_K \circ \cdots \circ T^g_1\) maps \(g\) to a base measure
-and \(J^g_k\) denotes the Jacobian of \(T^g_k\). It is straightforward to
-show that, holding \(g\) fixed, the optimal \(q\) is the true posterior
-\(p(\lambda_i \mid x_i, s_i, g)\) (e.g., Neal and Hinton 1998). In order to
-ensure \(q\) is flexible enough to capture the true posterior, suppose it
-too is represened by a normalizing flow
-</p>
-
-\begin{equation}
-  q(\cdot) = q_0(\cdot) \prod_k \det\abs{J^q_k},
-\end{equation}
-
-<p>
-where \(J^q_k\) denotes the Jacobian of the transform \(T^q_k\). In order to
-make sampling easy, suppose \(T_q = T^q_K \circ \cdots \circ T^q_1\) maps
-the base measure \(q_0(\cdot) = \N(\cdot; 0, 1)\) to \(q\). Then, the
-optimization problem is
-</p>
-
-\begin{equation}
-  \max_{T_g, T_q} \E_{u_i \sim q_0}\left[\sum_i \ln p(x_i | s_i, T_q(u_i)) + \ln g_0(T_g(T_q(u_i))) + \sum_k \ln\det\abs{J^g_k} - \ln q_0(u_i) - \sum_k \ln\det\abs{J^q_k}\right].
-\end{equation}
-
-<p>
-Since \(T_g, T_q\) are differentiable, this problem can be solved by
-replacing the expectation with a Monte Carlo integral (e.g., Kingma and
-Welling 2014), and then using automatic differentiation and gradient descent
-to optimize the resulting stochastic objective.
-</p>
-
-<p>
-<i>Remark:</i> When reducing problems in scRNA-seq data analysis to EBPM, we are
-primarily interested in the estimated prior \(\hat{g}\). Depending on the
-choice of flow, obtaining expectations with respect to \(\hat{g}\) might be
-difficult.
-</p>
-</div>
-</div>
-</div>
-
-<div id="outline-container-org26165be" class="outline-2">
-<h2 id="org26165be">Results</h2>
-<div class="outline-text-2" id="text-org26165be">
-</div>
-<div id="outline-container-org74ca7c6" class="outline-3">
-<h3 id="org74ca7c6">Example of normalizing flow</h3>
-<div class="outline-text-3" id="text-org74ca7c6">
-<p>
-Draw data from a scale mixture of Gaussians.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
-<span class="org-variable-name">n</span> = 1000
-<span class="org-variable-name">pi</span> = np.array([0.3, 0.7])
-<span class="org-variable-name">scale</span> = np.array([0.1, 0.4])
-<span class="org-variable-name">z</span> = rng.uniform(size=(n, 1)) &lt; pi[0]
-<span class="org-variable-name">x</span> = rng.normal(scale=scale @ np.hstack([z, ~z]).T)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
-plt.clf()
-plt.gcf().set_size_inches(2.5, 2.5)
-plt.hist(x, bins=19, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
-<span class="org-variable-name">grid</span> = np.linspace(x.<span class="org-builtin">min</span>(), x.<span class="org-builtin">max</span>(), 5000)
-<span class="org-variable-name">mixcdf</span> = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
-plt.plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c=<span class="org-string">'k'</span>)
-plt.xlabel(<span class="org-string">'Observation'</span>)
-plt.ylabel(<span class="org-string">'Density'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/flows.org/ex0.png" alt="ex0.png">
-</p>
-</div>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">PlanarFlow</span>(torch.nn.Module):
@@ -559,6 +459,226 @@ plt.tight_layout()
     <span class="org-keyword">return</span> l
 </pre>
 </div>
+</div>
+</div>
+
+<div id="outline-container-orgef00a68" class="outline-3">
+<h3 id="orgef00a68">Normalizing flow for empirical Bayes</h3>
+<div class="outline-text-3" id="text-orgef00a68">
+<p>
+Now consider the EBPM problem
+</p>
+
+\begin{align}
+  x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
+  \lambda_i &\sim g(\cdot) = g_0(\cdot) \prod_k \det \abs{J^g_k}
+\end{align}
+
+<p>
+where \(i = 1, \ldots, n\), and \(g_0(\cdot) = \N(\cdot; 0, 1)\) for
+simplicity. One can estimate \(g\) by maximizing the marginal likelihood
+</p>
+
+\begin{align}
+   &\max_g \sum_i \ln p(x_i \mid s_i, g)\\
+   \geq &\max_{g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g(\lambda_i) - \ln q(\lambda_i)\right]\\
+   = &\max_{T_g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g_0(T_g(\lambda_i)) + \sum_k \ln\det\abs{J^g_k} - \ln q(\lambda_i)\right]\\
+\end{align}
+
+<p>
+where \(T_g = T^g_K \circ \cdots \circ T^g_1\) maps \(g\) to a base measure
+and \(J^g_k\) denotes the Jacobian of \(T^g_k\). It is straightforward to
+show that, holding \(g\) fixed, the optimal \(q\) is the true posterior
+\(p(\lambda_i \mid x_i, s_i, g)\) (e.g., Neal and Hinton 1998). In order to
+ensure \(q\) is flexible enough to capture the true posterior, suppose it
+too is represened by a normalizing flow
+</p>
+
+\begin{equation}
+  q(\cdot) = q_0(\cdot) \prod_k \det\abs{J^q_k},
+\end{equation}
+
+<p>
+where \(J^q_k\) denotes the Jacobian of the transform \(T^q_k\). In order to
+make sampling easy, suppose \(T_q = T^q_K \circ \cdots \circ T^q_1\) maps
+the base measure \(q_0(u_i \mid x_i)\) to \(q\). Then, the optimization
+problem is
+</p>
+
+\begin{equation}
+  \max_{T_g, T_q} \E_{u_i \sim q_0}\left[\sum_i \ln p(x_i | s_i, T_q(u_i)) + \ln g_0(T_g(T_q(u_i))) + \sum_k \ln\det\abs{J^g_k} - \ln q_0(u_i) + \sum_k \ln\det\abs{J^q_k}\right].
+\end{equation}
+
+<p>
+<i>Remark</i> It is critical that \(u_i \sim q_0\) depends on \(x_i\) in the
+variational approximation. Rezende and Mohamed 2015 propose using amortized
+inference; however, in the context of this problem, a simpler alternative
+could be a log-Gamma posterior.
+</p>
+
+<p>
+<i>Remark</i> Since the transformation \(T_q\) maps \(u_i \in \mathcal{U}\) to
+\(\lambda_i \in \Lambda\), the sign of the determinants of the Jacobian
+needs to be inverted.
+</p>
+
+<p>
+Since \(T_g, T_q\) are differentiable, this problem can be solved by
+replacing the expectation with a Monte Carlo integral (e.g., Kingma and
+Welling 2014), and then using automatic differentiation and gradient descent
+to optimize the resulting stochastic objective.
+</p>
+
+<p>
+<i>Remark</i> When reducing problems in scRNA-seq data analysis to EBPM, we are
+primarily interested in the estimated prior \(\hat{g}\). Depending on the
+choice of flow, obtaining expectations with respect to \(\hat{g}\) might be
+difficult. One possibility is to approximate these expectations by
+discretizing \(\hat{g}\) and taking weighted sums.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">EBNM</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, K, scale):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.scale = scale
+    <span class="org-keyword">self</span>.p0 = torch.distributions.Normal(loc=0., scale=1.)
+    <span class="org-keyword">self</span>.pz = NormalizingFlow([PlanarFlow(1) <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K)])
+    <span class="org-keyword">self</span>.qz = NormalizingFlow([PlanarFlow(1) <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K)])
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, n_samples):
+    <span class="org-variable-name">q0</span> = torch.distributions.Normal(
+      loc=x / (1 + <span class="org-keyword">self</span>.scale ** 2),
+      scale=torch.sqrt(1 / (1 + <span class="org-keyword">self</span>.scale ** 2)))
+    <span class="org-variable-name">u</span> = q0.rsample([1]).squeeze(-1)
+    <span class="org-variable-name">z</span>, <span class="org-variable-name">log_det_q</span> = <span class="org-keyword">self</span>.qz.forward(u.T)
+    <span class="org-variable-name">w</span>, <span class="org-variable-name">log_det_p</span> = <span class="org-keyword">self</span>.pz.forward(z)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: qz is forward transforms, so we need to invert the sign of</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">log_det_q</span>
+    <span class="org-variable-name">elbo</span> = (torch.distributions.Normal(z, <span class="org-keyword">self</span>.scale).log_prob(x)
+            + <span class="org-keyword">self</span>.p0.log_prob(w) + log_det_p
+            - (q0.log_prob(u.T) - log_det_q)).<span class="org-builtin">sum</span>()
+    <span class="org-keyword">assert</span> elbo &lt;= 0
+    <span class="org-keyword">return</span> -elbo
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, n_epochs, n_samples=1, log_dir=<span class="org-constant">None</span>, **kwargs):
+    <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">writer</span> = tb.SummaryWriter(log_dir)
+    <span class="org-variable-name">n_samples</span> = torch.Size([n_samples])
+    <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), **kwargs)
+    <span class="org-variable-name">global_step</span> = 0
+    <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
+      opt.zero_grad()
+      <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, n_samples)
+      <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+        writer.add_scalar(<span class="org-string">'loss'</span>, loss, global_step)
+      <span class="org-keyword">if</span> torch.isnan(loss):
+        <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>
+      loss.backward()
+      opt.step()
+      <span class="org-variable-name">global_step</span> += 1
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+
+  <span class="org-type">@torch.no_grad</span>()
+  <span class="org-keyword">def</span> <span class="org-function-name">fitted_g</span>(<span class="org-keyword">self</span>, z, log=<span class="org-constant">True</span>):
+    <span class="org-variable-name">u</span>, <span class="org-variable-name">log_det</span> = <span class="org-keyword">self</span>.pz.forward(z)
+    <span class="org-variable-name">log_prob</span> = <span class="org-keyword">self</span>.p0.log_prob(u) + log_det
+    <span class="org-keyword">if</span> log:
+      <span class="org-keyword">return</span> log_prob.numpy()
+    <span class="org-keyword">else</span>:
+      <span class="org-keyword">return</span> torch.exp(log_prob).numpy()
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">EBPM</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, K):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.pz = NormalizingFlow([PlanarFlow(1) <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K)])
+    <span class="org-keyword">self</span>.qz = NormalizingFlow([PlanarFlow(1) <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K)])
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, s, n_samples):
+    <span class="org-variable-name">u</span> = N.rsample([x.shape[0], 1])
+    <span class="org-variable-name">log_lam</span>, <span class="org-variable-name">log_det_q</span> = <span class="org-keyword">self</span>.qz.forward(u)
+    <span class="org-variable-name">lam</span> = torch.exp(log_lam)
+    <span class="org-variable-name">log_det_q</span> += log_lam
+    <span class="org-variable-name">w</span>, <span class="org-variable-name">log_det_p</span> = <span class="org-keyword">self</span>.pz.forward(lam)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: qz is forward transforms, so we need to invert the sign of</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">log_det_q</span>
+    <span class="org-variable-name">kl</span> = N.log_prob(w) + log_det_p - (N.log_prob(u) - log_det_q)
+    <span class="org-keyword">assert</span> (kl &gt; 0).<span class="org-builtin">all</span>()
+    <span class="org-variable-name">elbo</span> = (torch.distributions.Poisson(s * lam).log_prob(x) - kl).<span class="org-builtin">sum</span>()
+    <span class="org-keyword">assert</span> elbo &lt;= 0
+    <span class="org-keyword">return</span> -elbo
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, s, n_epochs, n_samples=1, log_dir=<span class="org-constant">None</span>, **kwargs):
+    <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">writer</span> = tb.SummaryWriter(log_dir)
+    <span class="org-variable-name">n_samples</span> = torch.Size([n_samples])
+    <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), **kwargs)
+    <span class="org-variable-name">global_step</span> = 0
+    <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
+      opt.zero_grad()
+      <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, s, n_samples)
+      <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+        writer.add_scalar(<span class="org-string">'loss'</span>, loss, global_step)
+      <span class="org-keyword">if</span> torch.isnan(loss):
+        <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>
+      loss.backward()
+      opt.step()
+      <span class="org-variable-name">global_step</span> += 1
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fitted_g</span>(<span class="org-keyword">self</span>, lam):
+    <span class="org-variable-name">u</span>, <span class="org-variable-name">log_det</span> = <span class="org-keyword">self</span>.pz.forward(lam)
+    <span class="org-keyword">return</span> N.log_prob(u) + log_det
+
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org26165be" class="outline-2">
+<h2 id="org26165be">Results</h2>
+<div class="outline-text-2" id="text-org26165be">
+</div>
+<div id="outline-container-org74ca7c6" class="outline-3">
+<h3 id="org74ca7c6">Example of normalizing flow</h3>
+<div class="outline-text-3" id="text-org74ca7c6">
+<p>
+Draw data from a scale mixture of Gaussians.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 1000
+<span class="org-variable-name">pi</span> = np.array([0.3, 0.7])
+<span class="org-variable-name">scale</span> = np.array([0.1, 0.4])
+<span class="org-variable-name">z</span> = rng.uniform(size=(n, 1)) &lt; pi[0]
+<span class="org-variable-name">x</span> = rng.normal(scale=scale @ np.hstack([z, ~z]).T)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+plt.hist(x, bins=19, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.7'</span>)
+<span class="org-variable-name">grid</span> = np.linspace(x.<span class="org-builtin">min</span>(), x.<span class="org-builtin">max</span>(), 5000)
+<span class="org-variable-name">mixcdf</span> = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
+plt.plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Observation'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/flows.org/ex0.png" alt="ex0.png">
+</p>
+</div>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">K</span> = 2
@@ -604,11 +724,250 @@ plt.tight_layout()
 </div>
 </div>
 </div>
+
+<div id="outline-container-orga548a6a" class="outline-3">
+<h3 id="orga548a6a">Example of Empirical Bayes Normal Means</h3>
+<div class="outline-text-3" id="text-orga548a6a">
+<p>
+For EBNM, a simple choice of \(q_0\) is 
+</p>
+
+\begin{equation}
+  u_i \mid x_i, s_i^2 \sim \N\left(\frac{1}{1 + s_i^2} x_i, \frac{1}{1 + 1 / s_i^2}\right),
+\end{equation}
+
+<p>
+which is the exact posterior under the simple model
+</p>
+
+\begin{align}
+  x_i \mid u_i, s_i^2 &\sim \N(u_i, s_i^2)\\
+  u_i &\sim \N(0, 1).
+\end{align}
+
+<p>
+Draw from a scale mixture of Gaussians convolved with a Gaussian.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 1000
+<span class="org-variable-name">s</span> = 1.
+<span class="org-variable-name">pi</span> = np.array([0.7, 0.3])
+<span class="org-variable-name">scale</span> = np.array([0.1, 0.4])
+<span class="org-variable-name">z</span> = rng.uniform(size=(n, 1)) &lt; pi[0]
+<span class="org-variable-name">mu</span> = rng.normal(scale=scale @ np.hstack([z, ~z]).T)
+<span class="org-variable-name">x</span> = rng.normal(mu, 0.05)
+</pre>
+</div>
+
+<p>
+Plot the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(4, 4)
+ax[0].hist(x, bins=27, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+ax[0].set_xlabel(<span class="org-string">'Observation'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+<span class="org-variable-name">grid</span> = np.linspace(mu.<span class="org-builtin">min</span>(), mu.<span class="org-builtin">max</span>(), 1000)
+<span class="org-variable-name">mixcdf</span> = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
+ax[1].hist(mu, bins=31, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+ax[1].plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c=<span class="org-string">'k'</span>)
+ax[1].set_xlabel(<span class="org-string">'Latent variable'</span>)
+ax[1].set_ylabel(<span class="org-string">'Density'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/flows.org/ebnm-ex.png" alt="ebnm-ex.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">K</span> = 3
+<span class="org-variable-name">run</span> = 10
+<span class="org-variable-name">lr</span> = 1e-2
+<span class="org-variable-name">n_epochs</span> = 1600
+torch.manual_seed(run)
+<span class="org-variable-name">m</span> = (EBNM(K=K, scale=torch.tensor(0.05))
+     .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+          n_epochs=n_epochs,
+          lr=lr,
+          log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/ebnm-nf-{K}-{lr}-{n_epochs}-{run}'</span>))
+</pre>
+</div>
+
+<p>
+Plot the fitted prior against the true prior.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3.5, 2.5)
+<span class="org-variable-name">grid</span> = np.linspace(mu.<span class="org-builtin">min</span>(), mu.<span class="org-builtin">max</span>(), 1000)
+<span class="org-variable-name">mixcdf</span> = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
+plt.plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
+plt.plot(grid, m.fitted_g(torch.tensor(grid, dtype=torch.<span class="org-builtin">float</span>).reshape(-1, 1), log=<span class="org-constant">False</span>), lw=1, c=<span class="org-string">'r'</span>, label=<span class="org-string">'Fit'</span>)
+plt.legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+plt.xlabel(<span class="org-string">'Latent variable'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/flows.org/ebnm-fitted-g.png" alt="ebnm-fitted-g.png">
+</p>
+</div>
+
+<p>
+Plot the approximate posterior against the true latent variables.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+<span class="org-variable-name">q0</span> = st.norm(x.reshape(-1, 1) / (1 + .05**2), np.sqrt(1 / (1 + 1 / .05**2)))
+<span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">samples</span> = np.stack([m.qz.forward(torch.tensor(q0.rvs(), dtype=torch.<span class="org-builtin">float</span>))[0].numpy() <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(100)]).squeeze()
+  <span class="org-variable-name">muhat</span> = samples.mean(axis=0)
+plt.scatter(mu, muhat, s=1, c=<span class="org-string">'k'</span>)
+<span class="org-variable-name">lim</span> = [mu.<span class="org-builtin">min</span>(), mu.<span class="org-builtin">max</span>()]
+plt.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
+plt.xlim(lim)
+plt.ylim(lim)
+plt.xlabel(<span class="org-string">'Latent variable'</span>)
+plt.ylabel(<span class="org-string">'Estimate'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/flows.org/ebnm-q.png" alt="ebnm-q.png">
+</p>
+</div>
+
+<p>
+Compute the marginal log likelihood of the data under the oracle prior, and
+under the estimated prior.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series({
+  <span class="org-string">'oracle'</span>: (st.norm(scale=np.sqrt(1 + scale ** 2)).pdf(x.reshape(-1, 1)) @ pi).<span class="org-builtin">sum</span>(),
+  <span class="org-string">'ebnm-nf'</span>: (st.norm(loc=grid).pdf(x.reshape(-1, 1)) @ m.fitted_g(torch.tensor(grid, dtype=torch.<span class="org-builtin">float</span>).reshape(-1, 1), log=<span class="org-constant">False</span>)).<span class="org-builtin">sum</span>()
+})
+</pre>
+</div>
+
+<pre class="example">
+oracle       271.383956
+ebnm-nf    96719.294528
+dtype: float64
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orgd0277f9" class="outline-3">
+<h3 id="orgd0277f9">Example of Empirical Bayes Poisson Means</h3>
+<div class="outline-text-3" id="text-orgd0277f9">
+<p>
+For EBPM, a simple choice of \(q_0\) is 
+</p>
+
+\begin{equation}
+  u_i \mid x_i, s_i \sim \Gam(1 + x_i, 1 + s_i),
+\end{equation}
+
+<p>
+where the Gamma distribution is parameterized by shape and rate, which is
+the exact posterior under the simple model
+</p>
+
+\begin{align}
+  x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i)\\
+  u_i &\sim \Gam(1, 1).
+\end{align}
+
+<p>
+For simplicity, it is easier to work with a prior (and approximate
+posterior) on \(\ln u_i\).
+</p>
+
+<p>
+Draw data from a Poisson convolved with a Gamma.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 1000
+<span class="org-variable-name">s</span> = np.full(n, 1e4)
+<span class="org-variable-name">log_mean</span> = -8
+<span class="org-variable-name">log_inv_disp</span> = 1
+<span class="org-variable-name">lam</span> = rng.gamma(shape=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp), size=n)
+<span class="org-variable-name">x</span> = rng.poisson(s * lam)
+</pre>
+</div>
+
+<p>
+Plot the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(4, 4)
+<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
+ax[0].hist(x, bins=grid, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+ax[0].plot(grid + 0.5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, c=<span class="org-string">'k'</span>)
+ax[0].set_xlabel(<span class="org-string">'Observed count'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+<span class="org-variable-name">grid</span> = np.linspace(0, (x / s).<span class="org-builtin">max</span>(), 1000)
+ax[1].plot(grid, st.gamma(a=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp)).pdf(grid), lw=1, c=<span class="org-string">'k'</span>)
+ax[1].set_xlabel(<span class="org-string">'Latent variable'</span>)
+ax[1].set_ylabel(<span class="org-string">'Density'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/flows.org/ex1.png" alt="ex1.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">K</span> = 2
+<span class="org-variable-name">run</span> = 2
+<span class="org-variable-name">lr</span> = 1e-2
+<span class="org-variable-name">n_epochs</span> = 8000
+torch.manual_seed(run)
+<span class="org-variable-name">m</span> = (EBPM(K=K)
+     .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+          torch.tensor(s.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+          n_epochs=n_epochs,
+          lr=lr,
+          log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/ebpm-nf-{K}-{lr}-{n_epochs}-{run}'</span>))
+</pre>
+</div>
+
+<p>
+0 - c7f81a67-eafd-460f-90f5-257874e6e1ed
+</p>
+</div>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-11-11 Wed 13:46</p>
+<p class="date">Created: 2021-01-26 Tue 13:37</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

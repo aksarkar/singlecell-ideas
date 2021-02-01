@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-01-31 Sun 12:37 -->
+<!-- 2021-01-31 Sun 22:40 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Normalizing flows for EBPM</title>
@@ -269,6 +269,7 @@ for the JavaScript code in this tag.
 <li><a href="#org26165be">Results</a>
 <ul>
 <li><a href="#org74ca7c6">Example of normalizing flow</a></li>
+<li><a href="#org2570b5c">EBNM via VBEM sanity check</a></li>
 <li><a href="#orga548a6a">Example of Empirical Bayes Normal Means</a></li>
 <li><a href="#orgd0277f9">Example of Empirical Bayes Poisson Means</a></li>
 </ul>
@@ -287,8 +288,10 @@ be thought of as solving an empirical Bayes problem (Sarkar and Stephens
   \DeclareMathOperator\Pois{Poisson}
   \DeclareMathOperator\Gam{Gamma}
   \DeclareMathOperator\E{E}
+  \DeclareMathOperator\V{V}
   \DeclareMathOperator\N{\mathcal{N}}
   \newcommand\abs[1]{\left\vert #1 \right\vert}
+  \newcommand\const{\mathrm{const}}
   \)
 </p>
 
@@ -346,6 +349,7 @@ family to fit expression models to scRNA-seq data.
 <pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> scmodes
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.tensorboard <span class="org-keyword">as</span> tb
 </pre>
@@ -746,6 +750,184 @@ plt.tight_layout()
 </div>
 </div>
 
+<div id="outline-container-org2570b5c" class="outline-3">
+<h3 id="org2570b5c">EBNM via VBEM sanity check</h3>
+<div class="outline-text-3" id="text-org2570b5c">
+<p>
+A critical assumption we make is that optimizing the ELBO will yield the
+correct \(\hat{g}\) if the space of approximations \(q \in \mathcal{Q}\)
+contains the true posterior. The intuition behind this assumption is that,
+in this case, VBEM equals EM (Neal and Hinton 1998). Check whether this is
+the case for a simple example
+</p>
+
+\begin{align}
+  x_i \mid z_i, s_i^2 &\sim \N(z_i, s_i^2), \qquad i = 1, \ldots, n\\
+  z_i &\sim \N(0, \sigma_0^2).
+\end{align}
+
+<p>
+The exact posterior
+</p>
+
+\begin{align}
+  q(z_i \mid x_i, s_i^2, \sigma_0^2) &= \N\left(\frac{\sigma_0^2}{\sigma_0^2 + s_i^2} x_i, \frac{1}{1 / \sigma_0^2 + 1 / s_i^2}\right)\\
+  &\triangleq \N(\mu_i, \sigma_i^2)
+\end{align}
+
+<p>
+and the ELBO is
+</p>
+
+\begin{align}
+  h &\triangleq \E\left[\sum_i \ln p(x_i, z_i \mid s_i^2, \sigma_0^2) - \ln q(z_i \mid x_i, s_i^2, \sigma_0^2)\right]\\
+  &= \sum_i -\ln s_i^2 - \frac{(x_i - \E[z_i])^2 - \V[z_i]}{2 s_i^2} - \ln \sigma_0^2 - \frac{\E[z_i]^2 - \V[z_i]}{2 \sigma_0^2} - \ln \sigma_i^2 + \const,
+\end{align}
+
+<p>
+where expectations are with respect to \(q\), yielding M step update
+</p>
+
+\begin{align}
+  \frac{\partial h}{\partial \sigma_0^2} &= \frac{n}{\sigma_0^2} - \frac{1}{(\sigma_0^2)^2} \sum_i \E[z_i]^2 - \V[z_i] = 0\\
+  \sigma_0^2 &:= \frac{1}{n} \sum_i \E[z_i]^2 - \V[z_i]
+\end{align}
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">ebnm_em</span>(x, s2, max_iters=100, tol=1e-3):
+  <span class="org-variable-name">init</span> = np.array([1])
+  <span class="org-variable-name">sigma2hat</span>, <span class="org-variable-name">elbo</span> = squarem(init, _ebnm_elbo, _ebnm_update, x=x, s2=s2,
+                             max_iters=max_iters, tol=tol)
+  <span class="org-keyword">return</span> sigma2hat, elbo
+
+<span class="org-keyword">def</span> <span class="org-function-name">_ebnm_elbo</span>(sigma2, x, s2):
+  <span class="org-variable-name">pm</span> = sigma2 / (sigma2 + s2) * x
+  <span class="org-variable-name">pv</span> = 1 / (1 / sigma2 + 1 / s2)
+  <span class="org-keyword">return</span> (-np.log(s2)
+          - ((x - pm) ** 2 - pv) / (2 * s2)
+          - np.log(sigma2)
+          - (pm ** 2 - pv) / (2 * sigma2)).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">_ebnm_update</span>(sigma2, x, s2):
+  <span class="org-variable-name">pm</span> = sigma2 / (sigma2 + s2) * x
+  <span class="org-variable-name">pv</span> = 1 / (1 / sigma2 + 1 / s2)
+  <span class="org-variable-name">sigma2</span> = (pm ** 2 - pv).mean()
+  <span class="org-keyword">assert</span> sigma2 &gt;= 0
+  <span class="org-keyword">return</span> sigma2
+
+<span class="org-keyword">def</span> <span class="org-function-name">squarem</span>(init, objective_fn, update_fn, max_iters, tol, par_tol=1e-8, max_step_updates=10, *args, **kwargs):
+  <span class="org-doc">"""Squared extrapolation scheme for accelerated EM</span>
+
+<span class="org-doc">  Reference: </span>
+
+<span class="org-doc">    Varadhan, R. and Roland, C. (2008), Simple and Globally Convergent Methods</span>
+<span class="org-doc">    for Accelerating the Convergence of Any EM Algorithm. Scandinavian Journal</span>
+<span class="org-doc">    of Statistics, 35: 335-353. doi:10.1111/j.1467-9469.2007.00585.x</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">theta</span> = init
+  <span class="org-variable-name">obj</span> = objective_fn(theta, *args, **kwargs)
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
+    <span class="org-variable-name">x1</span> = update_fn(theta, *args, **kwargs)
+    <span class="org-variable-name">r</span> = x1 - theta
+    <span class="org-keyword">if</span> i == 0 <span class="org-keyword">and</span> objective_fn(x1, *args, **kwargs) &lt; obj:
+      <span class="org-comment-delimiter"># </span><span class="org-comment">Hack: this is needed for numerical reasons, because in e.g.,</span>
+      <span class="org-comment-delimiter"># </span><span class="org-comment">ebpm_gamma, a point mass is the limit as a = 1/&#966; &#8594; &#8734;</span>
+      <span class="org-keyword">return</span> init, obj
+    <span class="org-variable-name">x2</span> = update_fn(x1, *args, **kwargs)
+    <span class="org-variable-name">v</span> = (x2 - x1) - r
+    <span class="org-keyword">if</span> np.linalg.norm(v) &lt; par_tol:
+      <span class="org-keyword">return</span> x2, objective_fn(x2, *args, **kwargs)
+    <span class="org-variable-name">step</span> = -np.sqrt(r @ r) / np.sqrt(v @ v)
+    <span class="org-keyword">if</span> step &gt; -1:
+      <span class="org-variable-name">step</span> = -1
+      <span class="org-variable-name">theta</span> += -2 * step * r + step * step * v
+      <span class="org-variable-name">update</span> = objective_fn(theta, *args, **kwargs)
+      <span class="org-variable-name">diff</span> = update - obj
+    <span class="org-keyword">else</span>:
+      <span class="org-comment-delimiter"># </span><span class="org-comment">Step length = -1 is EM; use as large a step length as is feasible to</span>
+      <span class="org-comment-delimiter"># </span><span class="org-comment">maintain monotonicity</span>
+      <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_step_updates):
+        <span class="org-variable-name">candidate</span> = theta - 2 * step * r + step * step * v
+        <span class="org-variable-name">update</span> = objective_fn(candidate, *args, **kwargs)
+        <span class="org-variable-name">diff</span> = update - obj
+        <span class="org-keyword">if</span> np.isfinite(update) <span class="org-keyword">and</span> diff &gt; 0:
+          <span class="org-variable-name">theta</span> = candidate
+          <span class="org-keyword">break</span>
+        <span class="org-keyword">else</span>:
+          <span class="org-variable-name">step</span> = (step - 1) / 2
+      <span class="org-keyword">else</span>:
+        <span class="org-variable-name">step</span> = -1
+        <span class="org-variable-name">theta</span> += -2 * step * r + step * step * v
+        <span class="org-variable-name">update</span> = objective_fn(theta, *args, **kwargs)
+        <span class="org-variable-name">diff</span> = update - obj
+    <span class="org-keyword">if</span> diff &lt; tol:
+      <span class="org-keyword">return</span> theta, update
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">obj</span> = update
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(f<span class="org-string">'failed to converge in max_iters ({diff:.3g} &gt; {tol:.3g})'</span>)
+</pre>
+</div>
+
+<p>
+Draw from the model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 1000
+<span class="org-variable-name">s</span> = 0.05
+<span class="org-variable-name">sigma</span> = 0.5
+<span class="org-variable-name">mu</span> = rng.normal(scale=sigma, size=n)
+<span class="org-variable-name">x</span> = rng.normal(loc=mu, scale=s)
+</pre>
+</div>
+
+<p>
+Fit VBEM.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">sigma2hat</span>, <span class="org-variable-name">trace</span> = ebnm_vbem(x, s ** 2, max_iters=1000)
+</pre>
+</div>
+
+<p>
+Plot the simulated data and model fit.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(4, 4)
+ax[0].hist(x, bins=25, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
+<span class="org-variable-name">grid</span> = np.linspace(x.<span class="org-builtin">min</span>(), x.<span class="org-builtin">max</span>(), 1000)
+ax[0].plot(grid, st.norm(scale=np.sqrt(s ** 2 + sigma ** 2)).pdf(grid), lw=1, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
+ax[0].plot(grid, st.norm(scale=np.sqrt(s ** 2 + sigma2hat)).pdf(grid), lw=1, c=<span class="org-string">'r'</span>, label=<span class="org-string">'Fit'</span>)
+ax[0].legend(loc=<span class="org-string">'upper right'</span>, frameon=<span class="org-constant">True</span>)
+ax[0].set_xlabel(<span class="org-string">'Observation $x$'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+
+ax[1].hist(mu, bins=25, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
+<span class="org-variable-name">grid</span> = np.linspace(mu.<span class="org-builtin">min</span>(), mu.<span class="org-builtin">max</span>(), 1000)
+ax[1].plot(grid, st.norm(scale=sigma).pdf(grid), lw=1, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
+ax[1].plot(grid, st.norm(scale=np.sqrt(sigma2hat)).pdf(grid), lw=1, c=<span class="org-string">'r'</span>, label=<span class="org-string">'Fit'</span>)
+ax[1].set_xlabel(<span class="org-string">'Latent variable $z$'</span>)
+ax[1].set_ylabel(<span class="org-string">'Density'</span>)
+
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/flows.org/ebnm-sanity-check.png" alt="ebnm-sanity-check.png">
+</p>
+</div>
+</div>
+</div>
+
 <div id="outline-container-orga548a6a" class="outline-3">
 <h3 id="orga548a6a">Example of Empirical Bayes Normal Means</h3>
 <div class="outline-text-3" id="text-orga548a6a">
@@ -973,7 +1155,7 @@ torch.manual_seed(run)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-01-31 Sun 12:37</p>
+<p class="date">Created: 2021-01-31 Sun 22:40</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -9,8 +9,10 @@
   \DeclareMathOperator\Pois{Poisson}
   \DeclareMathOperator\Gam{Gamma}
   \DeclareMathOperator\E{E}
+  \DeclareMathOperator\V{V}
   \DeclareMathOperator\N{\mathcal{N}}
   \newcommand\abs[1]{\left\vert #1 \right\vert}
+  \newcommand\const{\mathrm{const}}
   \)
 
   \begin{align}
@@ -71,13 +73,14 @@
     import numpy as np
     import pandas as pd
     import scipy.stats as st
+    import scmodes
     import torch
     import torch.utils.tensorboard as tb
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[15]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -450,6 +453,178 @@
    :RESULTS:
    # Out[125]:
    [[file:figure/flows.org/ex0-fit.png]]
+   :END:
+
+** EBNM via VBEM sanity check
+
+   A critical assumption we make is that optimizing the ELBO will yield the
+   correct \(\hat{g}\) if the space of approximations \(q \in \mathcal{Q}\)
+   contains the true posterior. The intuition behind this assumption is that,
+   in this case, VBEM equals EM (Neal and Hinton 1998). Check whether this is
+   the case for a simple example
+
+   \begin{align}
+     x_i \mid z_i, s_i^2 &\sim \N(z_i, s_i^2), \qquad i = 1, \ldots, n\\
+     z_i &\sim \N(0, \sigma_0^2).
+   \end{align}
+
+   The exact posterior
+
+   \begin{align}
+     q(z_i \mid x_i, s_i^2, \sigma_0^2) &= \N\left(\frac{\sigma_0^2}{\sigma_0^2 + s_i^2} x_i, \frac{1}{1 / \sigma_0^2 + 1 / s_i^2}\right)\\
+     &\triangleq \N(\mu_i, \sigma_i^2)
+   \end{align}
+
+   and the ELBO is
+
+   \begin{align}
+     h &\triangleq \E\left[\sum_i \ln p(x_i, z_i \mid s_i^2, \sigma_0^2) - \ln q(z_i \mid x_i, s_i^2, \sigma_0^2)\right]\\
+     &= \sum_i -\ln s_i^2 - \frac{(x_i - \E[z_i])^2 - \V[z_i]}{2 s_i^2} - \ln \sigma_0^2 - \frac{\E[z_i]^2 - \V[z_i]}{2 \sigma_0^2} - \ln \sigma_i^2 + \const,
+   \end{align}
+
+   where expectations are with respect to \(q\), yielding M step update
+
+   \begin{align}
+     \frac{\partial h}{\partial \sigma_0^2} &= \frac{n}{\sigma_0^2} - \frac{1}{(\sigma_0^2)^2} \sum_i \E[z_i]^2 - \V[z_i] = 0\\
+     \sigma_0^2 &:= \frac{1}{n} \sum_i \E[z_i]^2 - \V[z_i]
+   \end{align}
+   
+   #+BEGIN_SRC ipython
+     def ebnm_em(x, s2, max_iters=100, tol=1e-3):
+       init = np.array([1])
+       sigma2hat, elbo = squarem(init, _ebnm_elbo, _ebnm_update, x=x, s2=s2,
+                                  max_iters=max_iters, tol=tol)
+       return sigma2hat, elbo
+
+     def _ebnm_elbo(sigma2, x, s2):
+       pm = sigma2 / (sigma2 + s2) * x
+       pv = 1 / (1 / sigma2 + 1 / s2)
+       return (-np.log(s2)
+               - ((x - pm) ** 2 - pv) / (2 * s2)
+               - np.log(sigma2)
+               - (pm ** 2 - pv) / (2 * sigma2)).sum()
+
+     def _ebnm_update(sigma2, x, s2):
+       pm = sigma2 / (sigma2 + s2) * x
+       pv = 1 / (1 / sigma2 + 1 / s2)
+       sigma2 = (pm ** 2 - pv).mean()
+       assert sigma2 >= 0
+       return sigma2
+
+     def squarem(init, objective_fn, update_fn, max_iters, tol, par_tol=1e-8, max_step_updates=10, *args, **kwargs):
+       """Squared extrapolation scheme for accelerated EM
+
+       Reference: 
+
+         Varadhan, R. and Roland, C. (2008), Simple and Globally Convergent Methods
+         for Accelerating the Convergence of Any EM Algorithm. Scandinavian Journal
+         of Statistics, 35: 335-353. doi:10.1111/j.1467-9469.2007.00585.x
+
+       """
+       theta = init
+       obj = objective_fn(theta, *args, **kwargs)
+       for i in range(max_iters):
+         x1 = update_fn(theta, *args, **kwargs)
+         r = x1 - theta
+         if i == 0 and objective_fn(x1, *args, **kwargs) < obj:
+           # Hack: this is needed for numerical reasons, because in e.g.,
+           # ebpm_gamma, a point mass is the limit as a = 1/φ → ∞
+           return init, obj
+         x2 = update_fn(x1, *args, **kwargs)
+         v = (x2 - x1) - r
+         if np.linalg.norm(v) < par_tol:
+           return x2, objective_fn(x2, *args, **kwargs)
+         step = -np.sqrt(r @ r) / np.sqrt(v @ v)
+         if step > -1:
+           step = -1
+           theta += -2 * step * r + step * step * v
+           update = objective_fn(theta, *args, **kwargs)
+           diff = update - obj
+         else:
+           # Step length = -1 is EM; use as large a step length as is feasible to
+           # maintain monotonicity
+           for j in range(max_step_updates):
+             candidate = theta - 2 * step * r + step * step * v
+             update = objective_fn(candidate, *args, **kwargs)
+             diff = update - obj
+             if np.isfinite(update) and diff > 0:
+               theta = candidate
+               break
+             else:
+               step = (step - 1) / 2
+           else:
+             step = -1
+             theta += -2 * step * r + step * step * v
+             update = objective_fn(theta, *args, **kwargs)
+             diff = update - obj
+         if diff < tol:
+           return theta, update
+         else:
+           obj = update
+       else:
+         raise RuntimeError(f'failed to converge in max_iters ({diff:.3g} > {tol:.3g})')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[29]:
+   :END:
+
+   Draw from the model.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 1000
+     s = 0.05
+     sigma = 0.5
+     mu = rng.normal(scale=sigma, size=n)
+     x = rng.normal(loc=mu, scale=s)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[32]:
+   :END:
+
+   Fit VBEM.
+
+   #+BEGIN_SRC ipython :async t
+     sigma2hat, trace = ebnm_vbem(x, s ** 2, max_iters=1000)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[33]:
+   :END:
+
+   Plot the simulated data and model fit.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-sanity-check.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(4, 4)
+     ax[0].hist(x, bins=25, density='True', color='0.7')
+     grid = np.linspace(x.min(), x.max(), 1000)
+     ax[0].plot(grid, st.norm(scale=np.sqrt(s ** 2 + sigma ** 2)).pdf(grid), lw=1, c='k', label='Simulated')
+     ax[0].plot(grid, st.norm(scale=np.sqrt(s ** 2 + sigma2hat)).pdf(grid), lw=1, c='r', label='Fit')
+     ax[0].legend(loc='upper right', frameon=True)
+     ax[0].set_xlabel('Observation $x$')
+     ax[0].set_ylabel('Density')
+
+     ax[1].hist(mu, bins=25, density='True', color='0.7')
+     grid = np.linspace(mu.min(), mu.max(), 1000)
+     ax[1].plot(grid, st.norm(scale=sigma).pdf(grid), lw=1, c='k', label='Simulated')
+     ax[1].plot(grid, st.norm(scale=np.sqrt(sigma2hat)).pdf(grid), lw=1, c='r', label='Fit')
+     ax[1].set_xlabel('Latent variable $z$')
+     ax[1].set_ylabel('Density')
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[49]:
+   [[file:figure/flows.org/ebnm-sanity-check.png]]
    :END:
 
 ** Example of Empirical Bayes Normal Means

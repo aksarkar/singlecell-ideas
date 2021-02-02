@@ -307,7 +307,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[17]:
+   # Out[46]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -733,31 +733,51 @@
      rng = np.random.default_rng(1)
      n = 1000
      s = 0.05
-     pi = np.array([1., 0.])
-     scale = np.array([1., 1.])
-     z = rng.uniform(size=(n, 1)) < pi[0]
-     mu = rng.normal(scale=scale @ np.hstack([z, ~z]).T)
+     mu = rng.normal(size=n)
      x = rng.normal(loc=mu, scale=s)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[43]:
    :END:
 
-   Plot the simulated data.
+   Fit the model for different choices of \(K\).
+
+   #+BEGIN_SRC ipython :async t
+     run = 21
+     lr = 1e-2
+     n_epochs = 6400
+     torch.manual_seed(run)
+     models = [EBNM(K=K, scale=torch.tensor(s))
+               .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+                    n_epochs=n_epochs,
+                    lr=lr)
+               for K in range(1, 5)]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[59]:
+   :END:
+
+   Plot the model fits against the simulated data.
 
    #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-ex.png
+     cm = plt.get_cmap('Dark2')
      plt.clf()
      fig, ax = plt.subplots(2, 1)
      fig.set_size_inches(4, 4)
      ax[0].hist(x, bins=25, color='0.7', density=True)
      ax[0].set_xlabel('Observation $x$')
      ax[0].set_ylabel('Density')
+
      grid = np.linspace(mu.min(), mu.max(), 1000)
-     mixcdf = st.norm(scale=scale).cdf(grid.reshape(-1, 1)) @ pi
      ax[1].hist(mu, bins=25, color='0.7', density=True)
-     ax[1].plot(grid[:-1], np.diff(mixcdf) / (grid[1] - grid[0]), lw=1, c='k')
+     ax[1].plot(grid, st.norm().pdf(grid), lw=1, c='k', label='Simulated')
+     for k, m in enumerate(models):
+       ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.float), log=False), c=cm(k), label=f'K={k + 1}')
+     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
      ax[1].set_xlabel('Latent variable $\mu$')
      ax[1].set_ylabel('Density')
      fig.tight_layout()
@@ -765,48 +785,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[34]:
+   # Out[60]:
    [[file:figure/flows.org/ebnm-ex.png]]
-   :END:
-
-   #+BEGIN_SRC ipython :async t
-     run = 20
-     lr = 1e-2
-     n_epochs = 800
-     torch.manual_seed(run)
-     models = [(EBNM(K=K, scale=torch.tensor(s))
-                .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
-                     n_epochs=n_epochs,
-                     lr=lr,
-                     log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebnm-nf-{K}-{lr}-{n_epochs}-{run}'))
-               for K in range(1, 5)]
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[38]:
-   :END:
-
-   Plot the fitted prior against the true prior.
-
-   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-fitted-g.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(3.5, 2.5)
-     plt.plot(grid, st.norm(scale=scale).pdf(grid.reshape(-1, 1)) @ pi, lw=1, c='k', label='Simulated')
-     grid = np.linspace(mu.min(), mu.max(), 1000)
-     for k, m in enumerate(models):
-       plt.plot(grid, m.fitted_g(torch.tensor(grid, dtype=torch.float).reshape(-1, 1), log=False), lw=1, c=cm(k), label=f'K={k+1}')
-     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
-     plt.xlabel('Latent variable')
-     plt.ylabel('Density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[45]:
-   [[file:figure/flows.org/ebnm-fitted-g.png]]
    :END:
 
    Plot the approximate posterior mean against the true values of the latent
@@ -834,7 +814,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[51]:
+   # Out[62]:
    [[file:figure/flows.org/ebnm-q.png]]
    :END:
 

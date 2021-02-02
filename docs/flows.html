@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-02-02 Tue 11:56 -->
+<!-- 2021-02-02 Tue 12:13 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Normalizing flows for EBPM</title>
@@ -362,7 +362,8 @@ family to fit expression models to scRNA-seq data.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
 </pre>
@@ -407,11 +408,11 @@ descent.
     <span class="org-keyword">self</span>.post_act = torch.nn.Parameter(torch.zeros([n_features, 1]))
     <span class="org-comment-delimiter"># </span><span class="org-comment">torch.nn.init.xavier_normal_(self.post_act)</span>
 
-  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, eps=1e-15):
     <span class="org-comment-delimiter"># </span><span class="org-comment">x is [batch_size, n_features]</span>
     <span class="org-variable-name">pre_act</span> = x @ <span class="org-keyword">self</span>.weight + <span class="org-keyword">self</span>.bias
     <span class="org-comment-delimiter"># </span><span class="org-comment">This is required to invert the flow</span>
-    <span class="org-variable-name">post_act</span> = <span class="org-keyword">self</span>.post_act + <span class="org-keyword">self</span>.weight / (<span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.weight) * (-1 + torch.nn.functional.softplus(<span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.post_act) - <span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.post_act)
+    <span class="org-variable-name">post_act</span> = <span class="org-keyword">self</span>.post_act + <span class="org-keyword">self</span>.weight / (<span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.weight + eps) * (-1 + torch.nn.functional.softplus(<span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.post_act) - <span class="org-keyword">self</span>.weight.T @ <span class="org-keyword">self</span>.post_act)
     <span class="org-variable-name">out</span> = x + torch.sigmoid(pre_act) @ post_act.T
     <span class="org-variable-name">log_det</span> = torch.log(torch.<span class="org-builtin">abs</span>(1 + torch.sigmoid(pre_act) * torch.sigmoid(-pre_act) @ <span class="org-keyword">self</span>.weight.T @ post_act))
     <span class="org-keyword">assert</span> <span class="org-keyword">not</span> torch.isnan(log_det).<span class="org-builtin">any</span>()
@@ -660,6 +661,33 @@ where \(u, w, b\) are free (scalar) parameters. The intuition behind this
 transform is that the pre-activation \(w x + b\) defines a (hyper)plane, and
 the post-activation \(u\) dilates the density about that hyperplane.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = colorcet.cm[<span class="org-string">'bmy'</span>]
+<span class="org-variable-name">T</span> = PlanarFlow(1)
+<span class="org-variable-name">T.weight.data</span> = torch.ones([1, 1])
+<span class="org-variable-name">T.bias.data</span> = torch.ones([1, 1])
+<span class="org-variable-name">grid</span> = np.linspace(-3, 3, 1000)
+
+plt.clf()
+plt.gcf().set_size_inches(3.5, 2.5)
+<span class="org-keyword">for</span> u <span class="org-keyword">in</span> np.linspace(0, 2, 5):
+  <span class="org-variable-name">T.post_act.data</span> = torch.tensor(np.array(u).reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>)
+  <span class="org-keyword">with</span> torch.no_grad():
+    <span class="org-variable-name">log_det</span> = T.forward(torch.tensor(grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>))[1].numpy().squeeze()
+  plt.plot(grid, np.exp(st.norm().logpdf(grid) + log_det), lw=1, c=cm((2 - u) / 2), label=f<span class="org-string">'u={u:.1g}'</span>)
+plt.legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+plt.xlabel(<span class="org-string">'Observation $x$'</span>)
+plt.ylabel(<span class="org-string">'Density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/flows.org/planar-ex0.png" alt="planar-ex0.png">
+</p>
+</div>
 </div>
 </div>
 </div>
@@ -1217,7 +1245,7 @@ torch.manual_seed(run)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-02-02 Tue 11:56</p>
+<p class="date">Created: 2021-02-02 Tue 12:13</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

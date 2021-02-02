@@ -93,6 +93,7 @@
   :END:
 
   #+BEGIN_SRC ipython
+    import colorcet
     import matplotlib.pyplot as plt
     plt.rcParams['figure.facecolor'] = 'w'
     plt.rcParams['font.family'] = 'Nimbus Sans'
@@ -100,7 +101,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[10]:
   :END:
 
 * Methods
@@ -132,11 +133,11 @@
          self.post_act = torch.nn.Parameter(torch.zeros([n_features, 1]))
          # torch.nn.init.xavier_normal_(self.post_act)
 
-       def forward(self, x):
+       def forward(self, x, eps=1e-15):
          # x is [batch_size, n_features]
          pre_act = x @ self.weight + self.bias
          # This is required to invert the flow
-         post_act = self.post_act + self.weight / (self.weight.T @ self.weight) * (-1 + torch.nn.functional.softplus(self.weight.T @ self.post_act) - self.weight.T @ self.post_act)
+         post_act = self.post_act + self.weight / (self.weight.T @ self.weight + eps) * (-1 + torch.nn.functional.softplus(self.weight.T @ self.post_act) - self.weight.T @ self.post_act)
          out = x + torch.sigmoid(pre_act) @ post_act.T
          log_det = torch.log(torch.abs(1 + torch.sigmoid(pre_act) * torch.sigmoid(-pre_act) @ self.weight.T @ post_act))
          assert not torch.isnan(log_det).any()
@@ -191,7 +192,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[19]:
    :END:
 
 ** Normalizing flow for empirical Bayes
@@ -371,6 +372,32 @@
    where \(u, w, b\) are free (scalar) parameters. The intuition behind this
    transform is that the pre-activation \(w x + b\) defines a (hyper)plane, and
    the post-activation \(u\) dilates the density about that hyperplane.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/planar-ex0.png
+     cm = colorcet.cm['bmy']
+     T = PlanarFlow(1)
+     T.weight.data = torch.ones([1, 1])
+     T.bias.data = torch.ones([1, 1])
+     grid = np.linspace(-3, 3, 1000)
+
+     plt.clf()
+     plt.gcf().set_size_inches(3.5, 2.5)
+     for u in np.linspace(0, 2, 5):
+       T.post_act.data = torch.tensor(np.array(u).reshape(-1, 1), dtype=torch.float)
+       with torch.no_grad():
+         log_det = T.forward(torch.tensor(grid.reshape(-1, 1), dtype=torch.float))[1].numpy().squeeze()
+       plt.plot(grid, np.exp(st.norm().logpdf(grid) + log_det), lw=1, c=cm((2 - u) / 2), label=f'u={u:.1g}')
+     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     plt.xlabel('Observation $x$')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[42]:
+   [[file:figure/flows.org/planar-ex0.png]]
+   :END:
 
 * Results
 ** Example of density estimation

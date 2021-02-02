@@ -73,14 +73,13 @@
     import numpy as np
     import pandas as pd
     import scipy.stats as st
-    import scmodes
     import torch
     import torch.utils.tensorboard as tb
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[15]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -192,7 +191,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
+   # Out[4]:
    :END:
 
 ** Normalizing flow for empirical Bayes
@@ -374,7 +373,7 @@
    the post-activation \(u\) dilates the density about that hyperplane.
 
 * Results
-** Example of normalizing flow
+** Example of density estimation
 
    Draw data from a scale mixture of Gaussians.
 
@@ -453,6 +452,65 @@
    :RESULTS:
    # Out[125]:
    [[file:figure/flows.org/ex0-fit.png]]
+   :END:
+
+** Density estimation sanity check
+
+   Make sure the method can learn the identity transform. Draw data from a
+   standard Gaussian.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 1000
+     x = rng.normal(size=n)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   Fit the model.
+
+   #+BEGIN_SRC ipython :async t
+     run = 0
+     lr = 1e-2
+     n_epochs = 4000
+     torch.manual_seed(run)
+     models = [DensityEstimator(n_features=1, K=K)
+               .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+                    n_epochs=n_epochs,
+                    lr=lr) for K in range(1, 5)]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   :END:
+
+   Plot the fitted models against the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ex2.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(3.5, 2.5)
+     plt.hist(x, bins=23, density=True, color='0.7')
+     grid = np.linspace(x.min(), x.max(), 1000)
+     plt.plot(grid, st.norm().pdf(grid), lw=1, c='k', label='Simulated')
+     for k, m in enumerate(models):
+       with torch.no_grad():
+         flow = np.exp(m.log_prob(torch.tensor(grid.reshape(-1, 1), dtype=torch.float)).numpy())
+       plt.plot(grid, flow, lw=1, c=cm(k), label=f'K={k + 1}')
+     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     plt.xlabel('Observation $x$')
+     plt.ylabel('Density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[9]:
+   [[file:figure/flows.org/ex2.png]]
    :END:
 
 ** EBNM via VBEM sanity check
@@ -627,7 +685,7 @@
    [[file:figure/flows.org/ebnm-sanity-check.png]]
    :END:
 
-** Example of Empirical Bayes Normal Means
+** EBNM via flows sanity check
 
    For EBNM, a simple choice of \(q_0\) is 
 
@@ -642,7 +700,7 @@
      u_i &\sim \N(0, 1).
    \end{align}
 
-   Draw from a scale mixture of Gaussians convolved with a Gaussian.
+   Draw observations from the simple model.
 
    #+BEGIN_SRC ipython
      rng = np.random.default_rng(1)
@@ -724,7 +782,8 @@
    [[file:figure/flows.org/ebnm-fitted-g.png]]
    :END:
 
-   Plot the approximate posterior against the true latent variables.
+   Plot the approximate posterior mean against the true values of the latent
+   variables.
 
    #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-q.png
      cm = plt.get_cmap('Dark2')

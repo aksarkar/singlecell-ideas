@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-02-03 Wed 12:19 -->
+<!-- 2021-02-03 Wed 12:43 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Normalizing flows for EBPM</title>
@@ -1088,8 +1088,7 @@ fig.tight_layout()
 </div>
 
 <p>
-Plot the approximate posterior mean against the true values of the latent
-variables.
+Plot the approximate posterior mean against the true posterior mean.
 </p>
 
 <div class="org-src-container">
@@ -1101,14 +1100,14 @@ plt.gcf().set_size_inches(2.5, 2.5)
   <span class="org-keyword">with</span> torch.no_grad():
     <span class="org-variable-name">samples</span> = np.stack([m.qz.forward(torch.tensor(q0.rvs(), dtype=torch.<span class="org-builtin">float</span>))[0].numpy() <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(100)]).squeeze()
     <span class="org-variable-name">muhat</span> = samples.mean(axis=0)
-  plt.scatter(mu, muhat, s=1, c=np.array(cm(k)).reshape(1, -1), label=f<span class="org-string">'K={k+1}'</span>)
+  plt.scatter(q0.mean().ravel(), muhat, s=1, c=np.array(cm(k)).reshape(1, -1), label=f<span class="org-string">'K = {k+1}'</span>)
 <span class="org-variable-name">l</span> = plt.legend(frameon=<span class="org-constant">False</span>, handletextpad=0, markerscale=4)
 <span class="org-variable-name">lim</span> = [mu.<span class="org-builtin">min</span>(), mu.<span class="org-builtin">max</span>()]
 plt.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
 plt.xlim(lim)
 plt.ylim(lim)
-plt.xlabel(<span class="org-string">'Latent variable'</span>)
-plt.ylabel(<span class="org-string">'Estimate'</span>)
+plt.xlabel(<span class="org-string">'Exact posterior mean'</span>)
+plt.ylabel(<span class="org-string">'Approximate posterior mean'</span>)
 plt.tight_layout()
 </pre>
 </div>
@@ -1116,6 +1115,34 @@ plt.tight_layout()
 
 <div class="figure">
 <p><img src="figure/flows.org/ebnm-q.png" alt="ebnm-q.png">
+</p>
+</div>
+
+<p>
+Compare samples from the approximate posterior, holding \(K=2\), for the
+largest observation against the true posterior.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+<span class="org-variable-name">idx</span> = np.argmax(mu)
+<span class="org-variable-name">q0</span> = st.norm(x[idx] / (1 + s ** 2), np.sqrt(1 / (1 + 1 / s ** 2)))
+<span class="org-variable-name">u</span> = q0.rvs(size=(500, 1))
+<span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">samples</span> = models[1].qz.forward(torch.tensor(u, dtype=torch.<span class="org-builtin">float</span>))[0].numpy()
+plt.hist(samples, bins=3, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.8'</span>)
+<span class="org-variable-name">grid</span> = np.linspace(2, 4, 1000)
+plt.plot(grid, q0.pdf(grid), lw=2, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Latent variable $\mu$'</span>)
+plt.ylabel(<span class="org-string">'Posterior density'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/flows.org/ebnm-q-max.png" alt="ebnm-q-max.png">
 </p>
 </div>
 
@@ -1257,7 +1284,7 @@ torch.manual_seed(run)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-02-03 Wed 12:19</p>
+<p class="date">Created: 2021-02-03 Wed 12:43</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

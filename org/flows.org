@@ -748,7 +748,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[30]:
+   # Out[35]:
    :END:
 
    Plot the model fits against the simulated data.
@@ -779,8 +779,7 @@
    [[file:figure/flows.org/ebnm-ex.png]]
    :END:
 
-   Plot the approximate posterior mean against the true values of the latent
-   variables.
+   Plot the approximate posterior mean against the true posterior mean.
 
    #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-q.png
      cm = plt.get_cmap('Dark2')
@@ -791,21 +790,46 @@
        with torch.no_grad():
          samples = np.stack([m.qz.forward(torch.tensor(q0.rvs(), dtype=torch.float))[0].numpy() for _ in range(100)]).squeeze()
          muhat = samples.mean(axis=0)
-       plt.scatter(mu, muhat, s=1, c=np.array(cm(k)).reshape(1, -1), label=f'K={k+1}')
+       plt.scatter(q0.mean().ravel(), muhat, s=1, c=np.array(cm(k)).reshape(1, -1), label=f'K = {k+1}')
      l = plt.legend(frameon=False, handletextpad=0, markerscale=4)
      lim = [mu.min(), mu.max()]
      plt.plot(lim, lim, lw=1, ls=':', c='r')
      plt.xlim(lim)
      plt.ylim(lim)
-     plt.xlabel('Latent variable')
-     plt.ylabel('Estimate')
+     plt.xlabel('Exact posterior mean')
+     plt.ylabel('Approximate posterior mean')
      plt.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[32]:
+   # Out[43]:
    [[file:figure/flows.org/ebnm-q.png]]
+   :END:
+
+   Compare samples from the approximate posterior, holding \(K=2\), for the
+   largest observation against the true posterior.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-q-max.png
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     idx = np.argmax(mu)
+     q0 = st.norm(x[idx] / (1 + s ** 2), np.sqrt(1 / (1 + 1 / s ** 2)))
+     u = q0.rvs(size=(500, 1))
+     with torch.no_grad():
+       samples = models[1].qz.forward(torch.tensor(u, dtype=torch.float))[0].numpy()
+     plt.hist(samples, bins=3, density=True, color='0.8')
+     grid = np.linspace(2, 4, 1000)
+     plt.plot(grid, q0.pdf(grid), lw=2, c='k')
+     plt.xlabel('Latent variable $\mu$')
+     plt.ylabel('Posterior density')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[56]:
+   [[file:figure/flows.org/ebnm-q-max.png]]
    :END:
 
    Look at different random initializations for \(K=4\).

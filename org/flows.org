@@ -808,6 +808,51 @@
    [[file:figure/flows.org/ebnm-q.png]]
    :END:
 
+   Look at different random initializations for \(K=4\).
+
+   #+BEGIN_SRC ipython :async t
+     lr = 1e-2
+     n_epochs = 8000
+     models = []
+     for run in range(5):
+       torch.manual_seed(run)
+       models.append(EBNM(K=4, scale=torch.tensor(s))
+                     .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+                          n_epochs=n_epochs,
+                          lr=lr))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[33]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-k=4-init.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(4, 4)
+     ax[0].hist(x, bins=25, color='0.7', density=True)
+     ax[0].set_xlabel('Observation $x$')
+     ax[0].set_ylabel('Density')
+
+     grid = np.linspace(mu.min(), mu.max(), 1000)
+     ax[1].hist(mu, bins=25, color='0.7', density=True)
+     ax[1].plot(grid, st.norm().pdf(grid), lw=2, c='k', label='Simulated')
+     for k, m in enumerate(models):
+       ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.float), log=False), c=cm(k), label=f'Run = {k + 1}')
+     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     ax[1].set_xlabel('Latent variable $\mu$')
+     ax[1].set_ylabel('Density')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[34]:
+   [[file:figure/flows.org/ebnm-k=4-init.png]]
+   :END:
+
 ** Example of Empirical Bayes Poisson Means
 
    For EBPM, a simple choice of \(q_0\) is 

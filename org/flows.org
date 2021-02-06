@@ -65,7 +65,7 @@
   #+RESULTS:
   : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="broadwl",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+CALL: tensorboard(venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/singlecell
 
@@ -157,7 +157,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[44]:
+   # Out[4]:
    :END:
 
    The intuition behind this transform is that the pre-activation \(w x + b\)
@@ -317,15 +317,15 @@
        def forward(self, x, n_samples):
          q0 = torch.distributions.Normal(
            loc=x / (1 + self.scale ** 2),
-           scale=torch.sqrt(1 / (1 + self.scale ** 2)))
-         u = q0.rsample([1]).squeeze(-1)
-         z, log_det_q = self.qz.forward(u.T)
+           scale=torch.sqrt(1 / (1 + 1 / self.scale ** 2)))
+         u = q0.rsample(n_samples)
+         z, log_det_q = self.qz.forward(u)
          w, log_det_p = self.pz.forward(z)
          # Important: qz is forward transforms, so we need to invert the sign of
          # log_det_q
          elbo = (torch.distributions.Normal(z, self.scale).log_prob(x)
                  + self.p0.log_prob(w) + log_det_p
-                 - (q0.log_prob(u.T) - log_det_q)).sum()
+                 - (q0.log_prob(u) - log_det_q)).mean(dim=0).sum()
          assert elbo <= 0
          return -elbo
 
@@ -359,7 +359,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[47]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -733,7 +733,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[7]:
    :END:
 
    Fit the model for different choices of \(K\).
@@ -752,7 +752,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[35]:
+   # Out[48]:
    :END:
 
    Plot the model fits against the simulated data.
@@ -779,128 +779,53 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[31]:
+   # Out[50]:
    [[file:figure/flows.org/ebnm-ex.png]]
    :END:
 
-   Plot the approximate posterior mean against the true posterior mean.
+** EBNM example
 
-   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-q.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(2.5, 2.5)
-     q0 = st.norm(x.reshape(-1, 1) / (1 + s ** 2), np.sqrt(1 / (1 + 1 / s ** 2)))
-     for k, m in enumerate(models):
-       with torch.no_grad():
-         samples = np.stack([m.qz.forward(torch.tensor(q0.rvs(), dtype=torch.float))[0].numpy() for _ in range(100)]).squeeze()
-         muhat = samples.mean(axis=0)
-       plt.scatter(q0.mean().ravel(), muhat, s=1, c=np.array(cm(k)).reshape(1, -1), label=f'K = {k+1}')
-     l = plt.legend(frameon=False, handletextpad=0, markerscale=4)
-     lim = [mu.min(), mu.max()]
-     plt.plot(lim, lim, lw=1, ls=':', c='r')
-     plt.xlim(lim)
-     plt.ylim(lim)
-     plt.xlabel('Exact posterior mean')
-     plt.ylabel('Approximate posterior mean')
-     plt.tight_layout()
+   Draw observations from a scale mixture of Gaussians prior.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 1000
+     s = 0.05
+     pi = np.array([0.3, 0.7])
+     scale = np.array([0.1, 0.4])
+     z = rng.choice(a=scale.shape[0], p=pi, size=n)
+     mu = rng.normal(scale=scale[z], size=n)
+     x = rng.normal(loc=mu, scale=s)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[43]:
-   [[file:figure/flows.org/ebnm-q.png]]
+   # Out[71]:
    :END:
 
-   Compare samples from the approximate posterior, holding \(K=2\), for the
-   largest observation against the true posterior.
-
-   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-q-max.png
-     plt.clf()
-     plt.gcf().set_size_inches(2.5, 2.5)
-     idx = np.argmax(mu)
-     q0 = st.norm(x[idx] / (1 + s ** 2), np.sqrt(1 / (1 + 1 / s ** 2)))
-     u = q0.rvs(size=(500, 1))
-     with torch.no_grad():
-       samples = models[1].qz.forward(torch.tensor(u, dtype=torch.float))[0].numpy()
-     plt.hist(samples, bins=3, density=True, color='0.8')
-     grid = np.linspace(2, 4, 1000)
-     plt.plot(grid, q0.pdf(grid), lw=2, c='k')
-     plt.xlabel('Latent variable $\mu$')
-     plt.ylabel('Posterior density')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[56]:
-   [[file:figure/flows.org/ebnm-q-max.png]]
-   :END:
-
-   Look at different random initializations for \(K=4\).
+   Fit the model for different choices of \(K\).
 
    #+BEGIN_SRC ipython :async t
+     run = 1
      lr = 1e-2
-     n_epochs = 8000
-     models = []
-     for run in range(5):
-       torch.manual_seed(run)
-       models.append(EBNM(K=4, scale=torch.tensor(s))
-                     .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
-                          n_epochs=n_epochs,
-                          lr=lr))
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[33]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-k=4-init.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     fig, ax = plt.subplots(2, 1)
-     fig.set_size_inches(4, 4)
-     ax[0].hist(x, bins=25, color='0.7', density=True)
-     ax[0].set_xlabel('Observation $x$')
-     ax[0].set_ylabel('Density')
-
-     grid = np.linspace(mu.min(), mu.max(), 1000)
-     ax[1].hist(mu, bins=25, color='0.7', density=True)
-     ax[1].plot(grid, st.norm().pdf(grid), lw=2, c='k', label='Simulated')
-     for k, m in enumerate(models):
-       ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.float), log=False), c=cm(k), label=f'Run = {k + 1}')
-     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
-     ax[1].set_xlabel('Latent variable $\mu$')
-     ax[1].set_ylabel('Density')
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[34]:
-   [[file:figure/flows.org/ebnm-k=4-init.png]]
-   :END:
-
-   Look at the zero initialization.
-
-   #+BEGIN_SRC ipython :async t
-     run = 21
-     lr = 1e-2
-     n_epochs = 20000
+     n_epochs = 5000
      torch.manual_seed(run)
-     models = [EBNM(K=K, scale=torch.tensor(s), random_init=False)
+     models = [EBNM(K=K, scale=torch.tensor(s))
                .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
                     n_epochs=n_epochs,
-                    lr=lr)
+                    lr=lr,
+                    log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebnm-nf-normmix-{K}-{run}-{n_epochs}')
                for K in range(1, 5)]
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[12]:
+   # Out[74]:
    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-zero-init.png
+   Plot the model fits against the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebnm-normmix-ex.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
      fig, ax = plt.subplots(2, 1)
@@ -911,9 +836,10 @@
 
      grid = np.linspace(mu.min(), mu.max(), 1000)
      ax[1].hist(mu, bins=25, color='0.7', density=True)
-     ax[1].plot(grid, st.norm().pdf(grid), lw=2, c='k', label='Simulated')
+     g = st.norm(scale=scale).pdf(grid.reshape(-1, 1)) @ pi
+     ax[1].plot(grid, g, lw=2, c='k', label='Simulated')
      for k, m in enumerate(models):
-       ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.float), log=False), c=cm(k), label=f'K = {k + 1}')
+       ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.float), log=False), c=cm(k), label=f'K={k + 1}')
      ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
      ax[1].set_xlabel('Latent variable $\mu$')
      ax[1].set_ylabel('Density')
@@ -922,48 +848,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[13]:
-   [[file:figure/flows.org/ebnm-zero-init.png]]
-   :END:
-
-   Compute the analytic ELBO (where \(q\) equals the true posterior).
-
-   #+BEGIN_SRC ipython
-     q0 = st.norm(x / (1 + s ** 2), np.sqrt(1 / (1 + 1 / s ** 2)))
-     elbo0 = -.5 * (np.log(2 * np.pi * s ** 2) +
-                    (np.linalg.norm(x - q0.mean()) - q0.var()) / s ** 2 +
-                    (1 - 2 * np.log(q0.var()) + (q0.mean() ** 2 + q0.var()))).sum()
-     elbo0
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[34]:
-   : -20041.20645325556
-   :END:
-
-   Look at the stochastic estimate of the ELBO for each model.
-
-   #+BEGIN_SRC ipython
-     torch.manual_seed(100)
-     with torch.no_grad():
-       elbos = pd.Series({
-         k + 1: np.stack([-m.forward(torch.tensor(x.reshape(-1, 1), dtype=torch.float), [1]).numpy()
-                          for _ in range(10)]).mean()
-         for k, m in enumerate(models)})
-     elbos
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[59]:
-   #+BEGIN_EXAMPLE
-     1   -161365.531250
-     2   -153420.906250
-     3   -101058.085938
-     4    -98015.765625
-     dtype: float64
-   #+END_EXAMPLE
+   # Out[75]:
+   [[file:figure/flows.org/ebnm-normmix-ex.png]]
    :END:
 
 ** Example of Empirical Bayes Poisson Means

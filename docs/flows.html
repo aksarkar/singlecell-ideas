@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-02-05 Fri 12:39 -->
+<!-- 2021-02-05 Fri 20:53 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Normalizing flows for EBPM</title>
@@ -272,6 +272,7 @@ for the JavaScript code in this tag.
 <li><a href="#org0dd86e4">Density estimation sanity check</a></li>
 <li><a href="#org2570b5c">EBNM via VBEM sanity check</a></li>
 <li><a href="#orgb9dcf4c">EBNM via flows sanity check</a></li>
+<li><a href="#orge00a64a">EBNM example</a></li>
 <li><a href="#orgd0277f9">Example of Empirical Bayes Poisson Means</a></li>
 </ul>
 </li>
@@ -613,15 +614,15 @@ discretizing \(\hat{g}\) and taking weighted sums.
   <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, n_samples):
     <span class="org-variable-name">q0</span> = torch.distributions.Normal(
       loc=x / (1 + <span class="org-keyword">self</span>.scale ** 2),
-      scale=torch.sqrt(1 / (1 + <span class="org-keyword">self</span>.scale ** 2)))
-    <span class="org-variable-name">u</span> = q0.rsample([1]).squeeze(-1)
-    <span class="org-variable-name">z</span>, <span class="org-variable-name">log_det_q</span> = <span class="org-keyword">self</span>.qz.forward(u.T)
+      scale=torch.sqrt(1 / (1 + 1 / <span class="org-keyword">self</span>.scale ** 2)))
+    <span class="org-variable-name">u</span> = q0.rsample(n_samples)
+    <span class="org-variable-name">z</span>, <span class="org-variable-name">log_det_q</span> = <span class="org-keyword">self</span>.qz.forward(u)
     <span class="org-variable-name">w</span>, <span class="org-variable-name">log_det_p</span> = <span class="org-keyword">self</span>.pz.forward(z)
     <span class="org-comment-delimiter"># </span><span class="org-comment">Important: qz is forward transforms, so we need to invert the sign of</span>
     <span class="org-comment-delimiter"># </span><span class="org-comment">log_det_q</span>
     <span class="org-variable-name">elbo</span> = (torch.distributions.Normal(z, <span class="org-keyword">self</span>.scale).log_prob(x)
             + <span class="org-keyword">self</span>.p0.log_prob(w) + log_det_p
-            - (q0.log_prob(u.T) - log_det_q)).<span class="org-builtin">sum</span>()
+            - (q0.log_prob(u) - log_det_q)).mean(dim=0).<span class="org-builtin">sum</span>()
     <span class="org-keyword">assert</span> elbo &lt;= 0
     <span class="org-keyword">return</span> -elbo
 
@@ -1090,127 +1091,50 @@ fig.tight_layout()
 <p><img src="figure/flows.org/ebnm-ex.png" alt="ebnm-ex.png">
 </p>
 </div>
+</div>
+</div>
 
+<div id="outline-container-orge00a64a" class="outline-3">
+<h3 id="orge00a64a">EBNM example</h3>
+<div class="outline-text-3" id="text-orge00a64a">
 <p>
-Plot the approximate posterior mean against the true posterior mean.
+Draw observations from a scale mixture of Gaussians prior.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
-plt.clf()
-plt.gcf().set_size_inches(2.5, 2.5)
-<span class="org-variable-name">q0</span> = st.norm(x.reshape(-1, 1) / (1 + s ** 2), np.sqrt(1 / (1 + 1 / s ** 2)))
-<span class="org-keyword">for</span> k, m <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
-  <span class="org-keyword">with</span> torch.no_grad():
-    <span class="org-variable-name">samples</span> = np.stack([m.qz.forward(torch.tensor(q0.rvs(), dtype=torch.<span class="org-builtin">float</span>))[0].numpy() <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(100)]).squeeze()
-    <span class="org-variable-name">muhat</span> = samples.mean(axis=0)
-  plt.scatter(q0.mean().ravel(), muhat, s=1, c=np.array(cm(k)).reshape(1, -1), label=f<span class="org-string">'K = {k+1}'</span>)
-<span class="org-variable-name">l</span> = plt.legend(frameon=<span class="org-constant">False</span>, handletextpad=0, markerscale=4)
-<span class="org-variable-name">lim</span> = [mu.<span class="org-builtin">min</span>(), mu.<span class="org-builtin">max</span>()]
-plt.plot(lim, lim, lw=1, ls=<span class="org-string">':'</span>, c=<span class="org-string">'r'</span>)
-plt.xlim(lim)
-plt.ylim(lim)
-plt.xlabel(<span class="org-string">'Exact posterior mean'</span>)
-plt.ylabel(<span class="org-string">'Approximate posterior mean'</span>)
-plt.tight_layout()
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 1000
+<span class="org-variable-name">s</span> = 0.05
+<span class="org-variable-name">pi</span> = np.array([0.3, 0.7])
+<span class="org-variable-name">scale</span> = np.array([0.1, 0.4])
+<span class="org-variable-name">z</span> = rng.choice(a=scale.shape[0], p=pi, size=n)
+<span class="org-variable-name">mu</span> = rng.normal(scale=scale[z], size=n)
+<span class="org-variable-name">x</span> = rng.normal(loc=mu, scale=s)
 </pre>
 </div>
 
-
-<div class="figure">
-<p><img src="figure/flows.org/ebnm-q.png" alt="ebnm-q.png">
-</p>
-</div>
-
 <p>
-Compare samples from the approximate posterior, holding \(K=2\), for the
-largest observation against the true posterior.
+Fit the model for different choices of \(K\).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-plt.gcf().set_size_inches(2.5, 2.5)
-<span class="org-variable-name">idx</span> = np.argmax(mu)
-<span class="org-variable-name">q0</span> = st.norm(x[idx] / (1 + s ** 2), np.sqrt(1 / (1 + 1 / s ** 2)))
-<span class="org-variable-name">u</span> = q0.rvs(size=(500, 1))
-<span class="org-keyword">with</span> torch.no_grad():
-  <span class="org-variable-name">samples</span> = models[1].qz.forward(torch.tensor(u, dtype=torch.<span class="org-builtin">float</span>))[0].numpy()
-plt.hist(samples, bins=3, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.8'</span>)
-<span class="org-variable-name">grid</span> = np.linspace(2, 4, 1000)
-plt.plot(grid, q0.pdf(grid), lw=2, c=<span class="org-string">'k'</span>)
-plt.xlabel(<span class="org-string">'Latent variable $\mu$'</span>)
-plt.ylabel(<span class="org-string">'Posterior density'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/flows.org/ebnm-q-max.png" alt="ebnm-q-max.png">
-</p>
-</div>
-
-<p>
-Look at different random initializations for \(K=4\).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">lr</span> = 1e-2
-<span class="org-variable-name">n_epochs</span> = 8000
-<span class="org-variable-name">models</span> = []
-<span class="org-keyword">for</span> run <span class="org-keyword">in</span> <span class="org-builtin">range</span>(5):
-  torch.manual_seed(run)
-  models.append(EBNM(K=4, scale=torch.tensor(s))
-                .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
-                     n_epochs=n_epochs,
-                     lr=lr))
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
-plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
-fig.set_size_inches(4, 4)
-ax[0].hist(x, bins=25, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
-ax[0].set_xlabel(<span class="org-string">'Observation $x$'</span>)
-ax[0].set_ylabel(<span class="org-string">'Density'</span>)
-
-<span class="org-variable-name">grid</span> = np.linspace(mu.<span class="org-builtin">min</span>(), mu.<span class="org-builtin">max</span>(), 1000)
-ax[1].hist(mu, bins=25, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
-ax[1].plot(grid, st.norm().pdf(grid), lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
-<span class="org-keyword">for</span> k, m <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
-  ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), c=cm(k), label=f<span class="org-string">'Run = {k + 1}'</span>)
-ax[1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
-ax[1].set_xlabel(<span class="org-string">'Latent variable $\mu$'</span>)
-ax[1].set_ylabel(<span class="org-string">'Density'</span>)
-fig.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/flows.org/ebnm-k=4-init.png" alt="ebnm-k=4-init.png">
-</p>
-</div>
-
-<p>
-Look at the zero initialization.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">run</span> = 21
+<pre class="src src-ipython"><span class="org-variable-name">run</span> = 1
 <span class="org-variable-name">lr</span> = 1e-2
-<span class="org-variable-name">n_epochs</span> = 20000
+<span class="org-variable-name">n_epochs</span> = 5000
 torch.manual_seed(run)
-<span class="org-variable-name">models</span> = [EBNM(K=K, scale=torch.tensor(s), random_init=<span class="org-constant">False</span>)
+<span class="org-variable-name">models</span> = [EBNM(K=K, scale=torch.tensor(s))
           .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
                n_epochs=n_epochs,
-               lr=lr)
+               lr=lr,
+               log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/ebnm-nf-normmix-{K}-{run}-{n_epochs}'</span>)
           <span class="org-keyword">for</span> K <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 5)]
 </pre>
 </div>
 
+<p>
+Plot the model fits against the simulated data.
+</p>
+
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
 plt.clf()
@@ -1222,9 +1146,10 @@ ax[0].set_ylabel(<span class="org-string">'Density'</span>)
 
 <span class="org-variable-name">grid</span> = np.linspace(mu.<span class="org-builtin">min</span>(), mu.<span class="org-builtin">max</span>(), 1000)
 ax[1].hist(mu, bins=25, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
-ax[1].plot(grid, st.norm().pdf(grid), lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
+<span class="org-variable-name">g</span> = st.norm(scale=scale).pdf(grid.reshape(-1, 1)) @ pi
+ax[1].plot(grid, g, lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
 <span class="org-keyword">for</span> k, m <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
-  ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), c=cm(k), label=f<span class="org-string">'K = {k + 1}'</span>)
+  ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), c=cm(k), label=f<span class="org-string">'K={k + 1}'</span>)
 ax[1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
 ax[1].set_xlabel(<span class="org-string">'Latent variable $\mu$'</span>)
 ax[1].set_ylabel(<span class="org-string">'Density'</span>)
@@ -1234,50 +1159,9 @@ fig.tight_layout()
 
 
 <div class="figure">
-<p><img src="figure/flows.org/ebnm-zero-init.png" alt="ebnm-zero-init.png">
+<p><img src="figure/flows.org/ebnm-normmix-ex.png" alt="ebnm-normmix-ex.png">
 </p>
 </div>
-
-<p>
-Compute the analytic ELBO (where \(q\) equals the true posterior).
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">q0</span> = st.norm(x / (1 + s ** 2), np.sqrt(1 / (1 + 1 / s ** 2)))
-<span class="org-variable-name">elbo0</span> = -.5 * (np.log(2 * np.pi * s ** 2) +
-               (np.linalg.norm(x - q0.mean()) - q0.var()) / s ** 2 +
-               (1 - 2 * np.log(q0.var()) + (q0.mean() ** 2 + q0.var()))).<span class="org-builtin">sum</span>()
-elbo0
-</pre>
-</div>
-
-<pre class="example">
--20041.20645325556
-
-</pre>
-
-<p>
-Look at the stochastic estimate of the ELBO for each model.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">torch.manual_seed(100)
-<span class="org-keyword">with</span> torch.no_grad():
-  <span class="org-variable-name">elbos</span> = pd.Series({
-    k + 1: np.stack([-m.forward(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), [1]).numpy()
-                     <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(10)]).mean()
-    <span class="org-keyword">for</span> k, m <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models)})
-elbos
-</pre>
-</div>
-
-<pre class="example">
-1   -161365.531250
-2   -153420.906250
-3   -101058.085938
-4    -98015.765625
-dtype: float64
-</pre>
 </div>
 </div>
 
@@ -1373,7 +1257,7 @@ torch.manual_seed(run)
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-02-05 Fri 12:39</p>
+<p class="date">Created: 2021-02-05 Fri 20:53</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

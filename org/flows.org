@@ -141,6 +141,31 @@
        def __repr__(self):
          return f'PlanarFlow(post_act={self.post_act.data}, weight={self.weight.data}, bias={self.bias.data})'
 
+     # Important: these are needed to transform distributions with constrained
+     # support to unconstrained support
+
+     class Softplus(torch.nn.Module):
+       def __init__(self):
+         super().__init__()
+
+       def forward(self, x):
+         return torch.nn.functional.softplus(x), torch.log(torch.sigmoid(x))
+
+     class Exp(torch.nn.Module):
+       def __init__(self):
+         super().__init__()
+
+       def forward(self, x):
+         return torch.exp(x), x
+
+     class Log(torch.nn.Module):
+       def __init__(self):
+         super().__init__()
+
+       def forward(self, x):
+         assert (x > 0).all()
+         return torch.log(x), -torch.log(x)
+
      class NormalizingFlow(torch.nn.Module):
        # https://pytorch.org/docs/stable/_modules/torch/nn/modules/container.html#Sequential
        def __init__(self, flows):
@@ -157,7 +182,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[57]:
    :END:
 
    The intuition behind this transform is that the pre-activation \(w x + b\)
@@ -261,8 +286,8 @@
 
    \begin{align}
       &\max_g \sum_i \ln p(x_i \mid s_i, g)\\
-      \geq &\max_{g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g(\lambda_i) - \ln q(\lambda_i)\right]\\
-      = &\max_{T_g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i | s_i, \lambda_i) + \ln g_0(T_g(\lambda_i)) + \sum_k \ln\det\abs{J^g_k} - \ln q(\lambda_i)\right]\\
+      \geq &\max_{g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i \mid s_i, \lambda_i) + \ln g(\lambda_i) - \ln q(\lambda_i)\right]\\
+      = &\max_{T_g, q} \E_{\lambda_i \sim q}\left[\sum_i \ln p(x_i \mid s_i, \lambda_i) + \ln g_0(T_g(\lambda_i)) + \sum_k \ln\det\abs{J^g_k} - \ln q(\lambda_i)\right]\\
    \end{align}
 
    where \(T_g = T^g_K \circ \cdots \circ T^g_1\) maps \(g\) to a base measure
@@ -282,7 +307,7 @@
    problem is
 
    \begin{equation}
-     \max_{T_g, T_q} \E_{u_i \sim q_0}\left[\sum_i \ln p(x_i | s_i, T_q(u_i)) + \ln g_0(T_g(T_q(u_i))) + \sum_k \ln\det\abs{J^g_k} - \ln q_0(u_i) + \sum_k \ln\det\abs{J^q_k}\right].
+     \max_{T_g, T_q} \E_{u_i \sim q_0}\left[\sum_i \ln p(x_i \mid s_i, T_q(u_i)) + \ln g_0(T_g(T_q(u_i))) + \sum_k \ln\det\abs{J^g_k} - \ln q_0(u_i) + \sum_k \ln\det\abs{J^q_k}\right].
    \end{equation}
 
    /Remark/ It is critical that \(u_i \sim q_0\) depends on \(x_i\) in the
@@ -291,8 +316,8 @@
    could be a log-Gamma posterior.
 
    /Remark/ Since the transformation \(T_q\) maps \(u_i \in \mathcal{U}\) to
-   \(\lambda_i \in \Lambda\), the sign of the determinants of the Jacobian
-   needs to be inverted.
+   \(\lambda_i \in \Lambda\), the signs of the log determinant terms need to be
+   inverted.
 
    Since \(T_g, T_q\) are differentiable, this problem can be solved by
    replacing the expectation with a Monte Carlo integral (e.g., Kingma and
@@ -366,20 +391,18 @@
      class EBPM(torch.nn.Module):
        def __init__(self, K):
          super().__init__()
-         self.pz = NormalizingFlow([PlanarFlow(1) for _ in range(K)])
-         self.qz = NormalizingFlow([PlanarFlow(1) for _ in range(K)])
+         self.p0 = torch.distributions.Gamma(concentration=1., rate=1.)
+         self.pz = NormalizingFlow([Log()] + [PlanarFlow(1) for _ in range(K)] + [Softplus()])
+         self.qz = NormalizingFlow([Log()] + [PlanarFlow(1) for _ in range(K)] + [Softplus()])
 
        def forward(self, x, s, n_samples):
-         u = N.rsample([x.shape[0], 1])
-         log_lam, log_det_q = self.qz.forward(u)
-         lam = torch.exp(log_lam)
-         log_det_q += log_lam
-         w, log_det_p = self.pz.forward(lam)
-         # Important: qz is forward transforms, so we need to invert the sign of
-         # log_det_q
-         kl = N.log_prob(w) + log_det_p - (N.log_prob(u) - log_det_q)
-         assert (kl > 0).all()
-         elbo = (torch.distributions.Poisson(s * lam).log_prob(x) - kl).sum()
+         q0 = torch.distributions.Gamma(concentration=1 + x, rate=1 + s)
+         u = q0.rsample(n_samples)
+         z, log_det_q = self.qz.forward(u)
+         w, log_det_p = self.pz.forward(z)
+         elbo = (torch.distributions.Poisson(s * z).log_prob(x)
+                 + self.p0.log_prob(w) + log_det_p
+                 - (q0.log_prob(u) - log_det_q)).mean(dim=0).sum()
          assert elbo <= 0
          return -elbo
 
@@ -401,15 +424,19 @@
            global_step += 1
          return self
 
-       def fitted_g(self, lam):
-         u, log_det = self.pz.forward(lam)
-         return N.log_prob(u) + log_det
-
+       @torch.no_grad()
+       def fitted_g(self, z, log=True):
+         u, log_det = self.pz.forward(z)
+         log_prob = self.p0.log_prob(u) + log_det
+         if log:
+           return log_prob.numpy()
+         else:
+           return torch.exp(log_prob).numpy()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[48]:
    :END:
 
 * Results
@@ -783,7 +810,7 @@
    [[file:figure/flows.org/ebnm-ex.png]]
    :END:
 
-** EBNM example
+** Example of EBNM
 
    Draw observations from a scale mixture of Gaussians prior.
 
@@ -852,7 +879,7 @@
    [[file:figure/flows.org/ebnm-normmix-ex.png]]
    :END:
 
-** Example of Empirical Bayes Poisson Means
+** EBPM sanity check
 
    For EBPM, a simple choice of \(q_0\) is 
 
@@ -868,8 +895,74 @@
      u_i &\sim \Gam(1, 1).
    \end{align}
 
-   For simplicity, it is easier to work with a prior (and approximate
-   posterior) on \(\ln u_i\).
+   Simulate data from the simple model.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 1000
+     s = np.full(n, 1)
+     lam = rng.gamma(shape=1, scale=1, size=n)
+     x = rng.poisson(s * lam)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[61]:
+   :END:
+
+   Fit EBPM for different choices of \(K\).
+
+   #+BEGIN_SRC ipython :async t
+     run = 2
+     lr = 1e-2
+     n_epochs = 2000
+     torch.manual_seed(run)
+     models = [EBPM(K=K)
+               .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+                    torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+                    n_epochs=n_epochs,
+                    lr=lr,
+                    log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-sanity-{run}-{K}-{n_epochs}')
+               for K in range(1, 5)]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[64]:
+   :END:
+
+   Plot the fitted models against the simulated data.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebpm-sanity-check.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(4, 4)
+     grid = np.arange(x.max() + 1)
+     ax[0].hist(x, bins=grid, density='True', color='0.7')
+     ax[0].set_xticks(grid)
+     ax[0].set_xlabel('Observation $x$')
+     ax[0].set_ylabel('Density')
+
+     ax[1].hist(lam, bins=50, density='True', color='0.7')
+     grid = np.linspace(lam.min(), lam.max(), 1000)
+     ax[1].plot(grid, st.gamma(a=1, scale=1).pdf(grid), lw=2, c='k', label='Simulated')
+     for k, m in enumerate(models):
+       ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.float), log=False), lw=1, c=cm(k), label=f'K = {k + 1}')
+     ax[1].legend(frameon=False)
+     ax[1].set_xlabel('Latent variable $\lambda$')
+     ax[1].set_ylabel('Density')
+
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[67]:
+   [[file:figure/flows.org/ebpm-sanity-check.png]]
+   :END:
+
+** Example of EBPM
 
    Draw data from a Poisson convolved with a Gamma.
 
@@ -885,49 +978,92 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[24]:
+   # Out[68]:
+   :END:
+
+   Fit the model for different choices of \(K\).
+
+   #+BEGIN_SRC ipython :async t
+     run = 16
+     lr = 1e-2
+     n_epochs = 4000
+     torch.manual_seed(run)
+     models = {K: EBPM(K=K)
+               .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
+                    torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+                    n_epochs=n_epochs,
+                    lr=lr,
+                    log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-nf-{run}-{K}-{lr}-{n_epochs}')
+               for K in (1, 4, 8)}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[80]:
    :END:
 
    Plot the simulated data.
 
-   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ex1.png
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebpm-gamma-ex.png
+     cm = plt.get_cmap('Dark2')
      plt.clf()
      fig, ax = plt.subplots(2, 1)
      fig.set_size_inches(4, 4)
      grid = np.arange(x.max() + 1)
-     ax[0].hist(x, bins=grid, color='0.7', density=True)
-     ax[0].plot(grid + 0.5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=1, c='k')
-     ax[0].set_xlabel('Observed count')
+     ax[0].hist(x, bins=grid, density='True', color='0.7')
+     ax[0].set_xticks(grid[::3])
+     ax[0].set_xlabel('Observation $x$')
      ax[0].set_ylabel('Density')
-     grid = np.linspace(0, (x / s).max(), 1000)
-     ax[1].plot(grid, st.gamma(a=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp)).pdf(grid), lw=1, c='k')
-     ax[1].set_xlabel('Latent variable')
+
+     ax[1].hist(lam, bins=30, density='True', color='0.7')
+     grid = np.linspace(lam.min(), lam.max(), 1000)
+     ax[1].plot(grid, st.gamma(a=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp)).pdf(grid), lw=2, c='k', label='Simulated')
+     for i, k in enumerate(models):
+       ax[1].plot(grid, models[k].fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.float), log=False), lw=1, c=cm(i), label=f'K = {k}')
+     ax[1].legend(frameon=False)
+     ax[1].set_xlabel('Latent variable $\lambda$')
      ax[1].set_ylabel('Density')
+
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[68]:
-   [[file:figure/flows.org/ex1.png]]
+   # Out[83]:
+   [[file:figure/flows.org/ebpm-gamma-ex.png]]
    :END:
 
-   #+BEGIN_SRC ipython :async t
-     K = 2
-     run = 2
-     lr = 1e-2
-     n_epochs = 8000
-     torch.manual_seed(run)
-     m = (EBPM(K=K)
-          .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
-               torch.tensor(s.reshape(-1, 1), dtype=torch.float),
-               n_epochs=n_epochs,
-               lr=lr,
-               log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-nf-{K}-{lr}-{n_epochs}-{run}'))
+   Under this model, the true posterior is
+
+   \begin{equation}
+     \lambda_i \mid x_i, s_i \sim \Gam(a + x_i, b + s_i),
+   \end{equation}
+
+   where the true prior is \(\lambda_i \sim \Gam(a, b)\). Compare the
+   approximate posterior mean to the true posterior mean.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebpm-gamma-ex-pm.png
+     cm = plt.get_cmap('Dark2')
+     pm = (x + np.exp(log_inv_disp)) / (s + np.exp(log_mean - log_inv_disp))
+     plt.clf()
+     plt.gcf().set_size_inches(3, 2.5)
+     plt.gca().set_aspect('equal')
+     q0 = st.gamma(a=1 + x.reshape(-1, 1), scale=1 / (1 + s.reshape(-1, 1)))
+     for i, k in enumerate(models):
+       with torch.no_grad():
+         samples = np.stack([models[k].qz.forward(torch.tensor(q0.rvs(), dtype=torch.float))[0].numpy() for _ in range(100)]).squeeze()
+         muhat = samples.mean(axis=0)
+       plt.scatter(pm, muhat, s=1, color=cm(i), label=f'K = {k}')
+     lim = [0, 0.0025]
+     plt.plot(lim, lim, lw=1, ls=':', c='r')
+     plt.legend(frameon=False, handletextpad=0, markerscale=4)
+     plt.xlabel('True posterior mean')
+     plt.ylabel('Approximate posterior mean')
+     plt.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   0 - c7f81a67-eafd-460f-90f5-257874e6e1ed
+   # Out[98]:
+   [[file:figure/flows.org/ebpm-gamma-ex-pm.png]]
    :END:
-

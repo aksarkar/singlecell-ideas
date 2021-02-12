@@ -144,12 +144,30 @@
      # Important: these are needed to transform distributions with constrained
      # support to unconstrained support
 
+     # y = softplus(x) = log1p(exp(x))
+
+     # dy/dx = exp(x) / (1 + exp(x)) = sigmoid(x)
+
      class Softplus(torch.nn.Module):
        def __init__(self):
          super().__init__()
 
        def forward(self, x):
          return torch.nn.functional.softplus(x), torch.log(torch.sigmoid(x))
+
+     # x = softplus^{-1}(y) = ln(expm1(y))
+
+     # dx/dy = exp(y) / (exp(y) - 1) = 1 / (1 - exp(-y))
+
+     class InverseSoftplus(torch.nn.Module):
+       def __init__(self):
+         super().__init__()
+
+       def forward(self, x):
+         # c.f. https://github.com/tensorflow/probability/blob/v0.12.1/tensorflow_probability/python/math/generic.py#L456-L507    
+         return torch.log(torch.expm1(x)), x - torch.log(torch.expm1(x))
+
+     # For completeness. In preliminary experiments, Exp tends to overflow
 
      class Exp(torch.nn.Module):
        def __init__(self):
@@ -182,7 +200,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[57]:
+   # Out[77]:
    :END:
 
    The intuition behind this transform is that the pre-activation \(w x + b\)
@@ -392,8 +410,8 @@
        def __init__(self, K):
          super().__init__()
          self.p0 = torch.distributions.Gamma(concentration=1., rate=1.)
-         self.pz = NormalizingFlow([Log()] + [PlanarFlow(1) for _ in range(K)] + [Softplus()])
-         self.qz = NormalizingFlow([Log()] + [PlanarFlow(1) for _ in range(K)] + [Softplus()])
+         self.pz = NormalizingFlow([InverseSoftplus()] + [PlanarFlow(1) for _ in range(K)] + [Softplus()])
+         self.qz = NormalizingFlow([InverseSoftplus()] + [PlanarFlow(1) for _ in range(K)] + [Softplus()])
 
        def forward(self, x, s, n_samples):
          q0 = torch.distributions.Gamma(concentration=1 + x, rate=1 + s)
@@ -436,7 +454,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[48]:
+   # Out[5]:
    :END:
 
 * Results
@@ -907,13 +925,13 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[61]:
+   # Out[83]:
    :END:
 
    Fit EBPM for different choices of \(K\).
 
    #+BEGIN_SRC ipython :async t
-     run = 2
+     run = 3
      lr = 1e-2
      n_epochs = 2000
      torch.manual_seed(run)
@@ -928,7 +946,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[64]:
+   # Out[84]:
    :END:
 
    Plot the fitted models against the simulated data.
@@ -958,7 +976,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[67]:
+   # Out[85]:
    [[file:figure/flows.org/ebpm-sanity-check.png]]
    :END:
 
@@ -978,13 +996,13 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[68]:
+   # Out[86]:
    :END:
 
    Fit the model for different choices of \(K\).
 
    #+BEGIN_SRC ipython :async t
-     run = 16
+     run = 2
      lr = 1e-2
      n_epochs = 4000
      torch.manual_seed(run)
@@ -999,7 +1017,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[80]:
+   # Out[94]:
    :END:
 
    Plot the simulated data.
@@ -1029,7 +1047,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[83]:
+   # Out[95]:
    [[file:figure/flows.org/ebpm-gamma-ex.png]]
    :END:
 
@@ -1064,6 +1082,35 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[98]:
+   # Out[96]:
    [[file:figure/flows.org/ebpm-gamma-ex-pm.png]]
+   :END:
+
+   Compare the approximate posterior to the true posterior for a subset of
+   observations.
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebpm-gamma-ex-q.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 4)
+     fig.set_size_inches(7.5, 2.5)
+
+     for i, a in enumerate(ax):
+       grid = np.log(np.linspace(0, 3e-3, 1000)[1:])
+       q = st.gamma(a=np.exp(log_inv_disp) + x[i], scale=1 / (np.exp(log_mean - log_inv_disp) + s[i]))
+       ax[i].plot(grid, q.pdf(np.exp(grid)) * np.exp(grid), lw=2, c='k', label='$q$')
+       q0 = st.gamma(a=1 + x[i], scale=1 / (1 + s[i]))
+       ax[i].plot(grid, q0.pdf(np.exp(grid)) * np.exp(grid), lw=1, c='k', ls='--', label='$q_0$')
+       with torch.no_grad():
+         samples = models[8].qz.forward(torch.tensor(q0.rvs(size=(500, 1)), dtype=torch.float))[0].numpy()
+       ax[i].hist(np.log(samples), bins=7, density=True, color='0.8')
+       ax[i].set_xlabel('$\ln(\lambda)$')
+     ax[0].set_ylabel('Density')
+     ax[0].legend(frameon=False, loc='upper left')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[133]:
+   [[file:figure/flows.org/ebpm-gamma-ex-q.png]]
    :END:

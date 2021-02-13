@@ -72,6 +72,7 @@
   #+BEGIN_SRC ipython
     import numpy as np
     import pandas as pd
+    import scipy.special as sp
     import scipy.stats as st
     import torch
     import torch.utils.tensorboard as tb
@@ -79,7 +80,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[15]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -200,7 +201,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[77]:
+   # Out[4]:
    :END:
 
    The intuition behind this transform is that the pre-activation \(w x + b\)
@@ -996,7 +997,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[86]:
+   # Out[6]:
    :END:
 
    Fit the model for different choices of \(K\).
@@ -1004,7 +1005,7 @@
    #+BEGIN_SRC ipython :async t
      run = 2
      lr = 1e-2
-     n_epochs = 4000
+     n_epochs = 16000
      torch.manual_seed(run)
      models = {K: EBPM(K=K)
                .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
@@ -1017,18 +1018,20 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[94]:
+   # Out[9]:
    :END:
 
    Plot the simulated data.
 
    #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebpm-gamma-ex.png
+     n_samples = 1000
      cm = plt.get_cmap('Dark2')
      plt.clf()
      fig, ax = plt.subplots(2, 1)
      fig.set_size_inches(4, 4)
      grid = np.arange(x.max() + 1)
      ax[0].hist(x, bins=grid, density='True', color='0.7')
+     ax[0].plot(grid + 0.5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(grid), lw=2, c='k')
      ax[0].set_xticks(grid[::3])
      ax[0].set_xlabel('Observation $x$')
      ax[0].set_ylabel('Density')
@@ -1047,7 +1050,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[95]:
+   # Out[55]:
    [[file:figure/flows.org/ebpm-gamma-ex.png]]
    :END:
 
@@ -1091,7 +1094,7 @@
 
    #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebpm-gamma-ex-q.png
      plt.clf()
-     fig, ax = plt.subplots(1, 4)
+     fig, ax = plt.subplots(1, 4, sharey=True)
      fig.set_size_inches(7.5, 2.5)
 
      for i, a in enumerate(ax):
@@ -1102,8 +1105,9 @@
        ax[i].plot(grid, q0.pdf(np.exp(grid)) * np.exp(grid), lw=1, c='k', ls='--', label='$q_0$')
        with torch.no_grad():
          samples = models[8].qz.forward(torch.tensor(q0.rvs(size=(500, 1)), dtype=torch.float))[0].numpy()
-       ax[i].hist(np.log(samples), bins=7, density=True, color='0.8')
+       ax[i].hist(np.log(samples), bins=9, density=True, color='0.8')
        ax[i].set_xlabel('$\ln(\lambda)$')
+       ax[i].set_title(f'$x$ = {x[i]}')
      ax[0].set_ylabel('Density')
      ax[0].legend(frameon=False, loc='upper left')
      fig.tight_layout()
@@ -1111,6 +1115,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[133]:
+   # Out[62]:
    [[file:figure/flows.org/ebpm-gamma-ex-q.png]]
    :END:

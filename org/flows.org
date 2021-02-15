@@ -26,27 +26,32 @@
   can fail to accurately describe expression variation at some genes.
 
   In contrast, the family of non-parametric unimodal distributions
-  (Stephens 2016) could be sufficient for all but a minority of genes. In
+  (Stephens 2017) could be sufficient for all but a minority of genes. In
   practice, this family is approximated as the family of mixture of uniform
-  distributions with fixed endpoints, including the common mode. Then,
-  inference in this model can be achieved by a combination of convex
-  optimization (over mixture weights, given the mode) and line search (over the
-  mode, as an outer loop). However, in practice this approach is expensive and
-  cumbersome to parallelize for large data sets.
+  distributions with fixed endpoints \(a_k\) and common mode \(\lambda_0\)
+
+  \begin{equation}
+    \lambda_i \sim \sum_{k=1}^K \pi_k \operatorname{Uniform}(\lambda_0, a_k).
+  \end{equation}
+
+  Then, inference in this model can be achieved by a combination of convex
+  optimization (over \(\boldsybmol{\pi}\), given \(\lambda_0\)) and line search
+  (over \(\lambda_0\), as an outer loop). However, in practice this approach is
+  expensive and cumbersome to parallelize for large data sets.
 
   One idea which could bridge the gap between these approaches (in both
   computational cost and flexibility) is /normalizing flows/ (reviewed in
-  [[https://arxiv.org/abs/1912.02762][Papamakarios et al. 2019]]). The key idea
-  of normalizing flows is to apply a series of invertible, differentiable
-  transformations \(T_1, \ldots, T_K\) to a tractable density, in order to
-  obtain a different density
+  [[https://arxiv.org/abs/1912.02762][Papamakarios et al. 2019]]). The key idea of normalizing flows is to apply a
+  series of invertible, differentiable transformations \(T_1, \ldots, T_K\) to
+  a tractable density, in order to obtain a different density. It is sometimes
+  more convenient to instead work with the inverse transformation
 
   \begin{align}
-    x &= (T_K \circ \cdots \circ T_1)(u)\\
+    u &= (T_K \circ \cdots \circ T_1)(x)\\
     f_x(x) &= f_u(u) \prod_{k=1}^{K} \det \abs{J_k(\cdot)},
   \end{align}
 
-  where \(J_k\) is the Jacobian of \(T_k^{-1}\). If the \(T_k\) have free
+  where \(J_k\) is the Jacobian of \(T_k\). If the functions \(T_k\) have free
   parameters, gradients with respect to those parameters are available,
   allowing the transformations to be learned from the data. Here, we
   investigate using flows to define a flexible family of priors, and use that

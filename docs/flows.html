@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-02-15 Mon 11:51 -->
+<!-- 2021-02-18 Thu 17:17 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Normalizing flows for EBPM</title>
@@ -273,8 +273,10 @@ for the JavaScript code in this tag.
 <li><a href="#org2570b5c">EBNM via VBEM sanity check</a></li>
 <li><a href="#orgb9dcf4c">EBNM via flows sanity check</a></li>
 <li><a href="#orgd951f8b">Example of EBNM</a></li>
+<li><a href="#orgb886926">EBNM example 2</a></li>
 <li><a href="#orgcfa1770">EBPM sanity check</a></li>
 <li><a href="#orgb7fab19">Example of EBPM</a></li>
+<li><a href="#org377f0e5">EBPM example: multi-modal prior</a></li>
 </ul>
 </li>
 </ul>
@@ -358,8 +360,10 @@ family to fit expression models to scRNA-seq data.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scipy.integrate <span class="org-keyword">as</span> si
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> scmodes
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.tensorboard <span class="org-keyword">as</span> tb
 </pre>
@@ -367,7 +371,7 @@ family to fit expression models to scRNA-seq data.
 
 <div class="org-src-container">
 <pre class="src src-ipython">%matplotlib inline
-%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'svg'</span>])
 </pre>
 </div>
 
@@ -709,14 +713,14 @@ discretizing \(\hat{g}\) and taking weighted sums.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">EBPM</span>(torch.nn.Module):
-  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, K):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, K, a=1., b=1.):
     <span class="org-builtin">super</span>().__init__()
-    <span class="org-keyword">self</span>.p0 = torch.distributions.Gamma(concentration=1., rate=1.)
+    <span class="org-keyword">self</span>.p0 = torch.distributions.Gamma(concentration=a, rate=b)
     <span class="org-keyword">self</span>.pz = NormalizingFlow([InverseSoftplus()] + [PlanarFlow(1) <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K)] + [Softplus()])
     <span class="org-keyword">self</span>.qz = NormalizingFlow([InverseSoftplus()] + [PlanarFlow(1) <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K)] + [Softplus()])
 
   <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, s, n_samples):
-    <span class="org-variable-name">q0</span> = torch.distributions.Gamma(concentration=1. + x, rate=1. + s)
+    <span class="org-variable-name">q0</span> = torch.distributions.Gamma(concentration=<span class="org-keyword">self</span>.p0.concentration + x, rate=<span class="org-keyword">self</span>.p0.rate + s)
     <span class="org-variable-name">u</span> = q0.rsample(n_samples)
     <span class="org-variable-name">z</span>, <span class="org-variable-name">log_det_q</span> = <span class="org-keyword">self</span>.qz.forward(u)
     <span class="org-variable-name">w</span>, <span class="org-variable-name">log_det_p</span> = <span class="org-keyword">self</span>.pz.forward(z)
@@ -734,7 +738,7 @@ discretizing \(\hat{g}\) and taking weighted sums.
     <span class="org-variable-name">global_step</span> = 0
     <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
       opt.zero_grad()
-      <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, s, n_samples)
+      <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, s, n_samples=n_samples)
       <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
         writer.add_scalar(<span class="org-string">'loss'</span>, loss, global_step)
       <span class="org-keyword">if</span> torch.isnan(loss):
@@ -1152,7 +1156,7 @@ fig.tight_layout()
 <h3 id="orgd951f8b">Example of EBNM</h3>
 <div class="outline-text-3" id="text-orgd951f8b">
 <p>
-Draw observations from a scale mixture of Gaussians prior.
+Draw observations from a mean zero, scale mixture of Gaussians prior.
 </p>
 
 <div class="org-src-container">
@@ -1180,7 +1184,8 @@ torch.manual_seed(run)
           .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
                n_epochs=n_epochs,
                lr=lr,
-               log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/ebnm-nf-normmix-{K}-{run}-{n_epochs}'</span>)
+               <span class="org-comment-delimiter"># </span><span class="org-comment">log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebnm-nf-normmix-{K}-{run}-{n_epochs}',</span>
+          )
           <span class="org-keyword">for</span> K <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 5)]
 </pre>
 </div>
@@ -1203,7 +1208,7 @@ ax[1].hist(mu, bins=25, color=<span class="org-string">'0.7'</span>, density=<sp
 <span class="org-variable-name">g</span> = st.norm(scale=scale).pdf(grid.reshape(-1, 1)) @ pi
 ax[1].plot(grid, g, lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
 <span class="org-keyword">for</span> k, m <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
-  ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), c=cm(k), label=f<span class="org-string">'K={k + 1}'</span>)
+  ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), c=cm(k), label=f<span class="org-string">'K = {k + 1}'</span>)
 ax[1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
 ax[1].set_xlabel(<span class="org-string">'Latent variable $\mu$'</span>)
 ax[1].set_ylabel(<span class="org-string">'Density'</span>)
@@ -1213,7 +1218,82 @@ fig.tight_layout()
 
 
 <div class="figure">
-<p><img src="figure/flows.org/ebnm-normmix-ex.png" alt="ebnm-normmix-ex.png">
+<p><object type="image/svg+xml" data="figure/flows.org/ebnm-normmix-ex.svg" class="org-svg">
+Sorry, your browser does not support SVG.</object>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgb886926" class="outline-3">
+<h3 id="orgb886926">EBNM example 2</h3>
+<div class="outline-text-3" id="text-orgb886926">
+<p>
+Draw observations from a general mixture of Gaussians prior.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 1000
+<span class="org-variable-name">s</span> = 0.05
+<span class="org-variable-name">pi</span> = np.array([0.3, 0.7])
+<span class="org-variable-name">loc</span> = np.array([-1, 1])
+<span class="org-variable-name">scale</span> = np.array([0.1, 0.4])
+<span class="org-variable-name">z</span> = rng.choice(a=pi.shape[0], p=pi, size=n)
+<span class="org-variable-name">mu</span> = rng.normal(loc=loc[z], scale=scale[z], size=n)
+<span class="org-variable-name">x</span> = rng.normal(loc=mu, scale=s)
+</pre>
+</div>
+
+<p>
+Fit the model for different choices of \(K\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">run</span> = 3
+<span class="org-variable-name">lr</span> = 1e-2
+<span class="org-variable-name">n_epochs</span> = 10000
+torch.manual_seed(run)
+<span class="org-variable-name">models</span> = {K: EBNM(K=K, scale=torch.tensor(s))
+          .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+               n_epochs=n_epochs,
+               lr=lr,
+               log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/ebnm-nf-gmm-{K}-{run}-{n_epochs}'</span>,
+          )
+          <span class="org-keyword">for</span> K <span class="org-keyword">in</span> (1, 8, 16, 24)}
+</pre>
+</div>
+
+<p>
+Plot the model fits against the simulated data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(4, 4)
+ax[0].hist(x, bins=25, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+ax[0].set_xlabel(<span class="org-string">'Observation $x$'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+
+<span class="org-variable-name">grid</span> = np.linspace(mu.<span class="org-builtin">min</span>(), mu.<span class="org-builtin">max</span>(), 1000)
+ax[1].hist(mu, bins=25, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+<span class="org-variable-name">g</span> = st.norm(loc=loc, scale=scale).pdf(grid.reshape(-1, 1)) @ pi
+ax[1].plot(grid, g, lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  ax[1].plot(grid, models[k].fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), c=cm(i), label=f<span class="org-string">'K = {k}'</span>)
+ax[1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+ax[1].set_xlabel(<span class="org-string">'Latent variable $\mu$'</span>)
+ax[1].set_ylabel(<span class="org-string">'Density'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><object type="image/svg+xml" data="figure/flows.org/ebnm-gmm-ex.svg" class="org-svg">
+Sorry, your browser does not support SVG.</object>
 </p>
 </div>
 </div>
@@ -1258,7 +1338,7 @@ Fit EBPM for different choices of \(K\).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">run</span> = 3
+<pre class="src src-ipython"><span class="org-variable-name">run</span> = 5
 <span class="org-variable-name">lr</span> = 1e-2
 <span class="org-variable-name">n_epochs</span> = 2000
 torch.manual_seed(run)
@@ -1266,8 +1346,10 @@ torch.manual_seed(run)
           .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
                torch.tensor(s.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
                n_epochs=n_epochs,
+               n_samples=8,
                lr=lr,
-               log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/ebpm-sanity-{run}-{K}-{n_epochs}'</span>)
+               <span class="org-comment-delimiter"># </span><span class="org-comment">log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-sanity-{run}-{K}-{n_epochs}',</span>
+          )
           <span class="org-keyword">for</span> K <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 5)]
 </pre>
 </div>
@@ -1302,7 +1384,8 @@ fig.tight_layout()
 
 
 <div class="figure">
-<p><img src="figure/flows.org/ebpm-sanity-check.png" alt="ebpm-sanity-check.png">
+<p><object type="image/svg+xml" data="figure/flows.org/ebpm-sanity-check.svg" class="org-svg">
+Sorry, your browser does not support SVG.</object>
 </p>
 </div>
 </div>
@@ -1327,22 +1410,33 @@ Draw data from a Poisson convolved with a Gamma.
 </div>
 
 <p>
-Fit the model for different choices of \(K\).
+Fit a Gamma prior directly.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">run</span> = 6
+<pre class="src src-ipython"><span class="org-variable-name">fit0</span> = scmodes.ebpm.ebpm_gamma(x, s)
+</pre>
+</div>
+
+<p>
+Fit the model for different choices of \(K\), initializing \(g_0\) and
+\(q_0\) at the ground truth.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">run</span> = 7
 <span class="org-variable-name">lr</span> = 1e-2
 <span class="org-variable-name">n_epochs</span> = 8000
 <span class="org-variable-name">n_samples</span> = 8
 torch.manual_seed(run)
-<span class="org-variable-name">models</span> = {K: EBPM(K=K)
+<span class="org-variable-name">models</span> = {K: EBPM(K=K, a=np.exp(fit0[1]), b=np.exp(fit0[1] - fit0[0]))
           .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
                torch.tensor(s.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
                n_epochs=n_epochs,
                n_samples=n_samples,
                lr=lr,
-               log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/ebpm-nf-{run}-{K}-{lr}-{n_samples}-{n_epochs}'</span>)
+               <span class="org-comment-delimiter"># </span><span class="org-comment">log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-nf-{run}-{K}-{lr}-{n_samples}-{n_epochs}'</span>
+          )
           <span class="org-keyword">for</span> K <span class="org-keyword">in</span> (1, 4, 8)}
 </pre>
 </div>
@@ -1363,7 +1457,7 @@ fig.set_size_inches(4, 4)
 ax[0].hist(x, bins=x_grid, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
 ax[0].plot(x_grid + 0.5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(x_grid), lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
 <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
-  <span class="org-variable-name">F</span> = np.array([scipy.integrate.simps(
+  <span class="org-variable-name">F</span> = np.array([si.simps(
     st.poisson(s * lam_grid).pmf(y) * models[k].fitted_g(torch.tensor(lam_grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>).ravel(),
     lam_grid)
                 <span class="org-keyword">for</span> y <span class="org-keyword">in</span> x_grid])
@@ -1387,7 +1481,8 @@ fig.tight_layout()
 
 
 <div class="figure">
-<p><img src="figure/flows.org/ebpm-gamma-ex.png" alt="ebpm-gamma-ex.png">
+<p><object type="image/svg+xml" data="figure/flows.org/ebpm-gamma-ex.svg" class="org-svg">
+Sorry, your browser does not support SVG.</object>
 </p>
 </div>
 
@@ -1408,9 +1503,9 @@ approximate posterior mean to the true posterior mean.
 <pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
 <span class="org-variable-name">pm</span> = (x + np.exp(log_inv_disp)) / (s + np.exp(log_mean - log_inv_disp))
 plt.clf()
-plt.gcf().set_size_inches(3, 2.5)
-plt.gca().set_aspect(<span class="org-string">'equal'</span>)
-<span class="org-variable-name">q0</span> = st.gamma(a=1 + x.reshape(-1, 1), scale=1 / (1 + s.reshape(-1, 1)))
+plt.gcf().set_size_inches(3, 3)
+plt.gca().set_aspect(<span class="org-string">'equal'</span>, adjustable=<span class="org-string">'datalim'</span>)
+<span class="org-variable-name">q0</span> = st.gamma(a=x.reshape(-1, 1) + np.exp(log_inv_disp), scale=1 / (s.reshape(-1, 1) + np.exp(log_mean - log_inv_disp)))
 <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
   <span class="org-keyword">with</span> torch.no_grad():
     <span class="org-variable-name">samples</span> = np.stack([models[k].qz.forward(torch.tensor(q0.rvs(), dtype=torch.<span class="org-builtin">float</span>))[0].numpy() <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(100)]).squeeze()
@@ -1441,12 +1536,12 @@ observations.
 <span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4, sharey=<span class="org-constant">True</span>)
 fig.set_size_inches(8.5, 2.5)
 <span class="org-variable-name">order</span> = np.argsort(-x)
-<span class="org-variable-name">x_grid</span> = [18, 14, 10, 6]
+<span class="org-variable-name">x_grid</span> = [18, 12, 6, 0]
 <span class="org-keyword">for</span> i, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax):
-  <span class="org-variable-name">grid</span> = np.log(np.linspace(1e-4, 5e-3, 1000))
-  <span class="org-variable-name">q</span> = st.gamma(a=np.exp(log_inv_disp) + x_grid[i], scale=1 / (np.exp(log_mean - log_inv_disp) + s[0]))
+  <span class="org-variable-name">grid</span> = np.log(np.linspace(1e-5, 5e-3, 1000))
+  <span class="org-variable-name">q</span> = st.gamma(a=np.exp(fit0[1]) + x_grid[i], scale=1 / (np.exp(fit0[0] + fit0[1]) + s[0]))
   ax[i].plot(grid, q.pdf(np.exp(grid)) * np.exp(grid), lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'$p_{\mathrm{post}}$'</span>)
-  <span class="org-variable-name">q0</span> = st.gamma(a=1 + x_grid[i], scale=1 / (1 + s[0]))
+  <span class="org-variable-name">q0</span> = st.gamma(a=x_grid[i] + np.exp(log_inv_disp), scale=1 / (s[0] + np.exp(log_mean - log_inv_disp)))
   ax[i].plot(grid, q0.pdf(np.exp(grid)) * np.exp(grid), lw=1, c=<span class="org-string">'k'</span>, ls=<span class="org-string">'--'</span>, label=<span class="org-string">'$q_0$'</span>)
   <span class="org-keyword">with</span> torch.no_grad():
     <span class="org-variable-name">samples</span> = models[8].qz.forward(torch.tensor(q0.rvs(size=(500, 1)), dtype=torch.<span class="org-builtin">float</span>))[0].numpy()
@@ -1464,13 +1559,209 @@ fig.tight_layout()
 <p><img src="figure/flows.org/ebpm-gamma-ex-q.png" alt="ebpm-gamma-ex-q.png">
 </p>
 </div>
+
+<p>
+Fit the model fixing \(K = 8\), comparing different initializations.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">run</span> = 11
+<span class="org-variable-name">lr</span> = 1e-2
+<span class="org-variable-name">n_epochs</span> = 8000
+<span class="org-variable-name">n_samples</span> = 8
+<span class="org-variable-name">K</span> = 8
+torch.manual_seed(run)
+np.random.seed(run)
+<span class="org-variable-name">models</span> = {k: EBPM(K=K, a=a, b=b)
+          .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+               torch.tensor(s.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+               n_epochs=n_epochs,
+               n_samples=n_samples,
+               lr=lr,
+          )
+          <span class="org-keyword">for</span> k, a, b <span class="org-keyword">in</span> <span class="org-builtin">zip</span>([<span class="org-string">'Exp(1)'</span>, <span class="org-string">'Oracle'</span>, <span class="org-string">'Random'</span>],
+                             [1., np.exp(fit0[1]), st.expon().rvs()],
+                             [1., np.exp(fit0[1] - fit0[0]), st.expon().rvs()])}
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_samples</span> = 1000
+<span class="org-variable-name">x_grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
+<span class="org-variable-name">lam_grid</span> = np.linspace(lam.<span class="org-builtin">min</span>(), lam.<span class="org-builtin">max</span>(), 1000)
+
+<span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(4, 4)
+ax[0].hist(x, bins=x_grid, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
+ax[0].plot(x_grid + 0.5, st.nbinom(n=np.exp(log_inv_disp), p=1 / (1 + s[0] * np.exp(log_mean - log_inv_disp))).pmf(x_grid), lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  <span class="org-variable-name">F</span> = np.array([si.simps(
+    st.poisson(s * lam_grid).pmf(y) * models[k].fitted_g(torch.tensor(lam_grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>).ravel(),
+    lam_grid)
+                <span class="org-keyword">for</span> y <span class="org-keyword">in</span> x_grid])
+  ax[0].plot(x_grid + 0.5, F, lw=1, c=cm(i), label=f<span class="org-string">'{k}'</span>)
+ax[0].legend(title=f<span class="org-string">'Initialization (K = {K})'</span>, frameon=<span class="org-constant">False</span>)
+ax[0].set_xticks(x_grid[::3])
+ax[0].set_xlabel(<span class="org-string">'Observation $x$'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+
+ax[1].hist(lam, bins=30, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
+ax[1].plot(lam_grid, st.gamma(a=np.exp(log_inv_disp), scale=np.exp(log_mean - log_inv_disp)).pdf(lam_grid), lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  ax[1].plot(lam_grid, models[k].fitted_g(torch.tensor(lam_grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), lw=1, c=cm(i), label=f<span class="org-string">'{k}'</span>)
+ax[1].legend(title=f<span class="org-string">'Initialization (K = {K})'</span>, frameon=<span class="org-constant">False</span>)
+ax[1].set_xlabel(<span class="org-string">'Latent variable $\lambda$'</span>)
+ax[1].set_ylabel(<span class="org-string">'Density'</span>)
+
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><object type="image/svg+xml" data="figure/flows.org/ebpm-gamma-ex-2.svg" class="org-svg">
+Sorry, your browser does not support SVG.</object>
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(8.5, 2.5)
+<span class="org-variable-name">order</span> = np.argsort(-x)
+<span class="org-variable-name">x_grid</span> = [18, 12, 6, 0]
+<span class="org-keyword">for</span> i, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax):
+  <span class="org-variable-name">grid</span> = np.log(np.linspace(1e-5, 5e-3, 1000))
+  <span class="org-variable-name">q</span> = st.gamma(a=np.exp(fit0[1]) + x_grid[i], scale=1 / (np.exp(fit0[0] + fit0[1]) + s[0]))
+  ax[i].plot(grid, q.pdf(np.exp(grid)) * np.exp(grid), lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'$p_{\mathrm{post}}$'</span>)
+  <span class="org-variable-name">q0</span> = st.gamma(a=x_grid[i] + np.exp(3.), scale=1 / (s[0] + np.exp(fit1[0] + 3.)))
+  ax[i].plot(grid, q0.pdf(np.exp(grid)) * np.exp(grid), lw=1, c=<span class="org-string">'k'</span>, ls=<span class="org-string">'--'</span>, label=<span class="org-string">'$q_0$'</span>)
+  <span class="org-keyword">with</span> torch.no_grad():
+    <span class="org-variable-name">samples</span> = models[4].qz.forward(torch.tensor(q0.rvs(size=(500, 1)), dtype=torch.<span class="org-builtin">float</span>))[0].numpy()
+  ax[i].hist(np.log(samples), bins=9, density=<span class="org-constant">True</span>, color=<span class="org-string">'0.8'</span>, label=<span class="org-string">'$q$ ($K$ = 4)'</span>)
+  ax[i].set_xlabel(<span class="org-string">'$\ln(\lambda)$'</span>)
+  ax[i].set_title(f<span class="org-string">'$x$ = {x_grid[i]}'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+ax[-1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/flows.org/ebpm-gamma-ex-2-q.png" alt="ebpm-gamma-ex-2-q.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org377f0e5" class="outline-3">
+<h3 id="org377f0e5">EBPM example: multi-modal prior</h3>
+<div class="outline-text-3" id="text-org377f0e5">
+<p>
+Draw data from a two-state kinetic model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-variable-name">n</span> = 1000
+<span class="org-variable-name">s</span> = np.full(n, 1e4)
+<span class="org-variable-name">M</span> = 1e6
+<span class="org-variable-name">kon</span> = 0.25
+<span class="org-variable-name">koff</span> = 0.1
+<span class="org-variable-name">kr</span> = 1024
+<span class="org-variable-name">p</span> = rng.beta(a=kon, b=koff, size=n)
+<span class="org-variable-name">m</span> = rng.poisson(kr * p)
+<span class="org-variable-name">lam</span> = m / M
+<span class="org-variable-name">x</span> = rng.binomial(m, s / M)
+</pre>
+</div>
+
+<p>
+Fit the model for different choices of \(K\), initializing \(g_0\) and
+\(q_0\) from the Gamma component of a point-Gamma expresion model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit0</span> = scmodes.ebpm.ebpm_gamma(x, s)
+<span class="org-variable-name">fit1</span> = scmodes.ebpm.ebpm_point_gamma(x, s)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">run</span> = 4
+<span class="org-variable-name">lr</span> = 1e-2
+<span class="org-variable-name">n_epochs</span> = 24000
+<span class="org-variable-name">n_samples</span> = 8
+<span class="org-variable-name">K</span> = 16
+torch.manual_seed(run)
+<span class="org-variable-name">models</span> = {l: EBPM(K=K, a=a, b=b)
+          .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+               torch.tensor(s.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+               n_epochs=n_epochs,
+               n_samples=n_samples,
+               lr=lr,
+          )
+          <span class="org-keyword">for</span> l, a, b <span class="org-keyword">in</span> <span class="org-builtin">zip</span>([<span class="org-string">'Exp(1)'</span>, <span class="org-string">'Gamma MLE'</span>, <span class="org-string">'Point-Gamma MLE'</span>],
+                             [1., np.exp(fit0[1]), np.exp(fit1[1])],
+                             [1., np.exp(fit0[1] - fit0[0]), np.exp(fit1[1] - fit1[0])])}
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x_grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
+<span class="org-variable-name">lam_grid</span> = np.linspace(lam.<span class="org-builtin">min</span>(), 2 * lam.<span class="org-builtin">max</span>(), 1000)[1:]
+
+<span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(5.5, 4)
+ax[0].hist(x, bins=x_grid, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
+ax[0].plot(x_grid + 0.5, st.nbinom(n=np.exp(fit0[1]), p=1 / (1 + 1e4 * np.exp(fit0[0] - fit0[1]))).pmf(x_grid), lw=1, marker=<span class="org-string">'.'</span>, c=cm(5), label=<span class="org-string">'Gamma'</span>)
+<span class="org-variable-name">F</span> = st.nbinom(n=np.exp(fit1[1]), p=1 / (1 + 1e4 * np.exp(fit1[0] - fit1[1]))).pmf(x_grid)
+<span class="org-variable-name">F</span>[1:] *= sp.expit(-fit1[2])
+<span class="org-variable-name">F</span>[0] += sp.expit(fit1[2])
+ax[0].plot(x_grid + 0.5, F, lw=1, marker=<span class="org-string">'.'</span>, c=cm(6), label=<span class="org-string">'Point-Gamma'</span>)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  <span class="org-variable-name">F</span> = np.array([si.simps(
+    st.poisson(s[0] * lam_grid).pmf(y) * models[k].fitted_g(torch.tensor(lam_grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>).ravel(),
+    lam_grid)
+                <span class="org-keyword">for</span> y <span class="org-keyword">in</span> x_grid])
+  ax[0].plot(x_grid + 0.5, F, lw=1, c=cm(i), label=f<span class="org-string">'{k}'</span>)
+ax[0].legend(title=f<span class="org-string">'Initialization (K = {K})'</span>, frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+ax[0].set_xticks(x_grid[::3])
+ax[0].set_xlabel(<span class="org-string">'Observation $x$'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+
+ax[1].hist(lam, bins=30, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
+ax[1].plot(lam_grid, st.gamma(a=np.exp(fit0[1]), scale=np.exp(fit0[0] - fit0[1])).pdf(lam_grid), lw=1, c=cm(5), label=<span class="org-string">'Gamma'</span>)
+ax[1].plot(lam_grid, sp.expit(-fit1[2]) * st.gamma(a=np.exp(fit1[1]), scale=np.exp(fit1[0] - fit1[1])).pdf(lam_grid), lw=1, c=cm(6), label=<span class="org-string">'Point-Gamma'</span>)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  ax[1].plot(lam_grid, models[k].fitted_g(torch.tensor(lam_grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), lw=1, c=cm(i), label=f<span class="org-string">'{k}'</span>)
+ax[1].legend(title=f<span class="org-string">'Initialization (K = {K})'</span>, frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+ax[1].set_xlabel(<span class="org-string">'Latent variable $\lambda$'</span>)
+ax[1].set_ylabel(<span class="org-string">'Density'</span>)
+
+fig.tight_layout()
+
+</pre>
+</div>
+
+
+<div class="figure">
+<p><object type="image/svg+xml" data="figure/flows.org/ebpm-poisbeta-ex.svg" class="org-svg">
+Sorry, your browser does not support SVG.</object>
+</p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-02-15 Mon 11:51</p>
+<p class="date">Created: 2021-02-18 Thu 17:17</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

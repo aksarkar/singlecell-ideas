@@ -224,7 +224,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[21]:
+   # Out[69]:
    :END:
 
    The intuition behind this transform is that the pre-activation \(w x + b\)
@@ -374,7 +374,7 @@
 
    #+BEGIN_SRC ipython :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/flows.py
      class EBNM(torch.nn.Module):
-       def __init__(self, K, scale, random_init=True, use_cuda=True):
+       def __init__(self, K, scale, random_init=True, use_cuda=False):
          super().__init__()
          self.scale = scale
          self.p0 = torch.distributions.Normal(loc=0., scale=1.)
@@ -426,29 +426,35 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[17]:
+   # Out[7]:
    :END:
 
    #+BEGIN_SRC ipython :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/flows.py
      class EBPM(torch.nn.Module):
        def __init__(self, K, a=1., b=1.):
          super().__init__()
-         self.p0 = torch.distributions.Gamma(concentration=a, rate=b)
+         self.p0 = torch.distributions.Gamma(concentration=torch.tensor(a, device='cuda', dtype=torch.float),
+                                             rate=torch.tensor(b, device='cuda', dtype=torch.float))
          self.pz = NormalizingFlow([InverseSoftplus()] + [PlanarFlow(1) for _ in range(K)] + [Softplus()])
          self.qz = NormalizingFlow([InverseSoftplus()] + [PlanarFlow(1) for _ in range(K)] + [Softplus()])
 
-       def forward(self, x, s, n_samples):
+       def forward(self, x, s, weighted, n_samples):
          q0 = torch.distributions.Gamma(concentration=self.p0.concentration + x, rate=self.p0.rate + s)
          u = q0.rsample(n_samples)
          z, log_det_q = self.qz.forward(u)
          w, log_det_p = self.pz.forward(z)
-         elbo = (torch.distributions.Poisson(s * z).log_prob(x)
-                 + self.p0.log_prob(w) + log_det_p
-                 - (q0.log_prob(u) - log_det_q)).mean(dim=0).sum()
+         log_weights = (torch.distributions.Poisson(s * z).log_prob(x)
+                        + self.p0.log_prob(w) + log_det_p
+                        - (q0.log_prob(u) - log_det_q))
+         if weighted:
+           norm_weights = torch.softmax(log_weights, dim=0)
+           elbo = (norm_weights * log_weights).sum()
+         else:
+           elbo = log_weights.mean(dim=0).sum()
          assert elbo <= 0
          return -elbo
 
-       def fit(self, x, s, n_epochs, n_samples=1, log_dir=None, **kwargs):
+       def fit(self, x, s, n_epochs, weighted=False, n_samples=1, log_dir=None, **kwargs):
          if torch.cuda.is_available:
            self.cuda()
          if log_dir is not None:
@@ -458,7 +464,7 @@
          global_step = 0
          for _ in range(n_epochs):
            opt.zero_grad()
-           loss = self.forward(x, s, n_samples=n_samples)
+           loss = self.forward(x, s, weighted=weighted, n_samples=n_samples)
            if log_dir is not None:
              writer.add_scalar('loss', loss, global_step)
            if torch.isnan(loss):
@@ -482,7 +488,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
+   # Out[70]:
    :END:
 
 * Results
@@ -1059,50 +1065,83 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[35]:
+   # Out[9]:
+   :END:
+
+   Under this model, the marginal log likelihood is analytic.
+
+   #+BEGIN_SRC ipython
+     st.nbinom(n=1, p=0.5).logpmf(x).sum()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[37]:
+   : -1375.204006230931
+   :END:
+
+   #+BEGIN_SRC ipython
+     scmodes.ebpm.ebpm_gamma(x, s, tol=1e-7)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   : (-0.016131857011535328, -0.0495302151745216, -1375.0371924185035)
    :END:
 
    Fit EBPM for different choices of \(K\).
 
    #+BEGIN_SRC ipython :async t
-     run = 5
+     run = 0
      lr = 1e-2
      n_epochs = 2000
+     n_samples = 2
+     weighted = True
      torch.manual_seed(run)
-     models = [EBPM(K=K)
-               .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.float),
-                    torch.tensor(s.reshape(-1, 1), dtype=torch.float),
+     models = {K: EBPM(K=K)
+               .fit(torch.tensor(x.reshape(-1, 1), device='cuda', dtype=torch.float),
+                    torch.tensor(s.reshape(-1, 1), device='cuda', dtype=torch.float),
+                    weighted=weighted,
                     n_epochs=n_epochs,
-                    n_samples=8,
+                    n_samples=n_samples,
                     lr=lr,
-                    # log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-sanity-{run}-{K}-{n_epochs}',
+                    log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-sanity-{run}-{K}-{n_epochs}-{n_samples}-{weighted}',
                )
-               for K in range(1, 5)]
+               for K in range(1, 5)}
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[36]:
+   # Out[44]:
    :END:
 
    Plot the fitted models against the simulated data.
 
    #+BEGIN_SRC ipython :ipyfile figure/flows.org/ebpm-sanity-check.svg
+     x_grid = np.arange(x.max() + 1)
+     lam_grid = np.linspace(lam.min(), lam.max(), 1000)
      cm = plt.get_cmap('Dark2')
      plt.clf()
      fig, ax = plt.subplots(2, 1)
      fig.set_size_inches(4, 4)
-     grid = np.arange(x.max() + 1)
-     ax[0].hist(x, bins=grid, density='True', color='0.7')
-     ax[0].set_xticks(grid)
+     ax[0].hist(x, bins=x_grid, density='True', color='0.7')
+     ax[0].plot(x_grid + 0.5, st.nbinom(n=1, p=0.5).pmf(x_grid), lw=2, marker='.', c='k', label='Simulated')
+     for i, k in enumerate(models):
+       F = np.array([si.simps(
+         st.poisson(s * lam_grid).pmf(y) * models[k].fitted_g(torch.tensor(lam_grid.reshape(-1, 1), device='cuda', dtype=torch.float), log=False).ravel(),
+         lam_grid)
+                     for y in x_grid])
+       ax[0].plot(x_grid + 0.5, F, lw=1, marker='.', c=cm(i), label=f'K = {k}')
+     ax[0].legend(frameon=False)
+     ax[0].set_xticks(x_grid[::3])
      ax[0].set_xlabel('Observation $x$')
      ax[0].set_ylabel('Density')
 
      ax[1].hist(lam, bins=50, density='True', color='0.7')
-     grid = np.linspace(lam.min(), lam.max(), 1000)
      ax[1].plot(grid, st.gamma(a=1, scale=1).pdf(grid), lw=2, c='k', label='Simulated')
-     for k, m in enumerate(models):
-       ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.float), log=False), lw=1, c=cm(k), label=f'K = {k + 1}')
+     for i, k in enumerate(models):
+       ax[1].plot(grid, models[k].fitted_g(torch.tensor(grid.reshape(-1, 1), device='cuda', dtype=torch.float), log=False), lw=1, c=cm(i), label=f'K = {k}')
      ax[1].legend(frameon=False)
      ax[1].set_xlabel('Latent variable $\lambda$')
      ax[1].set_ylabel('Density')
@@ -1112,7 +1151,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[37]:
+   # Out[46]:
    [[file:figure/flows.org/ebpm-sanity-check.svg]]
    :END:
 
@@ -1370,6 +1409,151 @@
    :RESULTS:
    # Out[116]:
    [[file:figure/flows.org/ebpm-gamma-ex-2-q.png]]
+   :END:
+
+** EBPM example: /SKP1/ in iPSCs
+
+   Read the iPSC data.
+
+   #+BEGIN_SRC ipython
+     dat = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     x = dat[:,dat.var['name'] == 'SKP1'].X.A.ravel()
+     z = pd.get_dummies(dat.obs['chip_id'])
+     s = dat.obs['mol_hs'].values.ravel()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[24]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     gamma_fits = {k: scmodes.ebpm.ebpm_gamma(x[z[k].values.ravel().astype(bool)],
+                                              s[z[k].values.ravel().astype(bool)],
+                                              tol=1e-7)
+                   for k in z}
+     unimodal_fits = {k: scmodes.ebpm.ebpm_unimodal(x[z[k].values.ravel().astype(bool)],
+                                                    s[z[k].values.ravel().astype(bool)])
+                   for k in z}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[25]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     run = 2
+     K = 8
+     n_epochs = 1500
+     n_samples = 1
+     lr = 5e-3
+     torch.manual_seed(run)
+     nf_fits = {k: EBPM(K=K, a=np.exp(gamma_fits[k][1]), b=np.exp(gamma_fits[k][1] - gamma_fits[k][0]))
+                    .fit(torch.tensor(x[z[k].values.ravel().astype(bool)].reshape(-1, 1), device='cuda', dtype=torch.float),
+                         torch.tensor(s[z[k].values.ravel().astype(bool)].reshape(-1, 1), device='cuda', dtype=torch.float),
+                         n_epochs=n_epochs,
+                         n_samples=n_samples,
+                         lr=lr,
+                         weighted=False,
+                         log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-nf-skp1-{run}-{K}-{n_samples}-{n_epochs}',
+                    )
+                for k in ('NA18507',)}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[187]:
+   :END:
+
+   Look at N18507.
+
+   #+BEGIN_SRC ipython :async t
+     k = 'NA18507'
+     idx = z[k].values.ravel().astype(bool)
+
+     x_grid = np.arange(x[idx].max() + 1)
+     lam_grid = np.linspace(0, (x / s).max(), 1000)
+
+     pmf = dict()
+     pdf = dict()
+     llik = dict()
+
+     pmf['Gamma'] = st.nbinom(n=np.exp(gamma_fits[k][1]), p=1 / (1 + s[idx].mean() * np.exp(gamma_fits[k][0] - gamma_fits[k][1]))).pmf(x_grid)
+     pdf['Gamma'] = st.gamma(a=np.exp(gamma_fits[k][1]), scale=np.exp(gamma_fits[k][0] - gamma_fits[k][1])).pdf(lam_grid)
+     llik['Gamma']= gamma_fits[k][-1]
+
+     g = np.array(unimodal_fits[k].rx2('fitted_g'))
+     a = np.fmin(g[1], g[2])
+     b = np.fmax(g[1], g[2])
+     comp_dens_conv = np.array([((st.gamma(a=k + 1, scale=1 / s.reshape(-1, 1)).cdf(b.reshape(1, -1)) - st.gamma(a=k + 1, scale=1 / s.reshape(-1, 1)).cdf(a.reshape(1, -1))) / np.outer(s, b - a)).mean(axis=0) for k in x_grid])
+     comp_dens_conv[:,0] = st.poisson(mu=s.reshape(-1, 1) * b[0]).pmf(x_grid).mean(axis=0)
+     pmf['Unimodal'] = comp_dens_conv @ g[0]
+     pdf['Unimodal'] = np.diff(ashr.cdf_ash(unimodal_fits[k], lam_grid).rx2('y'), prepend=0).ravel() / np.diff(lam_grid, prepend=1)
+     llik['Unimodal'] = np.array(unimodal_fits[k].rx2('loglik'))[0]
+
+     pdf[f'NF (K = {K})'] = np.ma.masked_invalid(nf_fits[k].fitted_g(torch.tensor(lam_grid.reshape(-1, 1), device='cuda', dtype=torch.float), log=False).ravel()).filled(0)
+     pmf[f'NF (K = {K})'] = np.array([si.simps(st.poisson(s.mean() * lam_grid).pmf(y) * pdf[f'NF (K = {K})'], lam_grid)
+                                      for y in x_grid])
+     llik[f'NF (K = {K})'] = np.log(np.array([si.simps(st.poisson(sj * lam_grid).pmf(xj) * pdf[f'NF (K = {K})'], lam_grid)
+                                              for xj, sj in zip(x[idx], s[idx])])).sum()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[188]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     pd.Series(llik)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[189]:
+   #+BEGIN_EXAMPLE
+     Gamma        -1080.578583
+     Unimodal     -1070.660169
+     NF (K = 8)   -1081.758445
+     dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/flows.org/skp1-ex.svg
+     cm = plt.get_cmap('Dark2')
+
+     plt.clf()
+     fig, ax = plt.subplots(2, 1)
+     fig.set_size_inches(5, 4)
+     ax[0].hist(x[idx], bins=x_grid, color='0.7', density=True)
+     for i, k in enumerate(pmf):
+       ax[0].plot(x_grid + 0.5, pmf[k], lw=1, c=cm(i), label=k)
+     ax[0].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     ax[0].set_xlabel('Number of molecules')
+     ax[0].set_ylabel('Density')
+     ax[0].set_title('SKP1')
+
+     ax[1].hist(x[idx] / s[idx], bins=17, color='0.7', density=True, label='$x_i / s_i$')
+     for i, k in enumerate(pdf):
+       ax[1].plot(lam_grid, pdf[k], c=cm(i), lw=1, label=k)
+     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     ax[1].set_xlabel('Latent gene expression')
+     ax[1].set_ylabel('Density')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[190]:
+   [[file:figure/flows.org/skp1-ex.svg]]
    :END:
 
 ** EBPM real data example

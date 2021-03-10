@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-02-27 Sat 12:52 -->
+<!-- 2021-03-10 Wed 13:18 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Normalizing flows for EBPM</title>
@@ -276,6 +276,7 @@ for the JavaScript code in this tag.
 <li><a href="#orgb886926">EBNM example 2</a></li>
 <li><a href="#orgcfa1770">EBPM sanity check</a></li>
 <li><a href="#orgb7fab19">Example of EBPM</a></li>
+<li><a href="#org7cb3ebd">EBPM example: <i>SKP1</i> in iPSCs</a></li>
 <li><a href="#orgcab89a4">EBPM real data example</a></li>
 <li><a href="#org377f0e5">EBPM example: multi-modal prior</a></li>
 </ul>
@@ -673,7 +674,7 @@ discretizing \(\hat{g}\) and taking weighted sums.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">EBNM</span>(torch.nn.Module):
-  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, K, scale, random_init=<span class="org-constant">True</span>, use_cuda=<span class="org-constant">True</span>):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, K, scale, random_init=<span class="org-constant">True</span>, use_cuda=<span class="org-constant">False</span>):
     <span class="org-builtin">super</span>().__init__()
     <span class="org-keyword">self</span>.scale = scale
     <span class="org-keyword">self</span>.p0 = torch.distributions.Normal(loc=0., scale=1.)
@@ -728,22 +729,28 @@ discretizing \(\hat{g}\) and taking weighted sums.
 <pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">EBPM</span>(torch.nn.Module):
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, K, a=1., b=1.):
     <span class="org-builtin">super</span>().__init__()
-    <span class="org-keyword">self</span>.p0 = torch.distributions.Gamma(concentration=a, rate=b)
+    <span class="org-keyword">self</span>.p0 = torch.distributions.Gamma(concentration=torch.tensor(a, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>),
+                                        rate=torch.tensor(b, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>))
     <span class="org-keyword">self</span>.pz = NormalizingFlow([InverseSoftplus()] + [PlanarFlow(1) <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K)] + [Softplus()])
     <span class="org-keyword">self</span>.qz = NormalizingFlow([InverseSoftplus()] + [PlanarFlow(1) <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K)] + [Softplus()])
 
-  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, s, n_samples):
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, s, weighted, n_samples):
     <span class="org-variable-name">q0</span> = torch.distributions.Gamma(concentration=<span class="org-keyword">self</span>.p0.concentration + x, rate=<span class="org-keyword">self</span>.p0.rate + s)
     <span class="org-variable-name">u</span> = q0.rsample(n_samples)
     <span class="org-variable-name">z</span>, <span class="org-variable-name">log_det_q</span> = <span class="org-keyword">self</span>.qz.forward(u)
     <span class="org-variable-name">w</span>, <span class="org-variable-name">log_det_p</span> = <span class="org-keyword">self</span>.pz.forward(z)
-    <span class="org-variable-name">elbo</span> = (torch.distributions.Poisson(s * z).log_prob(x)
-            + <span class="org-keyword">self</span>.p0.log_prob(w) + log_det_p
-            - (q0.log_prob(u) - log_det_q)).mean(dim=0).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">log_weights</span> = (torch.distributions.Poisson(s * z).log_prob(x)
+                   + <span class="org-keyword">self</span>.p0.log_prob(w) + log_det_p
+                   - (q0.log_prob(u) - log_det_q))
+    <span class="org-keyword">if</span> weighted:
+      <span class="org-variable-name">norm_weights</span> = torch.softmax(log_weights, dim=0)
+      <span class="org-variable-name">elbo</span> = (norm_weights * log_weights).<span class="org-builtin">sum</span>()
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">elbo</span> = log_weights.mean(dim=0).<span class="org-builtin">sum</span>()
     <span class="org-keyword">assert</span> elbo &lt;= 0
     <span class="org-keyword">return</span> -elbo
 
-  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, s, n_epochs, n_samples=1, log_dir=<span class="org-constant">None</span>, **kwargs):
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, s, n_epochs, weighted=<span class="org-constant">False</span>, n_samples=1, log_dir=<span class="org-constant">None</span>, **kwargs):
     <span class="org-keyword">if</span> torch.cuda.is_available:
       <span class="org-keyword">self</span>.cuda()
     <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
@@ -753,7 +760,7 @@ discretizing \(\hat{g}\) and taking weighted sums.
     <span class="org-variable-name">global_step</span> = 0
     <span class="org-keyword">for</span> _ <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
       opt.zero_grad()
-      <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, s, n_samples=n_samples)
+      <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, s, weighted=weighted, n_samples=n_samples)
       <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
         writer.add_scalar(<span class="org-string">'loss'</span>, loss, global_step)
       <span class="org-keyword">if</span> torch.isnan(loss):
@@ -1386,23 +1393,50 @@ Simulate data from the simple model.
 </div>
 
 <p>
+Under this model, the marginal log likelihood is analytic.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">st.nbinom(n=1, p=0.5).logpmf(x).<span class="org-builtin">sum</span>()
+</pre>
+</div>
+
+<pre class="example">
+-1375.204006230931
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">scmodes.ebpm.ebpm_gamma(x, s, tol=1e-7)
+</pre>
+</div>
+
+<pre class="example">
+(-0.016131857011535328, -0.0495302151745216, -1375.0371924185035)
+
+</pre>
+
+<p>
 Fit EBPM for different choices of \(K\).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">run</span> = 5
+<pre class="src src-ipython"><span class="org-variable-name">run</span> = 0
 <span class="org-variable-name">lr</span> = 1e-2
 <span class="org-variable-name">n_epochs</span> = 2000
+<span class="org-variable-name">n_samples</span> = 2
+<span class="org-variable-name">weighted</span> = <span class="org-constant">True</span>
 torch.manual_seed(run)
-<span class="org-variable-name">models</span> = [EBPM(K=K)
-          .fit(torch.tensor(x.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
-               torch.tensor(s.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>),
+<span class="org-variable-name">models</span> = {K: EBPM(K=K)
+          .fit(torch.tensor(x.reshape(-1, 1), device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>),
+               torch.tensor(s.reshape(-1, 1), device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>),
+               weighted=weighted,
                n_epochs=n_epochs,
-               n_samples=8,
+               n_samples=n_samples,
                lr=lr,
-               <span class="org-comment-delimiter"># </span><span class="org-comment">log_dir=f'/scratch/midway2/aksarkar/singlecell/runs/ebpm-sanity-{run}-{K}-{n_epochs}',</span>
+               log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/ebpm-sanity-{run}-{K}-{n_epochs}-{n_samples}-{weighted}'</span>,
           )
-          <span class="org-keyword">for</span> K <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 5)]
+          <span class="org-keyword">for</span> K <span class="org-keyword">in</span> <span class="org-builtin">range</span>(1, 5)}
 </pre>
 </div>
 
@@ -1411,21 +1445,29 @@ Plot the fitted models against the simulated data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">x_grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
+<span class="org-variable-name">lam_grid</span> = np.linspace(lam.<span class="org-builtin">min</span>(), lam.<span class="org-builtin">max</span>(), 1000)
+<span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
 plt.clf()
 <span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
 fig.set_size_inches(4, 4)
-<span class="org-variable-name">grid</span> = np.arange(x.<span class="org-builtin">max</span>() + 1)
-ax[0].hist(x, bins=grid, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
-ax[0].set_xticks(grid)
+ax[0].hist(x, bins=x_grid, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
+ax[0].plot(x_grid + 0.5, st.nbinom(n=1, p=0.5).pmf(x_grid), lw=2, marker=<span class="org-string">'.'</span>, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  <span class="org-variable-name">F</span> = np.array([si.simps(
+    st.poisson(s * lam_grid).pmf(y) * models[k].fitted_g(torch.tensor(lam_grid.reshape(-1, 1), device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>).ravel(),
+    lam_grid)
+                <span class="org-keyword">for</span> y <span class="org-keyword">in</span> x_grid])
+  ax[0].plot(x_grid + 0.5, F, lw=1, marker=<span class="org-string">'.'</span>, c=cm(i), label=f<span class="org-string">'K = {k}'</span>)
+ax[0].legend(frameon=<span class="org-constant">False</span>)
+ax[0].set_xticks(x_grid[::3])
 ax[0].set_xlabel(<span class="org-string">'Observation $x$'</span>)
 ax[0].set_ylabel(<span class="org-string">'Density'</span>)
 
 ax[1].hist(lam, bins=50, density=<span class="org-string">'True'</span>, color=<span class="org-string">'0.7'</span>)
-<span class="org-variable-name">grid</span> = np.linspace(lam.<span class="org-builtin">min</span>(), lam.<span class="org-builtin">max</span>(), 1000)
 ax[1].plot(grid, st.gamma(a=1, scale=1).pdf(grid), lw=2, c=<span class="org-string">'k'</span>, label=<span class="org-string">'Simulated'</span>)
-<span class="org-keyword">for</span> k, m <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
-  ax[1].plot(grid, m.fitted_g(torch.tensor(grid.reshape(-1, 1), dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), lw=1, c=cm(k), label=f<span class="org-string">'K = {k + 1}'</span>)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  ax[1].plot(grid, models[k].fitted_g(torch.tensor(grid.reshape(-1, 1), device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>), lw=1, c=cm(i), label=f<span class="org-string">'K = {k}'</span>)
 ax[1].legend(frameon=<span class="org-constant">False</span>)
 ax[1].set_xlabel(<span class="org-string">'Latent variable $\lambda$'</span>)
 ax[1].set_ylabel(<span class="org-string">'Density'</span>)
@@ -1709,6 +1751,137 @@ fig.tight_layout()
 </div>
 </div>
 
+<div id="outline-container-org7cb3ebd" class="outline-3">
+<h3 id="org7cb3ebd">EBPM example: <i>SKP1</i> in iPSCs</h3>
+<div class="outline-text-3" id="text-org7cb3ebd">
+<p>
+Read the iPSC data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/ipsc/ipsc.h5ad'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span> = dat[:,dat.var[<span class="org-string">'name'</span>] == <span class="org-string">'SKP1'</span>].X.A.ravel()
+<span class="org-variable-name">z</span> = pd.get_dummies(dat.obs[<span class="org-string">'chip_id'</span>])
+<span class="org-variable-name">s</span> = dat.obs[<span class="org-string">'mol_hs'</span>].values.ravel()
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">gamma_fits</span> = {k: scmodes.ebpm.ebpm_gamma(x[z[k].values.ravel().astype(<span class="org-builtin">bool</span>)],
+                                         s[z[k].values.ravel().astype(<span class="org-builtin">bool</span>)],
+                                         tol=1e-7)
+              <span class="org-keyword">for</span> k <span class="org-keyword">in</span> z}
+<span class="org-variable-name">unimodal_fits</span> = {k: scmodes.ebpm.ebpm_unimodal(x[z[k].values.ravel().astype(<span class="org-builtin">bool</span>)],
+                                               s[z[k].values.ravel().astype(<span class="org-builtin">bool</span>)])
+              <span class="org-keyword">for</span> k <span class="org-keyword">in</span> z}
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">run</span> = 2
+<span class="org-variable-name">K</span> = 8
+<span class="org-variable-name">n_epochs</span> = 1500
+<span class="org-variable-name">n_samples</span> = 1
+<span class="org-variable-name">lr</span> = 5e-3
+torch.manual_seed(run)
+<span class="org-variable-name">nf_fits</span> = {k: EBPM(K=K, a=np.exp(gamma_fits[k][1]), b=np.exp(gamma_fits[k][1] - gamma_fits[k][0]))
+               .fit(torch.tensor(x[z[k].values.ravel().astype(<span class="org-builtin">bool</span>)].reshape(-1, 1), device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>),
+                    torch.tensor(s[z[k].values.ravel().astype(<span class="org-builtin">bool</span>)].reshape(-1, 1), device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>),
+                    n_epochs=n_epochs,
+                    n_samples=n_samples,
+                    lr=lr,
+                    weighted=<span class="org-constant">False</span>,
+                    log_dir=f<span class="org-string">'/scratch/midway2/aksarkar/singlecell/runs/ebpm-nf-skp1-{run}-{K}-{n_samples}-{n_epochs}'</span>,
+               )
+           <span class="org-keyword">for</span> k <span class="org-keyword">in</span> (<span class="org-string">'NA18507'</span>,)}
+</pre>
+</div>
+
+<p>
+Look at N18507.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">k</span> = <span class="org-string">'NA18507'</span>
+<span class="org-variable-name">idx</span> = z[k].values.ravel().astype(<span class="org-builtin">bool</span>)
+
+<span class="org-variable-name">x_grid</span> = np.arange(x[idx].<span class="org-builtin">max</span>() + 1)
+<span class="org-variable-name">lam_grid</span> = np.linspace(0, (x / s).<span class="org-builtin">max</span>(), 1000)
+
+<span class="org-variable-name">pmf</span> = <span class="org-builtin">dict</span>()
+<span class="org-variable-name">pdf</span> = <span class="org-builtin">dict</span>()
+<span class="org-variable-name">llik</span> = <span class="org-builtin">dict</span>()
+
+<span class="org-variable-name">pmf</span>[<span class="org-string">'Gamma'</span>] = st.nbinom(n=np.exp(gamma_fits[k][1]), p=1 / (1 + s[idx].mean() * np.exp(gamma_fits[k][0] - gamma_fits[k][1]))).pmf(x_grid)
+<span class="org-variable-name">pdf</span>[<span class="org-string">'Gamma'</span>] = st.gamma(a=np.exp(gamma_fits[k][1]), scale=np.exp(gamma_fits[k][0] - gamma_fits[k][1])).pdf(lam_grid)
+<span class="org-variable-name">llik</span>[<span class="org-string">'Gamma'</span>]= gamma_fits[k][-1]
+
+<span class="org-variable-name">g</span> = np.array(unimodal_fits[k].rx2(<span class="org-string">'fitted_g'</span>))
+<span class="org-variable-name">a</span> = np.fmin(g[1], g[2])
+<span class="org-variable-name">b</span> = np.fmax(g[1], g[2])
+<span class="org-variable-name">comp_dens_conv</span> = np.array([((st.gamma(a=k + 1, scale=1 / s.reshape(-1, 1)).cdf(b.reshape(1, -1)) - st.gamma(a=k + 1, scale=1 / s.reshape(-1, 1)).cdf(a.reshape(1, -1))) / np.outer(s, b - a)).mean(axis=0) <span class="org-keyword">for</span> k <span class="org-keyword">in</span> x_grid])
+<span class="org-variable-name">comp_dens_conv</span>[:,0] = st.poisson(mu=s.reshape(-1, 1) * b[0]).pmf(x_grid).mean(axis=0)
+<span class="org-variable-name">pmf</span>[<span class="org-string">'Unimodal'</span>] = comp_dens_conv @ g[0]
+<span class="org-variable-name">pdf</span>[<span class="org-string">'Unimodal'</span>] = np.diff(ashr.cdf_ash(unimodal_fits[k], lam_grid).rx2(<span class="org-string">'y'</span>), prepend=0).ravel() / np.diff(lam_grid, prepend=1)
+<span class="org-variable-name">llik</span>[<span class="org-string">'Unimodal'</span>] = np.array(unimodal_fits[k].rx2(<span class="org-string">'loglik'</span>))[0]
+
+<span class="org-variable-name">pdf</span>[f<span class="org-string">'NF (K = {K})'</span>] = np.ma.masked_invalid(nf_fits[k].fitted_g(torch.tensor(lam_grid.reshape(-1, 1), device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>), log=<span class="org-constant">False</span>).ravel()).filled(0)
+<span class="org-variable-name">pmf</span>[f<span class="org-string">'NF (K = {K})'</span>] = np.array([si.simps(st.poisson(s.mean() * lam_grid).pmf(y) * pdf[f<span class="org-string">'NF (K = {K})'</span>], lam_grid)
+                                 <span class="org-keyword">for</span> y <span class="org-keyword">in</span> x_grid])
+<span class="org-variable-name">llik</span>[f<span class="org-string">'NF (K = {K})'</span>] = np.log(np.array([si.simps(st.poisson(sj * lam_grid).pmf(xj) * pdf[f<span class="org-string">'NF (K = {K})'</span>], lam_grid)
+                                         <span class="org-keyword">for</span> xj, sj <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(x[idx], s[idx])])).<span class="org-builtin">sum</span>()
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series(llik)
+</pre>
+</div>
+
+<pre class="example">
+Gamma        -1080.578583
+Unimodal     -1070.660169
+NF (K = 8)   -1081.758445
+dtype: float64
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(5, 4)
+ax[0].hist(x[idx], bins=x_grid, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(pmf):
+  ax[0].plot(x_grid + 0.5, pmf[k], lw=1, c=cm(i), label=k)
+ax[0].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+ax[0].set_xlabel(<span class="org-string">'Number of molecules'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+ax[0].set_title(<span class="org-string">'SKP1'</span>)
+
+ax[1].hist(x[idx] / s[idx], bins=17, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>, label=<span class="org-string">'$x_i / s_i$'</span>)
+<span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(pdf):
+  ax[1].plot(lam_grid, pdf[k], c=cm(i), lw=1, label=k)
+ax[1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+ax[1].set_xlabel(<span class="org-string">'Latent gene expression'</span>)
+ax[1].set_ylabel(<span class="org-string">'Density'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><object type="image/svg+xml" data="figure/flows.org/skp1-ex.svg" class="org-svg">
+Sorry, your browser does not support SVG.</object>
+</p>
+</div>
+</div>
+</div>
+
 <div id="outline-container-orgcab89a4" class="outline-3">
 <h3 id="orgcab89a4">EBPM real data example</h3>
 <div class="outline-text-3" id="text-orgcab89a4">
@@ -1918,7 +2091,7 @@ Sorry, your browser does not support SVG.</object>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-02-27 Sat 12:52</p>
+<p class="date">Created: 2021-03-10 Wed 13:18</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

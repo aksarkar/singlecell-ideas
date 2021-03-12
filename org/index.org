@@ -4,6 +4,7 @@
 A collection of various (often incomplete or broken) ideas for single cell
 analysis plus some related topics.
 
+- [[file:horseshoe.org][Empirical Bayes inference for the horseshoe prior]]
 - [[file:pglmm.org][Poisson GLMM for differential expression]]
 - [[file:flows.org][Normalizing flows for EBPM]]
 - [[file:tsne.org][Pathological input to t-SNE]]

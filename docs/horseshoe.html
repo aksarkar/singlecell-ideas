@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2021-03-11 Thu 22:42 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Empirical Bayes inference for the horseshoe prior</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Empirical Bayes inference for the horseshoe prior</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org8677468">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org5143468">Results</a>
+<ul>
+<li><a href="#orgaa40e71">Simulation</a></li>
+<li><a href="#orga066f38">Scenario 1</a></li>
+<li><a href="#orga56335f">Scenario 2</a></li>
+</ul>
+</li>
+<li><a href="#org4e373aa">Notes</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org8677468" class="outline-2">
+<h2 id="org8677468">Introduction</h2>
+<div class="outline-text-2" id="text-org8677468">
+<p>
+The horseshoe prior (Carvalho et al. 2009) is \(
+  \DeclareMathOperator\N{\mathcal{N}}
+  \DeclareMathOperator\HalfCauchy{C^+}
+  \)
+</p>
+
+\begin{align}
+  \beta_j \mid \lambda_j, \tau &\sim \N(0, \lambda_j^2 \tau^2)\\
+  \lambda_j &\sim \HalfCauchy(0, 1).
+\end{align}
+
+<p>
+Commonly, it is used as a prior for EBNM
+</p>
+
+\begin{equation}
+  x_j \mid \beta_j, \sigma^2 \sim \N(\beta_j, \sigma^2).
+\end{equation}
+
+<p>
+Inference is commonly performed by MCMC or by VI (e.g. Ghosh and Doshi-Velez
+2018); however, recently a fast scheme for EB inference was proposed (van der
+Pas et al. 2014). Jason Willwerscheid gave an example where EB inference does
+poorly, which we investigate here.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orga4b789a" class="outline-2">
+<h2 id="setup"><a id="orga4b789a"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> contextlib
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> torch
+<span class="org-keyword">import</span> pyro
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> rpy2.robjects.packages
+<span class="org-keyword">import</span> rpy2.robjects.pandas2ri
+rpy2.robjects.pandas2ri.activate()
+<span class="org-variable-name">horseshoe</span> = rpy2.robjects.packages.importr(<span class="org-string">'horseshoe'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5143468" class="outline-2">
+<h2 id="org5143468">Results</h2>
+<div class="outline-text-2" id="text-org5143468">
+</div>
+<div id="outline-container-orgaa40e71" class="outline-3">
+<h3 id="orgaa40e71">Simulation</h3>
+<div class="outline-text-3" id="text-orgaa40e71">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate</span>(n, s, tau, seed):
+  <span class="org-variable-name">rng</span> = np.random.default_rng(seed)
+  <span class="org-variable-name">lam</span> = <span class="org-builtin">abs</span>(rng.standard_cauchy(size=n))
+  <span class="org-variable-name">beta</span> = rng.normal(scale=s * lam * tau)
+  <span class="org-variable-name">x</span> = rng.normal(loc=beta, scale=s)
+  <span class="org-keyword">return</span> x, beta
+
+<span class="org-keyword">def</span> <span class="org-function-name">run_mcmc</span>(x, s, tauhat, burn=1000, **kwargs):
+  <span class="org-keyword">with</span> contextlib.redirect_stdout(<span class="org-constant">None</span>):
+    <span class="org-variable-name">pm</span> = horseshoe.HS_normal_means(x, method_tau=<span class="org-string">'fixed'</span>, tau=tauhat,
+                                   method_sigma=<span class="org-string">'fixed'</span>, Sigma2=s ** 2,
+                                   burn=burn).rx2(<span class="org-string">'BetaHat'</span>)
+  <span class="org-keyword">return</span> pm
+
+<span class="org-keyword">def</span> <span class="org-function-name">run_analytic</span>(x, s, tauhat, **kwargs):
+  <span class="org-keyword">try</span>:
+    <span class="org-variable-name">pm</span> = horseshoe.HS_post_mean(x, tauhat, s ** 2)
+  <span class="org-keyword">except</span>:
+    <span class="org-variable-name">pm</span> = np.full(np.nan, beta.shape)
+  <span class="org-keyword">return</span> pm
+
+<span class="org-keyword">def</span> <span class="org-function-name">mse</span>(betahat, beta):
+  <span class="org-keyword">return</span> np.square(pm - beta).mean()
+
+<span class="org-keyword">def</span> <span class="org-function-name">trial</span>(n, s, tau, seed=1, **kwargs):
+  <span class="org-variable-name">x</span>, <span class="org-variable-name">beta</span> = simulate(n, s, tau, seed)
+  <span class="org-variable-name">tauhat</span> = horseshoe.HS_MMLE(x, s ** 2)[0]
+  <span class="org-variable-name">res</span> = {f<span class="org-string">'mse_{m}'</span>: mse(<span class="org-builtin">globals</span>()[f<span class="org-string">'run_{m}'</span>](x, s, tauhat, **kwargs), beta)
+         <span class="org-keyword">for</span> m <span class="org-keyword">in</span> (<span class="org-string">'mcmc'</span>, <span class="org-string">'analytic'</span>)}
+  <span class="org-variable-name">res</span>[<span class="org-string">'n'</span>] = n
+  <span class="org-variable-name">res</span>[<span class="org-string">'s'</span>] = s
+  <span class="org-variable-name">res</span>[<span class="org-string">'tau'</span>] = tau
+  <span class="org-variable-name">res</span>[<span class="org-string">'tauhat'</span>] = tauhat
+  <span class="org-variable-name">res</span>[<span class="org-string">'trial'</span>] = seed
+  <span class="org-keyword">return</span> pd.Series(res)
+
+<span class="org-keyword">def</span> <span class="org-function-name">evaluate</span>(s, tau, n_trials=1, **kwargs):
+  <span class="org-variable-name">res</span> = []
+  <span class="org-keyword">for</span> n <span class="org-keyword">in</span> (100, 500, 1000):
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_trials):
+      res.append(trial(n, s, tau, seed=i, **kwargs))
+  <span class="org-keyword">return</span> pd.DataFrame(res)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga066f38" class="outline-3">
+<h3 id="orga066f38">Scenario 1</h3>
+<div class="outline-text-3" id="text-orga066f38">
+<p>
+Use the hyperparameters Jason used.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">s</span> = 2
+<span class="org-variable-name">tau</span> = 0.3
+<span class="org-variable-name">x</span>, <span class="org-variable-name">beta</span> = simulate(n=100, s=s, tau=tau, seed=3)
+<span class="org-variable-name">tauhat</span> = horseshoe.HS_MMLE(x, s ** 2)[0]
+<span class="org-variable-name">pm_mcmc</span> = run_mcmc(x, s=s, tauhat=tauhat)
+<span class="org-variable-name">pm_analytic</span> = run_analytic(x, s=s, tauhat=tauhat)
+</pre>
+</div>
+
+<p>
+Compare the estimated posterior means by MCMC vs. the analytic solution.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(4, 2.5)
+
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_aspect(<span class="org-string">'equal'</span>, adjustable=<span class="org-string">'datalim'</span>)
+
+ax[0].scatter(pm_mcmc, beta, c=<span class="org-string">'k'</span>, s=4)
+ax[0].set_xlabel(r<span class="org-string">'Posterior mean $\hat\beta$ (MCMC)'</span>)
+ax[0].set_ylabel(r<span class="org-string">'Simulated $\beta$'</span>)
+
+ax[1].scatter(pm_analytic, beta, c=<span class="org-string">'k'</span>, s=4)
+ax[1].set_xlabel(r<span class="org-string">'Posterior mean $\hat\beta$ (analytic)'</span>)
+
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/horseshoe.org/hs-mcmc-vs-analytic.png" alt="hs-mcmc-vs-analytic.png">
+</p>
+</div>
+
+<p>
+Evaluate how the accuracy of inference depends on random seed and sample
+size.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res</span> = evaluate(s=2, tau=0.3, n_trials=5)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
+fig.set_size_inches(7.5, 2.5)
+
+<span class="org-keyword">for</span> a, n <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [100, 500, 1000]):
+  <span class="org-variable-name">query</span> = res[res[<span class="org-string">'n'</span>] == n].pivot_table(index=<span class="org-string">'trial'</span>, values=[<span class="org-string">'mse_mcmc'</span>, <span class="org-string">'mse_analytic'</span>]).values
+  a.boxplot([np.ma.masked_invalid(q).compressed() <span class="org-keyword">for</span> q <span class="org-keyword">in</span> query.T],
+            medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markerfacecolor'</span>: <span class="org-string">'k'</span>})
+  a.set_title(f<span class="org-string">'n = {n}'</span>)
+  a.set_xlabel(<span class="org-string">'Method'</span>)
+  a.set_xticklabels([<span class="org-string">'Analytic'</span>, <span class="org-string">'MCMC'</span>])
+  a.set_ylabel(r<span class="org-string">'MSE $\hat\beta$'</span>)
+
+ax[-1].boxplot(res.pivot_table(index=<span class="org-string">'trial'</span>, columns=<span class="org-string">'n'</span>, values=<span class="org-string">'tauhat'</span>).values,
+               medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markerfacecolor'</span>: <span class="org-string">'k'</span>})
+ax[-1].axhline(y=0.3, c=<span class="org-string">'r'</span>, ls=<span class="org-string">':'</span>, lw=1)
+ax[-1].set_xlabel(<span class="org-string">'$n$'</span>)
+ax[-1].set_xticklabels([100, 500, 1000])
+ax[-1].set_ylabel(r<span class="org-string">'$\hat{\tau}$'</span>)
+
+fig.suptitle(r<span class="org-string">'s = 2, $\tau$ = 0.3'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/horseshoe.org/sim-s-2-tau-0.3.png" alt="sim-s-2-tau-0.3.png">
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orga56335f" class="outline-3">
+<h3 id="orga56335f">Scenario 2</h3>
+<div class="outline-text-3" id="text-orga56335f">
+<p>
+Try a different setting of the hyperparameters.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res</span> = evaluate(s=0.1, tau=0.5, n_trials=5)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
+fig.set_size_inches(7.5, 2.5)
+
+<span class="org-keyword">for</span> a, n <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [100, 500, 1000]):
+  <span class="org-variable-name">query</span> = res[res[<span class="org-string">'n'</span>] == n].pivot_table(index=<span class="org-string">'trial'</span>, values=[<span class="org-string">'mse_mcmc'</span>, <span class="org-string">'mse_analytic'</span>]).values
+  a.boxplot([np.ma.masked_invalid(q).compressed() <span class="org-keyword">for</span> q <span class="org-keyword">in</span> query.T],
+            medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markerfacecolor'</span>: <span class="org-string">'k'</span>})
+  a.set_title(f<span class="org-string">'n = {n}'</span>)
+  a.set_xlabel(<span class="org-string">'Method'</span>)
+  a.set_xticklabels([<span class="org-string">'Analytic'</span>, <span class="org-string">'MCMC'</span>])
+  a.set_ylabel(r<span class="org-string">'MSE $\hat\beta$'</span>)
+  a.set_ylim(0, 0.05)
+
+ax[-1].boxplot(res.pivot_table(index=<span class="org-string">'trial'</span>, columns=<span class="org-string">'n'</span>, values=<span class="org-string">'tauhat'</span>).values,
+               medianprops={<span class="org-string">'color'</span>: <span class="org-string">'k'</span>}, flierprops={<span class="org-string">'marker'</span>: <span class="org-string">'.'</span>, <span class="org-string">'markerfacecolor'</span>: <span class="org-string">'k'</span>})
+ax[-1].axhline(y=0.5, c=<span class="org-string">'r'</span>, ls=<span class="org-string">':'</span>, lw=1)
+ax[-1].set_xlabel(<span class="org-string">'$n$'</span>)
+ax[-1].set_xticklabels([100, 500, 1000])
+ax[-1].set_ylabel(r<span class="org-string">'$\hat{\tau}$'</span>)
+
+fig.suptitle(r<span class="org-string">'s = 0.1, $\tau$ = 0.5'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/horseshoe.org/sim-ex.png" alt="sim-ex.png">
+</p>
+</div>
+
+<p>
+Find the cases where the analytic solution failed.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">res[np.isnan(res[<span class="org-string">'mse_analytic'</span>])]
+</pre>
+</div>
+
+<pre class="example">
+mse_mcmc  mse_analytic       n    s  tau    tauhat  trial
+6   0.027008           NaN   500.0  0.1  0.5  0.999934    1.0
+11  0.015194           NaN  1000.0  0.1  0.5  0.999934    1.0
+13  0.022354           NaN  1000.0  0.1  0.5  0.999934    3.0
+</pre>
+
+<p>
+Look at the simulated data for one of the cases.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">beta</span> = simulate(n=500, s=0.1, tau=0.5, seed=1)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">x.<span class="org-builtin">min</span>(), beta.<span class="org-builtin">min</span>()
+</pre>
+</div>
+
+<pre class="example">
+(-572.0789680814781, -571.9190274305989)
+
+</pre>
+
+<p>
+Plot the simulated data, omitting outliers.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1)
+fig.set_size_inches(4, 4)
+
+ax[0].hist(x[x &gt; -80], bins=100, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+ax[0].set_xlabel(<span class="org-string">'Observation $x$'</span>)
+ax[0].set_ylabel(<span class="org-string">'Density'</span>)
+
+ax[1].hist(beta[beta &gt; -80], bins=100, color=<span class="org-string">'0.7'</span>, density=<span class="org-constant">True</span>)
+ax[1].set_xlabel(r<span class="org-string">'Latent $\beta$'</span>)
+ax[1].set_ylabel(<span class="org-string">'Density'</span>)
+
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/horseshoe.org/horseshoe-analytic-failure.png" alt="horseshoe-analytic-failure.png">
+</p>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org4e373aa" class="outline-2">
+<h2 id="org4e373aa">Notes</h2>
+<div class="outline-text-2" id="text-org4e373aa">
+<p>
+In these simulations, there are surprisingly often very large outlier values
+of \(\beta\) (and therefore \(x\)), leading to an estimate \(\hat\tau =
+  1\). These in turn appear to lead to failures in numerically integrating to
+estimate the marginal likelihood (as a subroutine in derivate-free
+optimization).
+</p>
+
+<p>
+Ghosh and Doshi-Velez 2018 note that the prior exhibits strong correlation
+between \(\beta_j\) and \(\lambda_j \tau\), which makes MCMC very
+difficult. Instead, they suggest a non-centered parameterization
+</p>
+
+\begin{align}
+  \beta_j &= \lambda_j \tau b_j\\
+  b_j &\sim \N(0, 1)\\
+  \lambda_j &\sim \HalfCauchy(0, 1),
+\end{align}
+
+<p>
+in which the prior is marginally uncorrelated. However, it is not clear that
+this is the parameterization used in the implementation of
+<code>horseshoe::HS.normal.means</code>.
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2021-03-11 Thu 22:42</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

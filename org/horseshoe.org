@@ -37,19 +37,21 @@
   #+RESULTS:
   : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="4G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="4G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+BEGIN_SRC ipython
     import contextlib
+    import functools as ft
     import numpy as np
     import pandas as pd
-    import torch
     import pyro
+    import sys
+    import torch
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[15]:
+  # Out[31]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -96,6 +98,18 @@
        x = rng.normal(loc=beta, scale=s)
        return x, beta
 
+     def _ebnm_horseshoe(x, s, tauhat):
+       lam = pyro.sample('lam', pyro.distributions.HalfCauchy(scale=torch.ones(x.shape[0])))
+       b = pyro.sample('b', pyro.distributions.Normal(loc=torch.zeros(x.shape[0]), scale=1.))
+       beta = lam * b * tauhat
+       return pyro.sample('x', pyro.distributions.Normal(loc=beta, scale=s), obs=x)
+
+     def run_nuts(x, s, tauhat, num_samples=100, warmup_steps=100, verbose=True, **kwargs):
+       nuts = pyro.infer.mcmc.NUTS(_ebnm_horseshoe)
+       samples = pyro.infer.mcmc.MCMC(nuts, num_samples=num_samples, warmup_steps=warmup_steps)
+       samples.run(torch.tensor(x), torch.tensor(s), torch.tensor(tauhat))
+       return (tauhat * samples.get_samples()['b'] * samples.get_samples()['lam']).mean(dim=0).numpy()
+
      def run_mcmc(x, s, tauhat, burn=1000, **kwargs):
        with contextlib.redirect_stdout(None):
          pm = horseshoe.HS_normal_means(x, method_tau='fixed', tau=tauhat,
@@ -111,13 +125,13 @@
        return pm
 
      def mse(betahat, beta):
-       return np.square(pm - beta).mean()
+       return np.square(betahat - beta).mean()
 
-     def trial(n, s, tau, seed=1, **kwargs):
+     def trial(n, s, tau, seed=1, methods=['mcmc', 'analytic'], **kwargs):
        x, beta = simulate(n, s, tau, seed)
        tauhat = horseshoe.HS_MMLE(x, s ** 2)[0]
        res = {f'mse_{m}': mse(globals()[f'run_{m}'](x, s, tauhat, **kwargs), beta)
-              for m in ('mcmc', 'analytic')}
+              for m in methods}
        res['n'] = n
        res['s'] = s
        res['tau'] = tau
@@ -135,51 +149,72 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[101]:
+   # Out[47]:
    :END:
 
 ** Scenario 1
 
    Use the hyperparameters Jason used.
 
-   #+BEGIN_SRC ipython
+   #+BEGIN_SRC ipython :async t
      s = 2
      tau = 0.3
      x, beta = simulate(n=100, s=s, tau=tau, seed=3)
      tauhat = horseshoe.HS_MMLE(x, s ** 2)[0]
      pm_mcmc = run_mcmc(x, s=s, tauhat=tauhat)
      pm_analytic = run_analytic(x, s=s, tauhat=tauhat)
+     pm_nuts = run_nuts(x, s=s, tauhat=tauhat)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[114]:
+   # Out[33]:
    :END:
 
    Compare the estimated posterior means by MCMC vs. the analytic solution.
 
    #+BEGIN_SRC ipython :ipyfile figure/horseshoe.org/hs-mcmc-vs-analytic.png
      plt.clf()
-     fig, ax = plt.subplots(1, 2, sharey=True)
-     fig.set_size_inches(4, 2.5)
+     fig, ax = plt.subplots(1, 3, sharey=True)
+     fig.set_size_inches(5.5, 2.5)
 
      for a in ax:
        a.set_aspect('equal', adjustable='datalim')
-  
+
      ax[0].scatter(pm_mcmc, beta, c='k', s=4)
-     ax[0].set_xlabel(r'Posterior mean $\hat\beta$ (MCMC)')
+     ax[0].set_xlabel(r'Estimated $\hat\beta$ (Gibbs)')
      ax[0].set_ylabel(r'Simulated $\beta$')
 
      ax[1].scatter(pm_analytic, beta, c='k', s=4)
-     ax[1].set_xlabel(r'Posterior mean $\hat\beta$ (analytic)')
+     ax[1].set_xlabel(r'Estimated $\hat\beta$ (analytic)')
+
+     ax[2].scatter(pm_nuts, beta, c='k', s=4)
+     ax[2].set_xlabel(r'Estimated $\hat\beta$ (NUTS)')
 
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[117]:
+   # Out[35]:
    [[file:figure/horseshoe.org/hs-mcmc-vs-analytic.png]]
+   :END:
+
+   #+BEGIN_SRC ipython
+     pd.Series({'mcmc': mse(pm_mcmc, beta),
+                'nuts': mse(pm_nuts, beta),
+                'analytic': mse(pm_analytic, beta)})
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[48]:
+   #+BEGIN_EXAMPLE
+     mcmc        1.934118
+     nuts        1.004739
+     analytic    1.043704
+     dtype: float64
+   #+END_EXAMPLE
    :END:
 
    Evaluate how the accuracy of inference depends on random seed and sample
@@ -345,7 +380,7 @@
   difficult. Instead, they suggest a non-centered parameterization
 
   \begin{align}
-    \beta_j &= \lambda_j \tau b_j\\
+    \beta_j &= b_j \lambda_j \tau\\
     b_j &\sim \N(0, 1)\\
     \lambda_j &\sim \HalfCauchy(0, 1),
   \end{align}

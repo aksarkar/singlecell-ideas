@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-03-11 Thu 22:42 -->
+<!-- 2021-03-12 Fri 11:26 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Empirical Bayes inference for the horseshoe prior</title>
@@ -308,10 +308,12 @@ poorly, which we investigate here.
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> contextlib
+<span class="org-keyword">import</span> functools <span class="org-keyword">as</span> ft
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
-<span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> pyro
+<span class="org-keyword">import</span> sys
+<span class="org-keyword">import</span> torch
 </pre>
 </div>
 
@@ -353,6 +355,18 @@ rpy2.robjects.pandas2ri.activate()
   <span class="org-variable-name">x</span> = rng.normal(loc=beta, scale=s)
   <span class="org-keyword">return</span> x, beta
 
+<span class="org-keyword">def</span> <span class="org-function-name">_ebnm_horseshoe</span>(x, s, tauhat):
+  <span class="org-variable-name">lam</span> = pyro.sample(<span class="org-string">'lam'</span>, pyro.distributions.HalfCauchy(scale=torch.ones(x.shape[0])))
+  <span class="org-variable-name">b</span> = pyro.sample(<span class="org-string">'b'</span>, pyro.distributions.Normal(loc=torch.zeros(x.shape[0]), scale=1.))
+  <span class="org-variable-name">beta</span> = lam * b * tauhat
+  <span class="org-keyword">return</span> pyro.sample(<span class="org-string">'x'</span>, pyro.distributions.Normal(loc=beta, scale=s), obs=x)
+
+<span class="org-keyword">def</span> <span class="org-function-name">run_nuts</span>(x, s, tauhat, num_samples=100, warmup_steps=100, verbose=<span class="org-constant">True</span>, **kwargs):
+  <span class="org-variable-name">nuts</span> = pyro.infer.mcmc.NUTS(_ebnm_horseshoe)
+  <span class="org-variable-name">samples</span> = pyro.infer.mcmc.MCMC(nuts, num_samples=num_samples, warmup_steps=warmup_steps)
+  samples.run(torch.tensor(x), torch.tensor(s), torch.tensor(tauhat))
+  <span class="org-keyword">return</span> (tauhat * samples.get_samples()[<span class="org-string">'b'</span>] * samples.get_samples()[<span class="org-string">'lam'</span>]).mean(dim=0).numpy()
+
 <span class="org-keyword">def</span> <span class="org-function-name">run_mcmc</span>(x, s, tauhat, burn=1000, **kwargs):
   <span class="org-keyword">with</span> contextlib.redirect_stdout(<span class="org-constant">None</span>):
     <span class="org-variable-name">pm</span> = horseshoe.HS_normal_means(x, method_tau=<span class="org-string">'fixed'</span>, tau=tauhat,
@@ -368,13 +382,13 @@ rpy2.robjects.pandas2ri.activate()
   <span class="org-keyword">return</span> pm
 
 <span class="org-keyword">def</span> <span class="org-function-name">mse</span>(betahat, beta):
-  <span class="org-keyword">return</span> np.square(pm - beta).mean()
+  <span class="org-keyword">return</span> np.square(betahat - beta).mean()
 
-<span class="org-keyword">def</span> <span class="org-function-name">trial</span>(n, s, tau, seed=1, **kwargs):
+<span class="org-keyword">def</span> <span class="org-function-name">trial</span>(n, s, tau, seed=1, methods=[<span class="org-string">'mcmc'</span>, <span class="org-string">'analytic'</span>], **kwargs):
   <span class="org-variable-name">x</span>, <span class="org-variable-name">beta</span> = simulate(n, s, tau, seed)
   <span class="org-variable-name">tauhat</span> = horseshoe.HS_MMLE(x, s ** 2)[0]
   <span class="org-variable-name">res</span> = {f<span class="org-string">'mse_{m}'</span>: mse(<span class="org-builtin">globals</span>()[f<span class="org-string">'run_{m}'</span>](x, s, tauhat, **kwargs), beta)
-         <span class="org-keyword">for</span> m <span class="org-keyword">in</span> (<span class="org-string">'mcmc'</span>, <span class="org-string">'analytic'</span>)}
+         <span class="org-keyword">for</span> m <span class="org-keyword">in</span> methods}
   <span class="org-variable-name">res</span>[<span class="org-string">'n'</span>] = n
   <span class="org-variable-name">res</span>[<span class="org-string">'s'</span>] = s
   <span class="org-variable-name">res</span>[<span class="org-string">'tau'</span>] = tau
@@ -407,6 +421,7 @@ Use the hyperparameters Jason used.
 <span class="org-variable-name">tauhat</span> = horseshoe.HS_MMLE(x, s ** 2)[0]
 <span class="org-variable-name">pm_mcmc</span> = run_mcmc(x, s=s, tauhat=tauhat)
 <span class="org-variable-name">pm_analytic</span> = run_analytic(x, s=s, tauhat=tauhat)
+<span class="org-variable-name">pm_nuts</span> = run_nuts(x, s=s, tauhat=tauhat)
 </pre>
 </div>
 
@@ -416,18 +431,21 @@ Compare the estimated posterior means by MCMC vs. the analytic solution.
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
-fig.set_size_inches(4, 2.5)
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(5.5, 2.5)
 
 <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
   a.set_aspect(<span class="org-string">'equal'</span>, adjustable=<span class="org-string">'datalim'</span>)
 
 ax[0].scatter(pm_mcmc, beta, c=<span class="org-string">'k'</span>, s=4)
-ax[0].set_xlabel(r<span class="org-string">'Posterior mean $\hat\beta$ (MCMC)'</span>)
+ax[0].set_xlabel(r<span class="org-string">'Estimated $\hat\beta$ (Gibbs)'</span>)
 ax[0].set_ylabel(r<span class="org-string">'Simulated $\beta$'</span>)
 
 ax[1].scatter(pm_analytic, beta, c=<span class="org-string">'k'</span>, s=4)
-ax[1].set_xlabel(r<span class="org-string">'Posterior mean $\hat\beta$ (analytic)'</span>)
+ax[1].set_xlabel(r<span class="org-string">'Estimated $\hat\beta$ (analytic)'</span>)
+
+ax[2].scatter(pm_nuts, beta, c=<span class="org-string">'k'</span>, s=4)
+ax[2].set_xlabel(r<span class="org-string">'Estimated $\hat\beta$ (NUTS)'</span>)
 
 fig.tight_layout()
 </pre>
@@ -438,6 +456,20 @@ fig.tight_layout()
 <p><img src="figure/horseshoe.org/hs-mcmc-vs-analytic.png" alt="hs-mcmc-vs-analytic.png">
 </p>
 </div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.Series({<span class="org-string">'mcmc'</span>: mse(pm_mcmc, beta),
+           <span class="org-string">'nuts'</span>: mse(pm_nuts, beta),
+           <span class="org-string">'analytic'</span>: mse(pm_analytic, beta)})
+</pre>
+</div>
+
+<pre class="example">
+mcmc        1.934118
+nuts        1.004739
+analytic    1.043704
+dtype: float64
+</pre>
 
 <p>
 Evaluate how the accuracy of inference depends on random seed and sample
@@ -611,7 +643,7 @@ difficult. Instead, they suggest a non-centered parameterization
 </p>
 
 \begin{align}
-  \beta_j &= \lambda_j \tau b_j\\
+  \beta_j &= b_j \lambda_j \tau\\
   b_j &\sim \N(0, 1)\\
   \lambda_j &\sim \HalfCauchy(0, 1),
 \end{align}
@@ -626,7 +658,7 @@ this is the parameterization used in the implementation of
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-03-11 Thu 22:42</p>
+<p class="date">Created: 2021-03-12 Fri 11:26</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2021-03-18 Thu 09:34 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installing cellAssign</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Installing cellAssign</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgb291fdc">Introduction</a></li>
+<li><a href="#org02aa7a7">conda environment specification</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgb291fdc" class="outline-2">
+<h2 id="orgb291fdc">Introduction</h2>
+<div class="outline-text-2" id="text-orgb291fdc">
+<p>
+<a href="https://github.com/Irrationone/cellassign">cellAssign</a>
+(<a href="https://www.nature.com/articles/s41592-019-0529-1">Zhang et al. 2019</a>) is
+a method that probabilistically assigns single cells to cell types based on
+known marker gene expression. Here, we automate installation of the package
+and all required dependencies.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org02aa7a7" class="outline-2">
+<h2 id="org02aa7a7">conda environment specification</h2>
+<div class="outline-text-2" id="text-org02aa7a7">
+<div class="org-src-container">
+<pre class="src src-sh">xargs -n100 conda create -y -n cellassign -c conda-forge -c bioconda &lt;&lt;EOF 
+<span class="org-sh-heredoc">python=3.8 </span>
+<span class="org-sh-heredoc">r-base=3.6</span>
+<span class="org-sh-heredoc">r-cellassign </span>
+<span class="org-sh-heredoc">r-seurat </span>
+<span class="org-sh-heredoc">r-spatstat=1.64</span>
+<span class="org-sh-heredoc">r-tensorflow=2.2.0</span>
+<span class="org-sh-heredoc">tensorflow-gpu=2.2.0</span>
+<span class="org-sh-heredoc">tensorflow-probability</span>
+<span class="org-sh-heredoc">EOF</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-yaml"><span class="org-variable-name">name</span>: cellassign
+<span class="org-variable-name">channels</span>:
+  - bioconda
+  - conda-forge
+  - defaults
+<span class="org-variable-name">dependencies</span>:
+  - _libgcc_mutex=0.1=conda_forge
+  - _openmp_mutex=4.5=1_gnu
+  - _r-mutex=1.0.1=anacondar_1
+  - _tflow_select=2.1.0=gpu
+  - absl-py=0.12.0=pyhd8ed1ab_0
+  - aiohttp=3.7.4=py38h497a2fe_0
+  - astor=0.8.1=pyh9f0ad1d_0
+  - astunparse=1.6.3=pyhd8ed1ab_0
+  - async-timeout=3.0.1=py_1000
+  - attrs=20.3.0=pyhd3deb0d_0
+  - binutils_impl_linux-64=2.35.1=h193b22a_2
+  - binutils_linux-64=2.35=h67ddf6f_30
+  - bioconductor-beachmat=2.2.0=r36he1b5a44_0
+  - bioconductor-biobase=2.46.0=r36h516909a_0
+  - bioconductor-biocgenerics=0.32.0=r36_0
+  - bioconductor-biocneighbors=1.4.0=r36he1b5a44_0
+  - bioconductor-biocparallel=1.20.0=r36he1b5a44_0
+  - bioconductor-biocsingular=1.2.0=r36he1b5a44_0
+  - bioconductor-delayedarray=0.12.0=r36h516909a_0
+  - bioconductor-delayedmatrixstats=1.8.0=r36_0
+  - bioconductor-edger=3.28.0=r36he1b5a44_0
+  - bioconductor-genomeinfodb=1.22.0=r36_0
+  - bioconductor-genomeinfodbdata=1.2.2=r36_0
+  - bioconductor-genomicranges=1.38.0=r36h516909a_0
+  - bioconductor-hdf5array=1.14.0=r36h516909a_0
+  - bioconductor-iranges=2.20.0=r36h516909a_0
+  - bioconductor-limma=3.42.0=r36h516909a_0
+  - bioconductor-rhdf5=2.30.0=r36he1b5a44_0
+  - bioconductor-rhdf5lib=1.8.0=r36h516909a_0
+  - bioconductor-s4vectors=0.24.0=r36h516909a_0
+  - bioconductor-scater=1.14.0=r36he1b5a44_0
+  - bioconductor-scran=1.14.1=r36he1b5a44_0
+  - bioconductor-singlecellexperiment=1.8.0=r36_0
+  - bioconductor-summarizedexperiment=1.16.0=r36_0
+  - bioconductor-xvector=0.26.0=r36h516909a_0
+  - bioconductor-zlibbioc=1.32.0=r36h516909a_0
+  - blinker=1.4=py_1
+  - brotlipy=0.7.0=py38h497a2fe_1001
+  - bwidget=1.9.14=ha770c72_0
+  - bzip2=1.0.8=h7f98852_4
+  - c-ares=1.17.1=h7f98852_1
+  - ca-certificates=2020.12.5=ha878542_0
+  - cachetools=4.2.1=pyhd8ed1ab_0
+  - cairo=1.16.0=h7979940_1007
+  - certifi=2020.12.5=py38h578d9bd_1
+  - cffi=1.14.5=py38ha65f79e_0
+  - chardet=4.0.0=py38h578d9bd_1
+  - click=7.1.2=pyh9f0ad1d_0
+  - cloudpickle=1.6.0=py_0
+  - colormath=3.0.0=py_2
+  - cryptography=3.4.6=py38ha5dfef3_0
+  - cudatoolkit=10.1.243=h036e899_8
+  - cudnn=7.6.5.32=hc0a50b0_1
+  - cupti=10.1.168=0
+  - curl=7.75.0=h979ede3_0
+  - decorator=4.4.2=py_0
+  - dm-tree=0.1.5=py38h51da96c_2
+  - fontconfig=2.13.1=hba837de_1004
+  - freetype=2.10.4=h0708190_1
+  - fribidi=1.0.10=h36c2ea0_0
+  - gast=0.3.3=py_0
+  - gcc_impl_linux-64=9.3.0=h70c0ae5_18
+  - gcc_linux-64=9.3.0=hf25ea35_30
+  - gettext=0.19.8.1=h0b5b191_1005
+  - gfortran_impl_linux-64=9.3.0=hc4a2995_18
+  - gfortran_linux-64=9.3.0=hdc58fab_30
+  - gmp=6.2.1=h58526e2_0
+  - google-auth=1.24.0=pyhd3deb0d_0
+  - google-auth-oauthlib=0.4.1=py_2
+  - google-pasta=0.2.0=pyh8c360ce_0
+  - graphite2=1.3.13=h58526e2_1001
+  - grpcio=1.36.1=py38hdd6454d_0
+  - gsl=2.6=he838d99_2
+  - gxx_impl_linux-64=9.3.0=hd87eabc_18
+  - gxx_linux-64=9.3.0=h3fbe746_30
+  - h5py=2.10.0=nompi_py38h7442b35_105
+  - harfbuzz=2.8.0=h83ec7ef_0
+  - hdf5=1.10.6=nompi_h6a2412b_1114
+  - icu=68.1=h58526e2_0
+  - idna=2.10=pyh9f0ad1d_0
+  - importlib-metadata=3.7.3=py38h578d9bd_0
+  - jpeg=9d=h36c2ea0_0
+  - keras-preprocessing=1.1.2=pyhd8ed1ab_0
+  - kernel-headers_linux-64=2.6.32=h77966d4_13
+  - krb5=1.17.2=h926e7f8_0
+  - ld_impl_linux-64=2.35.1=hea4e1c9_2
+  - libblas=3.9.0=8_openblas
+  - libcblas=3.9.0=8_openblas
+  - libcurl=7.75.0=hc4aaa36_0
+  - libedit=3.1.20191231=he28a2e2_2
+  - libev=4.33=h516909a_1
+  - libffi=3.3=h58526e2_2
+  - libgcc-devel_linux-64=9.3.0=h7864c58_18
+  - libgcc-ng=9.3.0=h2828fa1_18
+  - libgfortran-ng=9.3.0=hff62375_18
+  - libgfortran5=9.3.0=hff62375_18
+  - libglib=2.66.7=h3e27bee_1
+  - libgomp=9.3.0=h2828fa1_18
+  - libiconv=1.16=h516909a_0
+  - liblapack=3.9.0=8_openblas
+  - libnghttp2=1.43.0=h812cca2_0
+  - libopenblas=0.3.12=pthreads_h4812303_1
+  - libpng=1.6.37=h21135ba_2
+  - libprotobuf=3.15.6=h780b84a_0
+  - libssh2=1.9.0=ha56f1ee_6
+  - libstdcxx-devel_linux-64=9.3.0=hb016644_18
+  - libstdcxx-ng=9.3.0=h6de172a_18
+  - libtiff=4.2.0=hdc55705_0
+  - libuuid=2.32.1=h7f98852_1000
+  - libwebp-base=1.2.0=h7f98852_1
+  - libxcb=1.13=h7f98852_1003
+  - libxml2=2.9.10=h72842e0_3
+  - lz4-c=1.9.3=h9c3ff4c_0
+  - make=4.3=hd18ef5c_1
+  - markdown=3.3.4=pyhd8ed1ab_0
+  - multidict=5.1.0=py38h497a2fe_1
+  - ncurses=6.2=h58526e2_4
+  - networkx=2.5=py_0
+  - numpy=1.20.1=py38h18fd61f_0
+  - oauthlib=3.0.1=py_0
+  - openssl=1.1.1j=h7f98852_0
+  - opt_einsum=3.3.0=py_0
+  - pango=1.42.4=h69149e4_5
+  - pcre=8.44=he1b5a44_0
+  - pip=21.0.1=pyhd8ed1ab_0
+  - pixman=0.40.0=h36c2ea0_0
+  - protobuf=3.15.6=py38h709712a_0
+  - pthread-stubs=0.4=h36c2ea0_1001
+  - pyasn1=0.4.8=py_0
+  - pyasn1-modules=0.2.7=py_0
+  - pycparser=2.20=pyh9f0ad1d_2
+  - pyjwt=2.0.1=pyhd8ed1ab_0
+  - pyopenssl=20.0.1=pyhd8ed1ab_0
+  - pysocks=1.7.1=py38h578d9bd_3
+  - python=3.8.8=hffdb5ce_0_cpython
+  - python_abi=3.8=1_cp38
+  - r-abind=1.4_5=r36h6115d3f_1003
+  - r-askpass=1.1=r36hcdcec82_2
+  - r-assertthat=0.2.1=r36h6115d3f_2
+  - r-backports=1.2.1=r36hcfec24a_0
+  - r-base=3.6.3=hd23ff56_6
+  - r-base64enc=0.1_3=r36hcdcec82_1004
+  - r-beeswarm=0.3.1=r36hc72bb7e_0
+  - r-bh=1.75.0_0=r36hc72bb7e_0
+  - r-bitops=1.0_6=r36hcdcec82_1004
+  - r-brio=1.1.1=r36hcfec24a_0
+  - r-bslib=0.2.4=r36hc72bb7e_0
+  - r-cachem=1.0.4=r36hcfec24a_0
+  - r-callr=3.5.1=r36h142f84f_0
+  - r-catools=1.18.1=r36h03ef668_0
+  - r-cellassign=0.99.2=r36_1
+  - r-cli=2.3.1=r36hc72bb7e_0
+  - r-cluster=2.1.1=r36h859d828_0
+  - r-codetools=0.2_18=r36hc72bb7e_0
+  - r-colorspace=2.0_0=r36h9e2df91_0
+  - r-commonmark=1.7=r36hcdcec82_1002
+  - r-config=0.3.1=r36hc72bb7e_0
+  - r-cowplot=1.1.1=r36hc72bb7e_0
+  - r-crayon=1.4.1=r36hc72bb7e_0
+  - r-crosstalk=1.1.1=r36hc72bb7e_0
+  - r-curl=4.3=r36hcdcec82_1
+  - r-data.table=1.14.0=r36hcfec24a_0
+  - r-deldir=0.2_10=r36h859d828_0
+  - r-desc=1.3.0=r36hc72bb7e_0
+  - r-diffobj=0.3.3=r36hcfec24a_0
+  - r-digest=0.6.27=r36h1b71b39_0
+  - r-dplyr=1.0.5=r36h03ef668_0
+  - r-dqrng=0.2.1=r36h0357c0b_2
+  - r-ellipsis=0.3.1=r36hcdcec82_0
+  - r-evaluate=0.14=r36h6115d3f_2
+  - r-fansi=0.4.2=r36hcfec24a_0
+  - r-farver=2.1.0=r36h03ef668_0
+  - r-fastmap=1.1.0=r36h03ef668_0
+  - r-fitdistrplus=1.1_3=r36hc72bb7e_0
+  - r-fnn=1.1.3=r36h0357c0b_2
+  - r-formatr=1.8=r36hc72bb7e_0
+  - r-fs=1.5.0=r36h0357c0b_0
+  - r-futile.logger=1.4.3=r36h6115d3f_1003
+  - r-futile.options=1.0.1=r36h6115d3f_1002
+  - r-future=1.21.0=r36hc72bb7e_0
+  - r-future.apply=1.7.0=r36hc72bb7e_0
+  - r-generics=0.1.0=r36hc72bb7e_0
+  - r-ggbeeswarm=0.6.0=r36_1003
+  - r-ggplot2=3.3.3=r36hc72bb7e_0
+  - r-ggrepel=0.9.1=r36h03ef668_0
+  - r-ggridges=0.5.3=r36hc72bb7e_0
+  - r-globals=0.14.0=r36hc72bb7e_0
+  - r-glue=1.4.2=r36hcfec24a_0
+  - r-goftest=1.2_2=r36hcdcec82_1
+  - r-gplots=3.1.1=r36hc72bb7e_0
+  - r-gridextra=2.3=r36h6115d3f_1003
+  - r-gtable=0.3.0=r36h6115d3f_3
+  - r-gtools=3.8.2=r36hcdcec82_1
+  - r-hexbin=1.28.2=r36h859d828_0
+  - r-htmltools=0.5.1.1=r36h03ef668_0
+  - r-htmlwidgets=1.5.3=r36hc72bb7e_0
+  - r-httpuv=1.5.5=r36h03ef668_0
+  - r-httr=1.4.2=r36h6115d3f_0
+  - r-ica=1.0_2=r36h6115d3f_2
+  - r-igraph=1.2.6=r36hfbf21e4_1
+  - r-irlba=2.3.3=r36h7fa42b6_3
+  - r-isoband=0.2.4=r36h03ef668_0
+  - r-jquerylib=0.1.3=r36hc72bb7e_0
+  - r-jsonlite=1.7.2=r36hcfec24a_0
+  - r-kernsmooth=2.23_18=r36h742201e_0
+  - r-labeling=0.4.2=r36h142f84f_0
+  - r-lambda.r=1.2.4=r36h6115d3f_1
+  - r-later=1.1.0.1=r36h0357c0b_0
+  - r-lattice=0.20_41=r36hcfec24a_3
+  - r-lazyeval=0.2.2=r36hcdcec82_2
+  - r-leiden=0.3.7=r36hc72bb7e_0
+  - r-lifecycle=1.0.0=r36hc72bb7e_0
+  - r-listenv=0.8.0=r36h6115d3f_1
+  - r-lmtest=0.9_38=r36h580db52_1
+  - r-locfit=1.5_9.4=r36hcdcec82_1
+  - r-lsei=1.3_0=r36h86c2bf4_1
+  - r-magrittr=2.0.1=r36hcfec24a_1
+  - r-mass=7.3_53.1=r36hcfec24a_0
+  - r-matrix=1.3_2=r36he454529_0
+  - r-matrixstats=0.58.0=r36hcfec24a_0
+  - r-mgcv=1.8_34=r36he454529_0
+  - r-mime=0.10=r36hcfec24a_0
+  - r-miniui=0.1.1.1=r36h6115d3f_1002
+  - r-munsell=0.5.0=r36h6115d3f_1003
+  - r-nlme=3.1_152=r36h859d828_0
+  - r-npsurv=0.5_0=r36h6115d3f_0
+  - r-openssl=1.4.3=r36he5c4762_0
+  - r-parallelly=1.24.0=r36hc72bb7e_0
+  - r-patchwork=1.1.1=r36hc72bb7e_0
+  - r-pbapply=1.4_3=r36h6115d3f_0
+  - r-pillar=1.5.1=r36hc72bb7e_0
+  - r-pkgbuild=1.2.0=r36hc72bb7e_0
+  - r-pkgconfig=2.0.3=r36h6115d3f_1
+  - r-pkgload=1.2.0=r36h03ef668_0
+  - r-plotly=4.9.3=r36hc72bb7e_0
+  - r-plyr=1.8.6=r36h0357c0b_1
+  - r-png=0.1_7=r36hcdcec82_1004
+  - r-polyclip=1.10_0=r36h0357c0b_2
+  - r-praise=1.0.0=r36h6115d3f_1004
+  - r-prettyunits=1.1.1=r36h6115d3f_1
+  - r-processx=3.4.5=r36hcfec24a_0
+  - r-promises=1.2.0.1=r36h03ef668_0
+  - r-ps=1.6.0=r36hcfec24a_0
+  - r-purrr=0.3.4=r36hcdcec82_1
+  - r-r6=2.5.0=r36hc72bb7e_0
+  - r-rann=2.6.1=r36h0357c0b_2
+  - r-rappdirs=0.3.3=r36hcfec24a_0
+  - r-rcolorbrewer=1.1_2=r36h6115d3f_1003
+  - r-rcpp=1.0.6=r36h03ef668_0
+  - r-rcppannoy=0.0.18=r36h03ef668_0
+  - r-rcpparmadillo=0.10.2.2.0=r36h306847c_0
+  - r-rcppeigen=0.3.3.9.1=r36h306847c_0
+  - r-rcpphnsw=0.3.0=r36h0357c0b_0
+  - r-rcppparallel=5.0.3=r36h03ef668_0
+  - r-rcppprogress=0.4.2=r36h6115d3f_1
+  - r-rcurl=1.98_1.3=r36hcfec24a_0
+  - r-rematch2=2.1.2=r36h6115d3f_1
+  - r-reshape2=1.4.4=r36h0357c0b_1
+  - r-reticulate=1.18=r36h03ef668_0
+  - r-rlang=0.4.10=r36hcfec24a_0
+  - r-rocr=1.0_11=r36h6115d3f_1
+  - r-rpart=4.1_15=r36hcfec24a_2
+  - r-rprojroot=2.0.2=r36hc72bb7e_0
+  - r-rspectra=0.16_0=r36h51c796c_3
+  - r-rstudioapi=0.13=r36hc72bb7e_0
+  - r-rsvd=1.0.3=r36h6115d3f_1
+  - r-rtsne=0.15=r36hc8faad4_3
+  - r-sass=0.3.1=r36h03ef668_0
+  - r-scales=1.1.1=r36h6115d3f_0
+  - r-scattermore=0.7=r36hcfec24a_0
+  - r-sctransform=0.3.2=r36h34e6507_0
+  - r-seurat=3.2.3=r36h03ef668_0
+  - r-shiny=1.6.0=r36hc72bb7e_0
+  - r-sitmo=2.0.1=r36h0357c0b_2
+  - r-snow=0.4_3=r36h6115d3f_1002
+  - r-sourcetools=0.1.7=r36he1b5a44_1002
+  - r-spatstat=1.64_1=r36h0357c0b_0
+  - r-spatstat.core=1.65_5=r36h03ef668_0
+  - r-spatstat.data=2.0_0=r36hc72bb7e_0
+  - r-spatstat.geom=1.65_5=r36hcfec24a_0
+  - r-spatstat.linnet=1.65_3=r36hcfec24a_0
+  - r-spatstat.sparse=2.0_0=r36hcfec24a_0
+  - r-spatstat.utils=2.1_0=r36h7f98852_0
+  - r-statmod=1.4.35=r36h86c2bf4_1
+  - r-stringi=1.5.3=r36hcabe038_1
+  - r-stringr=1.4.0=r36h6115d3f_2
+  - r-survival=3.2_10=r36hcfec24a_0
+  - r-sys=3.4=r36hcdcec82_0
+  - r-tensor=1.5=r36h6115d3f_1003
+  - r-tensorflow=2.2.0=r36h6115d3f_0
+  - r-testthat=3.0.2=r36h03ef668_0
+  - r-tfruns=1.5.0=r36hc72bb7e_0
+  - r-tibble=3.1.0=r36hcfec24a_1
+  - r-tidyr=1.1.3=r36h03ef668_0
+  - r-tidyselect=1.1.0=r36h6115d3f_0
+  - r-utf8=1.2.1=r36hcfec24a_0
+  - r-uwot=0.1.10=r36h03ef668_0
+  - r-vctrs=0.3.6=r36hcfec24a_0
+  - r-vipor=0.4.5=r36h6115d3f_1003
+  - r-viridis=0.5.1=r36h6115d3f_1004
+  - r-viridislite=0.3.0=r36h6115d3f_1003
+  - r-waldo=0.2.5=r36hc72bb7e_0
+  - r-whisker=0.4=r36h6115d3f_1
+  - r-withr=2.4.1=r36hc72bb7e_0
+  - r-xtable=1.8_4=r36h6115d3f_3
+  - r-yaml=2.2.1=r36hcfec24a_1
+  - r-zeallot=0.1.0=r36h6115d3f_1002
+  - r-zoo=1.8_9=r36hcfec24a_0
+  - readline=8.0=he28a2e2_2
+  - requests=2.25.1=pyhd3deb0d_0
+  - requests-oauthlib=1.3.0=pyh9f0ad1d_0
+  - rsa=4.7.2=pyh44b312d_0
+  - scipy=1.6.0=py38hb2138dd_0
+  - sed=4.8=he412f7d_0
+  - setuptools=49.6.0=py38h578d9bd_3
+  - six=1.15.0=pyh9f0ad1d_0
+  - spectra=0.0.11=py_1
+  - sqlite=3.34.0=h74cdb3f_0
+  - sysroot_linux-64=2.12=h77966d4_13
+  - tensorboard=2.4.1=pyhd8ed1ab_0
+  - tensorboard-plugin-wit=1.8.0=pyh44b312d_0
+  - tensorflow=2.2.0=gpu_py38hb782248_0
+  - tensorflow-base=2.2.0=gpu_py38h83e3d50_0
+  - tensorflow-estimator=2.4.0=pyh9656e83_0
+  - tensorflow-gpu=2.2.0=h0d30ee6_0
+  - tensorflow-probability=0.12.1=pyhd8ed1ab_0
+  - termcolor=1.1.0=py_2
+  - tk=8.6.10=h21135ba_1
+  - tktable=2.10=hb7b940f_3
+  - typing-extensions=3.7.4.3=0
+  - typing_extensions=3.7.4.3=py_0
+  - tzdata=2021a=he74cb21_0
+  - urllib3=1.26.4=pyhd8ed1ab_0
+  - werkzeug=1.0.1=pyh9f0ad1d_0
+  - wheel=0.36.2=pyhd3deb0d_0
+  - wrapt=1.12.1=py38h497a2fe_3
+  - xorg-kbproto=1.0.7=h7f98852_1002
+  - xorg-libice=1.0.10=h7f98852_0
+  - xorg-libsm=1.2.3=hd9c2040_1000
+  - xorg-libx11=1.7.0=h7f98852_0
+  - xorg-libxau=1.0.9=h7f98852_0
+  - xorg-libxdmcp=1.1.3=h7f98852_0
+  - xorg-libxext=1.3.4=h7f98852_1
+  - xorg-libxrender=0.9.10=h7f98852_1003
+  - xorg-renderproto=0.11.1=h7f98852_1002
+  - xorg-xextproto=7.3.0=h7f98852_1002
+  - xorg-xproto=7.0.31=h7f98852_1007
+  - xz=5.2.5=h516909a_1
+  - yarl=1.6.3=py38h497a2fe_1
+  - zipp=3.4.1=pyhd8ed1ab_0
+  - zlib=1.2.11=h516909a_1010
+  - zstd=1.4.9=ha95c52a_0
+<span class="org-variable-name">prefix</span>: /scratch/midway2/aksarkar/miniconda3/envs/cellassign
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2021-03-18 Thu 09:34</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

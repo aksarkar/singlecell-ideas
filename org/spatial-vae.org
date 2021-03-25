@@ -107,6 +107,7 @@
     import scanpy as sc
     import scipy.io as si
     import scipy.sparse as ss
+    import sklearn.datasets as skd
     import scmodes
     import torch
     import torch.utils.data as td
@@ -117,18 +118,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
-  :END:
-
-  #+BEGIN_SRC ipython
-    import rpy2.robjects.packages
-    import rpy2.robjects.pandas2ri
-    rpy2.robjects.pandas2ri.activate()
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  # Out[2]:
+  # Out[9]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -138,7 +128,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[13]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -151,7 +141,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[4]:
+  # Out[14]:
   :END:
 
 * Methods
@@ -288,7 +278,7 @@
 
    #+RESULTS: convae-impl
    :RESULTS:
-   # Out[5]:
+   # Out[94]:
    :END:
 
    #+NAME: pois-convae-impl
@@ -361,7 +351,7 @@
 
    #+RESULTS: pois-convae-impl
    :RESULTS:
-   # Out[112]:
+   # Out[95]:
    :END:
 
 * Results
@@ -567,6 +557,241 @@
    :RESULTS:
    # Out[17]:
    [[file:figure/spatial-vae.org/mnist-cvae-latent-umap.png]]
+   :END:
+
+** Planted spatial signal
+
+   Generate an interesting spatial pattern.
+
+   #+BEGIN_SRC ipython
+     X, y = skd.make_moons(n_samples=5000, noise=0.15, random_state=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[73]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-vae.org/moons.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.scatter(X[:,0], X[:,1], s=2, c=cm(y))
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[74]:
+   [[file:figure/spatial-vae.org/moons.png]]
+   :END:
+
+   Bin the samples to get spots.
+
+   #+BEGIN_SRC ipython
+     n_bins = 64
+     t = [[X[:,0].min(), X[:,0].max()], [X[:,1].min(), X[:,1].max()]]
+     H0, *_ = np.histogram2d(X[y == 0,0], X[y == 0,1], bins=n_bins, range=t, density=True)
+     H1, *_ = np.histogram2d(X[y == 1,0], X[y == 1,1], bins=n_bins, range=t, density=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[75]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-vae.org/moons-binned.png
+     cm = colorcet.cm['fire']
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(6, 3)
+     ax[0].pcolormesh(H0.T, cmap=cm)
+     ax[1].pcolormesh(H1.T, cmap=cm)
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[77]:
+   [[file:figure/spatial-vae.org/moons-binned.png]]
+   :END:
+
+   Treat the spots as the true \(\lambda\), and generate example noisy observations.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(2)
+     x0 = st.nbinom(n=np.exp(-1), p = 1 / (1 + H0 / np.exp(-1))).rvs()
+     x1 = st.nbinom(n=np.exp(-2), p = 1 / (1 + H0 / np.exp(-2))).rvs()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[78]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-vae.org/moons-gen.png
+     cm = colorcet.cm['fire']
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(6, 3)
+     ax[0].pcolormesh(x0.T, cmap=cm)
+     ax[0].set_title('$\phi$ = $\exp(1)$')
+     ax[1].pcolormesh(x1.T, cmap=cm)
+     ax[1].set_title('$\phi$ = $\exp(2)$')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[80]:
+   [[file:figure/spatial-vae.org/moons-gen.png]]
+   :END:
+
+   Generate a training data set.
+
+   #+BEGIN_SRC ipython :async t
+     n = 8192
+     z = np.random.uniform(size=n) < 0.5
+     log_inv_disp = np.random.uniform(-3, 0, size=n)
+     x = np.stack([
+       st.nbinom(n=np.exp(phi_j), p=1 / (1 + H0 / np.exp(phi_j))).rvs() if z_j else
+       st.nbinom(n=np.exp(phi_j), p=1 / (1 + H1 / np.exp(phi_j))).rvs()
+       for z_j, phi_j in zip(z, log_inv_disp)])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[91]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     train = td.DataLoader(
+       torch.tensor(x, dtype=torch.float).unsqueeze(1),
+       batch_size=64,
+       shuffle=True,
+       pin_memory=True,
+       num_workers=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[93]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     latent_dim = 4
+     n_epochs = 40
+     lr = 5e-3
+     run = 0
+     torch.manual_seed(run)
+     model = PoisConvVAE(input_h=64, input_w=64, latent_dim=latent_dim)
+     model.fit(train,
+               size=torch.tensor(x.sum(axis=0), dtype=torch.float, device='cuda'),
+               n_epochs=n_epochs,
+               lr=lr,
+               log_dir=f'runs/convvae/planted/adam_latent_{latent_dim}_epochs_{n_epochs}_lr_{lr:.1g}_run_{run}')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[104]:
+   #+BEGIN_EXAMPLE
+     PoisConvVAE(
+     (encoder): Encoder(
+     (net): Sequential(
+     (0): Conv2d(1, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+     (1): ReLU()
+     (2): Conv2d(16, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+     (3): ReLU()
+     (4): Flatten(start_dim=1, end_dim=-1)
+     (5): Linear(in_features=8192, out_features=1024, bias=True)
+     (6): ReLU()
+     (7): Linear(in_features=1024, out_features=512, bias=True)
+     (8): ReLU()
+     )
+     (mean): Linear(in_features=512, out_features=4, bias=True)
+     (scale): Sequential(
+     (0): Linear(in_features=512, out_features=4, bias=True)
+     (1): Softplus(beta=1, threshold=20)
+     )
+     )
+     (decoder): Pois(
+     (net): Sequential(
+     (0): Linear(in_features=4, out_features=512, bias=True)
+     (1): ReLU()
+     (2): Linear(in_features=512, out_features=1024, bias=True)
+     (3): ReLU()
+     (4): Linear(in_features=1024, out_features=8192, bias=True)
+     (5): ReLU()
+     (6): Reshape()
+     (7): ConvTranspose2d(32, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+     (8): ReLU()
+     (9): ConvTranspose2d(16, 1, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
+     (10): Softplus(beta=1, threshold=20)
+     )
+     )
+     )
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython
+     torch.save(model.state_dict(), f'/scratch/midway2/aksarkar/singlecell/planted_latent_{latent_dim}_epochs_{n_epochs}_lr_{lr:.1g}_run_{run}.pt')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[105]:
+   :END:
+
+   De-noise one of the "genes" ignoring spatial information.
+
+   #+BEGIN_SRC ipython
+     s = x.sum(axis=0)
+     fit0 = scmodes.ebpm.ebpm_gamma(x[0].ravel(), s.ravel(), tol=1e-7)
+     pm0 = np.where(s > 0, (x[0] + np.exp(fit0[1])) / (s + np.exp(fit0[1] - fit0[0])), 0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[114]:
+   :END:
+
+   De-noise the same "gene" using the spatial VAE.
+
+   #+BEGIN_SRC ipython
+     with torch.no_grad():
+       pm = model.decoder(model.encoder(torch.tensor(x[0], dtype=torch.float, device='cuda').unsqueeze(0).unsqueeze(0))[0]).squeeze().cpu().numpy()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[121]:
+   :END:
+
+   Plot a fitted "gene".
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-vae.org/planted-denoised.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7.5, 3)
+     im = ax[0].pcolormesh(x[0].T, cmap=colorcet.cm['fire'])
+     ax[0].set_title('Observed counts')
+     fig.colorbar(im, ax=ax[0], orientation='horizontal')
+
+     im = ax[1].pcolormesh(pm0.T, cmap=colorcet.cm['bmy'])
+     ax[1].set_title('Naive denoising')
+     fig.colorbar(im, ax=ax[1], orientation='horizontal')
+
+     im = ax[2].pcolormesh(pm.T, cmap=colorcet.cm['bmy'])
+     ax[2].set_title('Spatial denoising')
+     fig.colorbar(im, ax=ax[2], orientation='horizontal')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[129]:
+   [[file:figure/spatial-vae.org/planted-denoised.png]]
    :END:
 
 ** Visium

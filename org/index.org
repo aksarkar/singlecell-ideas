@@ -13,10 +13,6 @@ analysis plus some related topics.
   - [[file:zinb-vae-gmm.org][Deep unsupervised clustering of scRNA-seq data]]
   - [[file:nbmix.org][Model-based clustering of scRNA-seq data]]
   - [[file:voom.org][An improved voom transform for scRNA-seq data]]
-  - [[file:experimental-finemapping.org][Experimental fine-mapping of QTLs from
-    scRNA-seq data]]
-  - [[file:pseudobulk.org][Alternative approaches to scRNA-seq pseudobulk models]]
-  - [[file:scqtl.org][Single cell QTL mapping via sparse multiple regression]]
   - [[file:mpebpm.org][Massively Parallel Empirical Bayes Poisson Means]]
 
 * Single cell applications
@@ -25,7 +21,11 @@ analysis plus some related topics.
   - [[file:time-course.org][Fully unsupervised topic models of scRNA-seq time course data]]
   - [[file:diff-var.org][Differential variance analysis]]
   - [[file:montoro.org][Deconvolution of Montoro et al.]]
+  - [[file:pseudobulk.org][Alternative approaches to scRNA-seq pseudobulk models]]
+  - [[file:scqtl.org][Single cell QTL mapping via sparse multiple regression]]
   - [[file:trajectory.org][Cardiac trajectory prediction]]
+  - [[file:experimental-finemapping.org][Experimental fine-mapping of QTLs from
+    scRNA-seq data]]
   - [[file:alignment.org][Single cell alignment]]
   - [[file:pop-structure.org][Population structure in single cell data]]
 

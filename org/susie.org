@@ -2,6 +2,35 @@
 #+SETUPFILE: setup.org
 #+OPTIONS: toc:2
 
+* Introduction
+
+  One of the key challenges in interpreting non-coding variation is linking
+  regulatory variants to their target genes. One natural approach to solve this
+  problem is QTL mapping: directly associating genetic variation with gene
+  expression levels. QTL studies have revealed that genetic variants associated
+  with expression of a gene cluster near the transcription start site of that
+  gene ([[http://dx.doi.org/10.1371/journal.pgen.1000214][Veyrieras et al. 2008]], [[http://dx.doi.org/10.1126/science.1174148][Dimas et al. 2009]], [[https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1002639][Stranger et al. 2012]]). Large
+  scale efforts such as the Gene Tissue Expression Project (GTEx) have
+  systematically profiled gene expression across cell types, and sought to use
+  the insights from QTL mapping to make progress on interrogating the genetic
+  basis of disease ([[https://www.nature.com/articles/nature24277][GTEx consortium 2017]]).
+
+  However, recent efforts to experimentally fine map GWAS loci have shown that
+  causal non-coding variants can be more than 1 megabase from their target
+  gene, and may not even target the closest gene ([[https://www.nature.com/articles/nature09266][Musunru et al 2010]],
+  [[https://www.nejm.org/doi/full/10.1056/NEJMoa1502214][Claussnitzer et al. 2015]], [[https://elifesciences.org/articles/10557][Wang et al 2016]]). Further, enhancer-gene
+  interactions have been shown to be limited by topologically associated domain
+  boundaries, rather than genomic distance ([[https://www.cell.com/cell/fulltext/S0092-8674(15)00377-3][Lupiáñes et al. 2015]]). These
+  handful of examples are supported by systematic profiling of chromatin
+  interactions ([[https://www.nature.com/articles/nature12716][Zhang et al. 2013]]) and high throughput perturbation assays
+  ([[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5438575/][Fulco et al. 2016]]).
+
+  Here, we develop a new method to fine map QTLs which does not assume that
+  SNPs target the nearest gene, or are within 1 MB of their target gene. The
+  key idea of our approach is to develop a novel multivariate fine mapping
+  approach under the prior assumption that any single SNP can have a non-zero
+  effect on at most one phenotype.
+
 * Setup                                                            :noexport:
 
   #+BEGIN_SRC emacs-lisp
@@ -49,35 +78,6 @@
   :RESULTS:
   # Out[2]:
   :END:
-
-* Introduction
-
-  One of the key challenges in interpreting non-coding variation is linking
-  regulatory variants to their target genes. One natural approach to solve this
-  problem is QTL mapping: directly associating genetic variation with gene
-  expression levels. QTL studies have revealed that genetic variants associated
-  with expression of a gene cluster near the transcription start site of that
-  gene ([[http://dx.doi.org/10.1371/journal.pgen.1000214][Veyrieras et al. 2008]], [[http://dx.doi.org/10.1126/science.1174148][Dimas et al. 2009]], [[https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1002639][Stranger et al. 2012]]). Large
-  scale efforts such as the Gene Tissue Expression Project (GTEx) have
-  systematically profiled gene expression across cell types, and sought to use
-  the insights from QTL mapping to make progress on interrogating the genetic
-  basis of disease ([[https://www.nature.com/articles/nature24277][GTEx consortium 2017]]).
-
-  However, recent efforts to experimentally fine map GWAS loci have shown that
-  causal non-coding variants can be more than 1 megabase from their target
-  gene, and may not even target the closest gene ([[https://www.nature.com/articles/nature09266][Musunru et al 2010]],
-  [[https://www.nejm.org/doi/full/10.1056/NEJMoa1502214][Claussnitzer et al. 2015]], [[https://elifesciences.org/articles/10557][Wang et al 2016]]). Further, enhancer-gene
-  interactions have been shown to be limited by topologically associated domain
-  boundaries, rather than genomic distance ([[https://www.cell.com/cell/fulltext/S0092-8674(15)00377-3][Lupiáñes et al. 2015]]). These
-  handful of examples are supported by systematic profiling of chromatin
-  interactions ([[https://www.nature.com/articles/nature12716][Zhang et al. 2013]]) and high throughput perturbation assays
-  ([[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5438575/][Fulco et al. 2016]]).
-
-  Here, we develop a new method to fine map QTLs which does not assume that
-  SNPs target the nearest gene, or are within 1 MB of their target gene. The
-  key idea of our approach is to develop a novel multivariate fine mapping
-  approach under the prior assumption that any single SNP can have a non-zero
-  effect on at most one phenotype.
 
 * Methods
 ** Two step fine-mapping approach

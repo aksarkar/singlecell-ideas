@@ -4,40 +4,55 @@
 A collection of various (often incomplete or broken) ideas for single cell
 analysis plus some related topics.
 
-- [[file:cellassign.org][Installing cellAssign]]
-- [[file:horseshoe.org][Empirical Bayes inference for the horseshoe prior]]
-- [[file:pglmm.org][Poisson GLMM for differential expression]]
-- [[file:flows.org][Normalizing flows for EBPM]]
-- [[file:tsne.org][Pathological input to t-SNE]]
-- [[file:spatial-vae.org][Convolutional VAE for spatial transcriptomic data]]
-- [[file:zinb-em.org][EM algorithm for point-Gamma expression model]]
-- [[file:taylor.org][Taylor expansions for single cell transforms]]
-- [[file:zinb-vae-gmm.org][Deep unsupervised clustering of scRNA-seq data]]
-- [[file:sparse-pois-fa.org][Sparse Poisson Factor Analysis]]
-- [[file:grand-challenges.org][Grand challenges in single-cell data science]]
-- [[file:prior-scaling.org][Scaling priors for regression models]]
-- [[file:voom.org][An improved voom transform for scRNA-seq data]]
-- [[file:experimental-finemapping.org][Experimental fine-mapping of QTLs from
-  scRNA-seq data]]
-- [[file:nbmix.org][Model-based clustering of scRNA-seq data]]
-- [[file:pseudobulk.org][Alternative approaches to scRNA-seq pseudobulk models]]
-- [[file:scqtl.org][Single cell QTL mapping via sparse multiple regression]]
-- [[file:rpp.org][Parallel computation of randomized quantiles]]
-- [[file:noisy-topics.org][Noisy topic models]]
-- [[file:mpebpm.org][Massively Parallel Empirical Bayes Poisson Means]]
-- [[file:mnn.org][Mutual nearest neighbors in topic model space]]
-- [[file:time-course.org][Fully unsupervised topic models of scRNA-seq time course data]]
-- [[file:pois-beta.org][Poisson-Beta model]]
-- [[file:ebpmf.org][Empirical Bayes Poisson Matrix Factorization]]
-- [[file:species-var.org][Correlation of gene expression variance across species]]
-- [[file:diff-var.org][Differential variance analysis]]
-- [[file:mediation.org][Causal mediation analysis]]
-- [[file:montoro.org][Deconvolution of Montoro et al.]]
-- [[file:gom.org][Two-group grade of membership model]]
-- [[file:trajectory.org][Cardiac trajectory prediction]]
-- [[file:alignment.org][Single cell alignment]]
-- [[file:wlra.org][Weighted low rank approximation]]
-- [[file:susie.org][Multivariate fine mapping]]
-- [[file:pop-structure.org][Population structure in single cell data]]
-- [[file:scvi.org][+SCVI+]]
-- [[file:vae.org][+VAE for single-cell expression+]]
+* Expression models
+
+  - [[file:flows.org][*Normalizing flows for EBPM*]]
+  - [[file:spatial-vae.org][*Convolutional VAE for spatial transcriptomic data*]]
+  - [[file:zinb-em.org][EM algorithm for point-Gamma expression model]]
+  - [[file:taylor.org][Taylor expansions for single cell transforms]]
+  - [[file:zinb-vae-gmm.org][Deep unsupervised clustering of scRNA-seq data]]
+  - [[file:nbmix.org][Model-based clustering of scRNA-seq data]]
+  - [[file:voom.org][An improved voom transform for scRNA-seq data]]
+  - [[file:experimental-finemapping.org][Experimental fine-mapping of QTLs from
+    scRNA-seq data]]
+  - [[file:pseudobulk.org][Alternative approaches to scRNA-seq pseudobulk models]]
+  - [[file:scqtl.org][Single cell QTL mapping via sparse multiple regression]]
+  - [[file:mpebpm.org][Massively Parallel Empirical Bayes Poisson Means]]
+
+* Single cell applications
+
+  - [[file:pglmm.org][Poisson GLMM for differential expression]]
+  - [[file:time-course.org][Fully unsupervised topic models of scRNA-seq time course data]]
+  - [[file:diff-var.org][Differential variance analysis]]
+  - [[file:montoro.org][Deconvolution of Montoro et al.]]
+  - [[file:trajectory.org][Cardiac trajectory prediction]]
+  - [[file:alignment.org][Single cell alignment]]
+  - [[file:pop-structure.org][Population structure in single cell data]]
+
+* Other applications
+
+  - [[file:species-var.org][Correlation of gene expression variance across species]]
+
+* Theory
+
+  - [[file:grand-challenges.org][*Grand challenges in single-cell data science*]]
+  - [[file:pois-beta.org][Poisson-Beta model]]
+
+* General methods development
+
+  - [[file:horseshoe.org][Empirical Bayes inference for the horseshoe prior]]
+  - [[file:sparse-pois-fa.org][Sparse Poisson Factor Analysis]]
+  - [[file:prior-scaling.org][Scaling priors for regression models]]
+  - [[file:rpp.org][Parallel computation of randomized quantiles]]
+  - [[file:noisy-topics.org][Noisy topic models]]
+  - [[file:mnn.org][Mutual nearest neighbors in topic model space]]
+  - [[file:ebpmf.org][Empirical Bayes Poisson Matrix Factorization]]
+  - [[file:mediation.org][Causal mediation analysis]]
+  - [[file:gom.org][Two-group grade of membership model]]
+  - [[file:wlra.org][Weighted low rank approximation]]
+  - [[file:susie.org][Multivariate fine mapping]]
+
+* Computation
+
+  - [[file:cellassign.org][Installing cellAssign]]
+  - [[file:tsne.org][Pathological input to t-SNE]]

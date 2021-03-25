@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-03-18 Thu 09:32 -->
+<!-- 2021-03-25 Thu 18:49 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Single cell ideas</title>
@@ -231,54 +231,110 @@ for the JavaScript code in this tag.
 <body>
 <div id="content">
 <h1 class="title">Single cell ideas</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgd75b5ec">Expression models</a></li>
+<li><a href="#orga0fd2f1">Single cell applications</a></li>
+<li><a href="#org782d899">Other applications</a></li>
+<li><a href="#org81a6dcc">Theory</a></li>
+<li><a href="#org844768b">General methods development</a></li>
+<li><a href="#orgc8f4f70">Computation</a></li>
+</ul>
+</div>
+</div>
 <p>
 A collection of various (often incomplete or broken) ideas for single cell
 analysis plus some related topics.
 </p>
 
+<div id="outline-container-orgd75b5ec" class="outline-2">
+<h2 id="orgd75b5ec">Expression models</h2>
+<div class="outline-text-2" id="text-orgd75b5ec">
 <ul class="org-ul">
-<li><a href="cellassign.html">Installing cellAssign</a></li>
-<li><a href="horseshoe.html">Empirical Bayes inference for the horseshoe prior</a></li>
-<li><a href="pglmm.html">Poisson GLMM for differential expression</a></li>
-<li><a href="flows.html">Normalizing flows for EBPM</a></li>
-<li><a href="tsne.html">Pathological input to t-SNE</a></li>
-<li><a href="spatial-vae.html">Convolutional VAE for spatial transcriptomic data</a></li>
+<li><a href="flows.html"><b>Normalizing flows for EBPM</b></a></li>
+<li><a href="spatial-vae.html"><b>Convolutional VAE for spatial transcriptomic data</b></a></li>
 <li><a href="zinb-em.html">EM algorithm for point-Gamma expression model</a></li>
 <li><a href="taylor.html">Taylor expansions for single cell transforms</a></li>
 <li><a href="zinb-vae-gmm.html">Deep unsupervised clustering of scRNA-seq data</a></li>
-<li><a href="sparse-pois-fa.html">Sparse Poisson Factor Analysis</a></li>
-<li><a href="grand-challenges.html">Grand challenges in single-cell data science</a></li>
-<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
+<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
 <li><a href="voom.html">An improved voom transform for scRNA-seq data</a></li>
 <li><a href="experimental-finemapping.html">Experimental fine-mapping of QTLs from
 scRNA-seq data</a></li>
-<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
 <li><a href="pseudobulk.html">Alternative approaches to scRNA-seq pseudobulk models</a></li>
 <li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
 <li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orga0fd2f1" class="outline-2">
+<h2 id="orga0fd2f1">Single cell applications</h2>
+<div class="outline-text-2" id="text-orga0fd2f1">
+<ul class="org-ul">
+<li><a href="pglmm.html">Poisson GLMM for differential expression</a></li>
 <li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
 <li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
 <li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
 <li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
 <li><a href="alignment.html">Single cell alignment</a></li>
+<li><a href="pop-structure.html">Population structure in single cell data</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org782d899" class="outline-2">
+<h2 id="org782d899">Other applications</h2>
+<div class="outline-text-2" id="text-org782d899">
+<ul class="org-ul">
+<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org81a6dcc" class="outline-2">
+<h2 id="org81a6dcc">Theory</h2>
+<div class="outline-text-2" id="text-org81a6dcc">
+<ul class="org-ul">
+<li><a href="grand-challenges.html"><b>Grand challenges in single-cell data science</b></a></li>
+<li><a href="pois-beta.html">Poisson-Beta model</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org844768b" class="outline-2">
+<h2 id="org844768b">General methods development</h2>
+<div class="outline-text-2" id="text-org844768b">
+<ul class="org-ul">
+<li><a href="horseshoe.html">Empirical Bayes inference for the horseshoe prior</a></li>
+<li><a href="sparse-pois-fa.html">Sparse Poisson Factor Analysis</a></li>
+<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
+<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
+<li><a href="noisy-topics.html">Noisy topic models</a></li>
+<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
+<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
+<li><a href="mediation.html">Causal mediation analysis</a></li>
+<li><a href="gom.html">Two-group grade of membership model</a></li>
 <li><a href="wlra.html">Weighted low rank approximation</a></li>
 <li><a href="susie.html">Multivariate fine mapping</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-<li><a href="scvi.html"><del>SCVI</del></a></li>
-<li><a href="vae.html"><del>VAE for single-cell expression</del></a></li>
 </ul>
+</div>
+</div>
+
+<div id="outline-container-orgc8f4f70" class="outline-2">
+<h2 id="orgc8f4f70">Computation</h2>
+<div class="outline-text-2" id="text-orgc8f4f70">
+<ul class="org-ul">
+<li><a href="cellassign.html">Installing cellAssign</a></li>
+<li><a href="tsne.html">Pathological input to t-SNE</a></li>
+</ul>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-03-18 Thu 09:32</p>
+<p class="date">Created: 2021-03-25 Thu 18:49</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

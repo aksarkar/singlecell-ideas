@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2021-03-27 Sat 15:15 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is eQTL analysis robust to removing some data points?</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Is eQTL analysis robust to removing some data points?</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#orgfd5600e">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org05a3fb0">Methods</a>
+<ul>
+<li><a href="#org50af25e">Simple linear regression</a></li>
+<li><a href="#orgeb7a5ae">eQTL simulation</a></li>
+</ul>
+</li>
+<li><a href="#org67e47d8">Results</a>
+<ul>
+<li><a href="#orgecfb678">Sanity check</a></li>
+<li><a href="#org6f06555">Easy simulation</a></li>
+<li><a href="#org288c377">Simulated eQTL</a></li>
+<li><a href="#org693dc12">Real eQTLs</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgfd5600e" class="outline-2">
+<h2 id="orgfd5600e">Introduction</h2>
+<div class="outline-text-2" id="text-orgfd5600e">
+<p>
+eQTL analysis is typically performed by fitting a series of simple linear
+regressions \(
+  \DeclareMathOperator\N{\mathcal{N}}
+  \DeclareMathOperator*\argmax{arg max}
+  \newcommand\ones{\boldsymbol{1}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vw{\mathbf{w}}
+  \newcommand\vy{\mathbf{y}}
+  \)
+</p>
+
+\begin{equation}
+  y_i \sim \N(x_i b, \sigma^2), \qquad i = 1, \ldots, n
+\end{equation}
+
+<p>
+where \(y_i\) denotes the phenotype of individual \(i\), and \(x_i\) denotes
+the genotype at the SNP of interest (for simplicity, centered and
+scaled). Typically, one estimates \(\hat{b}\) and tests its statistical
+significance.
+</p>
+
+<p>
+<a href="https://arxiv.org/abs/2011.14999">Broderick et al. 2020</a> demonstrate that
+such inferences can be not robust (e.g., changing statistical significance)
+to removing some of the data points, due to reasons <i>other than</i> heavy tailed
+errors, outliers, etc. The key ideas of their methodology are: (1) introduce
+a weight for each data point \(w_i\), so that dropping sample \(i\)
+corresponds to setting \(w_i = 0\); (2) write the inference problem (e.g.,
+significance testing) as a functional \(\phi\) of the weighted data and an
+estimator \(\hat{b}(\cdot)\); and (3) write the question of robustness as an
+optimization problem
+</p>
+
+\begin{align}
+  \vw^* &= \argmax_{\vw \in \mathcal{W}} \phi(\hat{b}(\vx, \vy, \vw), \vw) - \phi(\hat{b}(\vx, \vy, \ones), \ones)\\
+  &\approx \argmax_{\vw \in \mathcal{W}} \sum_i \left(\frac{\partial\phi}{\partial w_i} \Bigg\rvert_{\vw = \ones}\right)
+\end{align}
+
+<p>
+where \(\mathcal{W}\) is some subset of all possible subsets of the data
+(e.g., all subsets of size \(m\)) and the last approximation is made via
+first-order Taylor expansion. Here, we play with this idea in the context of
+eQTL mapping, using simulations based on sample sizes used in real studies,
+and realistic effect sizes (Gusev et al. 2016, Wheeler et al. 2016). We also
+extend the methodology to the <i>susie</i> model (Wang et al. 2020).
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgc3f3f49" class="outline-2">
+<h2 id="setup"><a id="orgc3f3f49"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> sqlite3
+<span class="org-keyword">import</span> torch
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org05a3fb0" class="outline-2">
+<h2 id="org05a3fb0">Methods</h2>
+<div class="outline-text-2" id="text-org05a3fb0">
+</div>
+<div id="outline-container-org50af25e" class="outline-3">
+<h3 id="org50af25e">Simple linear regression</h3>
+<div class="outline-text-3" id="text-org50af25e">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">ols_bhat</span>(x, y, w):
+  <span class="org-keyword">assert</span> x.shape == y.shape
+  <span class="org-keyword">assert</span> y.shape == w.shape
+  <span class="org-variable-name">xtx</span> = x.T @ torch.diag(w.squeeze()) @ x
+  <span class="org-variable-name">bhat</span> = torch.solve(x.T @ torch.diag(w.squeeze()) @ y, xtx)[0]
+  <span class="org-variable-name">s2</span> = torch.<span class="org-builtin">sum</span>(w * (y - x @ bhat) ** 2) / (y.shape[0] - bhat.shape[0])
+  <span class="org-variable-name">se</span> = torch.sqrt(s2 / xtx)
+  <span class="org-keyword">return</span> bhat, se
+
+<span class="org-keyword">def</span> <span class="org-function-name">ols_sign</span>(bhat, se, w):
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: we want to change sign from positive to negative</span>
+  <span class="org-keyword">return</span> -bhat
+
+<span class="org-keyword">def</span> <span class="org-function-name">ols_fwer</span>(bhat, se, w, alpha=.05 / 20000):
+  <span class="org-doc">"""Indicator whether the test was significant at level 0.05 after Bonferroni</span>
+<span class="org-doc">correction</span>
+
+<span class="org-doc">  By default, assume p = 20,000 tests"""</span>
+  <span class="org-keyword">if</span> bhat &gt; 0:
+    <span class="org-keyword">return</span> -bhat / se + st.norm.ppf(alpha)
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">return</span> bhat / se - st.norm.ppf(alpha)
+
+<span class="org-keyword">def</span> <span class="org-function-name">ols_influence</span>(x, y, phi, **kwargs):
+  <span class="org-variable-name">w</span> = torch.ones_like(y, requires_grad=<span class="org-constant">True</span>)
+  <span class="org-variable-name">bhat</span>, <span class="org-variable-name">se</span> = ols_bhat(x, y, w)
+  <span class="org-keyword">assert</span> torch.isfinite(bhat)
+  <span class="org-variable-name">phi</span> = phi(bhat, se, w, **kwargs)
+  phi.backward()
+  <span class="org-keyword">with</span> torch.no_grad():
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: we need negative influence elsewhere</span>
+    <span class="org-keyword">return</span> bhat.squeeze().numpy(), se.squeeze().numpy(), w.grad.squeeze().numpy()
+
+<span class="org-keyword">def</span> <span class="org-function-name">ols_prop_sign_change</span>(x, y):
+  <span class="org-variable-name">bhat</span>, <span class="org-variable-name">se</span>, <span class="org-variable-name">influence</span> = ols_influence(x, y, ols_sign)
+  <span class="org-variable-name">res</span> = {<span class="org-string">'bhat'</span>: bhat, <span class="org-string">'se'</span>: se}
+  <span class="org-keyword">if</span> bhat &gt; 0:
+    <span class="org-variable-name">target</span> = -bhat
+    <span class="org-variable-name">drop</span> = np.where((np.cumsum(np.sort(influence)) &lt; target))[0]
+  <span class="org-keyword">else</span>:
+    <span class="org-variable-name">target</span> = bhat
+    <span class="org-variable-name">drop</span> = np.where((np.cumsum(np.sort(-influence)) &lt; target))[0]
+  <span class="org-keyword">if</span> drop.size &gt; 0:
+    <span class="org-variable-name">n_drop</span> = drop[0]
+    <span class="org-variable-name">res</span>[<span class="org-string">'n_drop'</span>] = n_drop
+    <span class="org-variable-name">res</span>[<span class="org-string">'frac_drop'</span>] = n_drop / y.shape[0]
+    <span class="org-variable-name">idx</span> = np.argsort(influence)[:n_drop]
+    <span class="org-variable-name">res</span>[<span class="org-string">'drop'</span>] = idx
+    <span class="org-variable-name">v</span> = torch.ones_like(y)
+    <span class="org-variable-name">v</span>[idx] = 0
+    <span class="org-variable-name">bhat1</span>, <span class="org-variable-name">se1</span> = ols_bhat(x, y, v)
+    <span class="org-variable-name">res</span>[<span class="org-string">'bhat1'</span>] = bhat1
+    <span class="org-variable-name">res</span>[<span class="org-string">'se1'</span>] = se1
+  <span class="org-keyword">return</span> res
+
+<span class="org-keyword">def</span> <span class="org-function-name">ols_prop_fwer_change</span>(x, y, alpha=.05 / 20000):
+  <span class="org-variable-name">bhat</span>, <span class="org-variable-name">se</span>, <span class="org-variable-name">influence</span> = ols_influence(x, y, ols_fwer, alpha=alpha)
+  <span class="org-variable-name">res</span> = {<span class="org-string">'bhat'</span>: bhat, <span class="org-string">'se'</span>: se, <span class="org-string">'pval'</span>: <span class="org-builtin">min</span>(st.norm.sf(bhat / se), st.norm.sf(-bhat / se))}
+  <span class="org-keyword">if</span> bhat &gt; 0:
+    <span class="org-variable-name">target</span> = -bhat / se + st.norm.sf(alpha / 2)
+    <span class="org-variable-name">drop</span> = np.where((np.cumsum(np.sort(influence)) &lt; target))[0]
+  <span class="org-keyword">else</span>:
+    <span class="org-variable-name">target</span> = bhat / se - st.norm.sf(alpha / 2)
+    <span class="org-variable-name">drop</span> = np.where((np.cumsum(np.sort(-influence)) &lt; target))[0]
+  <span class="org-keyword">if</span> drop.size &gt; 0:
+    <span class="org-variable-name">n_drop</span> = drop[0]
+    <span class="org-variable-name">res</span>[<span class="org-string">'n_drop'</span>] = n_drop
+    <span class="org-variable-name">res</span>[<span class="org-string">'frac_drop'</span>] = n_drop / y.shape[0]
+    <span class="org-variable-name">idx</span> = np.argsort(influence)[:n_drop]
+    <span class="org-variable-name">res</span>[<span class="org-string">'drop'</span>] = idx
+    <span class="org-variable-name">v</span> = torch.ones_like(y)
+    <span class="org-variable-name">v</span>[idx] = 0
+    <span class="org-variable-name">bhat1</span>, <span class="org-variable-name">se1</span> = ols_bhat(x, y, v)
+    <span class="org-variable-name">res</span>[<span class="org-string">'bhat1'</span>] = bhat1
+    <span class="org-variable-name">res</span>[<span class="org-string">'se1'</span>] = se1
+    <span class="org-variable-name">res</span>[<span class="org-string">'pval1'</span>] = st.norm.sf(bhat1 / se1)
+  <span class="org-keyword">return</span> res
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgeb7a5ae" class="outline-3">
+<h3 id="orgeb7a5ae">eQTL simulation</h3>
+<div class="outline-text-3" id="text-orgeb7a5ae">
+<p>
+Simulate genotypes at one SNP with allele frequency \(f\), and generate
+noise so that the PVE by the simulated genotype is as specified.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate_easy</span>(n, pve, seed=0):
+  <span class="org-variable-name">rng</span> = np.random.default_rng(seed)
+  <span class="org-variable-name">x</span> = rng.normal(size=n)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: fix b = 1</span>
+  <span class="org-variable-name">e</span> = rng.normal(scale=np.sqrt(((1 / pve) - 1)) * x.var(), size=n)
+  <span class="org-variable-name">y</span> = x + e
+  <span class="org-variable-name">x</span> -= x.mean()
+  <span class="org-variable-name">x</span> /= x.std()
+  <span class="org-variable-name">y</span> -= y.mean()
+  <span class="org-keyword">return</span> torch.tensor(x).unsqueeze(1), torch.tensor(y).unsqueeze(1)
+
+<span class="org-keyword">def</span> <span class="org-function-name">simulate</span>(n, f, pve, seed=0):
+  <span class="org-variable-name">rng</span> = np.random.default_rng(seed)
+  <span class="org-variable-name">x</span> = rng.binomial(n=2, p=f, size=n).astype(<span class="org-builtin">float</span>)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: fix b = 1</span>
+  <span class="org-variable-name">e</span> = rng.normal(scale=np.sqrt(((1 / pve) - 1)) * x.var(), size=n)
+  <span class="org-variable-name">y</span> = x + e
+  <span class="org-variable-name">x</span> -= x.mean()
+  <span class="org-variable-name">x</span> /= x.std()
+  <span class="org-variable-name">y</span> -= y.mean()
+  <span class="org-keyword">return</span> torch.tensor(x).unsqueeze(1), torch.tensor(y).unsqueeze(1)
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org67e47d8" class="outline-2">
+<h2 id="org67e47d8">Results</h2>
+<div class="outline-text-2" id="text-org67e47d8">
+</div>
+<div id="outline-container-orgecfb678" class="outline-3">
+<h3 id="orgecfb678">Sanity check</h3>
+<div class="outline-text-3" id="text-orgecfb678">
+<p>
+Check our implementation against the analytic expression (eq. 2.13).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = simulate(n=100, f=0.25, pve=0.01, seed=0)
+<span class="org-variable-name">w</span> = torch.ones_like(y, requires_grad=<span class="org-constant">True</span>)
+<span class="org-variable-name">bhat</span>, <span class="org-variable-name">se</span> = ols_bhat(x, y, w)
+bhat.backward()
+torch.isclose(w.grad, x * (y - x @ bhat) / (x.T @ x)).<span class="org-builtin">all</span>()
+</pre>
+</div>
+
+<pre class="example">
+tensor(True)
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org6f06555" class="outline-3">
+<h3 id="org6f06555">Easy simulation</h3>
+<div class="outline-text-3" id="text-org6f06555">
+<p>
+Simulate an example where the linear approximation is unlikely to be a
+problem.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = simulate_easy(n=10000, pve=0.01)
+<span class="org-variable-name">bhat</span>, <span class="org-variable-name">se</span>, <span class="org-variable-name">influence</span> = ols_influence(x, y, ols_sign)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n_drop</span> = np.where(np.cumsum(np.sort(influence)) &lt; -bhat)[0][0]
+<span class="org-variable-name">idx</span> = np.argsort(influence)[:n_drop]
+n_drop / x.shape[0]
+</pre>
+</div>
+
+<pre class="example">
+0.0304
+
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">v</span> = torch.ones_like(y, requires_grad=<span class="org-constant">False</span>)
+<span class="org-variable-name">v</span>[idx] = 0
+ols_bhat(x, y, v)
+</pre>
+</div>
+
+<pre class="example">
+(tensor([[-0.0946]], dtype=torch.float64),
+tensor([[0.0979]], dtype=torch.float64))
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">ols_prop_sign_change(x, y)
+</pre>
+</div>
+
+<pre class="example">
+{'bhat': array(0.85542434),
+'se': array(0.09851568),
+'n_drop': 304,
+'frac_drop': 0.0304,
+'bhat1': tensor([[-0.0946]], dtype=torch.float64),
+'se1': tensor([[0.0979]], dtype=torch.float64)}
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org288c377" class="outline-3">
+<h3 id="org288c377">Simulated eQTL</h3>
+<div class="outline-text-3" id="text-org288c377">
+<p>
+Simulate an eQTL with realistic allele frequency, sample size, and effect
+size. Report how many data points need to be removed to change the sign of
+\(\hat{b}\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = simulate(n=100, f=0.15, pve=0.02)
+<span class="org-variable-name">res</span> = ols_prop_sign_change(x, y)
+res
+</pre>
+</div>
+
+<pre class="example">
+{'bhat': array(0.39178643),
+'se': array(0.21633481),
+'n_drop': 9,
+'frac_drop': 0.09,
+'drop': array([94, 97, 38, 89, 61, 40, 92, 37, 48]),
+'bhat1': tensor([[-0.0382]], dtype=torch.float64),
+'se1': tensor([[0.1885]], dtype=torch.float64)}
+</pre>
+
+<p>
+Report how many data points need to be removed to make the result not
+significant at level \(\alpha = 0.05\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res1</span> = ols_prop_fwer_change(x, y, alpha=0.05)
+res1
+</pre>
+</div>
+
+<pre class="example">
+{'bhat': array(0.39178643),
+'se': array(0.21633481),
+'pval': 0.03506895996320592,
+'n_drop': 6,
+'frac_drop': 0.06,
+'drop': array([94, 97, 38, 89, 37, 26]),
+'bhat1': tensor([[0.0803]], dtype=torch.float64),
+'se1': tensor([[0.2257]], dtype=torch.float64),
+'pval1': array([[0.36104071]])}
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(3, 3)
+
+<span class="org-variable-name">xx</span> = x.squeeze().numpy() + np.random.normal(scale=0.1, size=x.shape[0])
+plt.scatter(xx, y.squeeze().numpy(), c=<span class="org-string">'0.7'</span>, s=2, label=<span class="org-string">'Full data'</span>)
+plt.plot([x.<span class="org-builtin">min</span>(), x.<span class="org-builtin">max</span>()], [x.<span class="org-builtin">min</span>() * res[<span class="org-string">'bhat'</span>], x.<span class="org-builtin">max</span>() * res[<span class="org-string">'bhat'</span>]], c=<span class="org-string">'0.7'</span>, lw=1)
+<span class="org-keyword">for</span> i, (r, l, m) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>([res, res1], [<span class="org-string">'Sign'</span>, <span class="org-string">'Significance'</span>], [<span class="org-string">'x'</span>, <span class="org-string">'+'</span>])):
+  plt.plot([x.<span class="org-builtin">min</span>(), x.<span class="org-builtin">max</span>()], [x.<span class="org-builtin">min</span>() * r[<span class="org-string">'bhat1'</span>], x.<span class="org-builtin">max</span>() * r[<span class="org-string">'bhat1'</span>]], c=cm(i), lw=1)
+  plt.scatter(xx[r[<span class="org-string">'drop'</span>]], y[r[<span class="org-string">'drop'</span>]], marker=m, s=16, c=cm(i), label=l)
+plt.legend(handletextpad=0)
+plt.xlabel(<span class="org-string">'Standardized genotype'</span>)
+plt.ylabel(<span class="org-string">'Phenotype'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/influence.org/ols-ex.png" alt="ols-ex.png">
+</p>
+</div>
+
+<p>
+Simulate an eQTL with effect size equal to the median <i>cis</i>-heritability.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = simulate(n=100, f=0.05, pve=0.16)
+<span class="org-variable-name">res</span> = ols_prop_sign_change(x, y)
+res
+</pre>
+</div>
+
+<pre class="example">
+{'bhat': array(0.39748651), 'se': array(0.02987226)}
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org693dc12" class="outline-3">
+<h3 id="org693dc12">Real eQTLs</h3>
+<div class="outline-text-3" id="text-org693dc12">
+<p>
+Look at the top eQTL in iPSC scRNA-seq (Sarkar et al. 2019).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">log_mu</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-log-mu.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+<span class="org-variable-name">logodds</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/density-estimation/design1/zi2-logodds.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+<span class="org-variable-name">genes</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-genes.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+
+<span class="org-keyword">for</span> x <span class="org-keyword">in</span> (log_mu, logodds):
+  <span class="org-keyword">del</span> x[<span class="org-string">'NA18498'</span>]
+
+<span class="org-comment-delimiter"># </span><span class="org-comment">Important: log(sigmoid(x)) = -softplus(-x)</span>
+<span class="org-variable-name">log_mean</span> = log_mu - np.log1p(np.exp(logodds))
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> sqlite3.connect(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db'</span>) <span class="org-keyword">as</span> conn:
+  <span class="org-variable-name">x</span> = pd.read_sql(<span class="org-string">'select * from mean_qtl_geno where gene = ?'</span>, con=conn, params=(<span class="org-string">'ENSG00000113558'</span>,)).set_index(<span class="org-string">'ind'</span>)[<span class="org-string">'value'</span>]
+<span class="org-variable-name">y</span> = log_mean.loc[<span class="org-string">'ENSG00000113558'</span>]
+<span class="org-variable-name">y</span> -= y.values.mean()
+<span class="org-variable-name">x</span> -= x.values.mean()
+<span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = x.align(y, join=<span class="org-string">'inner'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res</span> = ols_prop_fwer_change(torch.tensor(x.values.reshape(-1, 1)), torch.tensor(y.values.reshape(-1, 1)), alpha=0.005)
+res
+</pre>
+</div>
+
+<pre class="example">
+{'bhat': array(-0.19109817),
+'se': array(0.01067698),
+'pval': 6.096084570244492e-72}
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+np.random.seed(2)
+<span class="org-variable-name">xx</span> = x + np.random.normal(scale=0.1, size=x.shape[0])
+plt.scatter(xx, y, color=<span class="org-string">'0.7'</span>, s=2, label=<span class="org-string">'Full data'</span>)
+plt.xlabel(<span class="org-string">'Genotype'</span>)
+plt.ylabel(<span class="org-string">'Centered gene expression'</span>)
+plt.title(<span class="org-string">'SKP1'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/influence.org/skp1-ex.png" alt="skp1-ex.png">
+</p>
+</div>
+
+<p>
+Look at a weaker eQTL.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mean_qtl_stats</span> = pd.read_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/data/scqtl-mapping/zinb/mean.txt.gz'</span>, sep=<span class="org-string">' '</span>, index_col=0)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">mean_qtl_stats[mean_qtl_stats[<span class="org-string">'p_beta'</span>] &lt; 2.5e-6].sort_values(<span class="org-string">'p_beta'</span>, ascending=<span class="org-constant">False</span>).head()[[<span class="org-string">'p_nominal'</span>, <span class="org-string">'p_beta'</span>]]
+</pre>
+</div>
+
+<pre class="example">
+p_nominal    p_beta
+gene
+ENSG00000134184  1.593470e-09  0.000002
+ENSG00000105640  2.157150e-09  0.000002
+ENSG00000182362  9.817790e-10  0.000002
+ENSG00000145725  7.636840e-09  0.000002
+ENSG00000142684  1.657690e-09  0.000002
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">k</span> = <span class="org-string">'ENSG00000134184'</span>
+<span class="org-keyword">with</span> sqlite3.connect(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-qtl/browser/browser.db'</span>) <span class="org-keyword">as</span> conn:
+  <span class="org-variable-name">x</span> = pd.read_sql(<span class="org-string">'select * from mean_qtl_geno where gene = ?'</span>, con=conn, params=(k,)).set_index(<span class="org-string">'ind'</span>)[<span class="org-string">'value'</span>]
+<span class="org-variable-name">y</span> = log_mean.loc[k]
+<span class="org-variable-name">x</span> -= x.values.mean()
+<span class="org-variable-name">y</span> -= y.values.mean()
+<span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = x.align(y, join=<span class="org-string">'inner'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">res</span> = ols_prop_fwer_change(torch.tensor(x.values.reshape(-1, 1)), torch.tensor(y.values.reshape(-1, 1)), alpha=0.005)
+res
+</pre>
+</div>
+
+<pre class="example">
+{'bhat': array(-0.51927837),
+'se': array(0.07773376),
+'pval': 1.1929436208959757e-11}
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2021-03-27 Sat 15:15</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

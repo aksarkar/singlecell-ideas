@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- 2021-04-10 Sat 17:50 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buffering of RNA expression variation</title>
+<meta name="generator" content="Org mode">
+<meta name="author" content="Abhishek Sarkar">
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+  /*]]>*/-->
+</style>
+<link href="bootstrap.min.css" rel="stylesheet" />
+<link rel="stylesheet" type="text/css" href="htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Buffering of RNA expression variation</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#org9418fd7">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org3c14c2c">Methods</a>
+<ul>
+<li><a href="#orgd80032a">Data sets</a></li>
+<li><a href="#org67a5681">Measurement model for CITE-seq/REAP-seq observations</a></li>
+<li><a href="#org0f31b0e">Gamma mixture expression model</a></li>
+<li><a href="#orgbb73c25">Predicting protein expression from RNA expression</a></li>
+</ul>
+</li>
+<li><a href="#orgafffbe0">Results</a>
+<ul>
+<li><a href="#org60fc732">Pre-process the data</a></li>
+<li><a href="#orgf6750fe">CBMC CITE-seq</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org9418fd7" class="outline-2">
+<h2 id="org9418fd7">Introduction</h2>
+<div class="outline-text-2" id="text-org9418fd7">
+<p>
+Recent advances have enabled simultaneous, high-throughput measurement of RNA
+and protein expression (CITE-seq,
+<a href="https://www.nature.com/articles/nmeth.4380">Stoeckius et al. 2017</a>;
+REAP-seq, <a href="https://www.nature.com/articles/nbt.3973">Peterson et al. 2017</a>;
+Abseq, <a href="10.1038/srep44447">Shahi et al. 2017</a>). These experiments have
+revealed that protein expression is often only weakly correlated with RNA
+expression. However, the fact that RNA and protein expression are not
+necessarily perfectly correlated is well understood; indeed, early
+experiments in model organisms clearly indicate this lack of correlation
+(e.g., <a href="https://science.sciencemag.org/content/297/5584/1183">Elowitz et
+al. 2002</a>).
+</p>
+
+<p>
+To explain this lack of correlation, variation in RNA expression among single
+cells has been partitioned into <i>intrinsic variation</i> (i.e., due to the
+<i>action</i> of polymerase) and <i>extrinsic variation</i> (e.g., due to availability
+of polymerase, transcription factors, etc.; reviewed
+<a href="10.1016/j.cell.2008.09.050">Raj and van Oudenaarden
+2008</a>). Subsequently, physically-motivated statistical models of intrinsic
+variation in RNA expression have been developed and estimated from data
+(<a href="https://dx.doi.org/10.1006/tpbi.1995.1027">Peccoud and Ycart 1995</a>,
+<a href="https://dx.doi.org/10.1371/journal.pbio.0040309">Raj et al. 2006</a>,
+<a href="https://dx.doi.org/10.1126/science.1216379">Munsky et al. 2012</a>,
+<a href="https://dx.doi.org/10.1186/gb-2013-14-1-r7">Kim and Marioni 2013</a>,
+<a href="https://www.biorxiv.org/content/10.1101/657619v2">Amrhein et al. 2019</a>,
+<a href="https://www.nature.com/articles/s41586-018-0836-1">Larsson et
+al. 2019</a>). In turn, physically-motivated models of protein expression
+variation have been developed and estimated from data
+(<a href="https://www.pnas.org/content/97/13/7148">Paulsson et al. 2000</a>,
+<a href="https://www.pnas.org/content/99/20/12795">Swain et al. 2002</a>,
+<a href="10.1073/pnas.0803850105">Shahrezaei and Swain 2008</a>). In summary,
+these models indicate that protein expression variation is <i>buffered</i> against
+RNA expression variation through the process of translation.
+</p>
+
+<p>
+<b>Open problems.</b> How well can protein expression be predicted from RNA
+expression using recent high-throughput assays? How well can it be explained
+by additive models as opposed to more complex models? How can we combine
+fine-mapping (variable selection) models with multiple imputation
+(Rubin 1987) to handle denoised observations?
+</p>
+
+<p>
+What are the consequences of buffering of RNA expression variation at the
+protein expressionlevel on making biological inferences from RNA expression
+data alone? If RNA expression is a poor proxy for protein expression, does it
+follow that explaining genetic/environmental effects on phenotype through RNA
+expression alone is fundamentally limited, if not fundamentally flawed?
+</p>
+</div>
+</div>
+
+<div id="outline-container-org61785c6" class="outline-2">
+<h2 id="setup"><a id="org61785c6"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> anndata
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> pickle
+<span class="org-keyword">import</span> scanpy
+<span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
+<span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> scmodes
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> rpy2.robjects.packages
+<span class="org-keyword">import</span> rpy2.robjects.pandas2ri
+rpy2.robjects.pandas2ri.activate()
+<span class="org-variable-name">ashr</span> = rpy2.robjects.packages.importr(<span class="org-string">'ashr'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.collections
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org3c14c2c" class="outline-2">
+<h2 id="org3c14c2c">Methods</h2>
+<div class="outline-text-2" id="text-org3c14c2c">
+</div>
+<div id="outline-container-orgd80032a" class="outline-3">
+<h3 id="orgd80032a">Data sets</h3>
+<div class="outline-text-3" id="text-orgd80032a">
+<ul class="org-ul">
+<li>CBMC CITE-seq (<a href="https://www.nature.com/articles/nmeth.4380">Stoeckius et
+al. 2017</a>;
+<a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE100866">GSE100866</a>)</li>
+
+<li>REAP-seq (<a href="https://www.nature.com/articles/nbt.3973">Peterson et
+al. 2017</a>;
+<a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE100501">GSE100501</a>)</li>
+
+<li><p>
+PBMC CITE-seq
+(<a href="https://www.frontiersin.org/articles/10.3389/fimmu.2021.636720/full">Lawlor
+et al. 2021</a>;
+<a href="https://data.humancellatlas.org/explore/projects/efea6426-510a-4b60-9a19-277e52bfa815">data
+available from HCA</a>)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh">parallel curl --ftp-pasv -O &lt;&lt;EOF
+<span class="org-sh-heredoc">https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100866/suppl/GSE100866_CBMC_8K_13AB_10X-ADT_umi.csv.gz</span>
+<span class="org-sh-heredoc">https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100866/suppl/GSE100866_CBMC_8K_13AB_10X-RNA_umi.csv.gz</span>
+<span class="org-sh-heredoc">https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100866/suppl/GSE100866_CD8_merged-ADT_umi.csv.gz</span>
+<span class="org-sh-heredoc">https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100866/suppl/GSE100866_CD8_merged-RNA_umi.csv.gz</span>
+<span class="org-sh-heredoc">https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100866/suppl/GSE100866_PBMC_vs_flow_10X-ADT_umi.csv.gz</span>
+<span class="org-sh-heredoc">https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/GSE100866/suppl/GSE100866_PBMC_vs_flow_10X-RNA_umi.csv.gz</span>
+<span class="org-sh-heredoc">EOF</span>
+curl <span class="org-string">"https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE100501&amp;format=file"</span> -o GSE100501.tar
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-sh">mkdir -p reap-seq
+tar xf GSE100501.tar -C reap-seq
+</pre>
+</div></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org67a5681" class="outline-3">
+<h3 id="org67a5681">Measurement model for CITE-seq/REAP-seq observations</h3>
+<div class="outline-text-3" id="text-org67a5681">
+<p>
+Recall that observed RNA molecule counts \(x_{ij}\) at gene \(j = 1, \ldots
+   p\) in sample \(i = 1, \ldots, n\) can be described as
+(<a href="https://dx.doi.org/10.1101/2020.04.07.030007">Sarkar and Stephens 2020</a>) \(
+   \DeclareMathOperator\Bern{Bernoulli}
+   \DeclareMathOperator\Pois{Poisson}
+   \DeclareMathOperator\Gam{Gamma}
+   \newcommand\E[1]{\left\langle #1 \right\rangle}
+   \newcommand\xiplus{x_{i+}}
+   \newcommand\yiplus{y_{i+}}
+   \newcommand\const{\mathrm{const}}
+   \)
+</p>
+
+\begin{equation}
+  x_{ij} \mid \xiplus, \lambda_{ij} \sim \Pois(\xiplus \lambda_{ij})
+\end{equation}
+
+<p>
+where \(\lambda_{ij}\) denotes (latent) relative gene expression level and
+\(\xiplus \triangleq \sum_j x_{ij}\). Protein expression levels measured via
+CITE-seq/REAP-seq are counts of unique barcodes (similar to UMIs);
+therefore, it is reasonable to begin with a Poisson measurement model for
+observed protein molecule counts,
+</p>
+
+\begin{equation}
+  y_{ij} \mid \yiplus, \rho_{ij} \sim \Pois(\yiplus \rho_{ij}),
+\end{equation}
+
+<p>
+where \(\rho_{ij}\) denotes (latent) relative protein expression level and
+\(\yiplus \triangleq \sum_j y_{ij}\). It follows that a single-gene <i>protein
+expression model</i> can be specified as a distribution \(\rho_{ij} \sim
+   \tilde{g}_j(\cdot)\), analogous to models for RNA expression variation
+\(\lambda_{ij} \sim g_j(\cdot)\).
+</p>
+
+<p>
+<i>Remark.</i> <code>totalVI</code>
+(<a href="https://www.nature.com/articles/s41592-020-01050-x">Gayoso et al. 2021</a>)
+combines a Poisson measurement model with a protein expression model
+</p>
+
+\begin{equation}
+  \rho_{ij} \mid \pi_j, \mu_j, \phi_j \sim \tilde{g}_j \triangleq \pi_j \Gam(\phi_j^{-1}, \phi_j^{-1}) + (1 - \pi_j) \Gam(\phi_j^{-1}, \phi_j^{-1}\mu_j^{-1}),
+\end{equation}
+
+<p>
+where the Gamma distribution is parameterized by shape and rate, and the
+mixture components represent background (non-specific) and foreground (tagged)
+distributions of antibody abundances. However, the motivation for the
+specific choice of background component is not clear. <code>cTP-net</code>
+(<a href="https://www.nature.com/articles/s41467-020-14391-0">Zhou et al. 2020</a>)
+minimizes the \(\ell_1\)-norm of the difference between relative protein
+expression levels predicted using de-noised RNA expression levels and the
+observed
+<a href="https://en.wikipedia.org/wiki/Compositional_data#Center_logratio_transform">clr-transformed</a>
+(relative) protein expression levels. Thus, it does not account for
+measurement error in the protein expression data.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0f31b0e" class="outline-3">
+<h3 id="org0f31b0e">Gamma mixture expression model</h3>
+<div class="outline-text-3" id="text-org0f31b0e">
+<p>
+<a href="https://www.nature.com/articles/s41592-020-01050-x">Gayoso et al. 2021</a>
+propose a mixture of two Gamma distributions protein expression model,
+</p>
+
+\begin{align}
+  \rho_i \mid z_i = 0 &\sim \Gam(a, b)\\
+  \rho_i \mid z_i = 1 &\sim \Gam(a, b - d), d > 0\\
+  z_i &\sim \Bern(p)
+\end{align}
+
+<p>
+where the Gamma distribution is parameterized by shape and rate and we have
+fixed gene \(j\). The key idea is to account for the fact that antibodies
+may bind non-specifically, by constraining the foreground distribution \(z_i
+   = 1\) to have larger mean than the background distribution. Here, derive an
+EM algorithm for the resulting observation model. The log joint
+</p>
+
+\begin{align}
+  \ln p(x_i, z_i, \rho_i \mid z_i = 0, s_i, a, b, d, p) = x_i \ln (s_i \rho_i) - s_i \rho_i + (1 - z_i) (\ln (1 - p) + a \ln b + a \ln\rho_i - b\rho_i - \ln\Gamma(a)) + z_i (\ln p + a \ln (b - d) + a \ln\rho_i - (b - d)\rho_i - \ln\Gamma(a)) + \const
+\end{align}
+
+<p>
+thus the posteriors
+</p>
+
+\begin{align}
+  q(z_i \mid \rho_i) &= z_i (\ln p + \Gam(\rho_i; a, b - d)) + (1 - z_i) (\ln (1 - p) + \Gam(\rho_i; a, b)) + \const\\
+  &= \Bern\left(\frac{\Gam(\rho_i; a, b - d)}{\Gam(\rho_i; a, b - d) + \Gam(\rho_i; a, b)}\right)\\
+  q(\rho_i \mid z_i = 1) &= x_i \ln (s_i\rho_i) - s_i \rho_i + a\ln\rho_i - (b - d)\rho_i + \const\\
+  &= \Gam(x_i + a, s_i + b - d)\\
+  q(\rho_i \mid z_i = 0) &= \Gam(x_i + a, s_i + b).
+\end{align}
+
+<p>
+The expected log joint with respect to \(q\)
+</p>
+
+\begin{multline}
+  h \triangleq \sum_i \E{\ln p(x_i, z_i, \rho_i \mid z_i = 0, s_i, a, b, d, p)} = \sum_i x_i (\ln s_i + \E{\ln\rho_i})- s_i \E{\rho_i}\\
+  + \E{(1 - z_i)} (\ln (1 - p) + a \ln b + a \E{\ln\rho_i} - b\E{\rho_i} - \ln\Gamma(a))\\
+  + \E{z_i} (\ln p + a \ln (b - d) + a \E{\ln\rho_i} - (b - d)\E{\rho_i} - \ln\Gamma(a)) + \const,
+\end{multline}
+
+<p>
+yielding M step updates
+</p>
+
+\begin{align}
+  \frac{\partial h}{\partial p} &= \sum_i \frac{\E{1 - z_i}}{1 - p} + \E{z_i}{p} = 0\\
+  \ln\left(\frac{p}{1 - p}\right) &:= \ln\left(\frac{\sum_i \E{z_i}}{\sum_i \E{1 - z_i}}\right)\\
+  \frac{\partial h}{\partial b} &= \sum_i \E{1 - z_i}\left(\frac{a}{b} - \E{\rho_i}\right) + \E{z_i}\left(\frac{a}{b - d} - \E{\rho_i}\right) = 0\\
+  \frac{\partial h}{\partial d} &= \sum_i \E{z_i}\left(\frac{a}{b - d} - \E{\rho_i}\right) = 0\\
+  \frac{\partial h}{\partial a} &= \sum_i \E{1 - z_i}(\ln b + \E{\ln\rho_i} - \psi(a)) + \E{z_i}(\ln (b - d) + \E{\ln\rho_i} - \psi(a))\\
+  \frac{\partial^2 h}{\partial a^2} &= -\sum_i \E{1 - z_i} \psi^{(1)}(a) - \E{z_i}\psi^{(1)}(a)
+\end{align}
+</div>
+</div>
+
+<div id="outline-container-orgbb73c25" class="outline-3">
+<h3 id="orgbb73c25">Predicting protein expression from RNA expression</h3>
+<div class="outline-text-3" id="text-orgbb73c25">
+<p>
+The major challenge in predicting protein expression from RNA expression is
+that both responses and predictors are noisy. Handling noise in predictors
+is well-studied
+(<a href="https://onlinelibrary.wiley.com/doi/book/10.1002/9780470316665">Fuller
+1987</a>), and can be addressed using e.g., multiple imputation
+(<a href="https://onlinelibrary.wiley.com/doi/book/10.1002/9781119013563">Little
+and Rubin 1987</a>). Handling noise in the response follows naturally from the
+measurement model for protein expression observations above.
+</p>
+
+<p>
+<i>Remark.</i> <code>cTP-net</code> does not account for uncertainty in the de-noised
+expression levels when predicting protein expression levels from RNA
+expression levels. <code>totalVI</code> is a full generative model for both RNA and
+protein expression; however, it is unclear whether missing (protein
+expression) observations are handled. In principle, they could be handled by
+producing an approximate posterior predictive distribution for the
+unobserved protein expression levels, given observed data.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgafffbe0" class="outline-2">
+<h2 id="orgafffbe0">Results</h2>
+<div class="outline-text-2" id="text-orgafffbe0">
+</div>
+<div id="outline-container-org60fc732" class="outline-3">
+<h3 id="org60fc732">Pre-process the data</h3>
+<div class="outline-text-3" id="text-org60fc732">
+<p>
+Pre-process the data into sparse matrices for convenience.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">prot</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/GSE100866_CBMC_8K_13AB_10X-ADT_umi.csv.gz'</span>, index_col=0).T
+<span class="org-variable-name">rna</span> = pd.read_csv(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/GSE100866_CBMC_8K_13AB_10X-RNA_umi.csv.gz'</span>, index_col=0).T
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">prot</span> = anndata.AnnData(ss.csc_matrix(prot.values),
+                       obs=pd.DataFrame(prot.index, columns=[<span class="org-string">'barcode'</span>]),
+                       var=pd.DataFrame(prot.columns, columns=[<span class="org-string">'gene'</span>]))
+<span class="org-variable-name">rna</span> = anndata.AnnData(ss.csc_matrix(rna.values),
+                      obs=pd.DataFrame(rna.index, columns=[<span class="org-string">'barcode'</span>]),
+                      var=pd.DataFrame(rna.columns, columns=[<span class="org-string">'gene'</span>]))
+prot, rna
+</pre>
+</div>
+
+<pre class="example">
+(AnnData object with n_obs × n_vars = 8617 × 13
+obs: 'barcode'
+var: 'gene',
+AnnData object with n_obs × n_vars = 8617 × 36280
+obs: 'barcode'
+var: 'gene')
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython">prot.write_h5ad(<span class="org-string">'GSE100866_CBMC_8K_13AB_10X-ADT.h5ad'</span>)
+rna.write_h5ad(<span class="org-string">'GSE100866_CBMC_8K_13AB_10X-RNA.h5ad'</span>)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf6750fe" class="outline-3">
+<h3 id="orgf6750fe">CBMC CITE-seq</h3>
+<div class="outline-text-3" id="text-orgf6750fe">
+<p>
+Read the sparse data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">prot</span> = anndata.read_h5ad(<span class="org-string">'GSE100866_CBMC_8K_13AB_10X-ADT.h5ad'</span>)
+<span class="org-variable-name">rna</span> = anndata.read_h5ad(<span class="org-string">'GSE100866_CBMC_8K_13AB_10X-RNA.h5ad'</span>)
+</pre>
+</div>
+
+<p>
+Gayoso et al. proposed a NB mixture observation model for protein
+expression. There are only 13 proteins measured, so we can just look at the
+empirical distribution of observed counts for all of them.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(3, 5, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7, 5)
+<span class="org-keyword">for</span> a, j <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax.ravel(), <span class="org-builtin">range</span>(prot.shape[1])):
+  <span class="org-variable-name">y</span> = prot[:,j].X.A.ravel()
+  a.hist(y, bins=20, color=<span class="org-string">'0.7'</span>)
+  a.set_title(prot.var.loc[<span class="org-builtin">str</span>(j), <span class="org-string">'gene'</span>])
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a[0].set_ylabel(<span class="org-string">'Num cells'</span>)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.T:
+  a[-1].set_xlabel(<span class="org-string">'Num mols'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/expr-var-buffering.org/cite-seq-cbmc-8k-prot.png" alt="cite-seq-cbmc-8k-prot.png">
+</p>
+</div>
+
+<p>
+The mapping of RNAs to proteins is complex, since e.g., <i>CD3D</i>, <i>CD3E</i>, and
+<i>CD3G</i> all encode protein subnits of the cell surface marker CD3.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">mapping</span> = {
+  <span class="org-string">'CD3'</span>: [<span class="org-string">'CD3D'</span>, <span class="org-string">'CD3E'</span>, <span class="org-string">'CD3G'</span>],
+  <span class="org-string">'CD4'</span>: [<span class="org-string">'CD4'</span>],
+  <span class="org-string">'CD8'</span>: [<span class="org-string">'CD8A'</span>, <span class="org-string">'CD8B'</span>],
+  <span class="org-string">'CD45RA'</span>: [<span class="org-string">'PTPRC'</span>],
+  <span class="org-string">'CD56'</span>: [<span class="org-string">'NCAM1'</span>],
+  <span class="org-string">'CD16'</span>: [<span class="org-string">'FCGR3A'</span>, <span class="org-string">'FCGR3B'</span>],
+  <span class="org-string">'CD10'</span>: [<span class="org-string">'MME'</span>],
+  <span class="org-string">'CD11c'</span>: [<span class="org-string">'ITGAX'</span>],
+  <span class="org-string">'CD14'</span>: [<span class="org-string">'CD14'</span>],
+  <span class="org-string">'CD19'</span>: [<span class="org-string">'CD19'</span>],
+  <span class="org-string">'CD34'</span>: [<span class="org-string">'CD34'</span>],
+  <span class="org-string">'CCR5'</span>: [<span class="org-string">'CCR5'</span>],
+  <span class="org-string">'CCR7'</span>: [<span class="org-string">'CCR7'</span>],
+}
+</pre>
+</div>
+
+<p>
+Look more closely at CD3.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
+fig.set_size_inches(7, 2)
+ax[0].hist(prot[:,prot.var[<span class="org-string">'gene'</span>] == <span class="org-string">'CD3'</span>].X.A.ravel(), bins=30, color=<span class="org-string">'k'</span>)
+ax[0].set_title(<span class="org-string">'CD3 (protein)'</span>)
+<span class="org-keyword">for</span> g, a <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(mapping[<span class="org-string">'CD3'</span>], ax[1:]):
+  <span class="org-variable-name">x</span> = rna[:,rna.var[<span class="org-string">'gene'</span>] == f<span class="org-string">'HUMAN_{g}'</span>].X.A.ravel()
+  a.hist(x, bins=np.arange(x.<span class="org-builtin">max</span>() + 1), color=<span class="org-string">'k'</span>)
+  a.set_title(f<span class="org-string">'{g} (mRNA)'</span>)
+ax[0].set_ylabel(<span class="org-string">'Number of cells'</span>)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_xlabel(<span class="org-string">'Number of molecules'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/expr-var-buffering.org/cite-seq-cbmc-8k-cd3.png" alt="cite-seq-cbmc-8k-cd3.png">
+</p>
+</div>
+
+<p>
+Fit a point-Gamma RNA expression model for the CD3 subunit genes, and fit a
+fully non-parametric protein expression model for CD3.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fits</span> = {
+  <span class="org-string">'CD3'</span>: scmodes.ebpm.ebpm_npmle(prot[:,prot.var[<span class="org-string">'gene'</span>] == <span class="org-string">'CD3'</span>].X.A.ravel(), prot.X.<span class="org-builtin">sum</span>(axis=1).A.ravel(), verbose=<span class="org-constant">True</span>)
+}
+fits.update({
+  f<span class="org-string">'HUMAN_{g}'</span>: scmodes.ebpm.ebpm_point_gamma(rna[:,rna.var[<span class="org-string">'gene'</span>] == f<span class="org-string">'HUMAN_{g}'</span>].X.A.ravel(), rna.X.<span class="org-builtin">sum</span>(axis=1).A.ravel())
+  <span class="org-keyword">for</span> g <span class="org-keyword">in</span> mapping[<span class="org-string">'CD3'</span>]
+})
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> <span class="org-builtin">open</span>(<span class="org-string">'cbmc-cd3-fits.pkl'</span>, <span class="org-string">'wb'</span>) <span class="org-keyword">as</span> f:
+  pickle.dump(fits, f)
+</pre>
+</div>
+
+<p>
+Plot the fitted expression and observation models against the observed data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">N</span> = prot.shape[0]
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 4)
+fig.set_size_inches(7, 4)
+
+<span class="org-variable-name">y</span> = prot[:,prot.var[<span class="org-string">'gene'</span>] == <span class="org-string">'CD3'</span>].X.A.ravel()
+<span class="org-variable-name">s</span> = prot.X.<span class="org-builtin">sum</span>(axis=1).A.ravel()
+ax[0][0].hist(y, bins=30, color=<span class="org-string">'k'</span>)
+ax[0][0].set_title(<span class="org-string">'CD3 (protein)'</span>)
+<span class="org-variable-name">grid</span> = np.linspace(0, (y / s).<span class="org-builtin">max</span>(), 1000)
+<span class="org-variable-name">F</span> = ashr.cdf_ash(fits[<span class="org-string">'CD3'</span>], grid).rx2(<span class="org-string">'y'</span>).ravel()
+ax[1][0].plot(grid[:-1], np.diff(F), lw=1, c=<span class="org-string">'k'</span>)
+
+<span class="org-variable-name">s</span> = rna.X.<span class="org-builtin">sum</span>(axis=1).A.ravel()
+<span class="org-keyword">for</span> g, a, b <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(mapping[<span class="org-string">'CD3'</span>], ax[0][1:], ax[1][1:]):
+  <span class="org-variable-name">x</span> = rna[:,rna.var[<span class="org-string">'gene'</span>] == f<span class="org-string">'HUMAN_{g}'</span>].X.A.ravel()
+  a.hist(x, bins=np.arange(x.<span class="org-builtin">max</span>() + 1), color=<span class="org-string">'k'</span>)
+  a.set_title(f<span class="org-string">'{g} (mRNA)'</span>)
+  <span class="org-variable-name">grid</span> = np.linspace(0, (x / s).<span class="org-builtin">max</span>(), 1000)
+  <span class="org-variable-name">F</span> = sp.expit(fits[f<span class="org-string">'HUMAN_{g}'</span>][2]) * st.gamma(a=np.exp(fits[f<span class="org-string">'HUMAN_{g}'</span>][1]), scale=np.exp(fits[f<span class="org-string">'HUMAN_{g}'</span>][1] - fits[f<span class="org-string">'HUMAN_{g}'</span>][0])).pdf(grid)
+  <span class="org-variable-name">F</span>[0] += sp.expit(-fits[f<span class="org-string">'HUMAN_{g}'</span>][2])
+  b.plot(grid, F, lw=1, c=<span class="org-string">'k'</span>)
+<span class="org-keyword">for</span> a, l <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax[:,0], [<span class="org-string">'Number of cells'</span>, <span class="org-string">'Density'</span>]):
+  a.set_ylabel(l)
+<span class="org-keyword">for</span> a, b <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax[0], ax[1]):
+  a.set_xlabel(<span class="org-string">'Number of molecules'</span>)
+  b.set_xlabel(<span class="org-string">'Latent expression level'</span>)
+
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/expr-var-buffering.org/cite-seq-cbmc-8k-cd3-point-gamma.png" alt="cite-seq-cbmc-8k-cd3-point-gamma.png">
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Abhishek Sarkar</p>
+<p class="date">Created: 2021-04-10 Sat 17:50</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

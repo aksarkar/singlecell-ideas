@@ -1,0 +1,271 @@
+#+TITLE: GOM model for spatial transcriptomic data
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  [[https://pubmed.ncbi.nlm.nih.gov/10548103/][Lee and Seung 1999]] described
+  how (Poisson) non-negative matrix factorization (NMF) can be used to learn
+  "parts" of faces/semantic concepts that combine additively to generate
+  observed images/text. Here, we investigate the use of NMF to learn spatial
+  structures from /spatial transcriptomic/ data
+  ([[https://science.sciencemag.org/content/353/6294/78][Ståhl et al. 2016]],
+  [[https://www.nature.com/articles/s41592-019-0548-y][Vikovic et al. 2019]],
+  [[https://science.sciencemag.org/content/353/6294/78][Rodriques et
+  al. 2019]]).
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",opts="-c8",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import scipy.sparse as ss
+    import scipy.stats as st
+    import scmodes
+    import sklearn.datasets as skd
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[39]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import rpy2.robjects.packages
+    import rpy2.robjects.pandas2ri
+    rpy2.robjects.pandas2ri.activate()
+    matrix = rpy2.robjects.packages.importr('Matrix')
+    fasttopics = rpy2.robjects.packages.importr('fastTopics')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[20]:
+  :END:
+  
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import colorcet
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[9]:
+  :END:
+
+* Results
+** Planted spatial signal
+
+   Generate an interesting spatial pattern.
+
+   #+BEGIN_SRC ipython
+     X, y = skd.make_moons(n_samples=5000, noise=0.15, random_state=1)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-gom.org/moons.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.scatter(X[:,0], X[:,1], s=2, c=cm(y))
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[6]:
+   [[file:figure/spatial-gom.org/moons.png]]
+   :END:
+
+   Bin the samples to get spots.
+
+   #+BEGIN_SRC ipython
+     n_bins = 64
+     t = [[X[:,0].min(), X[:,0].max()], [X[:,1].min(), X[:,1].max()]]
+     H0, *_ = np.histogram2d(X[y == 0,0], X[y == 0,1], bins=n_bins, range=t, density=True)
+     H1, *_ = np.histogram2d(X[y == 1,0], X[y == 1,1], bins=n_bins, range=t, density=True)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-gom.org/moons-binned.png
+     cm = colorcet.cm['fire']
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(6, 3)
+     ax[0].pcolormesh(H0.T, cmap=cm)
+     ax[1].pcolormesh(H1.T, cmap=cm)
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   [[file:figure/spatial-gom.org/moons-binned.png]]
+   :END:
+
+   Treat the spots as the true \(\lambda\), and generate example noisy observations.
+
+   #+BEGIN_SRC ipython
+     np.random.seed(2)
+     x0 = st.nbinom(n=np.exp(-1), p = 1 / (1 + H0 / np.exp(-1))).rvs()
+     x1 = st.nbinom(n=np.exp(-2), p = 1 / (1 + H0 / np.exp(-2))).rvs()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-gom.org/moons-gen.png
+     cm = colorcet.cm['fire']
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(6, 3)
+     ax[0].pcolormesh(x0.T, cmap=cm)
+     ax[0].set_title('$\phi$ = $\exp(1)$')
+     ax[1].pcolormesh(x1.T, cmap=cm)
+     ax[1].set_title('$\phi$ = $\exp(2)$')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[14]:
+   [[file:figure/spatial-gom.org/moons-gen.png]]
+   :END:
+
+   Generate a training data set.
+
+   #+BEGIN_SRC ipython :async t
+     p = 8192
+     z = np.random.uniform(size=n) < 0.5
+     log_inv_disp = np.random.uniform(-3, 0, size=p)
+     x = np.stack([
+       st.nbinom(n=np.exp(phi_j), p=1 / (1 + H0 / np.exp(phi_j))).rvs() if z_j else
+       st.nbinom(n=np.exp(phi_j), p=1 / (1 + H1 / np.exp(phi_j))).rvs()
+       for z_j, phi_j in zip(z, log_inv_disp)])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[19]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     # Important: this needs to be reshaped and transposed in this order
+     temp = ss.coo_matrix(x.reshape(p, -1).T)
+     y = matrix.sparseMatrix(
+       i=pd.Series(temp.row + 1),
+       j=pd.Series(temp.col + 1),
+       x=pd.Series(temp.data),
+       dims=pd.Series(temp.shape))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[77]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     fits = {k: fasttopics.fit_poisson_nmf(y, k=k, numiter=60, method='scd',
+                                           control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
+             for k in (2, 4, 8)}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[78]:
+   :END:
+
+   Compare spatial denoising to naive denoising.
+
+   #+BEGIN_SRC ipython
+     s = x.sum(axis=0)
+     fit0 = scmodes.ebpm.ebpm_gamma(x[0].ravel(), s.ravel(), tol=1e-7)
+     pm0 = np.where(s > 0, (x[0] + np.exp(fit0[1])) / (s + np.exp(fit0[1] - fit0[0])), 0)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[40]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     lam = fits[4].rx2('L') @ fits[4].rx2('F').T
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[90]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-gom.org/moons-k-2-denoising.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7.5, 3)
+     im = ax[0].pcolormesh(x[0].T, cmap=colorcet.cm['fire'])
+     ax[0].set_title('Observed counts')
+     fig.colorbar(im, ax=ax[0], orientation='horizontal')
+
+     im = ax[1].pcolormesh(pm0.T, cmap=colorcet.cm['bmy'])
+     ax[1].set_title('Naive denoising')
+     fig.colorbar(im, ax=ax[1], orientation='horizontal')
+
+     im = ax[2].pcolormesh(lam[:,0].reshape(n_bins, n_bins).T, cmap=colorcet.cm['bmy'])
+     ax[2].set_title('Spatial denoising')
+     fig.colorbar(im, ax=ax[2], orientation='horizontal')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[91]:
+   [[file:figure/spatial-gom.org/moons-k-2-denoising.png]]
+   :END:
+
+** Visium
+
+   Read the [[file:spatial-vae.org::*Visium][pre-processed data]].
+
+   #+BEGIN_SRC ipython
+     dat = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/dat.h5ad')
+     sc.pp.filter_genes(dat, min_cells=10)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[7]:
+   :END:
+

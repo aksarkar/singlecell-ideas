@@ -149,6 +149,10 @@
 
    - [[https://support.10xgenomics.com/spatial-gene-expression/datasets/1.1.0/V1_Breast_Cancer_Block_A_Section_1][Breast
      cancer]] (10X Genomics Visium v1.1.0)
+   - [[https://github.com/LieberInstitute/spatialLIBD][Human DPFC]] (10X
+     Genomics Visium;
+     [[https://www.nature.com/articles/s41593-020-00787-0][Maynard et
+     al. 2021]])
    - [[https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130682][Mouse
      olfactory bulb]] (HDST;
      [[https://www.nature.com/articles/s41592-019-0548-y][Vikovic et
@@ -160,6 +164,10 @@
    - Mouse cerebellum (SLIDE-Seq;
      [[https://science.sciencemag.org/content/353/6294/78][Rodriques et
      al. 2019]])
+   - [[https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE111672][Human
+     pancreatic ducal adinocarcinoma]] (ST;
+     [[https://www.nature.com/articles/s41587-019-0392-8][Moncada et al.,
+     2018]])
    - Human gingival tissue (ST;
      [[https://www.nature.com/articles/s41598-018-27627-3][Lundmark et
      al. 2018]])

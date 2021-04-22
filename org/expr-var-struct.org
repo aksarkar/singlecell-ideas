@@ -1,0 +1,156 @@
+#+TITLE: Learning the structure of RNA expression variation
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Characterizing the extent of RNA expression variation within cell types, cell
+  states, donors, and experimental conditions is important to learn about
+  evolutionary constraint on gene regulation, modulation of differentiation
+  potential, and the mechanisms underlying cell fate decisions. However,
+  actually estimating the level of expression variation from scRNA-seq data is
+  difficult. Here, we review these difficulties. \(
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\N{\mathcal{N}}
+  \DeclareMathOperator\Pois{Poisson}
+  \DeclareMathOperator\V{V}
+  \newcommand\mf{\mathbf{F}}
+  \newcommand\mh{\mathbf{H}}
+  \newcommand\mi{\mathbf{I}}
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vz{\mathbf{z}}
+  \)
+
+* Main results
+** Pre-defined conditions/hard clustering
+
+   The simplest case to consider is analyzing scRNA-seq observations \(x_i\)
+   from a single gene in one condition. Then, one can fit an observation model
+   (Sarkar and Stephens 2020)
+
+   \begin{align}
+     x_i \mid s_i, \lambda_i &\sim \Pois(s_i \lambda_i), \qquad i = 1, \ldots, n\\
+     \lambda_i &\sim g = \Gam(\phi^{-1}, \mu^{-1}\phi^{-1}).
+   \end{align}
+
+   Under this model, it is clear that the variance of true gene expression
+   levels is \(\V[g] = \mu^2\phi\). More generally, one could instead assume
+   that \(g\) belongs to some more flexible family, but still characterize
+   expression noise as \(V[g]\).
+
+   In the case where conditions were pre-defined (e.g., donor) or are learned
+   from the data by hard-clustering, one can readily generalize the above
+   observation model to multiple genes and conditions (Sarkar et al. 2019)
+
+   \begin{align}
+     x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij}), \qquad i = 1, \ldots, n; j = 1, \ldots, p\\
+     \lambda_{ij} &= \mu_{ij} u_{ij}\\
+     \mu_{ij} &= \exp((\ml\mf')_{ij})\\
+     u_{ij} \mid \ml, \mh &\sim \Gam(\exp(-(\ml\mh')_{ij}), \exp(-(\ml\mh')_{ij})),
+   \end{align}
+
+   where \(\ml\) is a fixed, binary matrix corresponding to assignment of
+   samples to conditions, \(\mf\) is a matrix of mean parameters, and \(\mh\)
+   is a matrix of dispersion parameters. Marginalizing,
+
+   \begin{equation}
+     \lambda_{ij} \sim g_{ij}(\cdot) = \Gam(\exp(-(\ml\mh')_{ij}), \exp(-(\ml(\mf + \mh)')_{ij})),
+   \end{equation}
+
+   where \(g_{ij}\) is identical for observations from the same condition and
+   gene. Therefore, the variance of gene expression can still be estimated as
+   the distinct \(\V[g_{ij}]\). However, this approach has important
+   limitations: (1) it requires pre-defining conditions, which may not be
+   justified by the data (in the case of learning clusters), and (2) it treats
+   every gene independently, and does not consider propagation of noise in gene
+   regulatory networks.
+
+** Generalizing to soft clustering
+
+   Considering the observation model
+
+   \begin{align}
+     x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+     \lambda_{ij} \mid \ml, \mf, \mh &\sim \Gam(\exp(-(\ml\mh')_{ij}), \exp(-(\ml(\mf + \mh)')_{ij})),
+   \end{align}
+
+   what happens when \(\ml\) is not binary? Suppose \(\ml\) is normalized so
+   that its rows sum to 1; then, this model corresponds to a sort of "noisy
+   topic model", where topics are characterized by a collection of Gamma
+   distributions for each gene, and cells are mixtures over those topics. This
+   model is also a generalization of [[file:nbmix.org][a simple model-based
+   clustering method]], in which hard clusters are defined by a collection of
+   Gamma distributions. In some sense then, the topics in this model could be
+   thought of as "noisy gene expression programs". One can in principle fit
+   this model by automatic differentiation and gradient descent, passing some
+   \(\tilde{\vl}_i\) through the softmax function to ensure the sum
+   constraint. One could also amortize inference by introducing an inference
+   network mapping \(\vx_i\) to \(\vl_i\).
+
+   This approach addresses the problem that pre-defined conditions are not
+   always available, and hard-clustering data may not be justified. However, it
+   complicates the question of what precisely the variance of gene expression
+   corresponds to in the model. If we think of samples as being mixtures of
+   gene expression programs, then even the question of what "variance of gene
+   expression" means is problematic, since it is no longer clear what subset of
+   samples the variance is being computed over. Is the variance of each learned
+   gene expression program instead the relevant quantity, regardless of which
+   samples express it? Is this the correct way to think about asking the
+   question when we don't begin from the assumption that there were some number
+   of distinct cell types present?
+
+   In this model, we can think of \(\vl_i\) as a latent variable, and the model
+   above as a linear latent variable model. But now, expression variation has
+   components \(\V[\vl_i]\) and \(\V[\lambda_{ij} \mid \vl_i]\). Which of these
+   components corresponds to expression noise? When \(\vl_i\) is constrained to
+   lie in the simplex, what does \(\V[\vl_i]\) even mean?
+
+   We note that DCA took a similar approach, but did not constrain \(\vl_i\) to
+   be in the simplex, and assumed a non-linear mapping from \(\vl_i\) to mean
+   and dispersion parameters. In contrast, other methods (scNBMF,
+   [[https://academic.oup.com/bioinformatics/article/36/11/3418/5807606][LDVAE]])
+   fit observation models of the form
+
+   \begin{align}
+     x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+     \lambda_{ij} &= \mu_{ij} u_{ij}\\
+     \mu_{ij} &= \exp(\ml\mf')\\
+     u_{ij} \mid \phi_j &\sim \Gam(\phi_j^{-1}, \phi_j^{-1}),
+   \end{align}
+
+   but it is unclear whether assuming \(p(u_{ij})\) being constant across
+   "conditions"/variation in latent space is appropriate.
+
+** Generalizing to a non-linear latent variable model
+
+   Now consider the non-linear latent variable model
+
+   \begin{align}
+     x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+     \lambda_{ij} &= (f(\vz_i))_j\\
+     \vz_i &\sim \N(0, \mi).
+   \end{align}
+
+   Here, \(f\) is a fully-connected neural network, and variability is pushed
+   into the \(\vz_i\). In this model, expression noise is completely explained
+   by \(\V[\vz_i \mid \vx_i]\). That is, variation in expression levels is
+   completely explained by variation in a low-dimensional latent space. Is this
+   a reasonable model? One thing that isn't obvious is what exactly expression
+   variance corresponds to in this model, since it is not clear which subset of
+   samples the variance is being computed over. Naively, one could return to
+   hard-clustering the \(\vz_i\), but it is not clear that this is an
+   improvement over existing hard-clustering approaches.
+
+   Existing methods (scVI, TotalVI) fit an even more complex expression model
+
+   \begin{align}
+     x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
+     \lambda_{ij} &= \mu_{ij} u_{ij}\\
+     \mu_{ij} &= (f(\vz_i))_j\\
+     u_{ij} &\sim \Gam(\phi_j^{-1}, \phi_j^{-1})\\
+     \vz_i &\sim \N(0, \mi).
+   \end{align}
+
+   In this model, expression noise depends both on variation in the latent
+   space and extra variability. Does this make sense?

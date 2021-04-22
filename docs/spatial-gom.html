@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-04-05 Mon 13:17 -->
+<!-- 2021-04-22 Thu 10:55 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOM model for spatial transcriptomic data</title>
@@ -227,28 +227,6 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
-<script type="text/x-mathjax-config">
-    MathJax.Hub.Config({
-        displayAlign: "center",
-        displayIndent: "0em",
-
-        "HTML-CSS": { scale: 100,
-                        linebreaks: { automatic: "false" },
-                        webFont: "TeX"
-                       },
-        SVG: {scale: 100,
-              linebreaks: { automatic: "false" },
-              font: "TeX"},
-        NativeMML: {scale: 100},
-        TeX: { equationNumbers: {autoNumber: "AMS"},
-               MultLineWidth: "85%",
-               TagSide: "right",
-               TagIndent: ".8em"
-             }
-});
-</script>
-<script type="text/javascript"
-        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
@@ -261,7 +239,6 @@ for the JavaScript code in this tag.
 <li><a href="#setup">Setup</a></li>
 <li><a href="#org5b9c931">Results</a>
 <ul>
-<li><a href="#org2192d08">Planted spatial signal</a></li>
 <li><a href="#org6037e95">Visium</a></li>
 </ul>
 </li>
@@ -290,8 +267,10 @@ al. 2019</a>).
 <h2 id="setup"><a id="org5489025"></a>Setup</h2>
 <div class="outline-text-2" id="text-setup">
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<pre class="src src-ipython"><span class="org-keyword">import</span> anndata
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> scmodes
@@ -328,187 +307,104 @@ rpy2.robjects.pandas2ri.activate()
 <h2 id="org5b9c931">Results</h2>
 <div class="outline-text-2" id="text-org5b9c931">
 </div>
-<div id="outline-container-org2192d08" class="outline-3">
-<h3 id="org2192d08">Planted spatial signal</h3>
-<div class="outline-text-3" id="text-org2192d08">
-<p>
-Generate an interesting spatial pattern.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">X</span>, <span class="org-variable-name">y</span> = skd.make_moons(n_samples=5000, noise=0.15, random_state=1)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
-plt.clf()
-plt.gcf().set_size_inches(3, 3)
-plt.scatter(X[:,0], X[:,1], s=2, c=cm(y))
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/spatial-gom.org/moons.png" alt="moons.png">
-</p>
-</div>
-
-<p>
-Bin the samples to get spots.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">n_bins</span> = 64
-<span class="org-variable-name">t</span> = [[X[:,0].<span class="org-builtin">min</span>(), X[:,0].<span class="org-builtin">max</span>()], [X[:,1].<span class="org-builtin">min</span>(), X[:,1].<span class="org-builtin">max</span>()]]
-H0, *<span class="org-variable-name">_</span> = np.histogram2d(X[y == 0,0], X[y == 0,1], bins=n_bins, <span class="org-builtin">range</span>=t, density=<span class="org-constant">True</span>)
-H1, *<span class="org-variable-name">_</span> = np.histogram2d(X[y == 1,0], X[y == 1,1], bins=n_bins, <span class="org-builtin">range</span>=t, density=<span class="org-constant">True</span>)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cm</span> = colorcet.cm[<span class="org-string">'fire'</span>]
-plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
-fig.set_size_inches(6, 3)
-ax[0].pcolormesh(H0.T, cmap=cm)
-ax[1].pcolormesh(H1.T, cmap=cm)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/spatial-gom.org/moons-binned.png" alt="moons-binned.png">
-</p>
-</div>
-
-<p>
-Treat the spots as the true \(\lambda\), and generate example noisy observations.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">np.random.seed(2)
-<span class="org-variable-name">x0</span> = st.nbinom(n=np.exp(-1), p = 1 / (1 + H0 / np.exp(-1))).rvs()
-<span class="org-variable-name">x1</span> = st.nbinom(n=np.exp(-2), p = 1 / (1 + H0 / np.exp(-2))).rvs()
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">cm</span> = colorcet.cm[<span class="org-string">'fire'</span>]
-plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2)
-fig.set_size_inches(6, 3)
-ax[0].pcolormesh(x0.T, cmap=cm)
-ax[0].set_title(<span class="org-string">'$\phi$ = $\exp(1)$'</span>)
-ax[1].pcolormesh(x1.T, cmap=cm)
-ax[1].set_title(<span class="org-string">'$\phi$ = $\exp(2)$'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/spatial-gom.org/moons-gen.png" alt="moons-gen.png">
-</p>
-</div>
-
-<p>
-Generate a training data set.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">p</span> = 8192
-<span class="org-variable-name">z</span> = np.random.uniform(size=n) &lt; 0.5
-<span class="org-variable-name">log_inv_disp</span> = np.random.uniform(-3, 0, size=p)
-<span class="org-variable-name">x</span> = np.stack([
-  st.nbinom(n=np.exp(phi_j), p=1 / (1 + H0 / np.exp(phi_j))).rvs() <span class="org-keyword">if</span> z_j <span class="org-keyword">else</span>
-  st.nbinom(n=np.exp(phi_j), p=1 / (1 + H1 / np.exp(phi_j))).rvs()
-  <span class="org-keyword">for</span> z_j, phi_j <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(z, log_inv_disp)])
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: this needs to be reshaped and transposed in this order</span>
-<span class="org-variable-name">temp</span> = ss.coo_matrix(x.reshape(p, -1).T)
-<span class="org-variable-name">y</span> = matrix.sparseMatrix(
-  i=pd.Series(temp.row + 1),
-  j=pd.Series(temp.col + 1),
-  x=pd.Series(temp.data),
-  dims=pd.Series(temp.shape))
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">fits</span> = {k: fasttopics.fit_poisson_nmf(y, k=k, numiter=60, method=<span class="org-string">'scd'</span>,
-                                      control=rpy2.robjects.ListVector({<span class="org-string">'extrapolate'</span>: <span class="org-constant">True</span>}), verbose=<span class="org-constant">True</span>)
-        <span class="org-keyword">for</span> k <span class="org-keyword">in</span> (2, 4, 8)}
-</pre>
-</div>
-
-<p>
-Compare spatial denoising to naive denoising.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">s</span> = x.<span class="org-builtin">sum</span>(axis=0)
-<span class="org-variable-name">fit0</span> = scmodes.ebpm.ebpm_gamma(x[0].ravel(), s.ravel(), tol=1e-7)
-<span class="org-variable-name">pm0</span> = np.where(s &gt; 0, (x[0] + np.exp(fit0[1])) / (s + np.exp(fit0[1] - fit0[0])), 0)
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">lam</span> = fits[4].rx2(<span class="org-string">'L'</span>) @ fits[4].rx2(<span class="org-string">'F'</span>).T
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
-fig.set_size_inches(7.5, 3)
-<span class="org-variable-name">im</span> = ax[0].pcolormesh(x[0].T, cmap=colorcet.cm[<span class="org-string">'fire'</span>])
-ax[0].set_title(<span class="org-string">'Observed counts'</span>)
-fig.colorbar(im, ax=ax[0], orientation=<span class="org-string">'horizontal'</span>)
-
-<span class="org-variable-name">im</span> = ax[1].pcolormesh(pm0.T, cmap=colorcet.cm[<span class="org-string">'bmy'</span>])
-ax[1].set_title(<span class="org-string">'Naive denoising'</span>)
-fig.colorbar(im, ax=ax[1], orientation=<span class="org-string">'horizontal'</span>)
-
-<span class="org-variable-name">im</span> = ax[2].pcolormesh(lam[:,0].reshape(n_bins, n_bins).T, cmap=colorcet.cm[<span class="org-string">'bmy'</span>])
-ax[2].set_title(<span class="org-string">'Spatial denoising'</span>)
-fig.colorbar(im, ax=ax[2], orientation=<span class="org-string">'horizontal'</span>)
-plt.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/spatial-gom.org/moons-k-2-denoising.png" alt="moons-k-2-denoising.png">
-</p>
-</div>
-</div>
-</div>
-
 <div id="outline-container-org6037e95" class="outline-3">
 <h3 id="org6037e95">Visium</h3>
 <div class="outline-text-3" id="text-org6037e95">
 <p>
-Read the <a href="spatial-vae.html#orgde57de0">pre-processed data</a>.
+Read the <a href="spatial-vae.html#orgde57de0">pre-processed data</a>. Filter out
+genes with no observed data.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/dat.h5ad'</span>)
-sc.pp.filter_genes(dat, min_cells=10)
+sc.pp.filter_genes(dat, min_cells=1)
+dat
 </pre>
 </div>
+
+<pre class="example">
+View of AnnData object with n_obs × n_vars = 3798 × 24865
+obs: 'barcode', 'in_tissue', 'row', 'col', 'pxl_row', 'pxl_col'
+var: 'gene', 'name', 'featuretype', 'n_cells'
+</pre>
+
+<p>
+Fit a topic model, ignoring spatial information.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">temp</span> = dat.X.tocoo()
+<span class="org-variable-name">y</span> = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+<span class="org-variable-name">res</span> = fasttopics.fit_poisson_nmf(y, k=10, numiter=100, method=<span class="org-string">'scd'</span>, control=rpy2.robjects.ListVector({<span class="org-string">'extrapolate'</span>: <span class="org-constant">True</span>}), verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">res</span> = fasttopics.poisson2multinom(res)
+</pre>
+</div>
+
+<p>
+Look at the loadings on each topic, spatially organized.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 5, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7, 4)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax.ravel()):
+  <span class="org-variable-name">temp</span> = ss.coo_matrix((res.rx2(<span class="org-string">'L'</span>)[:,k], (dat.obs[<span class="org-string">'row'</span>], dat.obs[<span class="org-string">'col'</span>] // 2)), shape=(80, 64))
+  a.imshow(temp.A, cmap=colorcet.cm[<span class="org-string">'fire'</span>])
+  a.set_title(f<span class="org-string">'Topic {k + 1}'</span>)
+  a.set_xticks([])
+  a.set_yticks([])
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/spatial-gom.org/visium-k-10.png" alt="visium-k-10.png">
+</p>
+</div>
+
+<p>
+Look at the top (highest probability) genes in each topic.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">pd.DataFrame({k: dat.var.iloc[np.argsort(-res.rx2(<span class="org-string">'F'</span>)[:,k])[:10]][<span class="org-string">'name'</span>].values <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(10)})
+</pre>
+</div>
+
+<pre class="example">
+0      1        2        3       4       5        6      7       8  \
+0     CD74   IGKC   IGFBP5    COX6C   COX6C  COL1A1    RPL41  COX6C     MGP
+1      FTL  IGHG3    RPL41    RPL41   KRT19  COL1A2     KRT8    B2M   RPL41
+2      B2M  IGHG4     KRT8     KRT8   RPL41     FN1    RPLP1  HLA-B  IGFBP5
+3     APOE  IGLC2    COX6C    KRT19  IGFBP5    ACTB    KRT18  HLA-A   KRT19
+4   TMSB10  IGHG1    RPLP1    RPL30    CPB1   SPARC    KRT19  IFI27   GAPDH
+5    RPL41  IGHA1    KRT18      MIF  TMSB10  MALAT1  S100A11  KRT19   RPL30
+6   TMSB4X  IGLC1     FTH1    SERF2   ACTG1  IGFBP7    RPL13   IFI6    TFF3
+7    HLA-B   IGHM  S100A11    RPLP1   RPL30     B2M    RPL30  HLA-C    FTH1
+8  HLA-DRA  IGLC3    KRT19    ACTG1   RPLP1  COL3A1     FTH1  ISG15  S100A6
+9    HLA-A  RPLP1    RPL30  SLC39A6   RPL13   RPLP1     MUC1   FTH1     MIF
+
+9
+0  KRT19
+1    FTL
+2   KRT8
+3  RPLP1
+4    MIF
+5   APOE
+6  SERF2
+7  CRIP1
+8  RPL13
+9  RPL41
+</pre>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-04-05 Mon 13:17</p>
+<p class="date">Created: 2021-04-22 Thu 10:55</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

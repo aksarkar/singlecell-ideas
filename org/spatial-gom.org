@@ -24,13 +24,15 @@
   #+END_SRC
 
   #+RESULTS:
-  : 1
+  : 2
 
-  #+CALL: ipython3(venv="singlecell",partition="mstephens",opts="-c8",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1 -c8",memory="8G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
   #+BEGIN_SRC ipython
+    import anndata
     import numpy as np
     import pandas as pd
+    import scanpy as sc
     import scipy.sparse as ss
     import scipy.stats as st
     import scmodes
@@ -39,7 +41,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[39]:
+  # Out[6]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -52,7 +54,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[20]:
+  # Out[2]:
   :END:
   
   #+BEGIN_SRC ipython
@@ -74,198 +76,98 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[9]:
+  # Out[4]:
   :END:
 
 * Results
-** Planted spatial signal
-
-   Generate an interesting spatial pattern.
-
-   #+BEGIN_SRC ipython
-     X, y = skd.make_moons(n_samples=5000, noise=0.15, random_state=1)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[5]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/spatial-gom.org/moons.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(3, 3)
-     plt.scatter(X[:,0], X[:,1], s=2, c=cm(y))
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[6]:
-   [[file:figure/spatial-gom.org/moons.png]]
-   :END:
-
-   Bin the samples to get spots.
-
-   #+BEGIN_SRC ipython
-     n_bins = 64
-     t = [[X[:,0].min(), X[:,0].max()], [X[:,1].min(), X[:,1].max()]]
-     H0, *_ = np.histogram2d(X[y == 0,0], X[y == 0,1], bins=n_bins, range=t, density=True)
-     H1, *_ = np.histogram2d(X[y == 1,0], X[y == 1,1], bins=n_bins, range=t, density=True)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[7]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/spatial-gom.org/moons-binned.png
-     cm = colorcet.cm['fire']
-     plt.clf()
-     fig, ax = plt.subplots(1, 2)
-     fig.set_size_inches(6, 3)
-     ax[0].pcolormesh(H0.T, cmap=cm)
-     ax[1].pcolormesh(H1.T, cmap=cm)
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[10]:
-   [[file:figure/spatial-gom.org/moons-binned.png]]
-   :END:
-
-   Treat the spots as the true \(\lambda\), and generate example noisy observations.
-
-   #+BEGIN_SRC ipython
-     np.random.seed(2)
-     x0 = st.nbinom(n=np.exp(-1), p = 1 / (1 + H0 / np.exp(-1))).rvs()
-     x1 = st.nbinom(n=np.exp(-2), p = 1 / (1 + H0 / np.exp(-2))).rvs()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[13]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/spatial-gom.org/moons-gen.png
-     cm = colorcet.cm['fire']
-     plt.clf()
-     fig, ax = plt.subplots(1, 2)
-     fig.set_size_inches(6, 3)
-     ax[0].pcolormesh(x0.T, cmap=cm)
-     ax[0].set_title('$\phi$ = $\exp(1)$')
-     ax[1].pcolormesh(x1.T, cmap=cm)
-     ax[1].set_title('$\phi$ = $\exp(2)$')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[14]:
-   [[file:figure/spatial-gom.org/moons-gen.png]]
-   :END:
-
-   Generate a training data set.
-
-   #+BEGIN_SRC ipython :async t
-     p = 8192
-     z = np.random.uniform(size=n) < 0.5
-     log_inv_disp = np.random.uniform(-3, 0, size=p)
-     x = np.stack([
-       st.nbinom(n=np.exp(phi_j), p=1 / (1 + H0 / np.exp(phi_j))).rvs() if z_j else
-       st.nbinom(n=np.exp(phi_j), p=1 / (1 + H1 / np.exp(phi_j))).rvs()
-       for z_j, phi_j in zip(z, log_inv_disp)])
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[19]:
-   :END:
-
-   #+BEGIN_SRC ipython :async t
-     # Important: this needs to be reshaped and transposed in this order
-     temp = ss.coo_matrix(x.reshape(p, -1).T)
-     y = matrix.sparseMatrix(
-       i=pd.Series(temp.row + 1),
-       j=pd.Series(temp.col + 1),
-       x=pd.Series(temp.data),
-       dims=pd.Series(temp.shape))
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[77]:
-   :END:
-
-   #+BEGIN_SRC ipython :async t
-     fits = {k: fasttopics.fit_poisson_nmf(y, k=k, numiter=60, method='scd',
-                                           control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
-             for k in (2, 4, 8)}
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[78]:
-   :END:
-
-   Compare spatial denoising to naive denoising.
-
-   #+BEGIN_SRC ipython
-     s = x.sum(axis=0)
-     fit0 = scmodes.ebpm.ebpm_gamma(x[0].ravel(), s.ravel(), tol=1e-7)
-     pm0 = np.where(s > 0, (x[0] + np.exp(fit0[1])) / (s + np.exp(fit0[1] - fit0[0])), 0)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[40]:
-   :END:
-
-   #+BEGIN_SRC ipython
-     lam = fits[4].rx2('L') @ fits[4].rx2('F').T
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[90]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/spatial-gom.org/moons-k-2-denoising.png
-     plt.clf()
-     fig, ax = plt.subplots(1, 3)
-     fig.set_size_inches(7.5, 3)
-     im = ax[0].pcolormesh(x[0].T, cmap=colorcet.cm['fire'])
-     ax[0].set_title('Observed counts')
-     fig.colorbar(im, ax=ax[0], orientation='horizontal')
-
-     im = ax[1].pcolormesh(pm0.T, cmap=colorcet.cm['bmy'])
-     ax[1].set_title('Naive denoising')
-     fig.colorbar(im, ax=ax[1], orientation='horizontal')
-
-     im = ax[2].pcolormesh(lam[:,0].reshape(n_bins, n_bins).T, cmap=colorcet.cm['bmy'])
-     ax[2].set_title('Spatial denoising')
-     fig.colorbar(im, ax=ax[2], orientation='horizontal')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[91]:
-   [[file:figure/spatial-gom.org/moons-k-2-denoising.png]]
-   :END:
-
 ** Visium
 
-   Read the [[file:spatial-vae.org::*Visium][pre-processed data]].
+   Read the [[file:spatial-vae.org::*Visium][pre-processed data]]. Filter out
+   genes with no observed data.
 
    #+BEGIN_SRC ipython
      dat = anndata.read_h5ad('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/spatial/V1_Breast_Cancer_Block_A_Section_1/dat.h5ad')
-     sc.pp.filter_genes(dat, min_cells=10)
+     sc.pp.filter_genes(dat, min_cells=1)
+     dat
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[59]:
+   #+BEGIN_EXAMPLE
+     View of AnnData object with n_obs × n_vars = 3798 × 24865
+     obs: 'barcode', 'in_tissue', 'row', 'col', 'pxl_row', 'pxl_col'
+     var: 'gene', 'name', 'featuretype', 'n_cells'
+   #+END_EXAMPLE
    :END:
 
+   Fit a topic model, ignoring spatial information.
+
+   #+BEGIN_SRC ipython :async t
+     temp = dat.X.tocoo()
+     y = matrix.sparseMatrix(i=pd.Series(temp.row + 1), j=pd.Series(temp.col + 1), x=pd.Series(temp.data), dims=pd.Series(temp.shape))
+     res = fasttopics.fit_poisson_nmf(y, k=10, numiter=100, method='scd', control=rpy2.robjects.ListVector({'extrapolate': True}), verbose=True)
+     res = fasttopics.poisson2multinom(res)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[60]:
+   :END:
+
+   Look at the loadings on each topic, spatially organized.
+
+   #+BEGIN_SRC ipython :ipyfile figure/spatial-gom.org/visium-k-10.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 5, sharex=True, sharey=True)
+     fig.set_size_inches(7, 4)
+     for k, a in enumerate(ax.ravel()):
+       temp = ss.coo_matrix((res.rx2('L')[:,k], (dat.obs['row'], dat.obs['col'] // 2)), shape=(80, 64))
+       a.imshow(temp.A, cmap=colorcet.cm['fire'])
+       a.set_title(f'Topic {k + 1}')
+       a.set_xticks([])
+       a.set_yticks([])
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[62]:
+   [[file:figure/spatial-gom.org/visium-k-10.png]]
+   :END:
+
+   Look at the top (highest probability) genes in each topic.
+
+   #+BEGIN_SRC ipython
+     pd.DataFrame({k: dat.var.iloc[np.argsort(-res.rx2('F')[:,k])[:10]]['name'].values for k in range(10)})
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[63]:
+   #+BEGIN_EXAMPLE
+     0      1        2        3       4       5        6      7       8  \
+     0     CD74   IGKC   IGFBP5    COX6C   COX6C  COL1A1    RPL41  COX6C     MGP
+     1      FTL  IGHG3    RPL41    RPL41   KRT19  COL1A2     KRT8    B2M   RPL41
+     2      B2M  IGHG4     KRT8     KRT8   RPL41     FN1    RPLP1  HLA-B  IGFBP5
+     3     APOE  IGLC2    COX6C    KRT19  IGFBP5    ACTB    KRT18  HLA-A   KRT19
+     4   TMSB10  IGHG1    RPLP1    RPL30    CPB1   SPARC    KRT19  IFI27   GAPDH
+     5    RPL41  IGHA1    KRT18      MIF  TMSB10  MALAT1  S100A11  KRT19   RPL30
+     6   TMSB4X  IGLC1     FTH1    SERF2   ACTG1  IGFBP7    RPL13   IFI6    TFF3
+     7    HLA-B   IGHM  S100A11    RPLP1   RPL30     B2M    RPL30  HLA-C    FTH1
+     8  HLA-DRA  IGLC3    KRT19    ACTG1   RPLP1  COL3A1     FTH1  ISG15  S100A6
+     9    HLA-A  RPLP1    RPL30  SLC39A6   RPL13   RPLP1     MUC1   FTH1     MIF
+
+     9
+     0  KRT19
+     1    FTL
+     2   KRT8
+     3  RPLP1
+     4    MIF
+     5   APOE
+     6  SERF2
+     7  CRIP1
+     8  RPL13
+     9  RPL41
+   #+END_EXAMPLE
+   :END:

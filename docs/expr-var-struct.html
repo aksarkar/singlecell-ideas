@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-04-22 Thu 12:13 -->
+<!-- 2021-04-30 Fri 13:52 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Learning the structure of RNA expression variation</title>
@@ -258,6 +258,7 @@ for the JavaScript code in this tag.
 <div id="text-table-of-contents">
 <ul>
 <li><a href="#org5fc0aab">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
 <li><a href="#orgfa22f8e">Main results</a>
 <ul>
 <li><a href="#orge4e6819">Pre-defined conditions/hard clustering</a></li>
@@ -278,7 +279,7 @@ states, donors, and experimental conditions is important to learn about
 evolutionary constraint on gene regulation, modulation of differentiation
 potential, and the mechanisms underlying cell fate decisions. However,
 actually estimating the level of expression variation from scRNA-seq data is
-difficult. Here, we review these difficulties. \(
+difficult. Here, we review some of these difficulties. \(
   \DeclareMathOperator\Gam{Gamma}
   \DeclareMathOperator\N{\mathcal{N}}
   \DeclareMathOperator\Pois{Poisson}
@@ -290,8 +291,40 @@ difficult. Here, we review these difficulties. \(
   \newcommand\vl{\mathbf{l}}
   \newcommand\vx{\mathbf{x}}
   \newcommand\vz{\mathbf{z}}
+  \newcommand\vmu{\boldsymbol{\mu}}
+  \newcommand\vphi{\boldsymbol{\phi}}
+  \newcommand\vpi{\boldsymbol{\pi}}
   \)
 </p>
+</div>
+</div>
+
+<div id="outline-container-org31cd25d" class="outline-2">
+<h2 id="setup"><a id="org31cd25d"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> anndata
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> mpebpm.topics
+<span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> torch
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
 </div>
 </div>
 
@@ -303,7 +336,7 @@ difficult. Here, we review these difficulties. \(
 <h3 id="orge4e6819">Pre-defined conditions/hard clustering</h3>
 <div class="outline-text-3" id="text-orge4e6819">
 <p>
-The simplest case to consider is analyzing scRNA-seq observations \(x_i\)
+The simplest case to consider is analyzing scRNA-seq observations
 from a single gene in one condition. Then, one can fit an observation model
 (Sarkar and Stephens 2020)
 </p>
@@ -316,14 +349,21 @@ from a single gene in one condition. Then, one can fit an observation model
 <p>
 Under this model, it is clear that the variance of true gene expression
 levels is \(\V[g] = \mu^2\phi\). More generally, one could instead assume
-that \(g\) belongs to some more flexible family, but still characterize
-expression noise as \(V[g]\).
+that \(g\) belongs to some other family, but still characterize expression
+variance as \(\V[g]\). There is some evidence that families more flexible
+than Gamma distributions may be required for a large fraction of genes in
+some data sets (Sarkar and Stephens 2020). One goal of this analysis is to
+potentially interpret gene expression variance relative to the mean as
+indicative of
+<a href="diff-var.html#org5d82bf1">the
+underlying kinetic parameters of transcriptional bursting</a>.
 </p>
 
 <p>
-In the case where conditions were pre-defined (e.g., donor) or are learned
-from the data by hard-clustering, one can readily generalize the above
-observation model to multiple genes and conditions (Sarkar et al. 2019)
+In the case where \(K\) conditions were pre-defined (e.g., donor) or are
+learned from the data by hard-clustering, one can readily generalize the
+above observation model to multiple genes and conditions (Sarkar et
+al. 2019)
 </p>
 
 \begin{align}
@@ -334,9 +374,11 @@ observation model to multiple genes and conditions (Sarkar et al. 2019)
 \end{align}
 
 <p>
-where \(\ml\) is a fixed, binary matrix corresponding to assignment of
-samples to conditions, \(\mf\) is a matrix of mean parameters, and \(\mh\)
-is a matrix of dispersion parameters. Marginalizing,
+where \(\ml\) is an \(n \times K\) fixed, binary matrix corresponding to
+assignment of samples to conditions, \(\mf\) is a \(K \times p\) matrix of
+mean parameters, and \(\mh\) is a \(K \times p\) matrix of dispersion
+parameters. This observation model can be readily fit <a href="mpebpm.html">to
+massive data using stochastic gradient descent</a>. Marginalizing,
 </p>
 
 \begin{equation}
@@ -350,7 +392,9 @@ the distinct \(\V[g_{ij}]\). However, this approach has important
 limitations: (1) it requires pre-defining conditions, which may not be
 justified by the data (in the case of learning clusters), and (2) it treats
 every gene independently, and does not consider propagation of noise in gene
-regulatory networks.
+regulatory networks (e.g.,
+<a href="https://www.pnas.org/content/98/15/8614">Thattai and van Oudenaarden
+2001</a>).
 </p>
 </div>
 </div>
@@ -359,31 +403,37 @@ regulatory networks.
 <h3 id="org3143bf8">Generalizing to soft clustering</h3>
 <div class="outline-text-3" id="text-org3143bf8">
 <p>
-Considering the observation model
+Considering the expression model
 </p>
 
-\begin{align}
-  x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
-  \lambda_{ij} \mid \ml, \mf, \mh &\sim \Gam(\exp(-(\ml\mh')_{ij}), \exp(-(\ml(\mf + \mh)')_{ij})),
-\end{align}
+\begin{equation}
+  \lambda_{ij} \mid \ml, \mf, \mh \sim \Gam(\exp(-(\ml\mh')_{ij}), \exp(-(\ml(\mf + \mh)')_{ij})),
+\end{equation}
 
 <p>
 what happens when \(\ml\) is not binary? Suppose \(\ml\) is normalized so
 that its rows sum to 1; then, this model corresponds to a sort of &ldquo;noisy
-topic model&rdquo;, where topics are characterized by a collection of Gamma
-distributions for each gene, and cells are mixtures over those topics. This
-model is also a generalization of <a href="nbmix.html">a simple model-based
-clustering method</a>, in which hard clusters are defined by a collection of
-Gamma distributions. In some sense then, the topics in this model could be
-thought of as &ldquo;noisy gene expression programs&rdquo;. One can in principle fit
-this model by automatic differentiation and gradient descent, passing some
-\(\tilde{\vl}_i\) through the softmax function to ensure the sum
-constraint. One could also amortize inference by introducing an inference
-network mapping \(\vx_i\) to \(\vl_i\).
+topic model,&rdquo; where topics are characterized by a collection of Gamma
+distributions for each gene, and cells are convex combinations of those
+topics. In some sense then, the topics in this model could be thought of as
+&ldquo;noisy gene expression programs&rdquo;. One can in principle fit this model by
+automatic differentiation and gradient descent, ensuring the sum constraint
+by re-parameterizing \(\vl_i = \operatorname{softmax}(\tilde{\vl}_i)\). One
+could also amortize inference by introducing an inference network mapping
+\(\vx_i\) to \(\vl_i\).
 </p>
 
 <p>
-This approach addresses the problem that pre-defined conditions are not
+<i>Remark.</i> When \(\ml\) is binary, using the exponential inverse link
+function makes sense since we are selecting a single log mean parameter and
+a single log dispersion parameter for each observation. However, when
+\(\ml\) is instead normalized to have row sum 1, it is not clear that this
+model makes sense compared to a model with identity link, analogous to
+NMF/pLSI.
+</p>
+
+<p>
+This approach addresses the issues that pre-defined conditions are not
 always available, and hard-clustering data may not be justified. However, it
 complicates the question of what precisely the variance of gene expression
 corresponds to in the model. If we think of samples as being mixtures of
@@ -400,28 +450,41 @@ of distinct cell types present?
 In this model, we can think of \(\vl_i\) as a latent variable, and the model
 above as a linear latent variable model. But now, expression variation has
 components \(\V[\vl_i]\) and \(\V[\lambda_{ij} \mid \vl_i]\). Which of these
-components corresponds to expression noise? When \(\vl_i\) is constrained to
-lie in the simplex, what does \(\V[\vl_i]\) even mean?
+components corresponds to expression noise? What does it mean for
+\(\V[\lambda_{ij} \mid \vl_i] \neq 0\) when \(\vl_i\) is a latent variable
+for a single observation? When \(\vl_i\) is constrained to lie in the
+simplex, what does \(\V[\vl_i]\) even mean?
 </p>
 
 <p>
-We note that DCA took a similar approach, but did not constrain \(\vl_i\) to
-be in the simplex, and assumed a non-linear mapping from \(\vl_i\) to mean
-and dispersion parameters. In contrast, other methods (scNBMF,
-<a href="https://academic.oup.com/bioinformatics/article/36/11/3418/5807606">LDVAE</a>)
-fit observation models of the form
+<i>Remark.</i> This model is a generalization of <a href="nbmix.html">a simple
+model-based clustering method</a>, in which hard clusters are defined by a
+collection of Gamma distributions
+</p>
+
+\begin{equation}
+  \lambda_{ij} \mid \vpi_i, \vmu_k, \vphi_k \sim \sum_{k=1}^{K} \pi_{ik} \Gam(\phi_{kj}^{-1}, \phi_{kj}^{-1}\mu_{kj}^{-1}).
+\end{equation}
+
+<p>
+It also generalizes other methods
+(<a href="https://bmcsystbiol.biomedcentral.com/articles/10.1186/s12918-019-0699-6">scNBMF</a>,
+<a href="https://academic.oup.com/bioinformatics/article/36/11/3418/5807606">LDVAE</a>),
+which fit expression models of the form
 </p>
 
 \begin{align}
-  x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
   \lambda_{ij} &= \mu_{ij} u_{ij}\\
-  \mu_{ij} &= \exp(\ml\mf')\\
+  \mu_{ij} &= \exp((\ml\mf')_{ij})\\
   u_{ij} \mid \phi_j &\sim \Gam(\phi_j^{-1}, \phi_j^{-1}),
 \end{align}
 
 <p>
-but it is unclear whether assuming \(p(u_{ij})\) being constant across
-&ldquo;conditions&rdquo;/variation in latent space is appropriate.
+i.e., where \(p(u_{ij})\) is constant across conditions. It is also a
+related to <a href="https://doi.org/10.1038/s41467-018-07931-2">DCA</a>, which fits a
+similar expression model, but does not constrain \(\vl_i\) to be in the
+simplex and assumes a non-linear mapping from \(\vl_i\) to mean and
+dispersion parameters per cell per gene .
 </p>
 </div>
 </div>
@@ -452,11 +515,12 @@ improvement over existing hard-clustering approaches.
 </p>
 
 <p>
-Existing methods (scVI, TotalVI) fit an even more complex expression model
+Existing methods (<a href="https://doi.org/10.1038/s41592-018-0229-2">scVI</a>,
+<a href="https://www.nature.com/articles/s41592-020-01050-x">totalVI</a>) fit an even
+more complex expression model
 </p>
 
 \begin{align}
-  x_{ij} \mid s_i, \lambda_{ij} &\sim \Pois(s_i \lambda_{ij})\\
   \lambda_{ij} &= \mu_{ij} u_{ij}\\
   \mu_{ij} &= (f(\vz_i))_j\\
   u_{ij} &\sim \Gam(\phi_j^{-1}, \phi_j^{-1})\\
@@ -473,7 +537,7 @@ space and extra variability. Does this make sense?
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-04-22 Thu 12:13</p>
+<p class="date">Created: 2021-04-30 Fri 13:52</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

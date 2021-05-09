@@ -1,0 +1,144 @@
+#+TITLE: Logistic regression in the presence of error-prone labels
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Logistic regression can be written \(
+  \DeclareMathOperator\Bern{Bernoulli}
+  \DeclareMathOperator\E{E}
+  \DeclareMathOperator\S{sigmoid}
+  \DeclareMathOperator\logit{logit}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vy{\mathbf{y}}
+  \newcommand\vtheta{\boldsymbol{\theta}}
+  \newcommand\mx{\mathbf{X}}
+  \)
+
+  \begin{align}
+    y_i \mid p_i &\sim \Bern(p_i)\\
+    \logit(p_i) &\triangleq \eta_i = \vx_i' \vb,
+  \end{align}
+
+  where \(y_i \in \{0, 1\}\) denotes the label of observation \(i = 1, \ldots,
+  n\), \(\vx_i\) denotes the \(p\)-dimensional feature vector for observation
+  \(i\), and \(\vb\) is a \(p\)-dimensional vector of coefficients. In words,
+  under this model the features \(x_{ij}\) (\(j = 1, \ldots, p\)) have linear
+  effects \(b_j\) on the log odds ratio \(\eta_i\) of the label \(y_i\)
+  equalling 1. One is primarily interested in estimating \(\vb\), in order to
+  explain which features are important in determining the label \(y_i\), and to
+  predict labels for future observations. Estimation can be done by a variety
+  of approaches, such as maximizing the log likelihood
+
+  \begin{equation}
+    \ell = \sum_i y_i \ln \S(\vx_i' \vb) + (1 - y_i) \ln \S(-\vx_i' \vb)
+  \end{equation}
+
+  with respect to \(\vb\), or by assuming a prior \(p(\vb)\) and estimating the
+  posterior \(p(\vb \mid \mx, \vy)\) using MCMC or variational inference.
+
+  A central assumption in using the model above to analyze data is that the
+  labels \(y_i\) do not have errors. This is not a safe assumption to make in
+  some settings, e.g., in associating genetic variants with diseases for which
+  diagnosis is known to be imperfect
+  ([[https://bmcbioinformatics.biomedcentral.com/articles/10.1186/s12859-020-3387-z][Shafquat
+  et al. 2020]]). One approach to account for error-prone labels is to build a
+  more complex model that relates the observed feature vectors \(\vx_i\), the
+  true (unobserved) labels \(z_i\), and the observed labels \(y_i\)
+
+  \begin{align}
+    y_i \mid z_i = 1, \theta_1 &\sim \Bern(1 - \theta_1)\\
+    y_i \mid z_i = 0, \theta_0 &\sim \Bern(\theta_0)\\
+    z_i \mid p_i &\sim \Bern(p_i)\\
+    \logit(p_i) &= \vx_i \vb.
+  \end{align}
+
+  In this model, \(\vtheta = (\theta_0, \theta_1)\) denotes error
+  probabilities. Specifically, \(\theta_1\) denotes the probability of
+  observing label \(y_i = 0\) when the true label \(z_i = 1\), and \(\theta_0\)
+  denotes the probability of observing \(y_i = 1\) when \(z_i = 0\). (One could
+  simplify by fixing \(\theta_0 = \theta_1\), or potentially build more complex
+  models where the error rates themselves depend on features in the data.) As
+  was the case for the simpler model, one estimates \((\vb, \vtheta)\) from
+  observed data by maximizing the log likelihood, or by assuming a prior
+  \(p(\vb, \vtheta)\) and estimating the posterior \(p(\vb, \vtheta \mid \mx,
+  \vy)\). However, unlike the simpler model, one can use these estimates to
+  infer the true labels (and thus identify mislabelled data points) from the
+  data, e.g., by estimating \(p(z_i = 1 \mid \mx, \vy)\).
+
+* Maximum likelihood estimation
+
+   One can use an EM algorithm to maximize the log likelihood
+
+   \begin{equation}
+     \ell = \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
+   \end{equation}
+
+   with respect to \((\vb, \vtheta)\). We briefly outline the derivation of the
+   algorithm. The joint probability
+
+   \begin{multline}
+     \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))}_{\triangleq \alpha_i}\\
+     + [z_i = 0]\underbrace{(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb))}_{\triangleq \beta_i},
+   \end{multline}
+
+   where \([\cdot]\) denotes the
+   [[https://en.wikipedia.org/wiki/Iverson_bracket][Iverson bracket]]. The
+   posterior
+
+   \begin{equation}
+     \phi_i \triangleq p(z_i = 1 \mid \vx_i, y_i, \vb, \vtheta) = \frac{\exp(\alpha_i)}{\exp(\alpha_i) + \exp(\beta_i)},
+   \end{equation}
+
+   and the expected log joint probability with respect to the posterior is
+
+   \begin{multline}
+     h = \sum_i \Big(\phi_i (y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))\\
+     + (1 - \phi_i) (y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)) \Big).
+   \end{multline}
+
+   In the E-step, one updates \(\phi_i\) as described above. In the M-step, one
+   updates
+
+   \begin{align}
+     \logit(\theta_1) &:= \frac{\sum_i \phi_i (1 - y_i)}{\sum_i \phi_i y_i}\\
+     \logit(\theta_0) &:= \frac{\sum_i (1 - \phi_i) y_i}{\sum_i (1 - \phi_i) (1 - y_i)},
+   \end{align}
+
+   and updates \(\vb\) using a numerical method to increase the expected log
+   joint probability (e.g., gradient ascent). One iterates the E and M steps
+   alternately until e.g., the change in log likelihood falls below some
+   threshold. Intuitively, this algorithm alternates between estimating the
+   true labels given the current estimates of the regression coefficients and
+   error rates, and estimating the regression coefficients and error rates
+   given the current estimates of the true labels. Crucially, all of the data
+   is used to estimate the regression coefficients and error rates, which makes
+   it possible to detect that an observed label is unlikely given the observed
+   features and estimated error rates, by borrowing information from the other
+   observations. From the estimated \(\hat{\vb}\), one can predict the true
+   label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
+
+   \begin{equation}
+     \E[\tilde{z}_i] = \logit(\tilde{\vx}' \hat{\vb}).
+   \end{equation}
+
+* Approximate Bayesian inference
+
+   If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
+   posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
+   readily implemented in inference engines such as
+   [[https://mc-stan.org/][Stan]], [[https://pyro.ai/][pyro]], or
+   [[https://www.tensorflow.org/probability][Tensorflow Probability]]. From the
+   estimated posterior, one can estimate the posterior distribution of the true
+   label \(\tilde{z}\) for a new data point \((\tilde{\vx}, \tilde{y})\), given
+   the observed (training) data, as
+
+   \begin{equation}
+     p(\tilde{z} \mid \tilde{\vx}, \tilde{y}) = \int p(\tilde{y} \mid \tilde{z}, \vtheta)\, p(\tilde{z} \mid \tilde{\vx}, \vb)\, dp(\vb, \vtheta \mid \mx, \vy).
+   \end{equation}
+
+   One could alternatively use variational inference to find the best
+   approximate posterior in a tractable family, by minimizing the KL divergence
+   between the approximate posterior and the true posterior. In either case,
+   the primary derived quantity of interest for prediction would be the
+   posterior mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).

@@ -42,6 +42,7 @@ analysis plus some related topics.
 
 * General methods development
 
+  - [[file:logistic-regression-labelling-errors.org][Logistic regression in the presence of error-prone labels]]
   - [[file:influence.org][Is eQTL analysis robust to removing some data points?]]
   - [[file:horseshoe.org][Empirical Bayes inference for the horseshoe prior]]
   - [[file:sparse-pois-fa.org][Sparse Poisson Factor Analysis]]

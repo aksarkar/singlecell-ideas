@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-05-09 Sun 00:01 -->
+<!-- 2021-05-09 Sun 09:23 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Logistic regression in the presence of error-prone labels</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,118 +227,223 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">Logistic regression in the presence of error-prone labels</h1>
 <div id="table-of-contents">
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orgd75b5ec">Expression models</a></li>
-<li><a href="#orga0fd2f1">Single cell applications</a></li>
-<li><a href="#org782d899">Other applications</a></li>
-<li><a href="#org81a6dcc">Theory</a></li>
-<li><a href="#org844768b">General methods development</a></li>
-<li><a href="#orgc8f4f70">Computation</a></li>
+<li><a href="#orgf22c2b3">Introduction</a></li>
+<li><a href="#org0eb2264">Maximum likelihood estimation</a></li>
+<li><a href="#orgcbac8fb">Approximate Bayesian inference</a></li>
 </ul>
 </div>
 </div>
+
+<div id="outline-container-orgf22c2b3" class="outline-2">
+<h2 id="orgf22c2b3">Introduction</h2>
+<div class="outline-text-2" id="text-orgf22c2b3">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+Logistic regression can be written \(
+  \DeclareMathOperator\Bern{Bernoulli}
+  \DeclareMathOperator\E{E}
+  \DeclareMathOperator\S{sigmoid}
+  \DeclareMathOperator\logit{logit}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vy{\mathbf{y}}
+  \newcommand\vtheta{\boldsymbol{\theta}}
+  \newcommand\mx{\mathbf{X}}
+  \)
 </p>
 
-<div id="outline-container-orgd75b5ec" class="outline-2">
-<h2 id="orgd75b5ec">Expression models</h2>
-<div class="outline-text-2" id="text-orgd75b5ec">
-<ul class="org-ul">
-<li><a href="flows.html"><b>Normalizing flows for EBPM</b></a></li>
-<li><a href="spatial-vae.html"><b>Convolutional VAE for spatial transcriptomic data</b></a></li>
-<li><a href="zinb-em.html">EM algorithm for point-Gamma expression model</a></li>
-<li><a href="taylor.html">Taylor expansions for single cell transforms</a></li>
-<li><a href="zinb-vae-gmm.html">Deep unsupervised clustering of scRNA-seq data</a></li>
-<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
-<li><a href="voom.html">An improved voom transform for scRNA-seq data</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-</ul>
+\begin{align}
+  y_i \mid p_i &\sim \Bern(p_i)\\
+  \logit(p_i) &\triangleq \eta_i = \vx_i' \vb,
+\end{align}
+
+<p>
+where \(y_i \in \{0, 1\}\) denotes the label of observation \(i = 1, \ldots,
+  n\), \(\vx_i\) denotes the \(p\)-dimensional feature vector for observation
+\(i\), and \(\vb\) is a \(p\)-dimensional vector of coefficients. In words,
+under this model the features \(x_{ij}\) (\(j = 1, \ldots, p\)) have linear
+effects \(b_j\) on the log odds ratio \(\eta_i\) of the label \(y_i\)
+equalling 1. One is primarily interested in estimating \(\vb\), in order to
+explain which features are important in determining the label \(y_i\), and to
+predict labels for future observations. Estimation can be done by a variety
+of approaches, such as maximizing the log likelihood
+</p>
+
+\begin{equation}
+  \ell = \sum_i y_i \ln \S(\vx_i' \vb) + (1 - y_i) \ln \S(-\vx_i' \vb)
+\end{equation}
+
+<p>
+with respect to \(\vb\), or by assuming a prior \(p(\vb)\) and estimating the
+posterior \(p(\vb \mid \mx, \vy)\) using MCMC or variational inference.
+</p>
+
+<p>
+A central assumption in using the model above to analyze data is that the
+labels \(y_i\) do not have errors. This is not a safe assumption to make in
+some settings, e.g., in associating genetic variants with diseases for which
+diagnosis is known to be imperfect
+(<a href="https://bmcbioinformatics.biomedcentral.com/articles/10.1186/s12859-020-3387-z">Shafquat
+et al. 2020</a>). One approach to account for error-prone labels is to build a
+more complex model that relates the observed feature vectors \(\vx_i\), the
+true (unobserved) labels \(z_i\), and the observed labels \(y_i\)
+</p>
+
+\begin{align}
+  y_i \mid z_i = 1, \theta_1 &\sim \Bern(1 - \theta_1)\\
+  y_i \mid z_i = 0, \theta_0 &\sim \Bern(\theta_0)\\
+  z_i \mid p_i &\sim \Bern(p_i)\\
+  \logit(p_i) &= \vx_i \vb.
+\end{align}
+
+<p>
+In this model, \(\vtheta = (\theta_0, \theta_1)\) denotes error
+probabilities. Specifically, \(\theta_1\) denotes the probability of
+observing label \(y_i = 0\) when the true label \(z_i = 1\), and \(\theta_0\)
+denotes the probability of observing \(y_i = 1\) when \(z_i = 0\). (One could
+simplify by fixing \(\theta_0 = \theta_1\), or potentially build more complex
+models where the error rates themselves depend on features in the data.) As
+was the case for the simpler model, one estimates \((\vb, \vtheta)\) from
+observed data by maximizing the log likelihood, or by assuming a prior
+\(p(\vb, \vtheta)\) and estimating the posterior \(p(\vb, \vtheta \mid \mx,
+  \vy)\). However, unlike the simpler model, one can use these estimates to
+infer the true labels (and thus identify mislabelled data points) from the
+data, e.g., by estimating \(p(z_i = 1 \mid \mx, \vy)\).
+</p>
 </div>
 </div>
 
-<div id="outline-container-orga0fd2f1" class="outline-2">
-<h2 id="orga0fd2f1">Single cell applications</h2>
-<div class="outline-text-2" id="text-orga0fd2f1">
-<ul class="org-ul">
-<li><a href="expr-var-struct.html">Learning the structure of RNA expression variation</a></li>
-<li><a href="expr-var-buffering.html">Buffering of RNA expression variation</a></li>
-<li><a href="pglmm.html">Poisson GLMM for differential expression</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="pseudobulk.html">Alternative approaches to scRNA-seq pseudobulk models</a></li>
-<li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="experimental-finemapping.html">Experimental fine-mapping of QTLs from
-scRNA-seq data</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-</ul>
+<div id="outline-container-org0eb2264" class="outline-2">
+<h2 id="org0eb2264">Maximum likelihood estimation</h2>
+<div class="outline-text-2" id="text-org0eb2264">
+<p>
+One can use an EM algorithm to maximize the log likelihood
+</p>
+
+\begin{equation}
+  \ell = \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
+\end{equation}
+
+<p>
+with respect to \((\vb, \vtheta)\). We briefly outline the derivation of the
+algorithm. The joint probability
+</p>
+
+\begin{multline}
+  \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))}_{\triangleq \alpha_i}\\
+  + [z_i = 0]\underbrace{(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb))}_{\triangleq \beta_i},
+\end{multline}
+
+<p>
+where \([\cdot]\) denotes the
+<a href="https://en.wikipedia.org/wiki/Iverson_bracket">Iverson bracket</a>. The
+posterior
+</p>
+
+\begin{equation}
+  \phi_i \triangleq p(z_i = 1 \mid \vx_i, y_i, \vb, \vtheta) = \frac{\exp(\alpha_i)}{\exp(\alpha_i) + \exp(\beta_i)},
+\end{equation}
+
+<p>
+and the expected log joint probability with respect to the posterior is
+</p>
+
+\begin{multline}
+  h = \sum_i \Big(\phi_i (y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))\\
+  + (1 - \phi_i) (y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)) \Big).
+\end{multline}
+
+<p>
+In the E-step, one updates \(\phi_i\) as described above. In the M-step, one
+updates
+</p>
+
+\begin{align}
+  \logit(\theta_1) &:= \frac{\sum_i \phi_i (1 - y_i)}{\sum_i \phi_i y_i}\\
+  \logit(\theta_0) &:= \frac{\sum_i (1 - \phi_i) y_i}{\sum_i (1 - \phi_i) (1 - y_i)},
+\end{align}
+
+<p>
+and updates \(\vb\) using a numerical method to increase the expected log
+joint probability (e.g., gradient ascent). One iterates the E and M steps
+alternately until e.g., the change in log likelihood falls below some
+threshold. Intuitively, this algorithm alternates between estimating the
+true labels given the current estimates of the regression coefficients and
+error rates, and estimating the regression coefficients and error rates
+given the current estimates of the true labels. Crucially, all of the data
+is used to estimate the regression coefficients and error rates, which makes
+it possible to detect that an observed label is unlikely given the observed
+features and estimated error rates, by borrowing information from the other
+observations. From the estimated \(\hat{\vb}\), one can predict the true
+label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
+</p>
+
+\begin{equation}
+  \E[\tilde{z}_i] = \logit(\tilde{\vx}' \hat{\vb}).
+\end{equation}
 </div>
 </div>
 
-<div id="outline-container-org782d899" class="outline-2">
-<h2 id="org782d899">Other applications</h2>
-<div class="outline-text-2" id="text-org782d899">
-<ul class="org-ul">
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-</ul>
-</div>
-</div>
+<div id="outline-container-orgcbac8fb" class="outline-2">
+<h2 id="orgcbac8fb">Approximate Bayesian inference</h2>
+<div class="outline-text-2" id="text-orgcbac8fb">
+<p>
+If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
+posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
+readily implemented in inference engines such as
+<a href="https://mc-stan.org/">Stan</a>, <a href="https://pyro.ai/">pyro</a>, or
+<a href="https://www.tensorflow.org/probability">Tensorflow Probability</a>. From the
+estimated posterior, one can estimate the posterior distribution of the true
+label \(\tilde{z}\) for a new data point \((\tilde{\vx}, \tilde{y})\), given
+the observed (training) data, as
+</p>
 
-<div id="outline-container-org81a6dcc" class="outline-2">
-<h2 id="org81a6dcc">Theory</h2>
-<div class="outline-text-2" id="text-org81a6dcc">
-<ul class="org-ul">
-<li><a href="grand-challenges.html"><b>Grand challenges in single-cell data science</b></a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-</ul>
-</div>
-</div>
+\begin{equation}
+  p(\tilde{z} \mid \tilde{\vx}, \tilde{y}) = \int p(\tilde{y} \mid \tilde{z}, \vtheta)\, p(\tilde{z} \mid \tilde{\vx}, \vb)\, dp(\vb, \vtheta \mid \mx, \vy).
+\end{equation}
 
-<div id="outline-container-org844768b" class="outline-2">
-<h2 id="org844768b">General methods development</h2>
-<div class="outline-text-2" id="text-org844768b">
-<ul class="org-ul">
-<li><a href="logistic-regression-labelling-errors.html">Logistic regression in the presence of error-prone labels</a></li>
-<li><a href="influence.html">Is eQTL analysis robust to removing some data points?</a></li>
-<li><a href="horseshoe.html">Empirical Bayes inference for the horseshoe prior</a></li>
-<li><a href="sparse-pois-fa.html">Sparse Poisson Factor Analysis</a></li>
-<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-</ul>
-</div>
-</div>
-
-<div id="outline-container-orgc8f4f70" class="outline-2">
-<h2 id="orgc8f4f70">Computation</h2>
-<div class="outline-text-2" id="text-orgc8f4f70">
-<ul class="org-ul">
-<li><a href="cellassign.html">Installing cellAssign</a></li>
-<li><a href="tsne.html">Pathological input to t-SNE</a></li>
-</ul>
+<p>
+One could alternatively use variational inference to find the best
+approximate posterior in a tractable family, by minimizing the KL divergence
+between the approximate posterior and the true posterior. In either case,
+the primary derived quantity of interest for prediction would be the
+posterior mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
+</p>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-05-09 Sun 00:01</p>
+<p class="date">Created: 2021-05-09 Sun 09:23</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

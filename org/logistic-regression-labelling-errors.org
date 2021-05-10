@@ -119,7 +119,7 @@
    label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
 
    \begin{equation}
-     \E[\tilde{z}_i] = \logit(\tilde{\vx}' \hat{\vb}).
+     \E[\tilde{z}_i] = \S(\tilde{\vx}' \hat{\vb}).
    \end{equation}
 
 * Approximate Bayesian inference

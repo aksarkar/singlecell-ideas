@@ -68,77 +68,264 @@
 
 * Maximum likelihood estimation
 
-   One can use an EM algorithm to maximize the log likelihood
+  One can use an EM algorithm to maximize the log likelihood
 
-   \begin{equation}
-     \ell = \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
-   \end{equation}
+  \begin{equation}
+    \ell = \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
+  \end{equation}
 
-   with respect to \((\vb, \vtheta)\). We briefly outline the derivation of the
-   algorithm. The joint probability
+  with respect to \((\vb, \vtheta)\). We briefly outline the derivation of the
+  algorithm. The joint probability
 
-   \begin{multline}
-     \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))}_{\triangleq \alpha_i}\\
-     + [z_i = 0]\underbrace{(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb))}_{\triangleq \beta_i},
-   \end{multline}
+  \begin{multline}
+    \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))}_{\triangleq \alpha_i}\\
+    + [z_i = 0]\underbrace{(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb))}_{\triangleq \beta_i},
+  \end{multline}
 
-   where \([\cdot]\) denotes the
-   [[https://en.wikipedia.org/wiki/Iverson_bracket][Iverson bracket]]. The
-   posterior
+  where \([\cdot]\) denotes the
+  [[https://en.wikipedia.org/wiki/Iverson_bracket][Iverson bracket]]. The
+  posterior
 
-   \begin{equation}
-     \phi_i \triangleq p(z_i = 1 \mid \vx_i, y_i, \vb, \vtheta) = \frac{\exp(\alpha_i)}{\exp(\alpha_i) + \exp(\beta_i)},
-   \end{equation}
+  \begin{equation}
+    \phi_i \triangleq p(z_i = 1 \mid \vx_i, y_i, \vb, \vtheta) = \frac{\exp(\alpha_i)}{\exp(\alpha_i) + \exp(\beta_i)},
+  \end{equation}
 
-   and the expected log joint probability with respect to the posterior is
+  and the expected log joint probability with respect to the posterior is
 
-   \begin{multline}
-     h = \sum_i \Big(\phi_i (y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))\\
-     + (1 - \phi_i) (y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)) \Big).
-   \end{multline}
+  \begin{multline}
+    h = \sum_i \Big(\phi_i (y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))\\
+    + (1 - \phi_i) (y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)) \Big).
+  \end{multline}
 
-   In the E-step, one updates \(\phi_i\) as described above. In the M-step, one
-   updates
+  In the E-step, one updates \(\phi_i\) as described above. In the M-step, one
+  updates
 
-   \begin{align}
-     \logit(\theta_1) &:= \frac{\sum_i \phi_i (1 - y_i)}{\sum_i \phi_i y_i}\\
-     \logit(\theta_0) &:= \frac{\sum_i (1 - \phi_i) y_i}{\sum_i (1 - \phi_i) (1 - y_i)},
-   \end{align}
+  \begin{align}
+    \logit(\theta_1) &:= \frac{\sum_i \phi_i (1 - y_i)}{\sum_i \phi_i y_i}\\
+    \logit(\theta_0) &:= \frac{\sum_i (1 - \phi_i) y_i}{\sum_i (1 - \phi_i) (1 - y_i)},
+  \end{align}
 
-   and updates \(\vb\) using a numerical method to increase the expected log
-   joint probability (e.g., gradient ascent). One iterates the E and M steps
-   alternately until e.g., the change in log likelihood falls below some
-   threshold. Intuitively, this algorithm alternates between estimating the
-   true labels given the current estimates of the regression coefficients and
-   error rates, and estimating the regression coefficients and error rates
-   given the current estimates of the true labels. Crucially, all of the data
-   is used to estimate the regression coefficients and error rates, which makes
-   it possible to detect that an observed label is unlikely given the observed
-   features and estimated error rates, by borrowing information from the other
-   observations. From the estimated \(\hat{\vb}\), one can predict the true
-   label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
+  and updates \(\vb\) using a numerical method to increase the expected log
+  joint probability (e.g., gradient ascent). One iterates the E and M steps
+  alternately until e.g., the change in log likelihood falls below some
+  threshold. Intuitively, this algorithm alternates between estimating the
+  true labels given the current estimates of the regression coefficients and
+  error rates, and estimating the regression coefficients and error rates
+  given the current estimates of the true labels. Crucially, all of the data
+  is used to estimate the regression coefficients and error rates, which makes
+  it possible to detect that an observed label is unlikely given the observed
+  features and estimated error rates, by borrowing information from the other
+  observations. From the estimated \(\hat{\vb}\), one can predict the true
+  label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
 
-   \begin{equation}
-     \E[\tilde{z}_i] = \S(\tilde{\vx}' \hat{\vb}).
-   \end{equation}
+  \begin{equation}
+    \E[\tilde{z}_i] = \S(\tilde{\vx}' \hat{\vb}).
+  \end{equation}
 
 * Approximate Bayesian inference
 
-   If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
-   posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
-   readily implemented in inference engines such as
-   [[https://mc-stan.org/][Stan]], [[https://pyro.ai/][pyro]], or
-   [[https://www.tensorflow.org/probability][Tensorflow Probability]]. From the
-   estimated posterior, one can estimate the posterior distribution of the true
-   label \(\tilde{z}\) for a new data point \((\tilde{\vx}, \tilde{y})\), given
-   the observed (training) data, as
+  If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
+  posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
+  readily implemented in inference engines such as
+  [[https://mc-stan.org/][Stan]], [[https://pyro.ai/][pyro]], or
+  [[https://www.tensorflow.org/probability][Tensorflow Probability]]. From the
+  estimated posterior, one can estimate the posterior distribution of the true
+  label \(\tilde{z}\) for a new data point \((\tilde{\vx}, \tilde{y})\), given
+  the observed (training) data, as
 
-   \begin{equation}
-     p(\tilde{z} \mid \tilde{\vx}, \tilde{y}) = \int p(\tilde{y} \mid \tilde{z}, \vtheta)\, p(\tilde{z} \mid \tilde{\vx}, \vb)\, dp(\vb, \vtheta \mid \mx, \vy).
-   \end{equation}
+  \begin{equation}
+    p(\tilde{z} \mid \tilde{\vx}, \tilde{y}) = \int p(\tilde{y} \mid \tilde{z}, \vtheta)\, p(\tilde{z} \mid \tilde{\vx}, \vb)\, dp(\vb, \vtheta \mid \mx, \vy).
+  \end{equation}
 
-   One could alternatively use variational inference to find the best
-   approximate posterior in a tractable family, by minimizing the KL divergence
-   between the approximate posterior and the true posterior. In either case,
-   the primary derived quantity of interest for prediction would be the
-   posterior mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
+  One could alternatively use variational inference to find the best
+  approximate posterior in a tractable family, by minimizing the KL divergence
+  between the approximate posterior and the true posterior. In either case,
+  the primary derived quantity of interest for prediction would be the
+  posterior mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
+
+* Example
+** Setup
+   :PROPERTIES:
+   :CUSTOM_ID: setup
+   :END:
+
+   #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+   #+END_SRC
+
+   #+RESULTS:
+   : 2
+
+   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+   #+BEGIN_SRC ipython
+     import numpy as np
+     import pandas as pd
+     import scipy.special as sp
+     import scipy.stats as st
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     %matplotlib inline
+     %config InlineBackend.figure_formats = set(['retina'])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[4]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     import matplotlib.pyplot as plt
+     plt.rcParams['figure.facecolor'] = 'w'
+     plt.rcParams['font.family'] = 'Nimbus Sans'
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+** Simulation
+
+   #+BEGIN_SRC ipython
+     def simulate(n, p, n_causal, theta0, theta1, seed=0):
+       rng = np.random.default_rng(seed)
+       x = rng.normal(size=(n, p))
+       b = np.zeros((p, 1))
+       b[:n_causal] = rng.normal(size=(n_causal, 1))
+       z = rng.uniform(size=(n, 1)) < sp.expit(x @ b)
+       u = rng.uniform(size=(n, 1))
+       y = np.where(z, u < (1 - theta1), u < theta0)
+       return x, y, z, b
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[15]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     x, y, z, b = simulate(n=500, p=10, n_causal=2, theta0=0.01, theta1=0.01)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[22]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/logistic-regression-labelling-errors.org/sim-ex.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(2.5, 2.5)
+     eta = x @ b
+     for k in range(2):
+       jitter = np.random.normal(scale=0.01, size=(z == k).sum())
+       plt.scatter(eta[z == k], jitter + z[z == k], s=1, c=cm(k))
+     plt.xlabel('Linear predictor')
+     plt.ylabel('True label')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[39]:
+   [[file:figure/logistic-regression-labelling-errors.org/sim-ex.png]]
+   :END:
+
+   #+BEGIN_SRC ipython
+     idx = y != z
+     pd.DataFrame(np.vstack([eta[idx], y[idx], z[idx]]).T, columns=['eta', 'y', 'z'])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[43]:
+   #+BEGIN_EXAMPLE
+     eta    y    z
+     0 -2.175591  1.0  0.0
+     1  2.075414  1.0  0.0
+     2 -1.470784  1.0  0.0
+     3  3.486473  0.0  1.0
+     4 -0.088405  1.0  0.0
+   #+END_EXAMPLE
+   :END:
+
+** EM
+
+   #+BEGIN_SRC ipython
+     def _objective(x, y, z, b, theta):
+       eta = x @ b
+       alpha = st.bernoulli(1 - theta[1]).pmf(y) + np.log(sp.expit(eta))
+       beta = st.bernoulli(theta[0]).pmf(y) + np.log(sp.expit(-eta))
+       return (z * alpha + (1 - z) * beta).sum()
+
+     def _objective_b(x, z, b):
+       eta = x @ b
+       return (z * np.log(sp.expit(eta)) + (1 - z) * np.log(sp.expit(-eta))).sum()
+
+     def _update_bj(x, y, z, b, j, step=1, c=0.5, tau=0.5, max_iters=30):
+       """Return regression coefficients
+
+       Use backtracking line search to find the step size for the update
+
+       step - initial step size
+       c - control parameter (Armijo-Goldstein condition)
+       tau - control parameter (step size update)
+       max_iters - maximum number of backtracking steps
+
+       """
+       loss = _objective_b(x, z, b)
+       eta = x @ b
+       d = ((z * (1 - sp.expit(eta)) + (1 - z) * (1 - sp.expit(-eta))) * x[:,j]).sum()
+       temp = b[:]
+       temp[j] += step * d
+       update = _objective_b(x, z, temp)
+       while (not np.isfinite(update) or (update > loss + c * step * d).any()) and max_iters > 0:
+         step *= tau
+         temp = b[:]
+         temp[j] += step * d
+         update = _objective_b(z, x, temp)
+         max_iters -= 1
+       if max_iters == 0:
+         # Step size is small enough that update can be skipped
+         return b, loss
+       else:
+         return temp, update
+
+     def _update_z_theta(x, y, b, theta):
+       eta = x @ b
+       alpha = st.bernoulli(1 - theta[1]).pmf(y) + np.log(sp.expit(eta))
+       beta = st.bernoulli(theta[0]).pmf(y) + np.log(sp.expit(-eta))
+       z = np.exp(alpha) / (np.exp(alpha) + np.exp(beta))
+       theta[0] = sp.expit(((1 - z) * y).sum() / ((1 - z) * (1 - y)).sum())
+       theta[1] = sp.expit((z * y).sum() / ((1 - z) * y).sum())
+       return z, theta
+
+     def logistic_regression_errors(x, y, tol=1e-3, max_iters=10000, verbose=True):
+       b = np.zeros(x.shape[1])
+       theta = 0.01 * np.ones(2)
+       obj = -np.inf
+       for i in range(max_iters):
+         z, theta = _update_z_theta(x, y, b, theta)
+         for j in range(x.shape[1]):
+           b[j], _ = _update_bj(x, y, z, b, j)
+         obj1 = _objective(x, y, z, b, theta)
+         if obj1 < obj:
+           raise RuntimeError('objective decreased')
+         elif obj1 - obj < tol:
+           return b, theta
+         else:
+           obj = obj1
+           print('{i:>6d} {obj:>.9g}')
+       else:
+         raise RuntimeError('failed to converge in max_iters')
+   #+END_SRC
+
+   

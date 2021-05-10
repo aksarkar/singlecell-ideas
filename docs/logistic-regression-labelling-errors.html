@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-05-10 Mon 14:41 -->
+<!-- 2021-05-10 Mon 14:42 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logistic regression in the presence of error-prone labels</title>
@@ -260,6 +260,13 @@ for the JavaScript code in this tag.
 <li><a href="#orgf22c2b3">Introduction</a></li>
 <li><a href="#org0eb2264">Maximum likelihood estimation</a></li>
 <li><a href="#orgcbac8fb">Approximate Bayesian inference</a></li>
+<li><a href="#orgc166d0f">Example</a>
+<ul>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org18caaf4">Simulation</a></li>
+<li><a href="#orga8eb9df">EM</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -408,7 +415,7 @@ label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
 </p>
 
 \begin{equation}
-  \E[\tilde{z}_i] = \S(\tilde{\vx}' \hat{\vb}).
+  \E[\tilde{z}_i] = \sigmoid(\tilde{\vx}' \hat{\vb}).
 \end{equation}
 </div>
 </div>
@@ -440,10 +447,174 @@ posterior mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
 </p>
 </div>
 </div>
+
+<div id="outline-container-orgc166d0f" class="outline-2">
+<h2 id="orgc166d0f">Example</h2>
+<div class="outline-text-2" id="text-orgc166d0f">
+</div>
+<div id="outline-container-orgce0ed18" class="outline-3">
+<h3 id="setup"><a id="orgce0ed18"></a>Setup</h3>
+<div class="outline-text-3" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org18caaf4" class="outline-3">
+<h3 id="org18caaf4">Simulation</h3>
+<div class="outline-text-3" id="text-org18caaf4">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">simulate</span>(n, p, n_causal, theta0, theta1, seed=0):
+  <span class="org-variable-name">rng</span> = np.random.default_rng(seed)
+  <span class="org-variable-name">x</span> = rng.normal(size=(n, p))
+  <span class="org-variable-name">b</span> = np.zeros((p, 1))
+  <span class="org-variable-name">b</span>[:n_causal] = rng.normal(size=(n_causal, 1))
+  <span class="org-variable-name">z</span> = rng.uniform(size=(n, 1)) &lt; sp.expit(x @ b)
+  <span class="org-variable-name">u</span> = rng.uniform(size=(n, 1))
+  <span class="org-variable-name">y</span> = np.where(z, u &lt; (1 - theta1), u &lt; theta0)
+  <span class="org-keyword">return</span> x, y, z, b
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">x</span>, <span class="org-variable-name">y</span>, <span class="org-variable-name">z</span>, <span class="org-variable-name">b</span> = simulate(n=500, p=10, n_causal=2, theta0=0.01, theta1=0.01)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(2.5, 2.5)
+<span class="org-variable-name">eta</span> = x @ b
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(2):
+  <span class="org-variable-name">jitter</span> = np.random.normal(scale=0.01, size=(z == k).<span class="org-builtin">sum</span>())
+  plt.scatter(eta[z == k], jitter + z[z == k], s=1, c=cm(k))
+plt.xlabel(<span class="org-string">'Linear predictor'</span>)
+plt.ylabel(<span class="org-string">'True label'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/logistic-regression-labelling-errors.org/sim-ex.png" alt="sim-ex.png">
+</p>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">idx</span> = y != z
+pd.DataFrame(np.vstack([eta[idx], y[idx], z[idx]]).T, columns=[<span class="org-string">'eta'</span>, <span class="org-string">'y'</span>, <span class="org-string">'z'</span>])
+</pre>
+</div>
+
+<pre class="example">
+eta    y    z
+0 -2.175591  1.0  0.0
+1  2.075414  1.0  0.0
+2 -1.470784  1.0  0.0
+3  3.486473  0.0  1.0
+4 -0.088405  1.0  0.0
+</pre>
+</div>
+</div>
+
+<div id="outline-container-orga8eb9df" class="outline-3">
+<h3 id="orga8eb9df">EM</h3>
+<div class="outline-text-3" id="text-orga8eb9df">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">_objective</span>(x, y, z, b, theta):
+  <span class="org-variable-name">eta</span> = x @ b
+  <span class="org-variable-name">alpha</span> = st.bernoulli(1 - theta[1]).pmf(y) + np.log(sp.expit(eta))
+  <span class="org-variable-name">beta</span> = st.bernoulli(theta[0]).pmf(y) + np.log(sp.expit(-eta))
+  <span class="org-keyword">return</span> (z * alpha + (1 - z) * beta).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">_objective_b</span>(x, z, b):
+  <span class="org-variable-name">eta</span> = x @ b
+  <span class="org-keyword">return</span> (z * np.log(sp.expit(eta)) + (1 - z) * np.log(sp.expit(-eta))).<span class="org-builtin">sum</span>()
+
+<span class="org-keyword">def</span> <span class="org-function-name">_update_bj</span>(x, y, z, b, j, step=1, c=0.5, tau=0.5, max_iters=30):
+  <span class="org-doc">"""Return regression coefficients</span>
+
+<span class="org-doc">  Use backtracking line search to find the step size for the update</span>
+
+<span class="org-doc">  step - initial step size</span>
+<span class="org-doc">  c - control parameter (Armijo-Goldstein condition)</span>
+<span class="org-doc">  tau - control parameter (step size update)</span>
+<span class="org-doc">  max_iters - maximum number of backtracking steps</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-variable-name">loss</span> = _objective_b(x, z, b)
+  <span class="org-variable-name">eta</span> = x @ b
+  <span class="org-variable-name">d</span> = ((z * (1 - sp.expit(eta)) + (1 - z) * (1 - sp.expit(-eta))) * x[:,j]).<span class="org-builtin">sum</span>()
+  <span class="org-variable-name">temp</span> = b[:]
+  <span class="org-variable-name">temp</span>[j] += step * d
+  <span class="org-variable-name">update</span> = _objective_b(x, z, temp)
+  <span class="org-keyword">while</span> (<span class="org-keyword">not</span> np.isfinite(update) <span class="org-keyword">or</span> (update &gt; loss + c * step * d).<span class="org-builtin">any</span>()) <span class="org-keyword">and</span> max_iters &gt; 0:
+    <span class="org-variable-name">step</span> *= tau
+    <span class="org-variable-name">temp</span> = b[:]
+    <span class="org-variable-name">temp</span>[j] += step * d
+    <span class="org-variable-name">update</span> = _objective_b(z, x, temp)
+    <span class="org-variable-name">max_iters</span> -= 1
+  <span class="org-keyword">if</span> max_iters == 0:
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Step size is small enough that update can be skipped</span>
+    <span class="org-keyword">return</span> b, loss
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">return</span> temp, update
+
+<span class="org-keyword">def</span> <span class="org-function-name">_update_z_theta</span>(x, y, b, theta):
+  <span class="org-variable-name">eta</span> = x @ b
+  <span class="org-variable-name">alpha</span> = st.bernoulli(1 - theta[1]).pmf(y) + np.log(sp.expit(eta))
+  <span class="org-variable-name">beta</span> = st.bernoulli(theta[0]).pmf(y) + np.log(sp.expit(-eta))
+  <span class="org-variable-name">z</span> = np.exp(alpha) / (np.exp(alpha) + np.exp(beta))
+  <span class="org-variable-name">theta</span>[0] = sp.expit(((1 - z) * y).<span class="org-builtin">sum</span>() / ((1 - z) * (1 - y)).<span class="org-builtin">sum</span>())
+  <span class="org-variable-name">theta</span>[1] = sp.expit((z * y).<span class="org-builtin">sum</span>() / ((1 - z) * y).<span class="org-builtin">sum</span>())
+  <span class="org-keyword">return</span> z, theta
+
+<span class="org-keyword">def</span> <span class="org-function-name">logistic_regression_errors</span>(x, y, tol=1e-3, max_iters=10000, verbose=<span class="org-constant">True</span>):
+  <span class="org-variable-name">b</span> = np.zeros(x.shape[1])
+  <span class="org-variable-name">theta</span> = 0.01 * np.ones(2)
+  <span class="org-variable-name">obj</span> = -np.inf
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_iters):
+    <span class="org-variable-name">z</span>, <span class="org-variable-name">theta</span> = _update_z_theta(x, y, b, theta)
+    <span class="org-keyword">for</span> j <span class="org-keyword">in</span> <span class="org-builtin">range</span>(x.shape[1]):
+      b[j], <span class="org-variable-name">_</span> = _update_bj(x, y, z, b, j)
+    <span class="org-variable-name">obj1</span> = _objective(x, y, z, b, theta)
+    <span class="org-keyword">if</span> obj1 &lt; obj:
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'objective decreased'</span>)
+    <span class="org-keyword">elif</span> obj1 - obj &lt; tol:
+      <span class="org-keyword">return</span> b, theta
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">obj</span> = obj1
+      <span class="org-keyword">print</span>(<span class="org-string">'{i:&gt;6d} {obj:&gt;.9g}'</span>)
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge in max_iters'</span>)
+</pre>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-05-10 Mon 14:41</p>
+<p class="date">Created: 2021-05-10 Mon 14:42</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

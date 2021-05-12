@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-05-10 Mon 14:42 -->
+<!-- 2021-05-12 Wed 14:52 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logistic regression in the presence of error-prone labels</title>
@@ -265,8 +265,11 @@ for the JavaScript code in this tag.
 <li><a href="#setup">Setup</a></li>
 <li><a href="#org18caaf4">Simulation</a></li>
 <li><a href="#orga8eb9df">EM</a></li>
+<li><a href="#orgf94f022">MCMC</a></li>
+<li><a href="#org935b49c">VEB</a></li>
 </ul>
 </li>
+<li><a href="#org858706d">Related work</a></li>
 </ul>
 </div>
 </div>
@@ -278,13 +281,18 @@ for the JavaScript code in this tag.
 Logistic regression can be written \(
   \DeclareMathOperator\Bern{Bernoulli}
   \DeclareMathOperator\E{E}
+  \DeclareMathOperator\Exp{Exp}
+  \DeclareMathOperator\KL{\mathcal{KL}}
+  \DeclareMathOperator\N{\mathcal{N}}
   \DeclareMathOperator\S{sigmoid}
+  \DeclareMathOperator\Unif{Uniform}
   \DeclareMathOperator\logit{logit}
-  \newcommand\vx{\mathbf{x}}
-  \newcommand\vb{\mathbf{b}}
-  \newcommand\vy{\mathbf{y}}
-  \newcommand\vtheta{\boldsymbol{\theta}}
+  \newcommand\mi{\mathbf{I}}
   \newcommand\mx{\mathbf{X}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vtheta{\boldsymbol{\theta}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vy{\mathbf{y}}
   \)
 </p>
 
@@ -312,6 +320,11 @@ of approaches, such as maximizing the log likelihood
 <p>
 with respect to \(\vb\), or by assuming a prior \(p(\vb)\) and estimating the
 posterior \(p(\vb \mid \mx, \vy)\) using MCMC or variational inference.
+</p>
+
+<p>
+<i>Remark.</i> Note that the log likelihood equals the negative of the cross
+entropy loss.
 </p>
 
 <p>
@@ -357,17 +370,26 @@ One can use an EM algorithm to maximize the log likelihood
 </p>
 
 \begin{equation}
-  \ell = \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
+  \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
 \end{equation}
 
 <p>
-with respect to \((\vb, \vtheta)\). We briefly outline the derivation of the
-algorithm. The joint probability
+with respect to \((\vb, \vtheta)\). 
+</p>
+
+<p>
+<i>Remark.</i> In the case where \(p > n\), one can add an \(\ell_1\) and/or
+\(\ell_2\) penalty on \(\vb\) to the log likelihood to regularize the
+problem, and modify the M-step update appropriately.
+</p>
+
+<p>
+We briefly outline the derivation of the algorithm. The joint probability
 </p>
 
 \begin{multline}
-  \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))}_{\triangleq \alpha_i}\\
-  + [z_i = 0]\underbrace{(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb))}_{\triangleq \beta_i},
+  \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{\left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)}_{\triangleq \alpha_i}\\
+  + [z_i = 0]\underbrace{\left(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)\right)}_{\triangleq \beta_i},
 \end{multline}
 
 <p>
@@ -385,8 +407,8 @@ and the expected log joint probability with respect to the posterior is
 </p>
 
 \begin{multline}
-  h = \sum_i \Big(\phi_i (y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))\\
-  + (1 - \phi_i) (y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)) \Big).
+  \sum_i \Big(\phi_i \left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)\\
+  + (1 - \phi_i) \left(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)\right) \Big).
 \end{multline}
 
 <p>
@@ -402,20 +424,20 @@ updates
 <p>
 and updates \(\vb\) using a numerical method to increase the expected log
 joint probability (e.g., gradient ascent). One iterates the E and M steps
-alternately until e.g., the change in log likelihood falls below some
-threshold. Intuitively, this algorithm alternates between estimating the
-true labels given the current estimates of the regression coefficients and
-error rates, and estimating the regression coefficients and error rates
-given the current estimates of the true labels. Crucially, all of the data
-is used to estimate the regression coefficients and error rates, which makes
-it possible to detect that an observed label is unlikely given the observed
-features and estimated error rates, by borrowing information from the other
+alternately until e.g., the change in objective falls below some
+threshold. Intuitively, this algorithm alternates between estimating the true
+labels given the current estimates of the regression coefficients and error
+rates, and estimating the regression coefficients and error rates given the
+current estimates of the true labels. Crucially, all of the data is used to
+estimate the regression coefficients and error rates, which makes it possible
+to detect that an observed label is unlikely given the observed features and
+estimated error rates, by borrowing information from the other
 observations. From the estimated \(\hat{\vb}\), one can predict the true
 label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
 </p>
 
 \begin{equation}
-  \E[\tilde{z}_i] = \sigmoid(\tilde{\vx}' \hat{\vb}).
+  \E[\tilde{z}_i] = \S(\tilde{\vx}' \hat{\vb}).
 \end{equation}
 </div>
 </div>
@@ -428,10 +450,13 @@ If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
 posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
 readily implemented in inference engines such as
 <a href="https://mc-stan.org/">Stan</a>, <a href="https://pyro.ai/">pyro</a>, or
-<a href="https://www.tensorflow.org/probability">Tensorflow Probability</a>. From the
-estimated posterior, one can estimate the posterior distribution of the true
-label \(\tilde{z}\) for a new data point \((\tilde{\vx}, \tilde{y})\), given
-the observed (training) data, as
+<a href="https://www.tensorflow.org/probability">Tensorflow Probability</a>. One could
+alternatively use variational inference to find the best approximate
+posterior in a tractable family, by minimizing the KL divergence between the
+approximate posterior and the true posterior. From the estimated posterior,
+one can estimate the posterior distribution of the true label \(\tilde{z}\)
+for a new data point \((\tilde{\vx}, \tilde{y})\), given the observed
+(training) data, as
 </p>
 
 \begin{equation}
@@ -439,11 +464,35 @@ the observed (training) data, as
 \end{equation}
 
 <p>
-One could alternatively use variational inference to find the best
-approximate posterior in a tractable family, by minimizing the KL divergence
-between the approximate posterior and the true posterior. In either case,
-the primary derived quantity of interest for prediction would be the
-posterior mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
+The primary derived quantity of interest for prediction is the posterior mean
+\(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\). As an example, assume a
+point-Normal prior
+</p>
+
+\begin{equation}
+  b_j \sim \pi_0 \delta_0(\cdot) + (1 - \pi_0) \N(0, \sigma_b^2),
+\end{equation}
+
+<p>
+and assume a conjugate variational family (Carbonetto and Stephens 2012)
+</p>
+
+\begin{equation}
+  q(b_j) = \alpha_j \delta_0(\cdot) + (1 - \alpha_j) \N(\mu_j, s_j^2).
+\end{equation}
+
+<p>
+The evidence lower bound is
+</p>
+
+\begin{equation}
+  \ell = \sum_i \E\left[\ln \left(\textstyle\sum_{z_i} p(y_i \mid z_i) p(z_i \mid \vx_i, \vb)\right)\right] - \KL(q(\vb) \Vert p(\vb)),
+\end{equation}
+
+<p>
+which can be approximated as a Monte Carlo integral (Kingma and Welling 2014,
+Rezende et al. 2014). This yields a differentiable stochastic objective which
+can be optimized via automatic differentiation and gradient descent.
 </p>
 </div>
 </div>
@@ -458,8 +507,10 @@ posterior mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> pyro
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> torch
 </pre>
 </div>
 
@@ -610,11 +661,148 @@ eta    y    z
 </div>
 </div>
 </div>
+
+<div id="outline-container-orgf94f022" class="outline-3">
+<h3 id="orgf94f022">MCMC</h3>
+<div class="outline-text-3" id="text-orgf94f022">
+<p>
+Assume proper priors \(\theta_k \sim \Unif(0, 1)\), \(\vb \sim \N(0, \lambda
+   \mi)\), \(\lambda \sim \Exp(1)\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">_logistic_regression_errors</span>(x, y):
+  <span class="org-variable-name">theta</span> = pyro.sample(<span class="org-string">'theta'</span>, pyro.distributions.Uniform(low=torch.zeros(2), high=torch.ones(2)))
+  <span class="org-variable-name">lam</span> = pyro.sample(<span class="org-string">'lam'</span>, pyro.distributions.Exponential(rate=torch.ones(1)))
+  <span class="org-variable-name">b</span> = pyro.sample(<span class="org-string">'b'</span>, pyro.distributions.MultivariateNormal(loc=torch.zeros(x.shape[1]), scale=torch.sqrt(lam) * torch.eye(x.shape[1])))
+  <span class="org-variable-name">z</span> = pyro.sample(<span class="org-string">'z'</span>, pyro.distributions.Bernoulli(logits=x @ b))
+  <span class="org-keyword">return</span> pyro.sample(<span class="org-string">'y'</span>, pyro.distributions.Bernoulli(probs=torch.where(z, 1 - theta[1], theta[0])), obs=y)
+
+<span class="org-keyword">def</span> <span class="org-function-name">logistic_regression_errors_nuts</span>(x, y, num_samples=100, warmup_steps=100, verbose=<span class="org-constant">True</span>, **kwargs):
+  <span class="org-variable-name">nuts</span> = pyro.infer.mcmc.NUTS(_logistic_regression_errors)
+  <span class="org-variable-name">samples</span> = pyro.infer.mcmc.MCMC(nuts, num_samples=num_samples, warmup_steps=warmup_steps)
+  samples.run(torch.tensor(x), torch.tensor(y))
+  <span class="org-keyword">return</span> samples
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org935b49c" class="outline-3">
+<h3 id="org935b49c">VEB</h3>
+<div class="outline-text-3" id="text-org935b49c">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">SpikeSlab</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, p):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.logits = torch.nn.Parameter(torch.randn([p, 1]))
+    <span class="org-keyword">self</span>.mean = torch.nn.Parameter(torch.zeros([p, 1]))
+    <span class="org-keyword">self</span>.log_prec = torch.nn.Parameter(torch.zeros([p, 1]))
+    <span class="org-keyword">self</span>.prior_logodds = torch.nn.Parameter(torch.full([1, 1], -np.log(p)))
+    <span class="org-keyword">self</span>.log_prior_prec = torch.nn.Parameter(torch.zeros([1, 1]))
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>):
+    <span class="org-variable-name">finfo</span> = torch.finfo(<span class="org-keyword">self</span>.logits.dtype)
+    <span class="org-variable-name">pip</span> = torch.clamp(torch.sigmoid(<span class="org-keyword">self</span>.logits), finfo.tiny, 1 - finfo.eps)
+    <span class="org-variable-name">prec</span> = torch.exp(<span class="org-keyword">self</span>.log_prec)
+    <span class="org-variable-name">kl</span> = (pip * torch.log(pip / torch.sigmoid(<span class="org-keyword">self</span>.prior_logodds)) +
+          (1 - pip) * torch.log((1 - pip) / torch.sigmoid(-<span class="org-keyword">self</span>.prior_logodds)) +
+          .5 * pip * (1 + <span class="org-keyword">self</span>.log_prec - <span class="org-keyword">self</span>.log_prior_prec + torch.exp(<span class="org-keyword">self</span>.log_prior_prec) * (<span class="org-keyword">self</span>.mean ** 2 + 1 / prec))).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">mean</span> = pip * <span class="org-keyword">self</span>.mean
+    <span class="org-variable-name">var</span> = pip / prec + pip * (1 - pip) * <span class="org-keyword">self</span>.mean ** 2
+    <span class="org-keyword">return</span> mean, var, kl
+
+<span class="org-keyword">class</span> <span class="org-type">LogisticRegressionWithError</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, p):
+    <span class="org-keyword">self</span>.prior = SpikeSlab(p)
+    <span class="org-keyword">self</span>.err_logits = torch.zeros([2, 1])
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, y, n_samples=1):
+    <span class="org-variable-name">b_mean</span>, <span class="org-variable-name">b_var</span>, <span class="org-variable-name">kl</span> = <span class="org-keyword">self</span>.prior.forward()
+    <span class="org-variable-name">eta</span> = torch.distributions.Normal(x @ b_mean, x @ torch.sqrt(b_var)).rsample(n_samples)
+    <span class="org-variable-name">err</span> = (torch.sigmoid(eta) * (y * torch.log(torch.sigmoid(-<span class="org-keyword">self</span>.err_logits[1])) + (1 - y) * torch.log(torch.sigmoid(<span class="org-keyword">self</span>.err_logits[1]))) +
+           torch.sigmoid(-eta) * ((1 - y) * torch.log(torch.sigmoid(<span class="org-keyword">self</span>.err_logits[0])) + (1 - y) * torch.log(torch.sigmoid(-<span class="org-keyword">self</span>.err_logits[1])))).mean(dim=0).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">elbo</span> = err - kl
+    <span class="org-keyword">return</span> -elbo
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, data, n_samples=10, n_epochs=2000, log_dir=<span class="org-constant">None</span>, **kwargs):
+    <span class="org-variable-name">n_samples</span> = torch.Size([n_samples])
+    <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), **kwargs)
+    <span class="org-variable-name">global_step</span> = 0
+    <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">writer</span> = tb.SummaryWriter(log_dir)
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">writer</span> = <span class="org-constant">None</span>
+    <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
+      <span class="org-keyword">for</span> x, y <span class="org-keyword">in</span> data:
+        opt.zero_grad()
+        <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, y, n_samples=n_samples, writer=writer, global_step=global_step)
+        <span class="org-keyword">if</span> torch.isnan(loss):
+          <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'nan loss'</span>)
+        loss.backward()
+        opt.step()
+        <span class="org-variable-name">global_step</span> += 1
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org858706d" class="outline-2">
+<h2 id="org858706d">Related work</h2>
+<div class="outline-text-2" id="text-org858706d">
+<ul class="org-ul">
+<li>Tenenbein,A. (1970). A double sampling scheme for estimating from binomial
+data with misclassifications. J. Am. Statist. Assoc. 65. 1350-1361.</li>
+
+<li>Hochberg,Y. (1977). On the use of double sampling schemes in analyzing
+categorical data with misclassification
+errors. J. Am. Statist. Assoc. 72. 914-921</li>
+
+<li>Chen, T.T. (1979). Log-linear models for categorical data with
+misclassification and double sampling. J. Am. Statist. Assoc. 74. 481-488.</li>
+
+<li>Espeland,M.A. and Odoroff,C.L. (1985). Log-linear models for doubly sampled
+categorical data fitted by the EM
+algorithm. J. Am. Statist. Assoc. 80. 663-670</li>
+
+<li>Espeland,M.A. and Hui,S.L. (1987). A general approach to analyzing
+epidemiologic data that contain misclassification
+errors. Biometrics 43. 1001-1012</li>
+
+<li>Zhi Geng &amp; Chooichiro Asano. (1989) Bayesian estimation methods for
+categorical data with misclassifications, Communications in Statistics -
+Theory and Methods, 18:8, 2935-2954. <a href="10.1080/03610928908830069">10.1080/03610928908830069</a></li>
+
+<li>Evans, M., Guttman, I., Haitovsky, Y., and Swartz, T. (1996). Bayesian
+analysis of binary data subject to misclassiﬁcation. In Bayesian Analysis
+in Statistics and Econometrics: Essays in Honor of Arnold Zellner,
+D. Berry, K. Chaloner, and J. Geweke (eds), 67–77. New York: North Holland.</li>
+
+<li>Mendoza-Blanco, J. R., Tu, X. M., and Iyengar, S. (1996). Bayesian
+inference on prevalence using a missing-data approach with simulation-based
+techniques: Applications to HIV screening. Statistics in Medicine 15,
+2161–2176.</li>
+
+<li>Rekaya, R., Weigel, K. A., and Gianola, D. (2001). Threshold model for
+misclassiﬁed binary responses with applications to animal
+breeding. Biometrics 57, 1123–1129.</li>
+
+<li>Daniel Paulino, C., Soares, P. and Neuhaus, J. (2003), Binomial Regression
+with Misclassification. Biometrics, 59:
+670-675. <a href="https://doi.org/10.1111/1541-0420.00077">https://doi.org/10.1111/1541-0420.00077</a></li>
+
+<li>Smith, S., Hay, E.H., Farhat, N. et al. Genome wide association studies in
+presence of misclassified binary responses. BMC Genet 14, 124
+(2013). <a href="https://doi.org/10.1186/1471-2156-14-124">https://doi.org/10.1186/1471-2156-14-124</a></li>
+</ul>
+</div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-05-10 Mon 14:42</p>
+<p class="date">Created: 2021-05-12 Wed 14:52</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

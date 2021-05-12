@@ -6,13 +6,18 @@
   Logistic regression can be written \(
   \DeclareMathOperator\Bern{Bernoulli}
   \DeclareMathOperator\E{E}
+  \DeclareMathOperator\Exp{Exp}
+  \DeclareMathOperator\KL{\mathcal{KL}}
+  \DeclareMathOperator\N{\mathcal{N}}
   \DeclareMathOperator\S{sigmoid}
+  \DeclareMathOperator\Unif{Uniform}
   \DeclareMathOperator\logit{logit}
-  \newcommand\vx{\mathbf{x}}
-  \newcommand\vb{\mathbf{b}}
-  \newcommand\vy{\mathbf{y}}
-  \newcommand\vtheta{\boldsymbol{\theta}}
+  \newcommand\mi{\mathbf{I}}
   \newcommand\mx{\mathbf{X}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vtheta{\boldsymbol{\theta}}
+  \newcommand\vx{\mathbf{x}}
+  \newcommand\vy{\mathbf{y}}
   \)
 
   \begin{align}
@@ -36,6 +41,9 @@
 
   with respect to \(\vb\), or by assuming a prior \(p(\vb)\) and estimating the
   posterior \(p(\vb \mid \mx, \vy)\) using MCMC or variational inference.
+
+  /Remark./ Note that the log likelihood equals the negative of the cross
+  entropy loss.
 
   A central assumption in using the model above to analyze data is that the
   labels \(y_i\) do not have errors. This is not a safe assumption to make in
@@ -71,15 +79,20 @@
   One can use an EM algorithm to maximize the log likelihood
 
   \begin{equation}
-    \ell = \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
+    \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
   \end{equation}
 
-  with respect to \((\vb, \vtheta)\). We briefly outline the derivation of the
-  algorithm. The joint probability
+  with respect to \((\vb, \vtheta)\). 
+
+  /Remark./ In the case where \(p > n\), one can add an \(\ell_1\) and/or
+  \(\ell_2\) penalty on \(\vb\) to the log likelihood to regularize the
+  problem, and modify the M-step update appropriately.
+
+  We briefly outline the derivation of the algorithm. The joint probability
 
   \begin{multline}
-    \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))}_{\triangleq \alpha_i}\\
-    + [z_i = 0]\underbrace{(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb))}_{\triangleq \beta_i},
+    \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{\left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)}_{\triangleq \alpha_i}\\
+    + [z_i = 0]\underbrace{\left(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)\right)}_{\triangleq \beta_i},
   \end{multline}
 
   where \([\cdot]\) denotes the
@@ -93,8 +106,8 @@
   and the expected log joint probability with respect to the posterior is
 
   \begin{multline}
-    h = \sum_i \Big(\phi_i (y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb))\\
-    + (1 - \phi_i) (y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)) \Big).
+    \sum_i \Big(\phi_i \left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)\\
+    + (1 - \phi_i) \left(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)\right) \Big).
   \end{multline}
 
   In the E-step, one updates \(\phi_i\) as described above. In the M-step, one
@@ -107,14 +120,14 @@
 
   and updates \(\vb\) using a numerical method to increase the expected log
   joint probability (e.g., gradient ascent). One iterates the E and M steps
-  alternately until e.g., the change in log likelihood falls below some
-  threshold. Intuitively, this algorithm alternates between estimating the
-  true labels given the current estimates of the regression coefficients and
-  error rates, and estimating the regression coefficients and error rates
-  given the current estimates of the true labels. Crucially, all of the data
-  is used to estimate the regression coefficients and error rates, which makes
-  it possible to detect that an observed label is unlikely given the observed
-  features and estimated error rates, by borrowing information from the other
+  alternately until e.g., the change in objective falls below some
+  threshold. Intuitively, this algorithm alternates between estimating the true
+  labels given the current estimates of the regression coefficients and error
+  rates, and estimating the regression coefficients and error rates given the
+  current estimates of the true labels. Crucially, all of the data is used to
+  estimate the regression coefficients and error rates, which makes it possible
+  to detect that an observed label is unlikely given the observed features and
+  estimated error rates, by borrowing information from the other
   observations. From the estimated \(\hat{\vb}\), one can predict the true
   label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
 
@@ -128,20 +141,41 @@
   posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
   readily implemented in inference engines such as
   [[https://mc-stan.org/][Stan]], [[https://pyro.ai/][pyro]], or
-  [[https://www.tensorflow.org/probability][Tensorflow Probability]]. From the
-  estimated posterior, one can estimate the posterior distribution of the true
-  label \(\tilde{z}\) for a new data point \((\tilde{\vx}, \tilde{y})\), given
-  the observed (training) data, as
+  [[https://www.tensorflow.org/probability][Tensorflow Probability]]. One could
+  alternatively use variational inference to find the best approximate
+  posterior in a tractable family, by minimizing the KL divergence between the
+  approximate posterior and the true posterior. From the estimated posterior,
+  one can estimate the posterior distribution of the true label \(\tilde{z}\)
+  for a new data point \((\tilde{\vx}, \tilde{y})\), given the observed
+  (training) data, as
 
   \begin{equation}
     p(\tilde{z} \mid \tilde{\vx}, \tilde{y}) = \int p(\tilde{y} \mid \tilde{z}, \vtheta)\, p(\tilde{z} \mid \tilde{\vx}, \vb)\, dp(\vb, \vtheta \mid \mx, \vy).
   \end{equation}
 
-  One could alternatively use variational inference to find the best
-  approximate posterior in a tractable family, by minimizing the KL divergence
-  between the approximate posterior and the true posterior. In either case,
-  the primary derived quantity of interest for prediction would be the
-  posterior mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
+  The primary derived quantity of interest for prediction is the posterior mean
+  \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\). As an example, assume a
+  point-Normal prior
+
+  \begin{equation}
+    b_j \sim \pi_0 \delta_0(\cdot) + (1 - \pi_0) \N(0, \sigma_b^2),
+  \end{equation}
+
+  and assume a conjugate variational family (Carbonetto and Stephens 2012)
+
+  \begin{equation}
+    q(b_j) = \alpha_j \delta_0(\cdot) + (1 - \alpha_j) \N(\mu_j, s_j^2).
+  \end{equation}
+
+  The evidence lower bound is
+
+  \begin{equation}
+    \ell = \sum_i \E\left[\ln \left(\textstyle\sum_{z_i} p(y_i \mid z_i) p(z_i \mid \vx_i, \vb)\right)\right] - \KL(q(\vb) \Vert p(\vb)),
+  \end{equation}
+
+  which can be approximated as a Monte Carlo integral (Kingma and Welling 2014,
+  Rezende et al. 2014). This yields a differentiable stochastic objective which
+  can be optimized via automatic differentiation and gradient descent.
 
 * Example
 ** Setup
@@ -162,8 +196,10 @@
    #+BEGIN_SRC ipython
      import numpy as np
      import pandas as pd
+     import pyro
      import scipy.special as sp
      import scipy.stats as st
+     import torch
    #+END_SRC
 
    #+RESULTS:
@@ -328,4 +364,124 @@
          raise RuntimeError('failed to converge in max_iters')
    #+END_SRC
 
-   
+** MCMC
+
+   Assume proper priors \(\theta_k \sim \Unif(0, 1)\), \(\vb \sim \N(0, \lambda
+   \mi)\), \(\lambda \sim \Exp(1)\).
+
+   #+BEGIN_SRC ipython
+     def _logistic_regression_errors(x, y):
+       theta = pyro.sample('theta', pyro.distributions.Uniform(low=torch.zeros(2), high=torch.ones(2)))
+       lam = pyro.sample('lam', pyro.distributions.Exponential(rate=torch.ones(1)))
+       b = pyro.sample('b', pyro.distributions.MultivariateNormal(loc=torch.zeros(x.shape[1]), scale=torch.sqrt(lam) * torch.eye(x.shape[1])))
+       z = pyro.sample('z', pyro.distributions.Bernoulli(logits=x @ b))
+       return pyro.sample('y', pyro.distributions.Bernoulli(probs=torch.where(z, 1 - theta[1], theta[0])), obs=y)
+
+     def logistic_regression_errors_nuts(x, y, num_samples=100, warmup_steps=100, verbose=True, **kwargs):
+       nuts = pyro.infer.mcmc.NUTS(_logistic_regression_errors)
+       samples = pyro.infer.mcmc.MCMC(nuts, num_samples=num_samples, warmup_steps=warmup_steps)
+       samples.run(torch.tensor(x), torch.tensor(y))
+       return samples
+   #+END_SRC
+
+** VEB
+
+   #+BEGIN_SRC ipython
+     class SpikeSlab(torch.nn.Module):
+       def __init__(self, p):
+         super().__init__()
+         self.logits = torch.nn.Parameter(torch.randn([p, 1]))
+         self.mean = torch.nn.Parameter(torch.zeros([p, 1]))
+         self.log_prec = torch.nn.Parameter(torch.zeros([p, 1]))
+         self.prior_logodds = torch.nn.Parameter(torch.full([1, 1], -np.log(p)))
+         self.log_prior_prec = torch.nn.Parameter(torch.zeros([1, 1]))
+
+       def forward(self):
+         finfo = torch.finfo(self.logits.dtype)
+         pip = torch.clamp(torch.sigmoid(self.logits), finfo.tiny, 1 - finfo.eps)
+         prec = torch.exp(self.log_prec)
+         kl = (pip * torch.log(pip / torch.sigmoid(self.prior_logodds)) +
+               (1 - pip) * torch.log((1 - pip) / torch.sigmoid(-self.prior_logodds)) +
+               .5 * pip * (1 + self.log_prec - self.log_prior_prec + torch.exp(self.log_prior_prec) * (self.mean ** 2 + 1 / prec))).sum()
+         mean = pip * self.mean
+         var = pip / prec + pip * (1 - pip) * self.mean ** 2
+         return mean, var, kl
+
+     class LogisticRegressionWithError(torch.nn.Module):
+       def __init__(self, p):
+         self.prior = SpikeSlab(p)
+         self.err_logits = torch.zeros([2, 1])
+
+       def forward(self, x, y, n_samples=1):
+         b_mean, b_var, kl = self.prior.forward()
+         eta = torch.distributions.Normal(x @ b_mean, x @ torch.sqrt(b_var)).rsample(n_samples)
+         err = (torch.sigmoid(eta) * (y * torch.log(torch.sigmoid(-self.err_logits[1])) + (1 - y) * torch.log(torch.sigmoid(self.err_logits[1]))) +
+                torch.sigmoid(-eta) * ((1 - y) * torch.log(torch.sigmoid(self.err_logits[0])) + (1 - y) * torch.log(torch.sigmoid(-self.err_logits[1])))).mean(dim=0).sum()
+         elbo = err - kl
+         return -elbo
+
+       def fit(self, data, n_samples=10, n_epochs=2000, log_dir=None, **kwargs):
+         n_samples = torch.Size([n_samples])
+         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         global_step = 0
+         if log_dir is not None:
+           writer = tb.SummaryWriter(log_dir)
+         else:
+           writer = None
+         for i in range(n_epochs):
+           for x, y in data:
+             opt.zero_grad()
+             loss = self.forward(x, y, n_samples=n_samples, writer=writer, global_step=global_step)
+             if torch.isnan(loss):
+               raise RuntimeError('nan loss')
+             loss.backward()
+             opt.step()
+             global_step += 1
+         return self
+   #+END_SRC
+
+* Related work
+
+  - Tenenbein,A. (1970). A double sampling scheme for estimating from binomial
+    data with misclassifications. J. Am. Statist. Assoc. 65. 1350-1361.
+
+  - Hochberg,Y. (1977). On the use of double sampling schemes in analyzing
+    categorical data with misclassification
+    errors. J. Am. Statist. Assoc. 72. 914-921
+
+  - Chen, T.T. (1979). Log-linear models for categorical data with
+    misclassification and double sampling. J. Am. Statist. Assoc. 74. 481-488.
+
+  - Espeland,M.A. and Odoroff,C.L. (1985). Log-linear models for doubly sampled
+    categorical data fitted by the EM
+    algorithm. J. Am. Statist. Assoc. 80. 663-670
+
+  - Espeland,M.A. and Hui,S.L. (1987). A general approach to analyzing
+    epidemiologic data that contain misclassification
+    errors. Biometrics 43. 1001-1012
+
+  - Zhi Geng & Chooichiro Asano. (1989) Bayesian estimation methods for
+    categorical data with misclassifications, Communications in Statistics -
+    Theory and Methods, 18:8, 2935-2954. doi:10.1080/03610928908830069
+
+  - Evans, M., Guttman, I., Haitovsky, Y., and Swartz, T. (1996). Bayesian
+    analysis of binary data subject to misclassiﬁcation. In Bayesian Analysis
+    in Statistics and Econometrics: Essays in Honor of Arnold Zellner,
+    D. Berry, K. Chaloner, and J. Geweke (eds), 67–77. New York: North Holland.
+
+  - Mendoza-Blanco, J. R., Tu, X. M., and Iyengar, S. (1996). Bayesian
+    inference on prevalence using a missing-data approach with simulation-based
+    techniques: Applications to HIV screening. Statistics in Medicine 15,
+    2161–2176.
+
+  - Rekaya, R., Weigel, K. A., and Gianola, D. (2001). Threshold model for
+    misclassiﬁed binary responses with applications to animal
+    breeding. Biometrics 57, 1123–1129.
+
+  - Daniel Paulino, C., Soares, P. and Neuhaus, J. (2003), Binomial Regression
+    with Misclassification. Biometrics, 59:
+    670-675. https://doi.org/10.1111/1541-0420.00077
+
+  - Smith, S., Hay, E.H., Farhat, N. et al. Genome wide association studies in
+    presence of misclassified binary responses. BMC Genet 14, 124
+    (2013). https://doi.org/10.1186/1471-2156-14-124

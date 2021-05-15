@@ -154,28 +154,7 @@
   \end{equation}
 
   The primary derived quantity of interest for prediction is the posterior mean
-  \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\). As an example, assume a
-  point-Normal prior
-
-  \begin{equation}
-    b_j \sim \pi_0 \delta_0(\cdot) + (1 - \pi_0) \N(0, \sigma_b^2),
-  \end{equation}
-
-  and assume a conjugate variational family (Carbonetto and Stephens 2012)
-
-  \begin{equation}
-    q(b_j) = \alpha_j \delta_0(\cdot) + (1 - \alpha_j) \N(\mu_j, s_j^2).
-  \end{equation}
-
-  The evidence lower bound is
-
-  \begin{equation}
-    \ell = \sum_i \E\left[\ln \left(\textstyle\sum_{z_i} p(y_i \mid z_i) p(z_i \mid \vx_i, \vb)\right)\right] - \KL(q(\vb) \Vert p(\vb)),
-  \end{equation}
-
-  which can be approximated as a Monte Carlo integral (Kingma and Welling 2014,
-  Rezende et al. 2014). This yields a differentiable stochastic objective which
-  can be optimized via automatic differentiation and gradient descent.
+  \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
 
 * Example
 ** Setup
@@ -199,12 +178,15 @@
      import pyro
      import scipy.special as sp
      import scipy.stats as st
+     import sklearn.linear_model as sklm
+     import sklearn.metrics as skm
+     import sklearn.model_selection as skms
      import torch
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[38]:
+   # Out[11]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -214,7 +196,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[3]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -225,7 +207,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[5]:
+   # Out[4]:
    :END:
 
 ** Simulation
@@ -244,28 +226,33 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[15]:
+   # Out[5]:
    :END:
 
    #+BEGIN_SRC ipython
-     x, y, z, b = simulate(n=500, p=10, n_causal=2, theta0=0.01, theta1=0.01)
+     x, y, z, b = simulate(n=1000, p=10, n_causal=3, theta0=0.05, theta1=0.05)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[22]:
+   # Out[6]:
    :END:
 
    #+BEGIN_SRC ipython :ipyfile figure/logistic-regression-labelling-errors.org/sim-ex.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
-     plt.gcf().set_size_inches(2.5, 2.5)
+     fig, ax = plt.subplots(1, 2, sharey=True)
+     fig.set_size_inches(5, 2.5)
      eta = x @ b
      for k in range(2):
        jitter = np.random.normal(scale=0.01, size=(z == k).sum())
-       plt.scatter(eta[z == k], jitter + z[z == k], s=1, c=cm(k))
-     plt.xlabel('Linear predictor')
-     plt.ylabel('True label')
+       ax[0].scatter(eta[z == k], jitter + z[z == k], s=1, c=cm(k), alpha=0.25)
+       ax[1].scatter(eta[(z == k) & (y == z)], jitter[(y == z)[z == k]] + y[(z == k) & (y == z)], s=1, c=cm(k), alpha=0.25)
+       ax[1].scatter(eta[(z == k) & (y != z)], jitter[(y != z)[z == k]] + y[(z == k) & (y != z)], s=8, marker='x', c=cm(k), alpha=1)
+     for a in ax:
+       a.set_xlabel('Linear predictor')
+     ax[0].set_ylabel('True label')
+     ax[1].set_ylabel('Observed label')
      plt.tight_layout()
    #+END_SRC
 
@@ -276,187 +263,160 @@
    :END:
 
    #+BEGIN_SRC ipython
-     idx = y != z
-     pd.DataFrame(np.vstack([eta[idx], y[idx], z[idx]]).T, columns=['eta', 'y', 'z'])
+     xt, xv, yt, yv, zt, zv = skms.train_test_split(x, y, z, test_size=0.1)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[43]:
+   # Out[13]:
+   :END:
+
+** Naive analysis
+
+   Fit regularized logistic regression to the data.
+
+   #+BEGIN_SRC ipython :async t
+     fit0 = sklm.LogisticRegressionCV(cv=4, n_jobs=-1).fit(xt, yt.ravel())
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   :END:
+
+   Report the accuracy in the training and validation data.
+
+   #+BEGIN_SRC ipython
+     pd.Series({'observed': fit0.score(xv, yv), 'true': fit0.score(xv, zv)}, name='accuracy')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[53]:
    #+BEGIN_EXAMPLE
-     eta    y    z
-     0 -2.175591  1.0  0.0
-     1  2.075414  1.0  0.0
-     2 -1.470784  1.0  0.0
-     3  3.486473  0.0  1.0
-     4 -0.088405  1.0  0.0
+     observed    0.70
+     true        0.75
+     Name: accuracy, dtype: float64
    #+END_EXAMPLE
    :END:
 
-** EM
-
-   #+BEGIN_SRC ipython
-     def _objective(x, y, z, b, theta):
-       eta = x @ b
-       alpha = st.bernoulli(1 - theta[1]).pmf(y) + np.log(sp.expit(eta))
-       beta = st.bernoulli(theta[0]).pmf(y) + np.log(sp.expit(-eta))
-       return (z * alpha + (1 - z) * beta).sum()
-
-     def _objective_b(x, z, b):
-       eta = x @ b
-       return (z * np.log(sp.expit(eta)) + (1 - z) * np.log(sp.expit(-eta))).sum()
-
-     def _update_bj(x, y, z, b, j, step=1, c=0.5, tau=0.5, max_iters=30):
-       """Return regression coefficients
-
-       Use backtracking line search to find the step size for the update
-
-       step - initial step size
-       c - control parameter (Armijo-Goldstein condition)
-       tau - control parameter (step size update)
-       max_iters - maximum number of backtracking steps
-
-       """
-       loss = _objective_b(x, z, b)
-       eta = x @ b
-       d = ((z * (1 - sp.expit(eta)) + (1 - z) * (1 - sp.expit(-eta))) * x[:,j]).sum()
-       temp = b[:]
-       temp[j] += step * d
-       update = _objective_b(x, z, temp)
-       while (not np.isfinite(update) or (update > loss + c * step * d).any()) and max_iters > 0:
-         step *= tau
-         temp = b[:]
-         temp[j] += step * d
-         update = _objective_b(z, x, temp)
-         max_iters -= 1
-       if max_iters == 0:
-         # Step size is small enough that update can be skipped
-         return b, loss
-       else:
-         return temp, update
-
-     def _update_z_theta(x, y, b, theta):
-       eta = x @ b
-       alpha = st.bernoulli(1 - theta[1]).pmf(y) + np.log(sp.expit(eta))
-       beta = st.bernoulli(theta[0]).pmf(y) + np.log(sp.expit(-eta))
-       z = np.exp(alpha) / (np.exp(alpha) + np.exp(beta))
-       theta[0] = sp.expit(((1 - z) * y).sum() / ((1 - z) * (1 - y)).sum())
-       theta[1] = sp.expit((z * y).sum() / ((1 - z) * y).sum())
-       return z, theta
-
-     def logistic_regression_errors(x, y, tol=1e-3, max_iters=10000, verbose=True):
-       b = np.zeros(x.shape[1])
-       theta = 0.01 * np.ones(2)
-       obj = -np.inf
-       for i in range(max_iters):
-         z, theta = _update_z_theta(x, y, b, theta)
-         for j in range(x.shape[1]):
-           b[j], _ = _update_bj(x, y, z, b, j)
-         obj1 = _objective(x, y, z, b, theta)
-         if obj1 < obj:
-           raise RuntimeError('objective decreased')
-         elif obj1 - obj < tol:
-           return b, theta
-         else:
-           obj = obj1
-           print('{i:>6d} {obj:>.9g}')
-       else:
-         raise RuntimeError('failed to converge in max_iters')
-   #+END_SRC
-
 ** MCMC
 
-   Assume proper priors \(\theta_k \sim \Unif(0, 1)\), \(\vb \sim \N(0, \lambda
-   \mi)\), \(\lambda \sim \Exp(1)\).
+   Assume proper priors \(\theta_k \sim \Unif(0, 1)\), \(\vb \sim
+   \N(\boldsymbol{0}, \lambda \mi)\), \(\lambda \sim \Exp(1)\).
 
    #+BEGIN_SRC ipython
      def _logistic_regression_errors(x, y):
-       theta = pyro.sample('theta', pyro.distributions.Uniform(low=torch.zeros(2), high=torch.ones(2)))
-       lam = pyro.sample('lam', pyro.distributions.Exponential(rate=torch.ones(1)))
-       b = pyro.sample('b', pyro.distributions.MultivariateNormal(loc=torch.zeros(x.shape[1]), scale=torch.sqrt(lam) * torch.eye(x.shape[1])))
-       z = pyro.sample('z', pyro.distributions.Bernoulli(logits=x @ b))
-       return pyro.sample('y', pyro.distributions.Bernoulli(probs=torch.where(z, 1 - theta[1], theta[0])), obs=y)
+       theta = pyro.sample('theta', pyro.distributions.Uniform(
+         low=torch.zeros(2),
+         high=torch.ones(2)))
+       lam = pyro.sample('lam', pyro.distributions.Exponential(rate=1.))
+       b = pyro.sample('b', pyro.distributions.MultivariateNormal(
+         loc=torch.zeros(x.shape[1]),
+         covariance_matrix=lam * torch.eye(x.shape[1])))
+       eta = x @ b
+       with pyro.plate('data', x.shape[0]):
+         y = pyro.sample('y', pyro.distributions.Bernoulli(
+           probs=(1 - theta[1]) * torch.sigmoid(eta) + theta[0] * torch.sigmoid(-eta)), obs=y)
+       return y
 
      def logistic_regression_errors_nuts(x, y, num_samples=100, warmup_steps=100, verbose=True, **kwargs):
        nuts = pyro.infer.mcmc.NUTS(_logistic_regression_errors)
        samples = pyro.infer.mcmc.MCMC(nuts, num_samples=num_samples, warmup_steps=warmup_steps)
-       samples.run(torch.tensor(x), torch.tensor(y))
+       samples.run(torch.tensor(x, dtype=torch.float), torch.tensor(y.ravel(), dtype=torch.float))
        return samples
    #+END_SRC
 
-** VEB
+   #+RESULTS:
+   :RESULTS:
+   # Out[9]:
+   :END:
+
+   Sample from the posterior.
+
+   #+BEGIN_SRC ipython :async t
+     samples = logistic_regression_errors_nuts(xt, yt, num_samples=2000, warmup_steps=1000)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[60]:
+   :END:
+
+   Report the AUROC of predicting the true labels in the training data.
 
    #+BEGIN_SRC ipython
-     class SpikeSlab(torch.nn.Module):
-       def __init__(self, p):
-         super().__init__()
-         self.logits = torch.nn.Parameter(torch.randn([p, 1]))
-         self.mean = torch.nn.Parameter(torch.zeros([p, 1]))
-         self.log_prec = torch.nn.Parameter(torch.zeros([p, 1]))
-         self.prior_logodds = torch.nn.Parameter(torch.full([1, 1], -np.log(p)))
-         self.log_prior_prec = torch.nn.Parameter(torch.zeros([1, 1]))
-
-       def forward(self):
-         finfo = torch.finfo(self.logits.dtype)
-         pip = torch.clamp(torch.sigmoid(self.logits), finfo.tiny, 1 - finfo.eps)
-         prec = torch.exp(self.log_prec)
-         kl = (pip * torch.log(pip / torch.sigmoid(self.prior_logodds)) +
-               (1 - pip) * torch.log((1 - pip) / torch.sigmoid(-self.prior_logodds)) +
-               .5 * pip * (1 + self.log_prec - self.log_prior_prec + torch.exp(self.log_prior_prec) * (self.mean ** 2 + 1 / prec))).sum()
-         mean = pip * self.mean
-         var = pip / prec + pip * (1 - pip) * self.mean ** 2
-         return mean, var, kl
-
-     class LogisticRegressionWithError(torch.nn.Module):
-       def __init__(self, p):
-         self.prior = SpikeSlab(p)
-         self.err_logits = torch.zeros([2, 1])
-
-       def forward(self, x, y, n_samples=1):
-         b_mean, b_var, kl = self.prior.forward()
-         eta = torch.distributions.Normal(x @ b_mean, x @ torch.sqrt(b_var)).rsample(n_samples)
-         err = (torch.sigmoid(eta) * (y * torch.log(torch.sigmoid(-self.err_logits[1])) + (1 - y) * torch.log(torch.sigmoid(self.err_logits[1]))) +
-                torch.sigmoid(-eta) * ((1 - y) * torch.log(torch.sigmoid(self.err_logits[0])) + (1 - y) * torch.log(torch.sigmoid(-self.err_logits[1])))).mean(dim=0).sum()
-         elbo = err - kl
-         return -elbo
-
-       def fit(self, data, n_samples=10, n_epochs=2000, log_dir=None, **kwargs):
-         n_samples = torch.Size([n_samples])
-         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
-         global_step = 0
-         if log_dir is not None:
-           writer = tb.SummaryWriter(log_dir)
-         else:
-           writer = None
-         for i in range(n_epochs):
-           for x, y in data:
-             opt.zero_grad()
-             loss = self.forward(x, y, n_samples=n_samples, writer=writer, global_step=global_step)
-             if torch.isnan(loss):
-               raise RuntimeError('nan loss')
-             loss.backward()
-             opt.step()
-             global_step += 1
-         return self
+     pt = np.stack([torch.sigmoid(torch.tensor(xt, dtype=torch.float) @ bt).numpy()
+                    for bt in samples.get_samples()['b']]).mean(axis=0)
+     skm.roc_auc_score(zt, pt)
    #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[61]:
+   : 0.8662639056294336
+   :END:
+
+   Report the 95% credible intervals for the error rates.
+
+   #+BEGIN_SRC ipython
+     pd.DataFrame(np.percentile(samples.get_samples()['theta'], [2.5, 97.5], axis=0).T)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[63]:
+   #+BEGIN_EXAMPLE
+     0         1
+     0  0.026715  0.155089
+     1  0.011076  0.155695
+   #+END_EXAMPLE
+   :END:
+
+   Report the AUROC of predicting the true labels in the validation data.
+
+   #+BEGIN_SRC ipython
+     pv = np.stack([torch.sigmoid(torch.tensor(xv, dtype=torch.float) @ bt).numpy()
+                    for bt in samples.get_samples()['b']]).mean(axis=0)
+     skm.roc_auc_score(zv, pv)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[79]:
+   : 0.8375350140056023
+   :END:
+
+   Report the accuracy of predicting the mislabeled data points in the
+   validation data.
+
+   #+BEGIN_SRC ipython
+     skm.roc_auc_score(yv != zv, np.where(yv.ravel(), 1 - pv, pv))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[80]:
+   : 0.9505208333333334
+   :END:
 
 * Related work
 
-  - Tenenbein,A. (1970). A double sampling scheme for estimating from binomial
+  - Tenenbein, A. (1970). A double sampling scheme for estimating from binomial
     data with misclassifications. J. Am. Statist. Assoc. 65. 1350-1361.
 
-  - Hochberg,Y. (1977). On the use of double sampling schemes in analyzing
+  - Hochberg, Y. (1977). On the use of double sampling schemes in analyzing
     categorical data with misclassification
     errors. J. Am. Statist. Assoc. 72. 914-921
 
   - Chen, T.T. (1979). Log-linear models for categorical data with
     misclassification and double sampling. J. Am. Statist. Assoc. 74. 481-488.
 
-  - Espeland,M.A. and Odoroff,C.L. (1985). Log-linear models for doubly sampled
+  - Espeland, M.A. and Odoroff, C.L. (1985). Log-linear models for doubly sampled
     categorical data fitted by the EM
     algorithm. J. Am. Statist. Assoc. 80. 663-670
 
-  - Espeland,M.A. and Hui,S.L. (1987). A general approach to analyzing
+  - Espeland, M.A. and Hui, S.L. (1987). A general approach to analyzing
     epidemiologic data that contain misclassification
     errors. Biometrics 43. 1001-1012
 
@@ -478,7 +438,7 @@
     misclassiﬁed binary responses with applications to animal
     breeding. Biometrics 57, 1123–1129.
 
-  - Daniel Paulino, C., Soares, P. and Neuhaus, J. (2003), Binomial Regression
+  - Paulino, C.D., Soares, P. and Neuhaus, J. (2003), Binomial Regression
     with Misclassification. Biometrics, 59:
     670-675. https://doi.org/10.1111/1541-0420.00077
 

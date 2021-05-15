@@ -422,7 +422,8 @@
 
   - Zhi Geng & Chooichiro Asano. (1989) Bayesian estimation methods for
     categorical data with misclassifications, Communications in Statistics -
-    Theory and Methods, 18:8, 2935-2954. doi:10.1080/03610928908830069
+    Theory and Methods, 18:8,
+    2935-2954. https://doi.org/10.1080/03610928908830069
 
   - Evans, M., Guttman, I., Haitovsky, Y., and Swartz, T. (1996). Bayesian
     analysis of binary data subject to misclassiﬁcation. In Bayesian Analysis

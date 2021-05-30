@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-04-22 Thu 10:55 -->
+<!-- 2021-05-30 Sun 16:20 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOM model for spatial transcriptomic data</title>
@@ -270,6 +270,7 @@ al. 2019</a>).
 <pre class="src src-ipython"><span class="org-keyword">import</span> anndata
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> pickle
 <span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
@@ -295,6 +296,7 @@ rpy2.robjects.pandas2ri.activate()
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib
 <span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
@@ -323,7 +325,7 @@ dat
 </div>
 
 <pre class="example">
-View of AnnData object with n_obs × n_vars = 3798 × 24865
+AnnData object with n_obs × n_vars = 3798 × 24923
 obs: 'barcode', 'in_tissue', 'row', 'col', 'pxl_row', 'pxl_col'
 var: 'gene', 'name', 'featuretype', 'n_cells'
 </pre>
@@ -341,19 +343,37 @@ Fit a topic model, ignoring spatial information.
 </div>
 
 <p>
+Write out the fitted model.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> <span class="org-builtin">open</span>(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/visium-k-10-topic-model.pkl'</span>, <span class="org-string">'wb'</span>) <span class="org-keyword">as</span> f:
+  pickle.dump(res, f)
+</pre>
+</div>
+
+<p>
 Look at the loadings on each topic, spatially organized.
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 5, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
-fig.set_size_inches(7, 4)
-<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax.ravel()):
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 6, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7, 3)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax[:,:5].ravel()):
   <span class="org-variable-name">temp</span> = ss.coo_matrix((res.rx2(<span class="org-string">'L'</span>)[:,k], (dat.obs[<span class="org-string">'row'</span>], dat.obs[<span class="org-string">'col'</span>] // 2)), shape=(80, 64))
   a.imshow(temp.A, cmap=colorcet.cm[<span class="org-string">'fire'</span>])
   a.set_title(f<span class="org-string">'Topic {k + 1}'</span>)
   a.set_xticks([])
   a.set_yticks([])
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax[:,5]:
+  a.axis(<span class="org-string">'off'</span>)
+<span class="org-variable-name">cb</span> = fig.colorbar(matplotlib.cm.ScalarMappable(norm=matplotlib.colors.Normalize(vmin=0, vmax=1),
+                                               cmap=colorcet.cm[<span class="org-string">'fire'</span>]),
+                  ax=ax[:,5].ravel(),
+                  anchor=(0, 0.5),
+                  shrink=0.75)
+cb.set_label(<span class="org-string">'Loading'</span>)
 fig.tight_layout()
 </pre>
 </div>
@@ -369,42 +389,110 @@ Look at the top (highest probability) genes in each topic.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">pd.DataFrame({k: dat.var.iloc[np.argsort(-res.rx2(<span class="org-string">'F'</span>)[:,k])[:10]][<span class="org-string">'name'</span>].values <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(10)})
+<pre class="src src-ipython"><span class="org-variable-name">freq_genes</span> = pd.DataFrame({k: dat.var.iloc[np.argsort(-res.rx2(<span class="org-string">'F'</span>)[:,k])[:10]][<span class="org-string">'name'</span>].values <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(10)})
+freq_genes
 </pre>
 </div>
 
 <pre class="example">
-0      1        2        3       4       5        6      7       8  \
-0     CD74   IGKC   IGFBP5    COX6C   COX6C  COL1A1    RPL41  COX6C     MGP
-1      FTL  IGHG3    RPL41    RPL41   KRT19  COL1A2     KRT8    B2M   RPL41
-2      B2M  IGHG4     KRT8     KRT8   RPL41     FN1    RPLP1  HLA-B  IGFBP5
-3     APOE  IGLC2    COX6C    KRT19  IGFBP5    ACTB    KRT18  HLA-A   KRT19
-4   TMSB10  IGHG1    RPLP1    RPL30    CPB1   SPARC    KRT19  IFI27   GAPDH
-5    RPL41  IGHA1    KRT18      MIF  TMSB10  MALAT1  S100A11  KRT19   RPL30
-6   TMSB4X  IGLC1     FTH1    SERF2   ACTG1  IGFBP7    RPL13   IFI6    TFF3
-7    HLA-B   IGHM  S100A11    RPLP1   RPL30     B2M    RPL30  HLA-C    FTH1
-8  HLA-DRA  IGLC3    KRT19    ACTG1   RPLP1  COL3A1     FTH1  ISG15  S100A6
-9    HLA-A  RPLP1    RPL30  SLC39A6   RPL13   RPLP1     MUC1   FTH1     MIF
+0        1       2       3        4        5       6       7       8  \
+0    COX6C    RPL41    CD74   COX6C   MT-CO1   IGFBP5    IGKC  MT-CO3     MGP
+1   MT-CO1     KRT8     FTL   KRT19   MT-CO3     KRT8   IGHG3     FTL  IGFBP5
+2    RPL41    RPLP1     B2M   RPL41   MT-CO2    RPL41   IGHG4  COL1A1   RPL41
+3     KRT8    RPS27  TMSB10  IGFBP5  MT-ATP6    COX6C   IGLC2   KRT19   KRT19
+4    KRT19    KRT18   RPL41    CPB1   MT-ND4    RPS27   IGHG1  COL1A2   COX6C
+5   MT-ND1    KRT19    APOE  TMSB10   MT-ND3    KRT18   IGHA1   RPLP1   GAPDH
+6    SERF2  S100A11  TMSB4X   ACTG1   MT-ND1    RPLP1   IGLC1    KRT8   RPL30
+7  SLC39A6    RPL13   RPS27   RPL13   MT-CYB    KRT19    IGHM     MIF    TFF3
+8   MT-CO3     MUC1  EEF1A1   RPLP1   MT-ND2     FTH1   IGLC3   SERF2  MT-CO1
+9    ACTG1     FTH1    ACTB    KRT8    RPL41  S100A11  JCHAIN     FN1   RPS18
 
 9
-0  KRT19
-1    FTL
-2   KRT8
-3  RPLP1
-4    MIF
-5   APOE
-6  SERF2
-7  CRIP1
-8  RPL13
-9  RPL41
+0  COX6C
+1    B2M
+2  HLA-B
+3  HLA-A
+4  IFI27
+5  KRT19
+6   IFI6
+7   CD74
+8   FTH1
+9  HLA-C
 </pre>
+
+<p>
+Look at distinctive genes in each topic, i.e., genes with maximum minimum KL
+divergence from all other topics.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">top_genes_idx</span>(F, k, num_genes=10):
+  <span class="org-variable-name">fk</span> = F[:,k].reshape(-1, 1)
+  <span class="org-variable-name">temp</span> = fk * (np.log(fk) - np.log(F)) - fk + F
+  <span class="org-keyword">return</span> np.argsort(-temp[:,np.arange(temp.shape[1]) != k].<span class="org-builtin">min</span>(axis=1))[:num_genes]
+
+<span class="org-variable-name">top_genes</span> = pd.DataFrame({k: dat.var.iloc[top_genes_idx(np.array(res.rx2(<span class="org-string">'F'</span>)), k)][<span class="org-string">'name'</span>].values <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(10)})
+top_genes
+</pre>
+</div>
+
+<pre class="example">
+0       1         2        3        4         5      6       7  \
+0    COX6C  CXCL14    TMSB4X     CPB1   MT-CO1    CRISP3   IGKC  COL1A1
+1  SLC39A6   CCND1     KRT19    COX6C   MT-CO2   SLITRK6  IGHG3  COL1A2
+2   MT-ND1    AGR2      CD74   FCGR3B   MT-CO3  C6orf141  IGLC2   SPARC
+3   MT-CO1  TTLL12    IGFBP5      CFB  MT-ATP6    SERHL2  IGHG4     FN1
+4    RPS15   GFRA1     HLA-B  TNFSF10   MT-ND3     H3F3A  IGHG1  COL3A1
+5     DDR1   DEGS1   HLA-DRA     TFF3   MT-ND4    IGFBP5  IGHA1  LGALS1
+6      SCD  MT-ND1      KRT8    KRT19   MT-CYB      CD74  IGLC3  MT-CO3
+7    RPL17  TCEAL4       LYZ  COLEC12   MT-ND1     VTCN1  IGLC1   POSTN
+8     SNCG   ARMT1     KRT18  SLC39A6   MT-ND2     NUPR1  IGHG2  COL6A2
+9    RPL13    GNG5  HLA-DPB1    REPS2   MT-ND5   S100A13   IGHM   TAGLN
+
+8      9
+0         MGP  HLA-B
+1         ALB   IFI6
+2       S100G  COX6C
+3    SERPINA3  IFI27
+4  ZNF350-AS1  HLA-C
+5       GAPDH  HLA-A
+6        TFF3  ISG15
+7      S100A6  RPL13
+8        STC2   CD74
+9        CD74  RPS18
+</pre>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">temp</span> = res.rx2(<span class="org-string">'F'</span>)[dat.var[<span class="org-string">'name'</span>].isin(<span class="org-builtin">set</span>(freq_genes.values.ravel()))]
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(7.5, 3)
+<span class="org-variable-name">im</span> = plt.imshow(temp.T, cmap=colorcet.cm[<span class="org-string">'bmy'</span>], norm=matplotlib.colors.LogNorm(vmin=temp.<span class="org-builtin">min</span>(), vmax=temp.<span class="org-builtin">max</span>()))
+plt.xlabel(<span class="org-string">'Gene'</span>)
+plt.ylabel(<span class="org-string">'Topic'</span>)
+plt.xticks(np.arange(temp.shape[0]), dat.var.loc[dat.var[<span class="org-string">'name'</span>].isin(<span class="org-builtin">set</span>(freq_genes.values.ravel())), <span class="org-string">'name'</span>].values, size=8, rotation=90)
+plt.yticks(np.arange(temp.shape[1]), 1 + np.arange(temp.shape[1]), size=8)
+<span class="org-variable-name">cb</span> = plt.colorbar(im, shrink=0.5)
+cb.set_label(<span class="org-string">'Relative gene expression'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/spatial-gom.org/visium-k-10-genes.png" alt="visium-k-10-genes.png">
+</p>
+</div>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-04-22 Thu 10:55</p>
+<p class="date">Created: 2021-05-30 Sun 16:20</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

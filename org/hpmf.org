@@ -1,0 +1,522 @@
+#+TITLE: Hierarchical PMF
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Consider the model \(
+  \DeclareMathOperator\E{E}
+  \DeclareMathOperator\Gam{Gamma}
+  \DeclareMathOperator\KL{\mathcal{KL}}
+  \DeclareMathOperator\Mult{Multinomial}
+  \DeclareMathOperator\Pois{Poisson}
+  \newcommand\mf{\mathbf{F}}
+  \newcommand\ml{\mathbf{L}}
+  \newcommand\mx{\mathbf{X}}
+  \newcommand\va{\mathbf{a}}
+  \newcommand\vb{\mathbf{b}}
+  \newcommand\vs{\mathbf{s}}
+  \)
+
+  \begin{align}
+    x_{ij} \mid \lambda_{ij} &\sim \Pois(\lambda_{ij})\\
+    \lambda_{ij} &= (\ml\mf')_{ij}\\
+    l_{ik} &\sim \Gam(a_{lk}, b_{lk})\\
+    f_{jk} &\sim \Gam(a_{fk}, b_{fk}),
+  \end{align}
+
+  where the Gamma distributions are parameterized by shape and rate.
+  [[https://msb.embopress.org/content/15/2/e8557][Levitin et al. 2019]]
+  considered a variation of this model to model scRNA-seq data. One can use
+  VBEM to estimate the posterior \(p(\ml, \mf \mid \mx, \va_l, \vb_l, \va_f,
+  \vb_f)\) ([[https://dx.doi.org/10.1155/2009/785152][Cemgil 2009]]). Here, we
+  investigate an alternative method that does not rely on EM.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="4G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import torch
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[91]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import rpy2.robjects.packages
+    import rpy2.robjects.pandas2ri
+    rpy2.robjects.pandas2ri.activate()
+    fasttopics = rpy2.robjects.packages.importr('fastTopics')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[4]:
+  :END:
+
+* Methods
+** VBEM
+
+   Consider the augmented model
+   ([[https://dx.doi.org/10.1155/2009/785152][Cemgil 2009]])
+
+   \begin{align}
+     x_{ij} &= \sum_{k=1}^K z_{ijk}\\
+     z_{ijk} \mid l_{ik}, f_{jk} &\sim \Pois(l_{ik} f_{jk})\\
+     l_{ik} &\sim \Gam(a_{lk}, b_{lk})\\
+     f_{jk} &\sim \Gam(a_{fk}, b_{fk}).
+   \end{align}
+
+   VBEM updates for the variational parameters are analytic
+
+   \begin{align}
+     q(z_{ij1}, \ldots, z_{ijK}) &= \Mult(x_{ij}, \pi_{ij1}, \ldots, \pi_{ijK})\\
+     \pi_{ijk} &\propto \exp(\E[\ln l_{ik}] + \E[\ln f_{jk}])\\
+     q(l_{ik}) &= \Gam(\textstyle \sum_j \E[z_{ijk}] + a_{lk}, \sum_j \E[f_{jk}] + b_{lk})\\
+     &\triangleq \Gam(\alpha_{lik}, \beta_{lik})\\
+     q(f_{jk}) &= \Gam(\textstyle \sum_i \E[z_{ijk}] + a_{fk}, \sum_i \E[l_{ik}] + b_{fk})\\
+     &\triangleq \Gam(\alpha_{fjk}, \beta_{fjk}),
+   \end{align}
+
+   where the expectations
+
+   \begin{align}
+     \E[z_{ijk}] &= x_{ij} \pi_{ijk}\\
+     \E[l_{ik}] &= \alpha_{lik} / \beta_{lik}\\
+     \E[\ln l_{ik}] &= \psi(\alpha_{lik}) - \ln \beta_{lik}\\
+     \E[f_{jk}] &= \alpha_{fjk} / \beta_{fjk}\\
+     \E[\ln f_{jk}] &= \psi(\alpha_{fjk}) - \ln \beta_{fjk},
+   \end{align}
+
+   and \(\psi\) denotes the digamma function. The ELBO
+
+   \begin{multline}
+     \ell = \sum_{i, j} \left[ \sum_k \Big[ \E[z_{ijk}] (\E[\ln l_{ik}] + \E[\ln f_{jk}] - \ln \pi_{ijk}) - \E[l_{ik}]\E[f_{jk}] \Big] - \ln\Gamma(x_{ij} + 1)\right]\\
+     + \sum_{i, k} \left[ (a_{lk} - \alpha_{lik}) \E[\ln l_{ik}] - (b_{lk} - \beta_{lik}) \E[l_{ik}] + a_{lk} \ln b_{lk} - \alpha_{lik} \ln \beta_{lik} - \ln\Gamma(a_{lk}) + \ln\Gamma(\alpha_{lik})\right]\\
+     + \sum_{j, k} \left[ (a_{fk} - \alpha_{fjk}) \E[\ln f_{jk}] - (b_{fk} - \beta_{fjk}) \E[f_{jk}] + a_{fk} \ln b_{fk} - \alpha_{fjk} \ln \beta_{fjk} - \ln\Gamma(a_{fk}) + \ln\Gamma(\alpha_{fjk})\right].
+   \end{multline}
+
+   Letting \(t_{ij} \triangleq \sum_k \exp(\E[\ln l_{ik}] + \E[\ln f_{jk}])\),
+   and plugging in \(\E[z_{ijk}], \pi_{ijk}\),
+
+   \begin{gather}
+     \sum_{i, j, k} \E[z_{ijk}] (\E[\ln l_{ik}] + \E[\ln f_{jk}] - \ln \pi_{ijk}) = \sum_{i, j} x_{ij} \ln t_{ij}\\
+     \sum_i \E[z_{ijk}] = \exp(\E[\ln f_{jk}]) \sum_i \frac{x_{ij}}{t_{ij}} \exp(\E[\ln l_{ik}])\\
+     \sum_j \E[z_{ijk}] = \exp(\E[\ln l_{ik}]) \sum_j \frac{x_{ij}}{t_{ij}} \exp(\E[\ln f_{jk}]).
+   \end{gather}
+
+   Updates for \(b_{lk}, b_{fk}\) are analytic:
+
+   \begin{align}
+     \frac{\partial \ell}{\partial b_{lk}} &= \frac{a_{lk}}{b_{lk}} - \sum_{i} \E[l_{ik}] = 0\\
+     b_{lk} &:= \frac{a_{lk}}{\sum_{i} \E[l_{ik}]}\\
+     \frac{\partial \ell}{\partial b_{fk}} &= \frac{a_{fk}}{b_{fk}} - \sum_{j} \E[f_{jk}] = 0\\
+     b_{fk} &:= \frac{a_{fk}}{\sum_{j} \E[f_{jk}]},
+   \end{align}
+
+   as are gradients for \(a_{lk}, a_{fk}\):
+
+   \begin{align}
+     \frac{\partial \ell}{\partial a_{lk}} &= \sum_{i} \E[\ln l_{ik}] + \ln b_{lk} - \psi(a_{lk})\\
+     \frac{\partial^2 \ell}{\partial a_{lk}^2} &= \psi^{(1)}(a_{lk})\\
+     \frac{\partial \ell}{\partial a_{fk}} &= \sum_{j} \E[\ln f_{jk}] + \ln b_{fk} - \psi(a_{fk})\\
+     \frac{\partial^2 \ell}{\partial a_{fk}^2} &= \psi^{(1)}(a_{fk}),
+   \end{align}
+
+   where \(\psi^{(1)}\) denotes the trigamma function.
+
+   #+NAME: vbem
+   #+BEGIN_SRC ipython
+     class PMFVBEM(torch.nn.Module):
+       def __init__(self, n, p, k):
+         super().__init__()
+         self.alpha_l = torch.nn.Parameter(torch.exp(torch.randn([n, k])))
+         self.beta_l = torch.nn.Parameter(torch.exp(torch.randn([n, k])))
+         self.alpha_f = torch.nn.Parameter(torch.exp(torch.randn([p, k])))
+         self.beta_f = torch.nn.Parameter(torch.exp(torch.randn([p, k])))
+         self.a_l = torch.nn.Parameter(torch.ones([1, k]))
+         self.b_l = torch.nn.Parameter(torch.ones([1, k]))
+         self.a_f = torch.nn.Parameter(torch.ones([1, k]))
+         self.b_f = torch.nn.Parameter(torch.ones([1, k]))
+
+       @torch.no_grad()
+       def elbo(self, x, pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f):
+         temp = exp_pm_ln_l @ exp_pm_ln_f.T
+         ret = (x * torch.log(temp) - pm_l @ pm_f.T - torch.lgamma(x + 1)).sum()
+         ret += ((self.a_l - self.alpha_l) * torch.log(exp_pm_ln_l)
+                 - (self.b_l - self.beta_l) * pm_l
+                 + self.a_l * torch.log(self.b_l)
+                 - self.alpha_l * torch.log(self.beta_l)
+                 - torch.lgamma(self.a_l)
+                 + torch.lgamma(self.alpha_l)).sum()
+         ret += ((self.a_f - self.alpha_f) * torch.log(exp_pm_ln_f)
+                 - (self.b_f - self.beta_f) * pm_f
+                 + self.a_f * torch.log(self.b_f)
+                 - self.alpha_f * torch.log(self.beta_f)
+                 - torch.lgamma(self.a_f)
+                 + torch.lgamma(self.alpha_f)).sum()
+         assert ret <= 0
+         return ret
+
+       @torch.no_grad()
+       def _pm(self):
+         pm_l = (self.alpha_l / self.beta_l)
+         exp_pm_ln_l = torch.exp(torch.digamma(self.alpha_l) - torch.log(self.beta_l))
+         pm_f = (self.alpha_f / self.beta_f)
+         exp_pm_ln_f = torch.exp(torch.digamma(self.alpha_f) - torch.log(self.beta_f))
+         return pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f
+
+       @torch.no_grad()
+       def fit(self, x, num_epochs):
+         self.trace = []
+         for i in range(num_epochs):
+           # Cemgil 2009, Alg. 1
+           pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f = self._pm()
+           elbo_ = self.elbo(x, pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f)
+           self.trace.append(-elbo_)
+           temp = x / (exp_pm_ln_l @ exp_pm_ln_f.T)
+           self.alpha_l.data = exp_pm_ln_l * (temp @ exp_pm_ln_f) + self.a_l
+           self.beta_l.data = pm_f.sum(dim=0) + self.b_l
+           self.alpha_f.data = exp_pm_ln_f * (exp_pm_ln_l.T @ temp).T + self.a_f
+           self.beta_f.data = pm_l.sum(dim=0) + self.b_f
+           # TODO: Hyperparameter updates
+         return self
+   #+END_SRC
+
+   #+RESULTS: vbem
+   :RESULTS:
+   # Out[247]:
+   :END:
+
+** Reparameterization gradient
+
+   In the original model, the ELBO
+
+   \begin{equation}
+     \ell = \sum_{i,j} \E[\ln p(x_{ij} \mid \ml, \mf)] - \KL(q(\ml) \Vert p(\ml)) - \KL(q(\mf) \Vert p(\mf)).
+   \end{equation}
+
+   The KL terms are analytic; however, the first expectation is not (unlike for
+   the approach described above, which made a variational approximation on
+   \(z\)). In this case, one can still optimize the ELBO using the
+   /reparameterization gradient/
+   ([[https://openreview.net/forum?id=33X9fd2-9FyZd][Kingma and Welling 2014]])
+   and gradient descent.
+
+   #+NAME: grad
+   #+BEGIN_SRC ipython
+     class PMF(torch.nn.Module):
+       def __init__(self, n, p, k):
+         super().__init__()
+         self.alpha_l = torch.nn.Parameter(torch.exp(torch.randn([n, k])))
+         self.beta_l = torch.nn.Parameter(torch.exp(torch.randn([n, k])))
+         self.alpha_f = torch.nn.Parameter(torch.exp(torch.randn([p, k])))
+         self.beta_f = torch.nn.Parameter(torch.exp(torch.randn([p, k])))
+         self.a_l = torch.nn.Parameter(torch.ones([1, k]))
+         self.b_l = torch.nn.Parameter(torch.ones([1, k]))
+         self.a_f = torch.nn.Parameter(torch.ones([1, k]))
+         self.b_f = torch.nn.Parameter(torch.ones([1, k]))
+
+       def forward(self, x):
+         q_l = torch.distributions.Gamma(self.alpha_l, self.beta_l)
+         q_f = torch.distributions.Gamma(self.alpha_f, self.beta_f)
+         kl_l = torch.distributions.kl.kl_divergence(q_l, torch.distributions.Gamma(self.a_l, self.b_l)).sum()
+         kl_f = torch.distributions.kl.kl_divergence(q_f, torch.distributions.Gamma(self.a_f, self.b_f)).sum()
+         # TODO: multiple samples?
+         l = q_l.rsample()
+         f = q_f.rsample()
+         err = torch.distributions.Poisson(l @ f.T).log_prob(x).sum()
+         elbo = err - kl_l - kl_f
+         return -elbo
+
+       def fit(self, x, num_epochs, **kwargs):
+         self.trace = []
+         opt = torch.optim.Adam(self.parameters(), **kwargs)
+         for i in range(num_epochs):
+           opt.zero_grad()
+           loss = self.forward(x)
+           self.trace.append(loss.cpu().detach().numpy())
+           loss.backward()
+           opt.step()
+         return self
+   #+END_SRC
+
+   #+RESULTS: grad
+   :RESULTS:
+   # Out[51]:
+   :END:
+
+* Results
+** Simulated example
+
+   Simulate from the model.
+
+   #+BEGIN_SRC ipython
+     rng = np.random.default_rng(1)
+     n = 200
+     p = 300
+     K = 3
+     a_l = 1
+     b_l = 1
+     a_f = 1
+     b_f = 1
+     l = rng.gamma(a_l, b_l, size=(n, K))
+     f = rng.gamma(a_f, b_f, size=(p, K))
+     x = rng.poisson(l @ f.T)
+     xt = torch.tensor(x, dtype=torch.float, device='cuda')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[114]:
+   :END:
+
+   Fit NMF.
+
+   #+BEGIN_SRC ipython :async t
+     m0 = fasttopics.fit_poisson_nmf(x, k=3, verbose=False)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[115]:
+   :END:
+
+   Examine the model fit.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-nmf.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 3)
+     fig.set_size_inches(7, 5)
+     for k, a in enumerate(ax[0]):
+       a.scatter(m0.rx2('L')[:,k], l[:,k], c='k', s=1)
+       a.set_title(f'$k = {k}$')
+     for k, a in enumerate(ax[1]):
+       a.scatter(m0.rx2('F')[:,k], f[:,k], c='k', s=1)
+       a.set_xlabel('Estimate')
+     for a, label in zip(ax, ['loading', 'factor']):
+       a[0].set_ylabel(f'True {label}')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[12]:
+   [[file:figure/hpmf.org/sim-ex-nmf.png]]
+   :END:
+
+   Fit the model via VBEM.
+
+   #+BEGIN_SRC ipython :async t
+     m1 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=16000)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[248]:
+   :END:
+
+   Match the most correlated factors to each other.
+
+   #+BEGIN_SRC ipython
+     with torch.no_grad():
+       pm = (m1.alpha_f / m1.beta_f).cpu()
+     R = np.corrcoef(pm.T, f.T)[K:,:K]
+     order = np.argmax(R, axis=1)
+     R
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[249]:
+   #+BEGIN_EXAMPLE
+     array([[ 0.01894324,  0.99240779, -0.07768185],
+     [ 0.99418493,  0.02722367,  0.03296913],
+     [ 0.02448261, -0.05624964,  0.99437127]])
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-vbem.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 3)
+     fig.set_size_inches(7, 5)
+     for k, a in enumerate(ax[0]):
+       with torch.no_grad():
+         pm = (m1.alpha_l / m1.beta_l).cpu()
+       a.scatter(pm[:,order[k]], l[:,k], c='k', s=1)
+       a.set_title(f'$k = {k}$')
+     for k, a in enumerate(ax[1]):
+       with torch.no_grad():
+         pm = (m1.alpha_f / m1.beta_f).cpu()
+       a.scatter(pm[:,order[k]], f[:,k], c='k', s=1)
+       a.set_xlabel('Estimate')
+     for a, label in zip(ax, ['loading', 'factor']):
+       a[0].set_ylabel(f'True {label}')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[157]:
+   [[file:figure/hpmf.org/sim-ex-vbem.png]]
+   :END:
+
+   Fit the model via reparameterization gradient.
+
+   #+BEGIN_SRC ipython :async t
+     m2 = PMF(n, p, K).cuda().fit(xt, num_epochs=16000, lr=5e-3)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[139]:
+   :END:
+
+   Examine the model fits.
+
+   #+BEGIN_SRC ipython
+     with torch.no_grad():
+       pm = (m2.alpha_f / m2.beta_f).cpu()
+     R = np.corrcoef(pm.T, f.T)[K:,:K]
+     order = np.argmax(R, axis=1)
+     R
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[141]:
+   #+BEGIN_EXAMPLE
+     array([[-8.11351619e-05,  9.87211813e-01, -2.97502599e-02],
+     [ 9.92688261e-01,  1.20890712e-01,  3.41500389e-03],
+     [ 7.54287206e-02, -4.68352410e-02,  9.92714375e-01]])
+   #+END_EXAMPLE
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-reparam.png
+     plt.clf()
+     fig, ax = plt.subplots(2, 3)
+     fig.set_size_inches(7, 5)
+     for k, a in enumerate(ax[0]):
+       with torch.no_grad():
+         pm = (m2.alpha_l / m2.beta_l).cpu()
+       a.scatter(pm[:,order[k]], l[:,k], c='k', s=1)
+       a.set_ylabel('True loading')
+       a.set_title(f'$k = {k}$')
+     for k, a in enumerate(ax[1]):
+       with torch.no_grad():
+         pm = (m2.alpha_f / m2.beta_f).cpu()
+       a.scatter(pm[:,order[k]], f[:,k], c='k', s=1)
+       a.set_ylabel('True factor')
+       a.set_xlabel('Estimate')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[142]:
+   [[file:figure/hpmf.org/sim-ex-reparam.png]]
+   :END:
+
+   Look at the point estimates of the hyperparameters.
+
+   #+BEGIN_SRC ipython
+     with torch.no_grad():
+       est_hyperparams = {key: getattr(m2, key).cpu() for key in ('a_l', 'b_l', 'a_f', 'b_f')}
+     est_hyperparams
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[143]:
+   #+BEGIN_EXAMPLE
+     {'a_l': tensor([[0.9687, 0.9990, 0.9307]]),
+     'b_l': tensor([[0.9351, 1.0962, 0.9469]]),
+     'a_f': tensor([[0.9280, 1.0938, 0.9437]]),
+     'b_f': tensor([[0.9381, 1.0112, 0.9229]])}
+   #+END_EXAMPLE
+   :END:
+
+   Look at the ELBO achieved by the algorithms.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-elbo.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(4, 2)
+     for i, (model, label) in enumerate(zip((m1, m2), ('VBEM', 'Grad'))):
+       plt.plot(pd.Series(model.trace).ewm(alpha=0.1).mean(), c=cm(i), lw=1, marker=None, label=label)
+     plt.legend(frameon=False)
+     plt.ylim(0, 5e5)
+     plt.xlabel('Epoch')
+     plt.ylabel('Negative ELBO\n(smoothed)')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[250]:
+   [[file:figure/hpmf.org/sim-elbo.png]]
+   :END:
+
+
+   Compare the fitted values of each approach to the observed values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-fit.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3, sharey=True)
+     fig.set_size_inches(7, 3)
+
+     ax[0].scatter((m0.rx2('L') @ m0.rx2('F').T).ravel(), x.ravel(), s=1, alpha=0.1, c='k')
+     for a, model in zip(ax[1:], (m1, m2)):
+       with torch.no_grad():
+         pm = ((model.alpha_l / model.beta_l) @ (model.alpha_f / model.beta_f).T).cpu()
+       a.scatter(pm.ravel(), x.ravel(), s=1, alpha=0.1, c='k')
+     lim = [0, 60]
+     for a, title in zip(ax, ['NMF', 'VBEM', 'Grad']):
+       a.plot(lim, lim, c='r', lw=1, ls=':')
+       a.set_xlabel('Fitted value')
+       a.set_title(title)
+     ax[0].set_ylabel('True value')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[147]:
+   [[file:figure/hpmf.org/sim-ex-fit.png]]
+   :END:

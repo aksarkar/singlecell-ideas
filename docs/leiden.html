@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-06-22 Tue 21:44 -->
+<!-- 2021-06-22 Tue 22:00 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>Pathological behavior of the Leiden algorithm</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -227,119 +227,143 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+        displayAlign: "center",
+        displayIndent: "0em",
+
+        "HTML-CSS": { scale: 100,
+                        linebreaks: { automatic: "false" },
+                        webFont: "TeX"
+                       },
+        SVG: {scale: 100,
+              linebreaks: { automatic: "false" },
+              font: "TeX"},
+        NativeMML: {scale: 100},
+        TeX: { equationNumbers: {autoNumber: "AMS"},
+               MultLineWidth: "85%",
+               TagSide: "right",
+               TagIndent: ".8em"
+             }
+});
+</script>
+<script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">Pathological behavior of the Leiden algorithm</h1>
 <div id="table-of-contents">
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orgd75b5ec">Expression models</a></li>
-<li><a href="#orga0fd2f1">Single cell applications</a></li>
-<li><a href="#org782d899">Other applications</a></li>
-<li><a href="#org81a6dcc">Theory</a></li>
-<li><a href="#org844768b">General methods development</a></li>
-<li><a href="#orgc8f4f70">Computation</a></li>
+<li><a href="#orgba66afa">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#org5c8c626">Results</a></li>
 </ul>
 </div>
 </div>
+
+<div id="outline-container-orgba66afa" class="outline-2">
+<h2 id="orgba66afa">Introduction</h2>
+<div class="outline-text-2" id="text-orgba66afa">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+I claim the Leiden algorithm (<a href="https://arxiv.org/abs/1810.08473">Traag et
+al. 2018</a>) can invent communities in iid. multivariate Gaussian data that
+had no community structure. Here, I show an example where this happens.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org445e0bf" class="outline-2">
+<h2 id="setup"><a id="org445e0bf"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> anndata
+<span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org5c8c626" class="outline-2">
+<h2 id="org5c8c626">Results</h2>
+<div class="outline-text-2" id="text-org5c8c626">
+<p>
+Simulate data from
 </p>
 
-<div id="outline-container-orgd75b5ec" class="outline-2">
-<h2 id="orgd75b5ec">Expression models</h2>
-<div class="outline-text-2" id="text-orgd75b5ec">
-<ul class="org-ul">
-<li><a href="flows.html"><b>Normalizing flows for EBPM</b></a></li>
-<li><a href="spatial-vae.html"><b>Convolutional VAE for spatial transcriptomic data</b></a></li>
-<li><a href="zinb-em.html">EM algorithm for point-Gamma expression model</a></li>
-<li><a href="taylor.html">Taylor expansions for single cell transforms</a></li>
-<li><a href="zinb-vae-gmm.html">Deep unsupervised clustering of scRNA-seq data</a></li>
-<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
-<li><a href="voom.html">An improved voom transform for scRNA-seq data</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-</ul>
-</div>
+\begin{equation}
+  \mathbf{x}_i \sim \operatorname{\mathcal{N}}(\boldsymbol{0}, \mathbf{I}), \qquad i = 1, \ldots, n
+\end{equation}
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">rng</span> = np.random.default_rng(1)
+<span class="org-comment-delimiter"># </span><span class="org-comment">Important: we consider up to k=256 neighbors</span>
+<span class="org-variable-name">n</span> = 257
+<span class="org-variable-name">p</span> = 2
+<span class="org-variable-name">x</span> = rng.normal(size=(n, p))
+<span class="org-variable-name">dat</span> = anndata.AnnData(x)
+</pre>
 </div>
 
-<div id="outline-container-orga0fd2f1" class="outline-2">
-<h2 id="orga0fd2f1">Single cell applications</h2>
-<div class="outline-text-2" id="text-orga0fd2f1">
-<ul class="org-ul">
-<li><a href="leiden.html">Pathological behavior of the Leiden algorithm</a></li>
-<li><a href="expr-var-struct.html">Learning the structure of RNA expression variation</a></li>
-<li><a href="expr-var-buffering.html">Buffering of RNA expression variation</a></li>
-<li><a href="pglmm.html">Poisson GLMM for differential expression</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="pseudobulk.html">Alternative approaches to scRNA-seq pseudobulk models</a></li>
-<li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="experimental-finemapping.html">Experimental fine-mapping of QTLs from
-scRNA-seq data</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-</ul>
-</div>
+<p>
+Run the Leiden algorithm for different \(k\)-nearest neighbors graphs,
+varying \(k\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">K</span> = (2, 4, 8, 16, 32, 64, 128, 256)
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> K:
+  sc.pp.neighbors(dat, n_neighbors=k, key_added=f<span class="org-string">'K{k}'</span>)
+  sc.tl.leiden(dat, neighbors_key=f<span class="org-string">'K{k}'</span>, key_added=f<span class="org-string">'leiden_K{k}'</span>)
+</pre>
 </div>
 
-<div id="outline-container-org782d899" class="outline-2">
-<h2 id="org782d899">Other applications</h2>
-<div class="outline-text-2" id="text-org782d899">
-<ul class="org-ul">
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-</ul>
-</div>
+<p>
+Plot the data and learned communities.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 4, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7, 4)
+<span class="org-keyword">for</span> a, k <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax.ravel(), K):
+  <span class="org-keyword">for</span> j <span class="org-keyword">in</span> pd.Categorical(dat.obs[f<span class="org-string">'leiden_K{k}'</span>]).categories:
+    <span class="org-variable-name">idx</span> = dat.obs[f<span class="org-string">'leiden_K{k}'</span>] == j
+    a.scatter(x[idx,0], x[idx,1], color=colorcet.cm[<span class="org-string">'glasbey_dark'</span>](<span class="org-builtin">int</span>(j)), s=1)
+    a.set_title(f<span class="org-string">'K = {k}'</span>)
+fig.tight_layout()
+</pre>
 </div>
 
-<div id="outline-container-org81a6dcc" class="outline-2">
-<h2 id="org81a6dcc">Theory</h2>
-<div class="outline-text-2" id="text-org81a6dcc">
-<ul class="org-ul">
-<li><a href="grand-challenges.html"><b>Grand challenges in single-cell data science</b></a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-</ul>
-</div>
-</div>
 
-<div id="outline-container-org844768b" class="outline-2">
-<h2 id="org844768b">General methods development</h2>
-<div class="outline-text-2" id="text-org844768b">
-<ul class="org-ul">
-<li><a href="logistic-regression-labelling-errors.html">Logistic regression in the presence of error-prone labels</a></li>
-<li><a href="influence.html">Is eQTL analysis robust to removing some data points?</a></li>
-<li><a href="horseshoe.html">Empirical Bayes inference for the horseshoe prior</a></li>
-<li><a href="sparse-pois-fa.html">Sparse Poisson Factor Analysis</a></li>
-<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-</ul>
+<div class="figure">
+<p><img src="figure/leiden.org/sim-ex.png" alt="sim-ex.png">
+</p>
 </div>
-</div>
-
-<div id="outline-container-orgc8f4f70" class="outline-2">
-<h2 id="orgc8f4f70">Computation</h2>
-<div class="outline-text-2" id="text-orgc8f4f70">
-<ul class="org-ul">
-<li><a href="cellassign.html">Installing cellAssign</a></li>
-<li><a href="tsne.html">Pathological input to t-SNE</a></li>
-</ul>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-06-22 Tue 21:44</p>
+<p class="date">Created: 2021-06-22 Tue 22:00</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

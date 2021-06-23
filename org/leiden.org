@@ -1,0 +1,114 @@
+#+TITLE: Pathological behavior of the Leiden algorithm
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  I claim the Leiden algorithm ([[https://arxiv.org/abs/1810.08473][Traag et
+  al. 2018]]) can invent communities in iid. multivariate Gaussian data that
+  had no community structure. Here, I show an example where this happens.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 1
+
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+BEGIN_SRC ipython
+    import anndata
+    import numpy as np
+    import pandas as pd
+    import scanpy as sc
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[12]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import colorcet
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[14]:
+  :END:
+
+* Results
+
+  Simulate data from
+
+  \begin{equation}
+    \mathbf{x}_i \sim \operatorname{\mathcal{N}}(\boldsymbol{0}, \mathbf{I}), \qquad i = 1, \ldots, n
+  \end{equation}
+
+  #+BEGIN_SRC ipython
+    rng = np.random.default_rng(1)
+    # Important: we consider up to k=256 neighbors
+    n = 257
+    p = 2
+    x = rng.normal(size=(n, p))
+    dat = anndata.AnnData(x)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[27]:
+  :END:
+
+  Run the Leiden algorithm for different \(k\)-nearest neighbors graphs,
+  varying \(k\).
+
+  #+BEGIN_SRC ipython :async t
+    K = (2, 4, 8, 16, 32, 64, 128, 256)
+    for k in K:
+      sc.pp.neighbors(dat, n_neighbors=k, key_added=f'K{k}')
+      sc.tl.leiden(dat, neighbors_key=f'K{k}', key_added=f'leiden_K{k}')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[28]:
+  :END:
+
+  Plot the data and learned communities.
+
+  #+BEGIN_SRC ipython :ipyfile figure/leiden.org/sim-ex.png
+    plt.clf()
+    fig, ax = plt.subplots(2, 4, sharex=True, sharey=True)
+    fig.set_size_inches(7, 4)
+    for a, k in zip(ax.ravel(), K):
+      for j in pd.Categorical(dat.obs[f'leiden_K{k}']).categories:
+        idx = dat.obs[f'leiden_K{k}'] == j
+        a.scatter(x[idx,0], x[idx,1], color=colorcet.cm['glasbey_dark'](int(j)), s=1)
+        a.set_title(f'K = {k}')
+    fig.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[30]:
+  [[file:figure/leiden.org/sim-ex.png]]
+  :END:

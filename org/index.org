@@ -17,6 +17,7 @@ analysis plus some related topics.
 
 * Single cell applications
 
+  - [[file:leiden.org][Pathological behavior of the Leiden algorithm]]
   - [[file:expr-var-struct.org][Learning the structure of RNA expression variation]]
   - [[file:expr-var-buffering.org][Buffering of RNA expression variation]]
   - [[file:pglmm.org][Poisson GLMM for differential expression]]

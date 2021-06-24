@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-06-24 Thu 00:34 -->
+<!-- 2021-06-24 Thu 13:14 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hierarchical PMF</title>
@@ -262,7 +262,7 @@ for the JavaScript code in this tag.
 <li><a href="#orgfffe2fb">Methods</a>
 <ul>
 <li><a href="#orgc8ee12a">VBEM</a></li>
-<li><a href="#org21ed18d">Reparameterization gradient</a></li>
+<li><a href="#org88930e6">Pathwise gradient</a></li>
 </ul>
 </li>
 <li><a href="#orgc7f6f86">Results</a>
@@ -495,9 +495,9 @@ where \(\psi^{(1)}\) denotes the trigamma function.
 </div>
 </div>
 
-<div id="outline-container-org21ed18d" class="outline-3">
-<h3 id="org21ed18d">Reparameterization gradient</h3>
-<div class="outline-text-3" id="text-org21ed18d">
+<div id="outline-container-org88930e6" class="outline-3">
+<h3 id="org88930e6">Pathwise gradient</h3>
+<div class="outline-text-3" id="text-org88930e6">
 <p>
 In the original model, the ELBO
 </p>
@@ -509,10 +509,10 @@ In the original model, the ELBO
 <p>
 The KL terms are analytic; however, the first expectation is not (unlike for
 the approach described above, which made a variational approximation on
-\(z\)). In this case, one can still optimize the ELBO using the
-<i>reparameterization gradient</i>
-(<a href="https://openreview.net/forum?id=33X9fd2-9FyZd">Kingma and Welling 2014</a>)
-and gradient descent.
+\(z\)). In this case, one can still optimize the ELBO using the <i>pathwise
+gradient</i> (reviewed by
+<a href="https://www.jmlr.org/papers/volume21/19-346/19-346.pdf">Mohamed et
+al. 2020</a>) and gradient descent. Briefly,
 </p>
 
 <div class="org-src-container">
@@ -619,11 +619,14 @@ fig.tight_layout()
 </div>
 
 <p>
-Fit the model via VBEM.
+Fit the model via VBEM. To simplify, fix the hyperparameters at the oracle
+values.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">m1</span> = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=16000)
+<pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: we randomly initialized</span>
+torch.manual_seed(1)
+<span class="org-variable-name">m1</span> = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=1000)
 </pre>
 </div>
 
@@ -641,9 +644,9 @@ R
 </div>
 
 <pre class="example">
-array([[ 0.01894324,  0.99240779, -0.07768185],
-[ 0.99418493,  0.02722367,  0.03296913],
-[ 0.02448261, -0.05624964,  0.99437127]])
+array([[ 0.01895363, -0.07767732,  0.99240795],
+[ 0.99418499,  0.03297424,  0.02721594],
+[ 0.02447772,  0.99437128, -0.05625653]])
 </pre>
 
 <div class="org-src-container">
@@ -673,16 +676,35 @@ fig.tight_layout()
 </div>
 
 <p>
-Fit the model via reparameterization gradient.
+Fit the model via pathwise gradient, initializing at the VBEM solution. To
+make the comparison more fair, continue to fix the hyperparameters at the
+oracle value.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">m2</span> = PMF(n, p, K).cuda().fit(xt, num_epochs=16000, lr=5e-3)
+<pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: this algorithm is stochastic</span>
+torch.manual_seed(2)
+<span class="org-variable-name">m2</span> = PMF(n, p, K).cuda()
+<span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">m2.alpha_l.data</span> = m1.alpha_l.clone()
+  <span class="org-variable-name">m2.beta_l.data</span> = m1.beta_l.clone()
+  <span class="org-variable-name">m2.alpha_f.data</span> = m1.alpha_f.clone()
+  <span class="org-variable-name">m2.beta_f.data</span> = m1.beta_f.clone()
+<span class="org-variable-name">m2.a_l.requires_grad</span> = <span class="org-constant">False</span>
+<span class="org-variable-name">m2.b_l.requires_grad</span> = <span class="org-constant">False</span>
+<span class="org-variable-name">m2.a_f.requires_grad</span> = <span class="org-constant">False</span>
+<span class="org-variable-name">m2.b_f.requires_grad</span> = <span class="org-constant">False</span>
+m2.fit(xt, num_epochs=4000, lr=1e-2)
 </pre>
 </div>
 
+<pre class="example">
+PMF()
+
+</pre>
+
 <p>
-Examine the model fits.
+Examine the model fit.
 </p>
 
 <div class="org-src-container">
@@ -695,9 +717,9 @@ R
 </div>
 
 <pre class="example">
-array([[-8.11351619e-05,  9.87211813e-01, -2.97502599e-02],
-[ 9.92688261e-01,  1.20890712e-01,  3.41500389e-03],
-[ 7.54287206e-02, -4.68352410e-02,  9.92714375e-01]])
+array([[ 0.01809326, -0.07844437,  0.9924126 ],
+[ 0.99418027,  0.03239465,  0.02689676],
+[ 0.02408282,  0.9943834 , -0.05662122]])
 </pre>
 
 <div class="org-src-container">
@@ -727,24 +749,6 @@ fig.tight_layout()
 </div>
 
 <p>
-Look at the point estimates of the hyperparameters.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
-  <span class="org-variable-name">est_hyperparams</span> = {key: <span class="org-builtin">getattr</span>(m2, key).cpu() <span class="org-keyword">for</span> key <span class="org-keyword">in</span> (<span class="org-string">'a_l'</span>, <span class="org-string">'b_l'</span>, <span class="org-string">'a_f'</span>, <span class="org-string">'b_f'</span>)}
-est_hyperparams
-</pre>
-</div>
-
-<pre class="example">
-{'a_l': tensor([[0.9687, 0.9990, 0.9307]]),
-'b_l': tensor([[0.9351, 1.0962, 0.9469]]),
-'a_f': tensor([[0.9280, 1.0938, 0.9437]]),
-'b_f': tensor([[0.9381, 1.0112, 0.9229]])}
-</pre>
-
-<p>
 Look at the ELBO achieved by the algorithms.
 </p>
 
@@ -752,10 +756,11 @@ Look at the ELBO achieved by the algorithms.
 <pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
 plt.clf()
 plt.gcf().set_size_inches(4, 2)
-<span class="org-keyword">for</span> i, (model, label) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>((m1, m2), (<span class="org-string">'VBEM'</span>, <span class="org-string">'Grad'</span>))):
-  plt.plot(pd.Series(model.trace).ewm(alpha=0.1).mean(), c=cm(i), lw=1, marker=<span class="org-constant">None</span>, label=label)
+plt.yscale(<span class="org-string">'log'</span>)
+plt.plot(pd.Series(m1.trace).ewm(alpha=0.1).mean(), c=cm(0), lw=1, marker=<span class="org-constant">None</span>, label=<span class="org-string">'VBEM'</span>)
+plt.plot(np.arange(1001, 5001), pd.Series(m2.trace).ewm(alpha=0.1).mean(), c=cm(1), lw=1, marker=<span class="org-constant">None</span>, label=<span class="org-string">'Grad'</span>)
 plt.legend(frameon=<span class="org-constant">False</span>)
-plt.ylim(0, 5e5)
+plt.ylim(1e5, 1.1e5)
 plt.xlabel(<span class="org-string">'Epoch'</span>)
 plt.ylabel(<span class="org-string">'Negative ELBO\n(smoothed)'</span>)
 plt.tight_layout()
@@ -768,6 +773,52 @@ plt.tight_layout()
 </p>
 </div>
 
+<p>
+Estimate the total improvement in ELBO achieved by GD.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">m1.trace[-1].cpu() - np.array(m2.trace[-50:]).mean()
+</pre>
+</div>
+
+<pre class="example">
+tensor(463.5781)
+
+</pre>
+
+<p>
+Quantify how much the variational approximation to \(z\) made by VBEM
+decreases the ELBO.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">m1.trace[-1].cpu() - m2.trace[0]
+</pre>
+</div>
+
+<pre class="example">
+tensor(426.4609)
+
+</pre>
+
+<p>
+Compare the estimated parameters to each other.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">norm_diff</span> = {key: torch.norm(<span class="org-builtin">getattr</span>(m1, key) - <span class="org-builtin">getattr</span>(m2, key)).cpu().numpy() <span class="org-keyword">for</span> key <span class="org-keyword">in</span> (<span class="org-string">'alpha_l'</span>, <span class="org-string">'beta_l'</span>, <span class="org-string">'alpha_f'</span>, <span class="org-string">'beta_f'</span>)}
+norm_diff
+</pre>
+</div>
+
+<pre class="example">
+{'alpha_l': array(43.566395, dtype=float32),
+'beta_l': array(3.7134445, dtype=float32),
+'alpha_f': array(54.408215, dtype=float32),
+'beta_f': array(3.3419561, dtype=float32)}
+</pre>
 
 <p>
 Compare the fitted values of each approach to the observed values.
@@ -804,7 +855,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-06-24 Thu 00:34</p>
+<p class="date">Created: 2021-06-24 Thu 13:14</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

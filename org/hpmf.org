@@ -54,7 +54,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[91]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -66,7 +66,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -76,7 +76,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[3]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -221,10 +221,10 @@
 
    #+RESULTS: vbem
    :RESULTS:
-   # Out[247]:
+   # Out[5]:
    :END:
 
-** Reparameterization gradient
+** Pathwise gradient
 
    In the original model, the ELBO
 
@@ -234,10 +234,10 @@
 
    The KL terms are analytic; however, the first expectation is not (unlike for
    the approach described above, which made a variational approximation on
-   \(z\)). In this case, one can still optimize the ELBO using the
-   /reparameterization gradient/
-   ([[https://openreview.net/forum?id=33X9fd2-9FyZd][Kingma and Welling 2014]])
-   and gradient descent.
+   \(z\)). In this case, one can still optimize the ELBO using the /pathwise
+   gradient/ (reviewed by
+   [[https://www.jmlr.org/papers/volume21/19-346/19-346.pdf][Mohamed et
+   al. 2020]]) and gradient descent. Briefly,
 
    #+NAME: grad
    #+BEGIN_SRC ipython
@@ -279,7 +279,7 @@
 
    #+RESULTS: grad
    :RESULTS:
-   # Out[51]:
+   # Out[6]:
    :END:
 
 * Results
@@ -304,7 +304,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[114]:
+   # Out[7]:
    :END:
 
    Fit NMF.
@@ -315,7 +315,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[115]:
+   # Out[37]:
    :END:
 
    Examine the model fit.
@@ -341,15 +341,18 @@
    [[file:figure/hpmf.org/sim-ex-nmf.png]]
    :END:
 
-   Fit the model via VBEM.
+   Fit the model via VBEM. To simplify, fix the hyperparameters at the oracle
+   values.
 
    #+BEGIN_SRC ipython :async t
-     m1 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=16000)
+     # Important: we randomly initialized
+     torch.manual_seed(1)
+     m1 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=1000)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[248]:
+   # Out[80]:
    :END:
 
    Match the most correlated factors to each other.
@@ -364,11 +367,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[249]:
+   # Out[17]:
    #+BEGIN_EXAMPLE
-     array([[ 0.01894324,  0.99240779, -0.07768185],
-     [ 0.99418493,  0.02722367,  0.03296913],
-     [ 0.02448261, -0.05624964,  0.99437127]])
+     array([[ 0.01895363, -0.07767732,  0.99240795],
+     [ 0.99418499,  0.03297424,  0.02721594],
+     [ 0.02447772,  0.99437128, -0.05625653]])
    #+END_EXAMPLE
    :END:
 
@@ -393,22 +396,37 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[157]:
+   # Out[18]:
    [[file:figure/hpmf.org/sim-ex-vbem.png]]
    :END:
 
-   Fit the model via reparameterization gradient.
+   Fit the model via pathwise gradient, initializing at the VBEM solution. To
+   make the comparison more fair, continue to fix the hyperparameters at the
+   oracle value.
 
    #+BEGIN_SRC ipython :async t
-     m2 = PMF(n, p, K).cuda().fit(xt, num_epochs=16000, lr=5e-3)
+     # Important: this algorithm is stochastic
+     torch.manual_seed(2)
+     m2 = PMF(n, p, K).cuda()
+     with torch.no_grad():
+       m2.alpha_l.data = m1.alpha_l.clone()
+       m2.beta_l.data = m1.beta_l.clone()
+       m2.alpha_f.data = m1.alpha_f.clone()
+       m2.beta_f.data = m1.beta_f.clone()
+     m2.a_l.requires_grad = False
+     m2.b_l.requires_grad = False
+     m2.a_f.requires_grad = False
+     m2.b_f.requires_grad = False
+     m2.fit(xt, num_epochs=4000, lr=1e-2)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[139]:
+   # Out[82]:
+   : PMF()
    :END:
 
-   Examine the model fits.
+   Examine the model fit.
 
    #+BEGIN_SRC ipython
      with torch.no_grad():
@@ -420,11 +438,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[141]:
+   # Out[87]:
    #+BEGIN_EXAMPLE
-     array([[-8.11351619e-05,  9.87211813e-01, -2.97502599e-02],
-     [ 9.92688261e-01,  1.20890712e-01,  3.41500389e-03],
-     [ 7.54287206e-02, -4.68352410e-02,  9.92714375e-01]])
+     array([[ 0.01809326, -0.07844437,  0.9924126 ],
+     [ 0.99418027,  0.03239465,  0.02689676],
+     [ 0.02408282,  0.9943834 , -0.05662122]])
    #+END_EXAMPLE
    :END:
 
@@ -449,27 +467,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[142]:
+   # Out[88]:
    [[file:figure/hpmf.org/sim-ex-reparam.png]]
-   :END:
-
-   Look at the point estimates of the hyperparameters.
-
-   #+BEGIN_SRC ipython
-     with torch.no_grad():
-       est_hyperparams = {key: getattr(m2, key).cpu() for key in ('a_l', 'b_l', 'a_f', 'b_f')}
-     est_hyperparams
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[143]:
-   #+BEGIN_EXAMPLE
-     {'a_l': tensor([[0.9687, 0.9990, 0.9307]]),
-     'b_l': tensor([[0.9351, 1.0962, 0.9469]]),
-     'a_f': tensor([[0.9280, 1.0938, 0.9437]]),
-     'b_f': tensor([[0.9381, 1.0112, 0.9229]])}
-   #+END_EXAMPLE
    :END:
 
    Look at the ELBO achieved by the algorithms.
@@ -478,10 +477,11 @@
      cm = plt.get_cmap('Dark2')
      plt.clf()
      plt.gcf().set_size_inches(4, 2)
-     for i, (model, label) in enumerate(zip((m1, m2), ('VBEM', 'Grad'))):
-       plt.plot(pd.Series(model.trace).ewm(alpha=0.1).mean(), c=cm(i), lw=1, marker=None, label=label)
+     plt.yscale('log')
+     plt.plot(pd.Series(m1.trace).ewm(alpha=0.1).mean(), c=cm(0), lw=1, marker=None, label='VBEM')
+     plt.plot(np.arange(1001, 5001), pd.Series(m2.trace).ewm(alpha=0.1).mean(), c=cm(1), lw=1, marker=None, label='Grad')
      plt.legend(frameon=False)
-     plt.ylim(0, 5e5)
+     plt.ylim(1e5, 1.1e5)
      plt.xlabel('Epoch')
      plt.ylabel('Negative ELBO\n(smoothed)')
      plt.tight_layout()
@@ -489,10 +489,53 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[250]:
+   # Out[89]:
    [[file:figure/hpmf.org/sim-elbo.png]]
    :END:
 
+   Estimate the total improvement in ELBO achieved by GD.
+
+   #+BEGIN_SRC ipython
+     m1.trace[-1].cpu() - np.array(m2.trace[-50:]).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[94]:
+   : tensor(463.5781)
+   :END:
+
+   Quantify how much the variational approximation to \(z\) made by VBEM
+   decreases the ELBO.
+
+   #+BEGIN_SRC ipython
+     m1.trace[-1].cpu() - m2.trace[0]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[95]:
+   : tensor(426.4609)
+   :END:
+
+   Compare the estimated parameters to each other.
+
+   #+BEGIN_SRC ipython
+     with torch.no_grad():
+       norm_diff = {key: torch.norm(getattr(m1, key) - getattr(m2, key)).cpu().numpy() for key in ('alpha_l', 'beta_l', 'alpha_f', 'beta_f')}
+     norm_diff
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[90]:
+   #+BEGIN_EXAMPLE
+     {'alpha_l': array(43.566395, dtype=float32),
+     'beta_l': array(3.7134445, dtype=float32),
+     'alpha_f': array(54.408215, dtype=float32),
+     'beta_f': array(3.3419561, dtype=float32)}
+   #+END_EXAMPLE
+   :END:
 
    Compare the fitted values of each approach to the observed values.
 
@@ -517,6 +560,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[147]:
+   # Out[91]:
    [[file:figure/hpmf.org/sim-ex-fit.png]]
    :END:

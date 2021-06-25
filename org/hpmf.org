@@ -29,7 +29,7 @@
   considered a variation of this model to model scRNA-seq data. One can use
   VBEM to estimate the posterior \(p(\ml, \mf \mid \mx, \va_l, \vb_l, \va_f,
   \vb_f)\) ([[https://dx.doi.org/10.1155/2009/785152][Cemgil 2009]]). Here, we
-  investigate an alternative method that does not rely on EM.
+  investigate alternative methods that do not rely on EM.
 
 * Setup
   :PROPERTIES:
@@ -58,25 +58,13 @@
   :END:
 
   #+BEGIN_SRC ipython
-    import rpy2.robjects.packages
-    import rpy2.robjects.pandas2ri
-    rpy2.robjects.pandas2ri.activate()
-    fasttopics = rpy2.robjects.packages.importr('fastTopics')
-  #+END_SRC
-
-  #+RESULTS:
-  :RESULTS:
-  # Out[2]:
-  :END:
-
-  #+BEGIN_SRC ipython
     %matplotlib inline
     %config InlineBackend.figure_formats = set(['retina'])
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -87,7 +75,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[4]:
+  # Out[3]:
   :END:
 
 * Methods
@@ -221,7 +209,81 @@
 
    #+RESULTS: vbem
    :RESULTS:
-   # Out[5]:
+   # Out[29]:
+   :END:
+
+** Newton-Raphson
+
+   Alternatively, one could plug in \(\E[z_{ijk}], \pi_{ijk}\) and then
+   optimize the ELBO with respect to \(\alpha_{lik}, \beta_{lik}, \alpha_{fjk},
+   \beta_{fjk}, a_{lk}, b_{lk}, a_{fk}, b_{fk}\) using one-dimensional
+   Newton-Raphson updates. To prototype this approach, we use automatic
+   differentiation to get the first and second derivatives.
+   
+   #+NAME: newton
+   #+BEGIN_SRC ipython
+     class PMFN(torch.nn.Module):
+       def __init__(self, n, p, k):
+         super().__init__()
+         self.alpha_l = torch.nn.Parameter(torch.exp(torch.randn([n, k])))
+         self.beta_l = torch.nn.Parameter(torch.exp(torch.randn([n, k])))
+         self.alpha_f = torch.nn.Parameter(torch.exp(torch.randn([p, k])))
+         self.beta_f = torch.nn.Parameter(torch.exp(torch.randn([p, k])))
+         self.a_l = torch.nn.Parameter(torch.ones([1, k]))
+         self.b_l = torch.nn.Parameter(torch.ones([1, k]))
+         self.a_f = torch.nn.Parameter(torch.ones([1, k]))
+         self.b_f = torch.nn.Parameter(torch.ones([1, k]))
+
+       def elbo(self, x):
+         pm_l = (self.alpha_l / self.beta_l)
+         exp_pm_ln_l = torch.exp(torch.digamma(self.alpha_l) - torch.log(self.beta_l))
+         pm_f = (self.alpha_f / self.beta_f)
+         exp_pm_ln_f = torch.exp(torch.digamma(self.alpha_f) - torch.log(self.beta_f))
+         temp = exp_pm_ln_l @ exp_pm_ln_f.T
+         ret = (x * torch.log(temp) - pm_l @ pm_f.T - torch.lgamma(x + 1)).sum()
+         ret += ((self.a_l - self.alpha_l) * torch.log(exp_pm_ln_l)
+                 - (self.b_l - self.beta_l) * pm_l
+                 + self.a_l * torch.log(self.b_l)
+                 - self.alpha_l * torch.log(self.beta_l)
+                 - torch.lgamma(self.a_l)
+                 + torch.lgamma(self.alpha_l)).sum()
+         ret += ((self.a_f - self.alpha_f) * torch.log(exp_pm_ln_f)
+                 - (self.b_f - self.beta_f) * pm_f
+                 + self.a_f * torch.log(self.b_f)
+                 - self.alpha_f * torch.log(self.beta_f)
+                 - torch.lgamma(self.a_f)
+                 + torch.lgamma(self.alpha_f)).sum()
+         assert not torch.isnan(ret)
+         assert torch.isfinite(ret)
+         assert ret <= 0
+         return ret
+
+       def _update(self, x, par, step=1, eps=1e-15):
+         """Newton-Raphon update"""
+         for i in range(par.shape[0]):
+           for k in range(par.shape[1]):
+             d = torch.autograd.grad(self.elbo(x), par, create_graph=True)[0]
+             d2 = torch.autograd.grad(d[i,k], par)[0]
+             with torch.no_grad():
+               par.data[i,k] -= step * d[i,k] / (d2[i,k] + eps)
+               par.data[i,k] = torch.clamp(par.data[i,k], min=eps)
+
+       def fit(self, x, num_epochs, step=1):
+         with torch.no_grad():
+           self.trace = [-self.elbo(x).cpu().numpy()]
+         for t in range(num_epochs):
+           # TODO: update order probably matters
+           for par in self.parameters():
+             if par.requires_grad:
+               self._update(x, par, step=step)
+           with torch.no_grad():
+             self.trace.append(-self.elbo(x).cpu().numpy())
+         return self
+   #+END_SRC
+
+   #+RESULTS: newton
+   :RESULTS:
+   # Out[46]:
    :END:
 
 ** Pathwise gradient
@@ -279,7 +341,7 @@
 
    #+RESULTS: grad
    :RESULTS:
-   # Out[6]:
+   # Out[31]:
    :END:
 
 * Results
@@ -304,58 +366,123 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[32]:
    :END:
 
-   Fit NMF.
+   To initialize all methods, run 1000 epochs of VBEM. For simplicity, fix the
+   hyperparameters to the oracle values.
 
    #+BEGIN_SRC ipython :async t
-     m0 = fasttopics.fit_poisson_nmf(x, k=3, verbose=False)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[37]:
-   :END:
-
-   Examine the model fit.
-
-   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-nmf.png
-     plt.clf()
-     fig, ax = plt.subplots(2, 3)
-     fig.set_size_inches(7, 5)
-     for k, a in enumerate(ax[0]):
-       a.scatter(m0.rx2('L')[:,k], l[:,k], c='k', s=1)
-       a.set_title(f'$k = {k}$')
-     for k, a in enumerate(ax[1]):
-       a.scatter(m0.rx2('F')[:,k], f[:,k], c='k', s=1)
-       a.set_xlabel('Estimate')
-     for a, label in zip(ax, ['loading', 'factor']):
-       a[0].set_ylabel(f'True {label}')
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[12]:
-   [[file:figure/hpmf.org/sim-ex-nmf.png]]
-   :END:
-
-   Fit the model via VBEM. To simplify, fix the hyperparameters at the oracle
-   values.
-
-   #+BEGIN_SRC ipython :async t
-     # Important: we randomly initialized
+     # Important: VBEM is randomly initialized
      torch.manual_seed(1)
-     m1 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=1000)
+     init_epochs = 500
+     m0 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=init_epochs)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[80]:
+   # Out[33]:
    :END:
 
-   Match the most correlated factors to each other.
+   Starting from the same initialization, compare VBEM and Newton-Raphson
+   (which optimize the ELBO eq. 21-22) and gradient descent (which optimizes
+   the ELBO eq. 32).
+
+   #+BEGIN_SRC ipython :async t
+     num_epochs = 4000
+
+     # Continue VBEM updates
+     m1 = PMFVBEM(n, p, K).cuda()
+     with torch.no_grad():
+       m1.alpha_l.data = m0.alpha_l.clone()
+       m1.beta_l.data = m0.beta_l.clone()
+       m1.alpha_f.data = m0.alpha_f.clone()
+       m1.beta_f.data = m0.beta_f.clone()
+     m1.fit(xt, num_epochs=num_epochs)
+
+     # Important: GD is stochastic
+     torch.manual_seed(2)
+     m2 = PMF(n, p, K).cuda()
+     with torch.no_grad():
+       m2.alpha_l.data = m0.alpha_l.clone()
+       m2.beta_l.data = m0.beta_l.clone()
+       m2.alpha_f.data = m0.alpha_f.clone()
+       m2.beta_f.data = m0.beta_f.clone()
+     m2.a_l.requires_grad = False
+     m2.b_l.requires_grad = False
+     m2.a_f.requires_grad = False
+     m2.b_f.requires_grad = False
+     m2.fit(xt, num_epochs=4000, lr=1e-2)
+
+     m3 = PMFN(n, p, K).cuda()
+     with torch.no_grad():
+       m3.alpha_l.data = m0.alpha_l.clone()
+       m3.beta_l.data = m0.beta_l.clone()
+       m3.alpha_f.data = m0.alpha_f.clone()
+       m3.beta_f.data = m0.beta_f.clone()
+     m3.a_l.requires_grad = False
+     m3.b_l.requires_grad = False
+     m3.a_f.requires_grad = False
+     m3.b_f.requires_grad = False
+     # TODO: why does this blow up for step=1?
+     m3.fit(xt, num_epochs=100, step=1e-2)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[55]:
+   : PMFN()
+   :END:
+
+   Look at the ELBO achieved by the algorithms.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-elbo.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(5, 2.5)
+     plt.yscale('log')
+     plt.plot(pd.Series(m0.trace).ewm(alpha=0.1).mean(), c=cm(0), lw=1, marker=None, label='Initialization')
+     for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
+       plt.plot(np.arange(init_epochs, init_epochs + len(model.trace)), pd.Series(model.trace).ewm(alpha=0.1).mean(), c=cm(i + 1), lw=1, marker=None, label=name)
+     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     plt.ylim(1.045e5, 1.12e5)
+     plt.xlabel('Epoch')
+     plt.ylabel('Negative ELBO\n(smoothed)')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[59]:
+   [[file:figure/hpmf.org/sim-elbo.png]]
+   :END:
+
+   Estimate the total improvement in ELBO achieved by GD.
+
+   #+BEGIN_SRC ipython
+     m1.trace[-1].cpu() - np.array(m2.trace[-50:]).mean()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[41]:
+   : tensor(378.7500)
+   :END:
+
+   Quantify how much the variational approximation to \(z\) made by VBEM
+   decreases the ELBO.
+
+   #+BEGIN_SRC ipython
+     m0.trace[-1].cpu() - m2.trace[0]
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[47]:
+   : tensor(-171.4219)
+   :END:
+
+   Examine the VBEM model fit. Match the most correlated factors to each other.
 
    #+BEGIN_SRC ipython
      with torch.no_grad():
@@ -367,11 +494,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[17]:
+   # Out[48]:
    #+BEGIN_EXAMPLE
-     array([[ 0.01895363, -0.07767732,  0.99240795],
-     [ 0.99418499,  0.03297424,  0.02721594],
-     [ 0.02447772,  0.99437128, -0.05625653]])
+     array([[ 0.01894316, -0.07768191,  0.99240779],
+     [ 0.99418493,  0.03296905,  0.02722373],
+     [ 0.02448254,  0.99437127, -0.05624917]])
    #+END_EXAMPLE
    :END:
 
@@ -396,37 +523,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[18]:
+   # Out[49]:
    [[file:figure/hpmf.org/sim-ex-vbem.png]]
    :END:
 
-   Fit the model via pathwise gradient, initializing at the VBEM solution. To
-   make the comparison more fair, continue to fix the hyperparameters at the
-   oracle value.
-
-   #+BEGIN_SRC ipython :async t
-     # Important: this algorithm is stochastic
-     torch.manual_seed(2)
-     m2 = PMF(n, p, K).cuda()
-     with torch.no_grad():
-       m2.alpha_l.data = m1.alpha_l.clone()
-       m2.beta_l.data = m1.beta_l.clone()
-       m2.alpha_f.data = m1.alpha_f.clone()
-       m2.beta_f.data = m1.beta_f.clone()
-     m2.a_l.requires_grad = False
-     m2.b_l.requires_grad = False
-     m2.a_f.requires_grad = False
-     m2.b_f.requires_grad = False
-     m2.fit(xt, num_epochs=4000, lr=1e-2)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[82]:
-   : PMF()
-   :END:
-
-   Examine the model fit.
+   Examine the gradient descent model fit.
 
    #+BEGIN_SRC ipython
      with torch.no_grad():
@@ -438,11 +539,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[87]:
+   # Out[50]:
    #+BEGIN_EXAMPLE
-     array([[ 0.01809326, -0.07844437,  0.9924126 ],
-     [ 0.99418027,  0.03239465,  0.02689676],
-     [ 0.02408282,  0.9943834 , -0.05662122]])
+     array([[ 0.01498485, -0.08129763,  0.99261935],
+     [ 0.9940327 ,  0.02940908,  0.0216655 ],
+     [ 0.02075537,  0.99444797, -0.06168111]])
    #+END_EXAMPLE
    :END:
 
@@ -467,55 +568,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[88]:
+   # Out[51]:
    [[file:figure/hpmf.org/sim-ex-reparam.png]]
-   :END:
-
-   Look at the ELBO achieved by the algorithms.
-
-   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-elbo.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(4, 2)
-     plt.yscale('log')
-     plt.plot(pd.Series(m1.trace).ewm(alpha=0.1).mean(), c=cm(0), lw=1, marker=None, label='VBEM')
-     plt.plot(np.arange(1001, 5001), pd.Series(m2.trace).ewm(alpha=0.1).mean(), c=cm(1), lw=1, marker=None, label='Grad')
-     plt.legend(frameon=False)
-     plt.ylim(1e5, 1.1e5)
-     plt.xlabel('Epoch')
-     plt.ylabel('Negative ELBO\n(smoothed)')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[89]:
-   [[file:figure/hpmf.org/sim-elbo.png]]
-   :END:
-
-   Estimate the total improvement in ELBO achieved by GD.
-
-   #+BEGIN_SRC ipython
-     m1.trace[-1].cpu() - np.array(m2.trace[-50:]).mean()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[94]:
-   : tensor(463.5781)
-   :END:
-
-   Quantify how much the variational approximation to \(z\) made by VBEM
-   decreases the ELBO.
-
-   #+BEGIN_SRC ipython
-     m1.trace[-1].cpu() - m2.trace[0]
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[95]:
-   : tensor(426.4609)
    :END:
 
    Compare the estimated parameters to each other.
@@ -528,12 +582,12 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[90]:
+   # Out[52]:
    #+BEGIN_EXAMPLE
-     {'alpha_l': array(43.566395, dtype=float32),
-     'beta_l': array(3.7134445, dtype=float32),
-     'alpha_f': array(54.408215, dtype=float32),
-     'beta_f': array(3.3419561, dtype=float32)}
+     {'alpha_l': array(290.46838, dtype=float32),
+     'beta_l': array(32.1682, dtype=float32),
+     'alpha_f': array(349.47363, dtype=float32),
+     'beta_f': array(8.524325, dtype=float32)}
    #+END_EXAMPLE
    :END:
 
@@ -544,13 +598,12 @@
      fig, ax = plt.subplots(1, 3, sharey=True)
      fig.set_size_inches(7, 3)
 
-     ax[0].scatter((m0.rx2('L') @ m0.rx2('F').T).ravel(), x.ravel(), s=1, alpha=0.1, c='k')
-     for a, model in zip(ax[1:], (m1, m2)):
+     for a, model in zip(ax, (m1, m2)):
        with torch.no_grad():
          pm = ((model.alpha_l / model.beta_l) @ (model.alpha_f / model.beta_f).T).cpu()
        a.scatter(pm.ravel(), x.ravel(), s=1, alpha=0.1, c='k')
      lim = [0, 60]
-     for a, title in zip(ax, ['NMF', 'VBEM', 'Grad']):
+     for a, title in zip(ax, ['VBEM', 'Grad', 'Newton']):
        a.plot(lim, lim, c='r', lw=1, ls=':')
        a.set_xlabel('Fitted value')
        a.set_title(title)
@@ -560,6 +613,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[91]:
+   # Out[53]:
    [[file:figure/hpmf.org/sim-ex-fit.png]]
    :END:

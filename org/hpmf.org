@@ -164,7 +164,22 @@
          self.b_f = torch.nn.Parameter(torch.ones([1, k]))
 
        @torch.no_grad()
-       def elbo(self, x, pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f):
+       def elbo(self, x):
+         """ELBO wrt q(l_{ik}) q(f_{jk}), i.e. integrating out z_{ijk}"""
+         q_l = torch.distributions.Gamma(self.alpha_l, self.beta_l)
+         q_f = torch.distributions.Gamma(self.alpha_f, self.beta_f)
+         kl_l = torch.distributions.kl.kl_divergence(q_l, torch.distributions.Gamma(self.a_l, self.b_l)).sum()
+         kl_f = torch.distributions.kl.kl_divergence(q_f, torch.distributions.Gamma(self.a_f, self.b_f)).sum()
+         # TODO: multiple samples?
+         l = q_l.rsample()
+         f = q_f.rsample()
+         err = torch.distributions.Poisson(l @ f.T).log_prob(x).sum()
+         elbo = err - kl_l - kl_f
+         return elbo
+
+       @torch.no_grad()
+       def elbo_z(self, x, pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f):
+         """ELBO wrt q(l_{ik}) q(f_{jk}) q(z_{ijk})"""
          temp = exp_pm_ln_l @ exp_pm_ln_f.T
          ret = (x * torch.log(temp) - pm_l @ pm_f.T - torch.lgamma(x + 1)).sum()
          ret += ((self.a_l - self.alpha_l) * torch.log(exp_pm_ln_l)
@@ -194,10 +209,10 @@
        def fit(self, x, num_epochs):
          self.trace = []
          for i in range(num_epochs):
-           # Cemgil 2009, Alg. 1
            pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f = self._pm()
-           elbo_ = self.elbo(x, pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f)
-           self.trace.append(-elbo_)
+           self.trace.append(-self.elbo(x).cpu().numpy())
+           # Cemgil 2009, Alg. 1
+           # Important: this optimizes elbo_z, not elbo
            temp = x / (exp_pm_ln_l @ exp_pm_ln_f.T)
            self.alpha_l.data = exp_pm_ln_l * (temp @ exp_pm_ln_f) + self.a_l
            self.beta_l.data = pm_f.sum(dim=0) + self.b_l
@@ -209,7 +224,7 @@
 
    #+RESULTS: vbem
    :RESULTS:
-   # Out[29]:
+   # Out[71]:
    :END:
 
 ** Newton-Raphson
@@ -234,7 +249,20 @@
          self.a_f = torch.nn.Parameter(torch.ones([1, k]))
          self.b_f = torch.nn.Parameter(torch.ones([1, k]))
 
+       @torch.no_grad()
        def elbo(self, x):
+         q_l = torch.distributions.Gamma(self.alpha_l, self.beta_l)
+         q_f = torch.distributions.Gamma(self.alpha_f, self.beta_f)
+         kl_l = torch.distributions.kl.kl_divergence(q_l, torch.distributions.Gamma(self.a_l, self.b_l)).sum()
+         kl_f = torch.distributions.kl.kl_divergence(q_f, torch.distributions.Gamma(self.a_f, self.b_f)).sum()
+         # TODO: multiple samples?
+         l = q_l.rsample()
+         f = q_f.rsample()
+         err = torch.distributions.Poisson(l @ f.T).log_prob(x).sum()
+         elbo = err - kl_l - kl_f
+         return elbo
+
+       def elbo_z(self, x):
          pm_l = (self.alpha_l / self.beta_l)
          exp_pm_ln_l = torch.exp(torch.digamma(self.alpha_l) - torch.log(self.beta_l))
          pm_f = (self.alpha_f / self.beta_f)
@@ -262,28 +290,27 @@
          """Newton-Raphon update"""
          for i in range(par.shape[0]):
            for k in range(par.shape[1]):
-             d = torch.autograd.grad(self.elbo(x), par, create_graph=True)[0]
+             # Important: this optimizes elbo_z, not elbo
+             d = torch.autograd.grad(self.elbo_z(x), par, create_graph=True)[0]
              d2 = torch.autograd.grad(d[i,k], par)[0]
              with torch.no_grad():
                par.data[i,k] -= step * d[i,k] / (d2[i,k] + eps)
                par.data[i,k] = torch.clamp(par.data[i,k], min=eps)
 
        def fit(self, x, num_epochs, step=1):
-         with torch.no_grad():
-           self.trace = [-self.elbo(x).cpu().numpy()]
+         self.trace = [-self.elbo(x).cpu().numpy()]
          for t in range(num_epochs):
            # TODO: update order probably matters
            for par in self.parameters():
              if par.requires_grad:
                self._update(x, par, step=step)
-           with torch.no_grad():
-             self.trace.append(-self.elbo(x).cpu().numpy())
+           self.trace.append(-self.elbo(x).cpu().numpy())
          return self
    #+END_SRC
 
    #+RESULTS: newton
    :RESULTS:
-   # Out[46]:
+   # Out[72]:
    :END:
 
 ** Pathwise gradient
@@ -333,7 +360,7 @@
          for i in range(num_epochs):
            opt.zero_grad()
            loss = self.forward(x)
-           self.trace.append(loss.cpu().detach().numpy())
+           self.trace.append(loss.detach().cpu().numpy())
            loss.backward()
            opt.step()
          return self
@@ -341,7 +368,7 @@
 
    #+RESULTS: grad
    :RESULTS:
-   # Out[31]:
+   # Out[73]:
    :END:
 
 * Results
@@ -369,7 +396,7 @@
    # Out[32]:
    :END:
 
-   To initialize all methods, run 1000 epochs of VBEM. For simplicity, fix the
+   To initialize all methods, run 500 epochs of VBEM. For simplicity, fix the
    hyperparameters to the oracle values.
 
    #+BEGIN_SRC ipython :async t
@@ -381,12 +408,13 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[33]:
+   # Out[74]:
    :END:
 
    Starting from the same initialization, compare VBEM and Newton-Raphson
-   (which optimize the ELBO eq. 21-22) and gradient descent (which optimizes
-   the ELBO eq. 32).
+   (which optimize the ELBO eq. 20-21) and gradient descent (which optimizes
+   the ELBO eq. 32). For each method, trace the ELBO estimated according to
+   eq. 32.
 
    #+BEGIN_SRC ipython :async t
      num_epochs = 4000
@@ -430,7 +458,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[55]:
+   # Out[75]:
    : PMFN()
    :END:
 
@@ -453,142 +481,22 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[59]:
+   # Out[76]:
    [[file:figure/hpmf.org/sim-elbo.png]]
    :END:
 
-   Estimate the total improvement in ELBO achieved by GD.
+   Report the final (approximate) ELBO.
 
    #+BEGIN_SRC ipython
-     m1.trace[-1].cpu() - np.array(m2.trace[-50:]).mean()
+     {'VBEM': np.array(m1.trace[-10:]).mean(),
+      'GD': np.array(m2.trace[-10:]).mean(),
+      'Newton': np.array(m3.trace[-10:]).mean()}
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[41]:
-   : tensor(378.7500)
-   :END:
-
-   Quantify how much the variational approximation to \(z\) made by VBEM
-   decreases the ELBO.
-
-   #+BEGIN_SRC ipython
-     m0.trace[-1].cpu() - m2.trace[0]
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[47]:
-   : tensor(-171.4219)
-   :END:
-
-   Examine the VBEM model fit. Match the most correlated factors to each other.
-
-   #+BEGIN_SRC ipython
-     with torch.no_grad():
-       pm = (m1.alpha_f / m1.beta_f).cpu()
-     R = np.corrcoef(pm.T, f.T)[K:,:K]
-     order = np.argmax(R, axis=1)
-     R
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[48]:
-   #+BEGIN_EXAMPLE
-     array([[ 0.01894316, -0.07768191,  0.99240779],
-     [ 0.99418493,  0.03296905,  0.02722373],
-     [ 0.02448254,  0.99437127, -0.05624917]])
-   #+END_EXAMPLE
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-vbem.png
-     plt.clf()
-     fig, ax = plt.subplots(2, 3)
-     fig.set_size_inches(7, 5)
-     for k, a in enumerate(ax[0]):
-       with torch.no_grad():
-         pm = (m1.alpha_l / m1.beta_l).cpu()
-       a.scatter(pm[:,order[k]], l[:,k], c='k', s=1)
-       a.set_title(f'$k = {k}$')
-     for k, a in enumerate(ax[1]):
-       with torch.no_grad():
-         pm = (m1.alpha_f / m1.beta_f).cpu()
-       a.scatter(pm[:,order[k]], f[:,k], c='k', s=1)
-       a.set_xlabel('Estimate')
-     for a, label in zip(ax, ['loading', 'factor']):
-       a[0].set_ylabel(f'True {label}')
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[49]:
-   [[file:figure/hpmf.org/sim-ex-vbem.png]]
-   :END:
-
-   Examine the gradient descent model fit.
-
-   #+BEGIN_SRC ipython
-     with torch.no_grad():
-       pm = (m2.alpha_f / m2.beta_f).cpu()
-     R = np.corrcoef(pm.T, f.T)[K:,:K]
-     order = np.argmax(R, axis=1)
-     R
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[50]:
-   #+BEGIN_EXAMPLE
-     array([[ 0.01498485, -0.08129763,  0.99261935],
-     [ 0.9940327 ,  0.02940908,  0.0216655 ],
-     [ 0.02075537,  0.99444797, -0.06168111]])
-   #+END_EXAMPLE
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-reparam.png
-     plt.clf()
-     fig, ax = plt.subplots(2, 3)
-     fig.set_size_inches(7, 5)
-     for k, a in enumerate(ax[0]):
-       with torch.no_grad():
-         pm = (m2.alpha_l / m2.beta_l).cpu()
-       a.scatter(pm[:,order[k]], l[:,k], c='k', s=1)
-       a.set_ylabel('True loading')
-       a.set_title(f'$k = {k}$')
-     for k, a in enumerate(ax[1]):
-       with torch.no_grad():
-         pm = (m2.alpha_f / m2.beta_f).cpu()
-       a.scatter(pm[:,order[k]], f[:,k], c='k', s=1)
-       a.set_ylabel('True factor')
-       a.set_xlabel('Estimate')
-     fig.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[51]:
-   [[file:figure/hpmf.org/sim-ex-reparam.png]]
-   :END:
-
-   Compare the estimated parameters to each other.
-
-   #+BEGIN_SRC ipython
-     with torch.no_grad():
-       norm_diff = {key: torch.norm(getattr(m1, key) - getattr(m2, key)).cpu().numpy() for key in ('alpha_l', 'beta_l', 'alpha_f', 'beta_f')}
-     norm_diff
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[52]:
-   #+BEGIN_EXAMPLE
-     {'alpha_l': array(290.46838, dtype=float32),
-     'beta_l': array(32.1682, dtype=float32),
-     'alpha_f': array(349.47363, dtype=float32),
-     'beta_f': array(8.524325, dtype=float32)}
-   #+END_EXAMPLE
+   # Out[77]:
+   : {'VBEM': 104987.02, 'GD': 104994.67, 'Newton': 104972.0}
    :END:
 
    Compare the fitted values of each approach to the observed values.
@@ -598,7 +506,7 @@
      fig, ax = plt.subplots(1, 3, sharey=True)
      fig.set_size_inches(7, 3)
 
-     for a, model in zip(ax, (m1, m2)):
+     for a, model in zip(ax, (m1, m2, m3)):
        with torch.no_grad():
          pm = ((model.alpha_l / model.beta_l) @ (model.alpha_f / model.beta_f).T).cpu()
        a.scatter(pm.ravel(), x.ravel(), s=1, alpha=0.1, c='k')
@@ -613,6 +521,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[53]:
+   # Out[79]:
    [[file:figure/hpmf.org/sim-ex-fit.png]]
    :END:

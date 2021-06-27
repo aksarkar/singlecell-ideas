@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-06-26 Sat 22:38 -->
+<!-- 2021-06-26 Sat 23:03 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hierarchical PMF</title>
@@ -442,7 +442,22 @@ where \(\psi^{(1)}\) denotes the trigamma function.
     <span class="org-keyword">self</span>.b_f = torch.nn.Parameter(torch.ones([1, k]))
 
   <span class="org-type">@torch.no_grad</span>()
-  <span class="org-keyword">def</span> <span class="org-function-name">elbo</span>(<span class="org-keyword">self</span>, x, pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f):
+  <span class="org-keyword">def</span> <span class="org-function-name">elbo</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-doc">"""ELBO wrt q(l_{ik}) q(f_{jk}), i.e. integrating out z_{ijk}"""</span>
+    <span class="org-variable-name">q_l</span> = torch.distributions.Gamma(<span class="org-keyword">self</span>.alpha_l, <span class="org-keyword">self</span>.beta_l)
+    <span class="org-variable-name">q_f</span> = torch.distributions.Gamma(<span class="org-keyword">self</span>.alpha_f, <span class="org-keyword">self</span>.beta_f)
+    <span class="org-variable-name">kl_l</span> = torch.distributions.kl.kl_divergence(q_l, torch.distributions.Gamma(<span class="org-keyword">self</span>.a_l, <span class="org-keyword">self</span>.b_l)).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">kl_f</span> = torch.distributions.kl.kl_divergence(q_f, torch.distributions.Gamma(<span class="org-keyword">self</span>.a_f, <span class="org-keyword">self</span>.b_f)).<span class="org-builtin">sum</span>()
+    <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: multiple samples?</span>
+    <span class="org-variable-name">l</span> = q_l.rsample()
+    <span class="org-variable-name">f</span> = q_f.rsample()
+    <span class="org-variable-name">err</span> = torch.distributions.Poisson(l @ f.T).log_prob(x).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">elbo</span> = err - kl_l - kl_f
+    <span class="org-keyword">return</span> elbo
+
+  <span class="org-type">@torch.no_grad</span>()
+  <span class="org-keyword">def</span> <span class="org-function-name">elbo_z</span>(<span class="org-keyword">self</span>, x, pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f):
+    <span class="org-doc">"""ELBO wrt q(l_{ik}) q(f_{jk}) q(z_{ijk})"""</span>
     <span class="org-variable-name">temp</span> = exp_pm_ln_l @ exp_pm_ln_f.T
     <span class="org-variable-name">ret</span> = (x * torch.log(temp) - pm_l @ pm_f.T - torch.lgamma(x + 1)).<span class="org-builtin">sum</span>()
     <span class="org-variable-name">ret</span> += ((<span class="org-keyword">self</span>.a_l - <span class="org-keyword">self</span>.alpha_l) * torch.log(exp_pm_ln_l)
@@ -472,10 +487,10 @@ where \(\psi^{(1)}\) denotes the trigamma function.
   <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, num_epochs):
     <span class="org-keyword">self</span>.trace = []
     <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_epochs):
-      <span class="org-comment-delimiter"># </span><span class="org-comment">Cemgil 2009, Alg. 1</span>
       <span class="org-variable-name">pm_l</span>, <span class="org-variable-name">exp_pm_ln_l</span>, <span class="org-variable-name">pm_f</span>, <span class="org-variable-name">exp_pm_ln_f</span> = <span class="org-keyword">self</span>._pm()
-      <span class="org-variable-name">elbo_</span> = <span class="org-keyword">self</span>.elbo(x, pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f)
-      <span class="org-keyword">self</span>.trace.append(-elbo_)
+      <span class="org-keyword">self</span>.trace.append(-<span class="org-keyword">self</span>.elbo(x).cpu().numpy())
+      <span class="org-comment-delimiter"># </span><span class="org-comment">Cemgil 2009, Alg. 1</span>
+      <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this optimizes elbo_z, not elbo</span>
       <span class="org-variable-name">temp</span> = x / (exp_pm_ln_l @ exp_pm_ln_f.T)
       <span class="org-keyword">self</span>.alpha_l.data = exp_pm_ln_l * (temp @ exp_pm_ln_f) + <span class="org-keyword">self</span>.a_l
       <span class="org-keyword">self</span>.beta_l.data = pm_f.<span class="org-builtin">sum</span>(dim=0) + <span class="org-keyword">self</span>.b_l
@@ -512,7 +527,20 @@ differentiation to get the first and second derivatives.
     <span class="org-keyword">self</span>.a_f = torch.nn.Parameter(torch.ones([1, k]))
     <span class="org-keyword">self</span>.b_f = torch.nn.Parameter(torch.ones([1, k]))
 
+  <span class="org-type">@torch.no_grad</span>()
   <span class="org-keyword">def</span> <span class="org-function-name">elbo</span>(<span class="org-keyword">self</span>, x):
+    <span class="org-variable-name">q_l</span> = torch.distributions.Gamma(<span class="org-keyword">self</span>.alpha_l, <span class="org-keyword">self</span>.beta_l)
+    <span class="org-variable-name">q_f</span> = torch.distributions.Gamma(<span class="org-keyword">self</span>.alpha_f, <span class="org-keyword">self</span>.beta_f)
+    <span class="org-variable-name">kl_l</span> = torch.distributions.kl.kl_divergence(q_l, torch.distributions.Gamma(<span class="org-keyword">self</span>.a_l, <span class="org-keyword">self</span>.b_l)).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">kl_f</span> = torch.distributions.kl.kl_divergence(q_f, torch.distributions.Gamma(<span class="org-keyword">self</span>.a_f, <span class="org-keyword">self</span>.b_f)).<span class="org-builtin">sum</span>()
+    <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: multiple samples?</span>
+    <span class="org-variable-name">l</span> = q_l.rsample()
+    <span class="org-variable-name">f</span> = q_f.rsample()
+    <span class="org-variable-name">err</span> = torch.distributions.Poisson(l @ f.T).log_prob(x).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">elbo</span> = err - kl_l - kl_f
+    <span class="org-keyword">return</span> elbo
+
+  <span class="org-keyword">def</span> <span class="org-function-name">elbo_z</span>(<span class="org-keyword">self</span>, x):
     <span class="org-variable-name">pm_l</span> = (<span class="org-keyword">self</span>.alpha_l / <span class="org-keyword">self</span>.beta_l)
     <span class="org-variable-name">exp_pm_ln_l</span> = torch.exp(torch.digamma(<span class="org-keyword">self</span>.alpha_l) - torch.log(<span class="org-keyword">self</span>.beta_l))
     <span class="org-variable-name">pm_f</span> = (<span class="org-keyword">self</span>.alpha_f / <span class="org-keyword">self</span>.beta_f)
@@ -540,22 +568,21 @@ differentiation to get the first and second derivatives.
     <span class="org-doc">"""Newton-Raphon update"""</span>
     <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(par.shape[0]):
       <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(par.shape[1]):
-        <span class="org-variable-name">d</span> = torch.autograd.grad(<span class="org-keyword">self</span>.elbo(x), par, create_graph=<span class="org-constant">True</span>)[0]
+        <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this optimizes elbo_z, not elbo</span>
+        <span class="org-variable-name">d</span> = torch.autograd.grad(<span class="org-keyword">self</span>.elbo_z(x), par, create_graph=<span class="org-constant">True</span>)[0]
         <span class="org-variable-name">d2</span> = torch.autograd.grad(d[i,k], par)[0]
         <span class="org-keyword">with</span> torch.no_grad():
           <span class="org-variable-name">par.data</span>[i,k] -= step * d[i,k] / (d2[i,k] + eps)
           <span class="org-variable-name">par.data</span>[i,k] = torch.clamp(par.data[i,k], <span class="org-builtin">min</span>=eps)
 
   <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, num_epochs, step=1):
-    <span class="org-keyword">with</span> torch.no_grad():
-      <span class="org-keyword">self</span>.trace = [-<span class="org-keyword">self</span>.elbo(x).cpu().numpy()]
+    <span class="org-keyword">self</span>.trace = [-<span class="org-keyword">self</span>.elbo(x).cpu().numpy()]
     <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_epochs):
       <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: update order probably matters</span>
       <span class="org-keyword">for</span> par <span class="org-keyword">in</span> <span class="org-keyword">self</span>.parameters():
         <span class="org-keyword">if</span> par.requires_grad:
           <span class="org-keyword">self</span>._update(x, par, step=step)
-      <span class="org-keyword">with</span> torch.no_grad():
-        <span class="org-keyword">self</span>.trace.append(-<span class="org-keyword">self</span>.elbo(x).cpu().numpy())
+      <span class="org-keyword">self</span>.trace.append(-<span class="org-keyword">self</span>.elbo(x).cpu().numpy())
     <span class="org-keyword">return</span> <span class="org-keyword">self</span>
 </pre>
 </div>
@@ -613,7 +640,7 @@ al. 2020</a>) and gradient descent. Briefly,
     <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_epochs):
       opt.zero_grad()
       <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x)
-      <span class="org-keyword">self</span>.trace.append(loss.cpu().detach().numpy())
+      <span class="org-keyword">self</span>.trace.append(loss.detach().cpu().numpy())
       loss.backward()
       opt.step()
     <span class="org-keyword">return</span> <span class="org-keyword">self</span>
@@ -651,7 +678,7 @@ Simulate from the model.
 </div>
 
 <p>
-To initialize all methods, run 1000 epochs of VBEM. For simplicity, fix the
+To initialize all methods, run 500 epochs of VBEM. For simplicity, fix the
 hyperparameters to the oracle values.
 </p>
 
@@ -665,8 +692,9 @@ torch.manual_seed(1)
 
 <p>
 Starting from the same initialization, compare VBEM and Newton-Raphson
-(which optimize the ELBO eq. 21-22) and gradient descent (which optimizes
-the ELBO eq. 32).
+(which optimize the ELBO eq. 20-21) and gradient descent (which optimizes
+the ELBO eq. 32). For each method, trace the ELBO estimated according to
+eq. 32.
 </p>
 
 <div class="org-src-container">
@@ -742,140 +770,19 @@ plt.tight_layout()
 </div>
 
 <p>
-Estimate the total improvement in ELBO achieved by GD.
+Report the final (approximate) ELBO.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">m1.trace[-1].cpu() - np.array(m2.trace[-50:]).mean()
+<pre class="src src-ipython">{<span class="org-doc">'VBEM'</span>: np.array(m1.trace[-10:]).mean(),
+ <span class="org-doc">'GD'</span>: np.array(m2.trace[-10:]).mean(),
+ <span class="org-doc">'Newton'</span>: np.array(m3.trace[-10:]).mean()}
 </pre>
 </div>
 
 <pre class="example">
-tensor(378.7500)
+{'VBEM': 104987.02, 'GD': 104994.67, 'Newton': 104972.0}
 
-</pre>
-
-<p>
-Quantify how much the variational approximation to \(z\) made by VBEM
-decreases the ELBO.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">m0.trace[-1].cpu() - m2.trace[0]
-</pre>
-</div>
-
-<pre class="example">
-tensor(-171.4219)
-
-</pre>
-
-<p>
-Examine the VBEM model fit. Match the most correlated factors to each other.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
-  <span class="org-variable-name">pm</span> = (m1.alpha_f / m1.beta_f).cpu()
-<span class="org-variable-name">R</span> = np.corrcoef(pm.T, f.T)[K:,:K]
-<span class="org-variable-name">order</span> = np.argmax(R, axis=1)
-R
-</pre>
-</div>
-
-<pre class="example">
-array([[ 0.01894316, -0.07768191,  0.99240779],
-[ 0.99418493,  0.03296905,  0.02722373],
-[ 0.02448254,  0.99437127, -0.05624917]])
-</pre>
-
-<div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 3)
-fig.set_size_inches(7, 5)
-<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax[0]):
-  <span class="org-keyword">with</span> torch.no_grad():
-    <span class="org-variable-name">pm</span> = (m1.alpha_l / m1.beta_l).cpu()
-  a.scatter(pm[:,order[k]], l[:,k], c=<span class="org-string">'k'</span>, s=1)
-  a.set_title(f<span class="org-string">'$k = {k}$'</span>)
-<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax[1]):
-  <span class="org-keyword">with</span> torch.no_grad():
-    <span class="org-variable-name">pm</span> = (m1.alpha_f / m1.beta_f).cpu()
-  a.scatter(pm[:,order[k]], f[:,k], c=<span class="org-string">'k'</span>, s=1)
-  a.set_xlabel(<span class="org-string">'Estimate'</span>)
-<span class="org-keyword">for</span> a, label <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'loading'</span>, <span class="org-string">'factor'</span>]):
-  a[0].set_ylabel(f<span class="org-string">'True {label}'</span>)
-fig.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/hpmf.org/sim-ex-vbem.png" alt="sim-ex-vbem.png">
-</p>
-</div>
-
-<p>
-Examine the gradient descent model fit.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
-  <span class="org-variable-name">pm</span> = (m2.alpha_f / m2.beta_f).cpu()
-<span class="org-variable-name">R</span> = np.corrcoef(pm.T, f.T)[K:,:K]
-<span class="org-variable-name">order</span> = np.argmax(R, axis=1)
-R
-</pre>
-</div>
-
-<pre class="example">
-array([[ 0.01498485, -0.08129763,  0.99261935],
-[ 0.9940327 ,  0.02940908,  0.0216655 ],
-[ 0.02075537,  0.99444797, -0.06168111]])
-</pre>
-
-<div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 3)
-fig.set_size_inches(7, 5)
-<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax[0]):
-  <span class="org-keyword">with</span> torch.no_grad():
-    <span class="org-variable-name">pm</span> = (m2.alpha_l / m2.beta_l).cpu()
-  a.scatter(pm[:,order[k]], l[:,k], c=<span class="org-string">'k'</span>, s=1)
-  a.set_ylabel(<span class="org-string">'True loading'</span>)
-  a.set_title(f<span class="org-string">'$k = {k}$'</span>)
-<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax[1]):
-  <span class="org-keyword">with</span> torch.no_grad():
-    <span class="org-variable-name">pm</span> = (m2.alpha_f / m2.beta_f).cpu()
-  a.scatter(pm[:,order[k]], f[:,k], c=<span class="org-string">'k'</span>, s=1)
-  a.set_ylabel(<span class="org-string">'True factor'</span>)
-  a.set_xlabel(<span class="org-string">'Estimate'</span>)
-fig.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/hpmf.org/sim-ex-reparam.png" alt="sim-ex-reparam.png">
-</p>
-</div>
-
-<p>
-Compare the estimated parameters to each other.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
-  <span class="org-variable-name">norm_diff</span> = {key: torch.norm(<span class="org-builtin">getattr</span>(m1, key) - <span class="org-builtin">getattr</span>(m2, key)).cpu().numpy() <span class="org-keyword">for</span> key <span class="org-keyword">in</span> (<span class="org-string">'alpha_l'</span>, <span class="org-string">'beta_l'</span>, <span class="org-string">'alpha_f'</span>, <span class="org-string">'beta_f'</span>)}
-norm_diff
-</pre>
-</div>
-
-<pre class="example">
-{'alpha_l': array(290.46838, dtype=float32),
-'beta_l': array(32.1682, dtype=float32),
-'alpha_f': array(349.47363, dtype=float32),
-'beta_f': array(8.524325, dtype=float32)}
 </pre>
 
 <p>
@@ -887,7 +794,7 @@ Compare the fitted values of each approach to the observed values.
 <span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharey=<span class="org-constant">True</span>)
 fig.set_size_inches(7, 3)
 
-<span class="org-keyword">for</span> a, model <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, (m1, m2)):
+<span class="org-keyword">for</span> a, model <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, (m1, m2, m3)):
   <span class="org-keyword">with</span> torch.no_grad():
     <span class="org-variable-name">pm</span> = ((model.alpha_l / model.beta_l) @ (model.alpha_f / model.beta_f).T).cpu()
   a.scatter(pm.ravel(), x.ravel(), s=1, alpha=0.1, c=<span class="org-string">'k'</span>)
@@ -912,7 +819,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-06-26 Sat 22:38</p>
+<p class="date">Created: 2021-06-26 Sat 23:03</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -328,6 +328,24 @@
    [[https://www.jmlr.org/papers/volume21/19-346/19-346.pdf][Mohamed et
    al. 2020]]) and gradient descent. Briefly,
 
+   \begin{align}
+     \nabla \textstyle \sum_{i,j} \E[\ln p(x_{ij} \mid \ml, \mf)] &\approx  \frac{1}{S} \sum_{s=1}^S \nabla \ln p(x_{ij} \mid \ml^{(s)}, \mf^{(s)}), \quad \ml^{(s)} \sim q(\ml), \mf^{(s)} \sim q(\mf)\\
+     &= \frac{1}{S} \sum_{s=1}^S \nabla \ln p(x_{ij} \mid h_{\ml}(\epsilon_{\ml}^{(s)}), h_{\mf}(\epsilon_{\ml}^{(s)})), \quad \epsilon_{\ml}^{(s)} \sim \Gam(1, 1), \epsilon_{\mf}^{(s)} \sim \Gam(1, 1),
+   \end{align}
+
+   where \(\epsilon_{\ml}, \epsilon_{\mf}\) are matrices with elements
+   following a standard Gamma distribution and \(h_{\ml}, h_{\mf}\) are
+   differentiable, element-wise functions of the sampled elements and the
+   variational parameters. The difference between the two lower bounds is
+
+   \begin{equation}
+     \E[\ln(\textstyle \sum_k l_{ik} f_{jk})] - \ln (\sum_k \exp(\E[\ln l_{ik}] + \E[\ln f_{jk}])),
+   \end{equation}
+
+   which may always be non-negative (intuitively, it seems to follow from
+   Jensen's inequality). It is not clear that the local optima of the two lower
+   bounds are the same.
+
    #+NAME: grad
    #+BEGIN_SRC ipython
      class PMF(torch.nn.Module):

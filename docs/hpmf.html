@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-06-26 Sat 23:03 -->
+<!-- 2021-06-27 Sun 13:34 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hierarchical PMF</title>
@@ -609,6 +609,28 @@ gradient</i> (reviewed by
 al. 2020</a>) and gradient descent. Briefly,
 </p>
 
+\begin{align}
+  \nabla \textstyle \sum_{i,j} \E[\ln p(x_{ij} \mid \ml, \mf)] &\approx  \frac{1}{S} \sum_{s=1}^S \nabla \ln p(x_{ij} \mid \ml^{(s)}, \mf^{(s)}), \quad \ml^{(s)} \sim q(\ml), \mf^{(s)} \sim q(\mf)\\
+  &= \frac{1}{S} \sum_{s=1}^S \nabla \ln p(x_{ij} \mid h_{\ml}(\epsilon_{\ml}^{(s)}), h_{\mf}(\epsilon_{\ml}^{(s)})), \quad \epsilon_{\ml}^{(s)} \sim \Gam(1, 1), \epsilon_{\mf}^{(s)} \sim \Gam(1, 1),
+\end{align}
+
+<p>
+where \(\epsilon_{\ml}, \epsilon_{\mf}\) are matrices with elements
+following a standard Gamma distribution and \(h_{\ml}, h_{\mf}\) are
+differentiable, element-wise functions of the sampled elements and the
+variational parameters. The difference between the two lower bounds is
+</p>
+
+\begin{equation}
+  \E[\ln(\textstyle \sum_k l_{ik} f_{jk})] - \ln (\sum_k \exp(\E[\ln l_{ik}] + \E[\ln f_{jk}])),
+\end{equation}
+
+<p>
+which may always be non-negative (intuitively, it seems to follow from
+Jensen&rsquo;s inequality). It is not clear that the local optima of the two lower
+bounds are the same.
+</p>
+
 <div class="org-src-container">
 <pre class="src src-ipython" id="org14b514f"><span class="org-keyword">class</span> <span class="org-type">PMF</span>(torch.nn.Module):
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, n, p, k):
@@ -819,7 +841,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-06-26 Sat 23:03</p>
+<p class="date">Created: 2021-06-27 Sun 13:34</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

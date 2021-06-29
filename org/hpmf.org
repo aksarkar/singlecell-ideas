@@ -97,7 +97,7 @@
      q(z_{ij1}, \ldots, z_{ijK}) &= \Mult(x_{ij}, \pi_{ij1}, \ldots, \pi_{ijK})\\
      \pi_{ijk} &\propto \exp(\E[\ln l_{ik}] + \E[\ln f_{jk}])\\
      q(l_{ik}) &= \Gam(\textstyle \sum_j \E[z_{ijk}] + a_{lk}, \sum_j \E[f_{jk}] + b_{lk})\\
-     &\triangleq \Gam(\alpha_{lik}, \beta_{ik})\\
+     &\triangleq \Gam(\alpha_{lik}, \beta_{lk})\\
      q(f_{jk}) &= \Gam(\textstyle \sum_i \E[z_{ijk}] + a_{fk}, \sum_i \E[l_{ik}] + b_{fk})\\
      &\triangleq \Gam(\alpha_{fjk}, \beta_{fk}),
    \end{align}
@@ -106,8 +106,8 @@
 
    \begin{align}
      \E[z_{ijk}] &= x_{ij} \pi_{ijk}\\
-     \E[l_{ik}] &= \alpha_{lik} / \beta_{ik}\\
-     \E[\ln l_{ik}] &= \psi(\alpha_{lik}) - \ln \beta_{ik}\\
+     \E[l_{ik}] &= \alpha_{lik} / \beta_{lk}\\
+     \E[\ln l_{ik}] &= \psi(\alpha_{lik}) - \ln \beta_{lk}\\
      \E[f_{jk}] &= \alpha_{fjk} / \beta_{fk}\\
      \E[\ln f_{jk}] &= \psi(\alpha_{fjk}) - \ln \beta_{fk},
    \end{align}
@@ -116,7 +116,7 @@
 
    \begin{multline}
      \ell = \sum_{i, j} \left[ \sum_k \Big[ \E[z_{ijk}] (\E[\ln l_{ik}] + \E[\ln f_{jk}] - \ln \pi_{ijk}) - \E[l_{ik}]\E[f_{jk}] \Big] - \ln\Gamma(x_{ij} + 1)\right]\\
-     + \sum_{i, k} \left[ (a_{lk} - \alpha_{lik}) \E[\ln l_{ik}] - (b_{lk} - \beta_{ik}) \E[l_{ik}] + a_{lk} \ln b_{lk} - \alpha_{lik} \ln \beta_{ik} - \ln\Gamma(a_{lk}) + \ln\Gamma(\alpha_{lik})\right]\\
+     + \sum_{i, k} \left[ (a_{lk} - \alpha_{lik}) \E[\ln l_{ik}] - (b_{lk} - \beta_{lk}) \E[l_{ik}] + a_{lk} \ln b_{lk} - \alpha_{lik} \ln \beta_{lk} - \ln\Gamma(a_{lk}) + \ln\Gamma(\alpha_{lik})\right]\\
      + \sum_{j, k} \left[ (a_{fk} - \alpha_{fjk}) \E[\ln f_{jk}] - (b_{fk} - \beta_{fk}) \E[f_{jk}] + a_{fk} \ln b_{fk} - \alpha_{fjk} \ln \beta_{fk} - \ln\Gamma(a_{fk}) + \ln\Gamma(\alpha_{fjk})\right].
    \end{multline}
 
@@ -230,7 +230,7 @@
 ** Newton-Raphson
 
    Alternatively, one could plug in \(\E[z_{ijk}], \pi_{ijk}\) and then
-   optimize the ELBO with respect to \(\alpha_{lik}, \beta_{ik}, \alpha_{fjk},
+   optimize the ELBO with respect to \(\alpha_{lik}, \beta_{lk}, \alpha_{fjk},
    \beta_{fk}, a_{lk}, b_{lk}, a_{fk}, b_{fk}\) using one-dimensional
    Newton-Raphson updates. To prototype this approach, we use automatic
    differentiation to get the first and second derivatives.
@@ -339,7 +339,7 @@
    variational parameters. The difference between the two lower bounds is
 
    \begin{equation}
-     \E[\ln(\textstyle \sum_k l_{ik} f_{jk})] - \ln (\sum_k \exp(\E[\ln l_{ik}] + \E[\ln f_{jk}])),
+     \sum_{i, j} x_{ij} \Big[ \E[\ln(\textstyle \sum_k l_{ik} f_{jk})] - \ln (\sum_k \exp(\E[\ln l_{ik}] + \E[\ln f_{jk}])) \Big],
    \end{equation}
 
    which may always be non-negative (intuitively, it seems to follow from

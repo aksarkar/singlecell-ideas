@@ -239,7 +239,7 @@
 
    #+RESULTS: vbem
    :RESULTS:
-   # Out[267]:
+   # Out[4]:
    :END:
 
 ** Newton-Raphson
@@ -426,7 +426,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[35]:
    :END:
 
    To initialize all methods, run 50 epochs of VBEM. Compare VBEM and
@@ -452,7 +452,7 @@
      torch.manual_seed(2)
      m2 = PMFGD(n, p, K).cuda()
      m2.load_state_dict(m0.state_dict())
-     m2.fit(xt, num_epochs=10000, lr=5e-2)
+     m2.fit(xt, num_epochs=100000, lr=5e-2, eps=1e-2)
 
      print('fitting by Newton-Raphson')
      m3 = PMFN(n, p, K).cuda()
@@ -463,7 +463,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[253]:
+   # Out[36]:
    : PMFN()
    :END:
 
@@ -494,7 +494,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[254]:
+   # Out[37]:
    [[file:figure/hpmf.org/sim-elbo.png]]
    :END:
 
@@ -508,8 +508,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[255]:
-   : {'VBEM': 105008.25, 'GD': 105009.27, 'Newton': 104985.46}
+   # Out[38]:
+   : {'VBEM': 105008.25, 'GD': 104886.67, 'Newton': 104985.69}
    :END:
 
    Compare the fitted values of each approach to the observed values.
@@ -534,7 +534,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[256]:
+   # Out[39]:
    [[file:figure/hpmf.org/sim-ex-fit.png]]
    :END:
 
@@ -560,7 +560,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[257]:
+   # Out[40]:
    :END:
 
    To initialize all methods, run 50 epochs of VBEM. Compare VBEM,
@@ -585,7 +585,7 @@
      torch.manual_seed(2)
      m2 = PMFGD(n, p, K).cuda()
      m2.load_state_dict(m0.state_dict())
-     m2.fit(xt, num_epochs=10000, lr=5e-2)
+     m2.fit(xt, num_epochs=100000, lr=5e-2, eps=1e-2)
 
      print('fitting by Newton-Raphson')
      m3 = PMFN(n, p, K).cuda()
@@ -596,7 +596,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[273]:
+   # Out[11]:
    : PMFN()
    :END:
 
@@ -608,13 +608,13 @@
      fig, ax = plt.subplots(1, 2, sharey=True)
      fig.set_size_inches(6, 2.5)
      for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
-       mu = pd.Series(model.trace).ewm(alpha=0.1).mean()
-       sd = pd.Series(model.trace).ewm(alpha=0.1).std()
+       mu = pd.Series(model.trace).ewm(alpha=0.01).mean()
+       sd = pd.Series(model.trace).ewm(alpha=0.01).std()
        ax[0].plot(mu, c=cm(i), lw=1, marker=None, label=name)
        ax[0].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
      for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
-       mu = pd.Series(model.trace).ewm(alpha=0.05).mean()
-       sd = pd.Series(model.trace).ewm(alpha=0.05).std()
+       mu = pd.Series(model.trace).ewm(alpha=0.1).mean()
+       sd = pd.Series(model.trace).ewm(alpha=0.1).std()
        ax[1].plot(mu, c=cm(i), lw=1, marker=None, label=name)
        ax[1].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
      ax[1].set_xlim(0, 200)
@@ -627,7 +627,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[279]:
+   # Out[32]:
    [[file:figure/hpmf.org/corr-sim-elbo.png]]
    :END:
 
@@ -641,8 +641,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[275]:
-   : {'VBEM': 118743.36, 'GD': 118731.02, 'Newton': 118729.98}
+   # Out[33]:
+   : {'VBEM': 118743.36, 'GD': 118684.94, 'Newton': 118729.95}
    :END:
 
    Compare the fitted values of each approach to the observed values.
@@ -667,6 +667,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[276]:
+   # Out[34]:
    [[file:figure/hpmf.org/corr-sim-ex-fit.png]]
    :END:

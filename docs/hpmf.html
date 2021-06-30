@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-06-30 Wed 00:27 -->
+<!-- 2021-06-30 Wed 14:30 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hierarchical PMF</title>
@@ -456,16 +456,17 @@ where \(\psi^{(1)}\) denotes the trigamma function.
     <span class="org-variable-name">elbo</span> = err - kl_l - kl_f
     <span class="org-keyword">return</span> elbo
 
-  <span class="org-keyword">def</span> <span class="org-function-name">_pm</span>(<span class="org-keyword">self</span>):
+  <span class="org-keyword">def</span> <span class="org-function-name">_pm</span>(<span class="org-keyword">self</span>, x):
     <span class="org-variable-name">pm_l</span> = <span class="org-keyword">self</span>.alpha_l / <span class="org-keyword">self</span>.beta_l
     <span class="org-variable-name">pm_ln_l</span> = torch.digamma(<span class="org-keyword">self</span>.alpha_l) - torch.log(<span class="org-keyword">self</span>.beta_l)
     <span class="org-variable-name">pm_f</span> = <span class="org-keyword">self</span>.alpha_f / <span class="org-keyword">self</span>.beta_f
     <span class="org-variable-name">pm_ln_f</span> = torch.digamma(<span class="org-keyword">self</span>.alpha_f) - torch.log(<span class="org-keyword">self</span>.beta_f)
-    <span class="org-keyword">return</span> pm_l, pm_ln_l, pm_f, pm_ln_f
+    <span class="org-variable-name">t</span> = x / (torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
+    <span class="org-keyword">return</span> pm_l, pm_ln_l, pm_f, pm_ln_f, t
 
   <span class="org-keyword">def</span> <span class="org-function-name">elbo_z</span>(<span class="org-keyword">self</span>, x):
     <span class="org-doc">"""ELBO wrt q(l_{ik}) q(f_{jk}) q(z_{ijk})"""</span>
-    <span class="org-variable-name">pm_l</span>, <span class="org-variable-name">pm_ln_l</span>, <span class="org-variable-name">pm_f</span>, <span class="org-variable-name">pm_ln_f</span> = <span class="org-keyword">self</span>._pm()
+    <span class="org-variable-name">pm_l</span>, <span class="org-variable-name">pm_ln_l</span>, <span class="org-variable-name">pm_f</span>, <span class="org-variable-name">pm_ln_f</span>, <span class="org-variable-name">_</span> = <span class="org-keyword">self</span>._pm(x)
     <span class="org-variable-name">ret</span> = (x * torch.log(torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
            - pm_l @ pm_f.T
            - torch.lgamma(x + 1)).<span class="org-builtin">sum</span>()
@@ -488,31 +489,26 @@ where \(\psi^{(1)}\) denotes the trigamma function.
   <span class="org-type">@torch.no_grad</span>()
   <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, num_epochs, eps=1e-15, step=1):
     <span class="org-keyword">self</span>.trace = []
+    <span class="org-keyword">self</span>.trace2 = []
     <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_epochs):
       <span class="org-keyword">self</span>.trace.append(-<span class="org-keyword">self</span>.elbo(x).cpu().numpy())
+      <span class="org-keyword">self</span>.trace2.append(-<span class="org-keyword">self</span>.elbo_z(x).cpu().numpy())
       <span class="org-variable-name">obj</span> = <span class="org-keyword">self</span>.elbo_z(x).cpu().numpy()
       <span class="org-comment-delimiter"># </span><span class="org-comment">Cemgil 2009, Alg. 1</span>
       <span class="org-comment-delimiter"># </span><span class="org-comment">Important: this optimizes elbo_z, not elbo</span>
-      <span class="org-variable-name">pm_l</span>, <span class="org-variable-name">pm_ln_l</span>, <span class="org-variable-name">pm_f</span>, <span class="org-variable-name">pm_ln_f</span> = <span class="org-keyword">self</span>._pm()
-      <span class="org-variable-name">temp</span> = x / (torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
-      <span class="org-keyword">self</span>.alpha_l.data = torch.exp(pm_ln_l) * (temp @ torch.exp(pm_ln_f)) + <span class="org-keyword">self</span>.a_l
+      <span class="org-variable-name">pm_l</span>, <span class="org-variable-name">pm_ln_l</span>, <span class="org-variable-name">pm_f</span>, <span class="org-variable-name">pm_ln_f</span>, <span class="org-variable-name">t</span> = <span class="org-keyword">self</span>._pm(x)
+      <span class="org-keyword">self</span>.alpha_l.data = torch.exp(pm_ln_l) * (t @ torch.exp(pm_ln_f)) + <span class="org-keyword">self</span>.a_l
       <span class="org-keyword">self</span>.beta_l.data = pm_f.<span class="org-builtin">sum</span>(dim=0) + <span class="org-keyword">self</span>.b_l
-      <span class="org-variable-name">pm_l</span>, <span class="org-variable-name">pm_ln_l</span>, <span class="org-variable-name">pm_f</span>, <span class="org-variable-name">pm_ln_f</span> = <span class="org-keyword">self</span>._pm()
-      <span class="org-variable-name">temp</span> = x / (torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
-      <span class="org-keyword">self</span>.alpha_f.data = torch.exp(pm_ln_f) * (torch.exp(pm_ln_l).T @ temp).T + <span class="org-keyword">self</span>.a_f
+      <span class="org-variable-name">pm_l</span>, <span class="org-variable-name">pm_ln_l</span>, <span class="org-variable-name">pm_f</span>, <span class="org-variable-name">pm_ln_f</span>, <span class="org-variable-name">t</span> = <span class="org-keyword">self</span>._pm(x)
+      <span class="org-keyword">self</span>.alpha_f.data = torch.exp(pm_ln_f) * (torch.exp(pm_ln_l).T @ t).T + <span class="org-keyword">self</span>.a_f
       <span class="org-keyword">self</span>.beta_f.data = pm_l.<span class="org-builtin">sum</span>(dim=0) + <span class="org-keyword">self</span>.b_f
-      <span class="org-variable-name">update1</span> = <span class="org-keyword">self</span>.elbo_z(x).cpu().numpy()
-      <span class="org-keyword">if</span> step &gt; 0:
-        <span class="org-keyword">assert</span> update1 &gt;= obj
-        <span class="org-variable-name">pm_l</span>, <span class="org-variable-name">pm_ln_l</span>, <span class="org-variable-name">pm_f</span>, <span class="org-variable-name">pm_ln_f</span> = <span class="org-keyword">self</span>._pm()
-        <span class="org-keyword">self</span>.a_l.data += step * (pm_ln_l + torch.log(<span class="org-keyword">self</span>.b_l) - torch.digamma(<span class="org-keyword">self</span>.a_l)).<span class="org-builtin">sum</span>(dim=0) / torch.polygamma(1, <span class="org-keyword">self</span>.a_l)
-        torch.clamp(<span class="org-keyword">self</span>.a_l, <span class="org-builtin">min</span>=eps)
-        <span class="org-keyword">self</span>.b_l.data = pm_l.shape[0] * <span class="org-keyword">self</span>.a_l / pm_l.<span class="org-builtin">sum</span>(dim=0)
-        <span class="org-keyword">self</span>.a_f.data += step * (pm_ln_f + torch.log(<span class="org-keyword">self</span>.b_f) - torch.digamma(<span class="org-keyword">self</span>.a_f)).<span class="org-builtin">sum</span>(dim=0) / torch.polygamma(1, <span class="org-keyword">self</span>.a_f)
-        torch.clamp(<span class="org-keyword">self</span>.a_f, <span class="org-builtin">min</span>=eps)
-        <span class="org-keyword">self</span>.b_f.data = pm_f.shape[0] * <span class="org-keyword">self</span>.a_f / pm_f.<span class="org-builtin">sum</span>(dim=0)
-        <span class="org-variable-name">update2</span> = <span class="org-keyword">self</span>.elbo_z(x).cpu().numpy()
-        <span class="org-keyword">assert</span> update2 &gt;= update1
+      <span class="org-variable-name">pm_l</span>, <span class="org-variable-name">pm_ln_l</span>, <span class="org-variable-name">pm_f</span>, <span class="org-variable-name">pm_ln_f</span>, <span class="org-variable-name">_</span> = <span class="org-keyword">self</span>._pm(x)
+      <span class="org-keyword">self</span>.a_l.data += step * (pm_ln_l + torch.log(<span class="org-keyword">self</span>.b_l) - torch.digamma(<span class="org-keyword">self</span>.a_l)).<span class="org-builtin">sum</span>(dim=0) / torch.polygamma(1, <span class="org-keyword">self</span>.a_l)
+      torch.clamp(<span class="org-keyword">self</span>.a_l, <span class="org-builtin">min</span>=eps)
+      <span class="org-keyword">self</span>.b_l.data = pm_l.shape[0] * <span class="org-keyword">self</span>.a_l / pm_l.<span class="org-builtin">sum</span>(dim=0)
+      <span class="org-keyword">self</span>.a_f.data += step * (pm_ln_f + torch.log(<span class="org-keyword">self</span>.b_f) - torch.digamma(<span class="org-keyword">self</span>.a_f)).<span class="org-builtin">sum</span>(dim=0) / torch.polygamma(1, <span class="org-keyword">self</span>.a_f)
+      torch.clamp(<span class="org-keyword">self</span>.a_f, <span class="org-builtin">min</span>=eps)
+      <span class="org-keyword">self</span>.b_f.data = pm_f.shape[0] * <span class="org-keyword">self</span>.a_f / pm_f.<span class="org-builtin">sum</span>(dim=0)
     <span class="org-keyword">return</span> <span class="org-keyword">self</span>
 </pre>
 </div>
@@ -592,13 +588,16 @@ differentiation to get the first and second derivatives.
           <span class="org-variable-name">par.data</span>[i,k] = torch.clamp(par.data[i,k], <span class="org-builtin">min</span>=eps)
 
   <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, num_epochs, step=1):
-    <span class="org-keyword">self</span>.trace = [-<span class="org-keyword">self</span>.elbo(x).cpu().numpy()]
+    <span class="org-keyword">self</span>.trace = []
+    <span class="org-keyword">self</span>.trace2 = []
     <span class="org-keyword">for</span> t <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_epochs):
       <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: update order probably matters</span>
       <span class="org-keyword">for</span> par <span class="org-keyword">in</span> <span class="org-keyword">self</span>.parameters():
         <span class="org-keyword">if</span> par.requires_grad:
           <span class="org-keyword">self</span>._update(x, par, step=step)
       <span class="org-keyword">self</span>.trace.append(-<span class="org-keyword">self</span>.elbo(x).cpu().numpy())
+      <span class="org-keyword">with</span> torch.no_grad():
+        <span class="org-keyword">self</span>.trace2.append(-<span class="org-keyword">self</span>.elbo_z(x).cpu().numpy())
     <span class="org-keyword">return</span> <span class="org-keyword">self</span>
 </pre>
 </div>
@@ -726,27 +725,27 @@ according to eq. 32.
 <pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: VBEM is randomly initialized</span>
 <span class="org-keyword">print</span>(<span class="org-string">'fitting initial model by VBEM'</span>)
 torch.manual_seed(1)
-<span class="org-comment-delimiter"># </span><span class="org-comment">TODO: this really needs line search</span>
 <span class="org-variable-name">m0</span> = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=50, step=1e-3)
+
+<span class="org-variable-name">models</span> = <span class="org-builtin">dict</span>()
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">Continue VBEM updates</span>
 <span class="org-keyword">print</span>(<span class="org-string">'fitting by VBEM'</span>)
-<span class="org-variable-name">m1</span> = PMFVBEM(n, p, K).cuda()
-m1.load_state_dict(m0.state_dict())
-m1.fit(xt, num_epochs=100, step=1e-4)
+<span class="org-variable-name">models</span>[<span class="org-string">'VBEM'</span>] = PMFVBEM(n, p, K).cuda()
+models[<span class="org-string">'VBEM'</span>].load_state_dict(m0.state_dict())
+models[<span class="org-string">'VBEM'</span>].fit(xt, num_epochs=200, step=1e-3)
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">Important: GD is stochastic</span>
 <span class="org-keyword">print</span>(<span class="org-string">'fitting by GD'</span>)
 torch.manual_seed(2)
-<span class="org-variable-name">m2</span> = PMFGD(n, p, K).cuda()
-m2.load_state_dict(m0.state_dict())
-m2.fit(xt, num_epochs=100000, lr=5e-2, eps=1e-2)
+<span class="org-variable-name">models</span>[<span class="org-string">'GD'</span>] = PMFGD(n, p, K).cuda()
+models[<span class="org-string">'GD'</span>].load_state_dict(m0.state_dict())
+models[<span class="org-string">'GD'</span>].fit(xt, num_epochs=60000, lr=5e-2, eps=1e-2)
 
 <span class="org-keyword">print</span>(<span class="org-string">'fitting by Newton-Raphson'</span>)
-<span class="org-variable-name">m3</span> = PMFN(n, p, K).cuda()
-m3.load_state_dict(m0.state_dict())
-<span class="org-comment-delimiter"># </span><span class="org-comment">TODO: this really needs line search</span>
-m3.fit(xt, num_epochs=100, step=0.5)
+<span class="org-variable-name">models</span>[<span class="org-string">'Newton'</span>] = PMFN(n, p, K).cuda()
+models[<span class="org-string">'Newton'</span>].load_state_dict(m0.state_dict())
+models[<span class="org-string">'Newton'</span>].fit(xt, num_epochs=100, step=0.5)
 </pre>
 </div>
 
@@ -762,20 +761,23 @@ Look at the ELBO achieved by the algorithms.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
 plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
-fig.set_size_inches(6, 2.5)
-<span class="org-keyword">for</span> i, (model, name) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>((m1, m2, m3), (<span class="org-string">'VBEM'</span>, <span class="org-string">'Grad'</span>, <span class="org-string">'Newton'</span>))):
-  <span class="org-variable-name">mu</span> = pd.Series(model.trace).ewm(alpha=0.1).mean()
-  <span class="org-variable-name">sd</span> = pd.Series(model.trace).ewm(alpha=0.1).std()
-  ax[0].plot(mu, c=cm(i), lw=1, marker=<span class="org-constant">None</span>, label=name)
-  ax[0].fill_between(np.arange(<span class="org-builtin">len</span>(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
-<span class="org-keyword">for</span> i, (model, name) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>((m1, m2, m3), (<span class="org-string">'VBEM'</span>, <span class="org-string">'Grad'</span>, <span class="org-string">'Newton'</span>))):
-  <span class="org-variable-name">mu</span> = pd.Series(model.trace).ewm(alpha=0.1).mean()
-  <span class="org-variable-name">sd</span> = pd.Series(model.trace).ewm(alpha=0.1).std()
-  ax[1].plot(mu, c=cm(i), lw=1, marker=<span class="org-constant">None</span>, label=name)
-  ax[1].fill_between(np.arange(<span class="org-builtin">len</span>(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
-ax[1].set_xlim(0, 100)
-ax[1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7.5, 2.5)
+<span class="org-keyword">for</span> i, name <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  <span class="org-variable-name">temp</span> = <span class="org-builtin">getattr</span>(models[name], <span class="org-string">'trace2'</span>, <span class="org-constant">None</span>)
+  <span class="org-keyword">if</span> temp:
+    ax[0].plot(temp, c=cm(i), lw=1, marker=<span class="org-constant">None</span>, label=name)
+ax[0].set_title(<span class="org-string">'Approximating $q(z_{ijk})$'</span>)
+
+<span class="org-keyword">for</span> i, name <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  <span class="org-variable-name">mu</span> = pd.Series(models[name].trace).ewm(alpha=0.1).mean()
+  <span class="org-variable-name">sd</span> = pd.Series(models[name].trace).ewm(alpha=0.1).std()
+  <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax[1:]:
+    a.plot(mu, c=cm(i), lw=1, marker=<span class="org-constant">None</span>, label=name)
+    a.fill_between(np.arange(<span class="org-builtin">len</span>(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+    a.set_title(<span class="org-string">'Integrating out $z_{ijk}$'</span>)
+ax[-1].set_xlim(0, 100)
+ax[-1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
 <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
   a.set_xlabel(<span class="org-string">'Epoch (after initialization)'</span>)
 ax[0].set_ylabel(<span class="org-string">'Negative ELBO'</span>)
@@ -794,14 +796,13 @@ Report the final (approximate) ELBO.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">{<span class="org-doc">'VBEM'</span>: np.array(m1.trace[-10:]).mean(),
- <span class="org-doc">'GD'</span>: np.array(m2.trace[-10:]).mean(),
- <span class="org-doc">'Newton'</span>: np.array(m3.trace[-10:]).mean()}
+<pre class="src src-ipython">{name: np.array(models[name].trace[-10:]).mean()
+ <span class="org-keyword">for</span> name <span class="org-keyword">in</span> models}
 </pre>
 </div>
 
 <pre class="example">
-{'VBEM': 105008.25, 'GD': 104886.67, 'Newton': 104985.69}
+{'VBEM': 104979.914, 'GD': 104915.23, 'Newton': 104974.35}
 
 </pre>
 
@@ -814,15 +815,16 @@ Compare the fitted values of each approach to the observed values.
 <span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharey=<span class="org-constant">True</span>)
 fig.set_size_inches(7, 3)
 
-<span class="org-keyword">for</span> a, model <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, (m1, m2, m3)):
+<span class="org-keyword">for</span> a, name <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, models):
   <span class="org-keyword">with</span> torch.no_grad():
-    <span class="org-variable-name">pm</span> = ((model.alpha_l / model.beta_l) @ (model.alpha_f / model.beta_f).T).cpu()
+    <span class="org-variable-name">pm</span> = ((models[name].alpha_l / models[name].beta_l) @
+          (models[name].alpha_f / models[name].beta_f).T).cpu()
   a.scatter(pm.ravel(), x.ravel(), s=1, alpha=0.1, c=<span class="org-string">'k'</span>)
 <span class="org-variable-name">lim</span> = [0, 60]
-<span class="org-keyword">for</span> a, title <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'VBEM'</span>, <span class="org-string">'Grad'</span>, <span class="org-string">'Newton'</span>]):
+<span class="org-keyword">for</span> a, name <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, models):
   a.plot(lim, lim, c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
   a.set_xlabel(<span class="org-string">'Fitted value'</span>)
-  a.set_title(title)
+  a.set_title(name)
 ax[0].set_ylabel(<span class="org-string">'True value'</span>)
 fig.tight_layout()
 </pre>
@@ -870,27 +872,27 @@ to eq. 32.
 <pre class="src src-ipython"><span class="org-comment-delimiter"># </span><span class="org-comment">Important: VBEM is randomly initialized</span>
 <span class="org-keyword">print</span>(<span class="org-string">'fitting initial model by VBEM'</span>)
 torch.manual_seed(1)
-<span class="org-comment-delimiter"># </span><span class="org-comment">TODO: this really needs line search</span>
-<span class="org-variable-name">m0</span> = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=50, step=1e-4)
+<span class="org-variable-name">m0</span> = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=50, step=1e-3)
+
+<span class="org-variable-name">models</span> = <span class="org-builtin">dict</span>()
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">Continue VBEM updates</span>
 <span class="org-keyword">print</span>(<span class="org-string">'fitting by VBEM'</span>)
-<span class="org-variable-name">m1</span> = PMFVBEM(n, p, K).cuda()
-m1.load_state_dict(m0.state_dict())
-m1.fit(xt, num_epochs=200, step=0)
+<span class="org-variable-name">models</span>[<span class="org-string">'VBEM'</span>] = PMFVBEM(n, p, K).cuda()
+models[<span class="org-string">'VBEM'</span>].load_state_dict(m0.state_dict())
+models[<span class="org-string">'VBEM'</span>].fit(xt, num_epochs=1000, step=1e-3)
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">Important: GD is stochastic</span>
 <span class="org-keyword">print</span>(<span class="org-string">'fitting by GD'</span>)
 torch.manual_seed(2)
-<span class="org-variable-name">m2</span> = PMFGD(n, p, K).cuda()
-m2.load_state_dict(m0.state_dict())
-m2.fit(xt, num_epochs=100000, lr=5e-2, eps=1e-2)
+<span class="org-variable-name">models</span>[<span class="org-string">'GD'</span>] = PMFGD(n, p, K).cuda()
+models[<span class="org-string">'GD'</span>].load_state_dict(m0.state_dict())
+models[<span class="org-string">'GD'</span>].fit(xt, num_epochs=60000, lr=5e-2, eps=1e-2)
 
 <span class="org-keyword">print</span>(<span class="org-string">'fitting by Newton-Raphson'</span>)
-<span class="org-variable-name">m3</span> = PMFN(n, p, K).cuda()
-m3.load_state_dict(m0.state_dict())
-<span class="org-comment-delimiter"># </span><span class="org-comment">TODO: this really needs line search</span>
-m3.fit(xt, num_epochs=100, step=0.5)
+<span class="org-variable-name">models</span>[<span class="org-string">'Newton'</span>] = PMFN(n, p, K).cuda()
+models[<span class="org-string">'Newton'</span>].load_state_dict(m0.state_dict())
+models[<span class="org-string">'Newton'</span>].fit(xt, num_epochs=200, step=0.5)
 </pre>
 </div>
 
@@ -906,20 +908,23 @@ Look at the ELBO achieved by the algorithms.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
 plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
-fig.set_size_inches(6, 2.5)
-<span class="org-keyword">for</span> i, (model, name) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>((m1, m2, m3), (<span class="org-string">'VBEM'</span>, <span class="org-string">'Grad'</span>, <span class="org-string">'Newton'</span>))):
-  <span class="org-variable-name">mu</span> = pd.Series(model.trace).ewm(alpha=0.01).mean()
-  <span class="org-variable-name">sd</span> = pd.Series(model.trace).ewm(alpha=0.01).std()
-  ax[0].plot(mu, c=cm(i), lw=1, marker=<span class="org-constant">None</span>, label=name)
-  ax[0].fill_between(np.arange(<span class="org-builtin">len</span>(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
-<span class="org-keyword">for</span> i, (model, name) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>((m1, m2, m3), (<span class="org-string">'VBEM'</span>, <span class="org-string">'Grad'</span>, <span class="org-string">'Newton'</span>))):
-  <span class="org-variable-name">mu</span> = pd.Series(model.trace).ewm(alpha=0.1).mean()
-  <span class="org-variable-name">sd</span> = pd.Series(model.trace).ewm(alpha=0.1).std()
-  ax[1].plot(mu, c=cm(i), lw=1, marker=<span class="org-constant">None</span>, label=name)
-  ax[1].fill_between(np.arange(<span class="org-builtin">len</span>(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
-ax[1].set_xlim(0, 200)
-ax[1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3)
+fig.set_size_inches(7.5, 2.5)
+<span class="org-keyword">for</span> i, name <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  <span class="org-variable-name">temp</span> = <span class="org-builtin">getattr</span>(models[name], <span class="org-string">'trace2'</span>, <span class="org-constant">None</span>)
+  <span class="org-keyword">if</span> temp:
+    ax[0].plot(temp, c=cm(i), lw=1, marker=<span class="org-constant">None</span>, label=name)
+ax[0].set_title(<span class="org-string">'Approximating $q(z_{ijk})$'</span>)
+
+<span class="org-keyword">for</span> i, name <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(models):
+  <span class="org-variable-name">mu</span> = pd.Series(models[name].trace).ewm(alpha=0.1).mean()
+  <span class="org-variable-name">sd</span> = pd.Series(models[name].trace).ewm(alpha=0.1).std()
+  <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax[1:]:
+    a.plot(mu, c=cm(i), lw=1, marker=<span class="org-constant">None</span>, label=name)
+    a.fill_between(np.arange(<span class="org-builtin">len</span>(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+    a.set_title(<span class="org-string">'Integrating out $z_{ijk}$'</span>)
+ax[-1].set_xlim(0, 1000)
+ax[-1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
 <span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
   a.set_xlabel(<span class="org-string">'Epoch (after initialization)'</span>)
 ax[0].set_ylabel(<span class="org-string">'Negative ELBO'</span>)
@@ -938,14 +943,13 @@ Report the final (approximate) ELBO.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">{<span class="org-doc">'VBEM'</span>: np.array(m1.trace[-10:]).mean(),
- <span class="org-doc">'GD'</span>: np.array(m2.trace[-10:]).mean(),
- <span class="org-doc">'Newton'</span>: np.array(m3.trace[-10:]).mean()}
+<pre class="src src-ipython">{name: np.array(models[name].trace[-10:]).mean()
+ <span class="org-keyword">for</span> name <span class="org-keyword">in</span> models}
 </pre>
 </div>
 
 <pre class="example">
-{'VBEM': 118743.36, 'GD': 118684.94, 'Newton': 118729.95}
+{'VBEM': 118721.9, 'GD': 118704.336, 'Newton': 118723.39}
 
 </pre>
 
@@ -958,15 +962,16 @@ Compare the fitted values of each approach to the observed values.
 <span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharey=<span class="org-constant">True</span>)
 fig.set_size_inches(7, 3)
 
-<span class="org-keyword">for</span> a, model <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, (m1, m2, m3)):
+<span class="org-keyword">for</span> a, name <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, models):
   <span class="org-keyword">with</span> torch.no_grad():
-    <span class="org-variable-name">pm</span> = ((model.alpha_l / model.beta_l) @ (model.alpha_f / model.beta_f).T).cpu()
+    <span class="org-variable-name">pm</span> = ((models[name].alpha_l / models[name].beta_l) @
+          (models[name].alpha_f / models[name].beta_f).T).cpu()
   a.scatter(pm.ravel(), x.ravel(), s=1, alpha=0.1, c=<span class="org-string">'k'</span>)
-<span class="org-variable-name">lim</span> = [0, 250]
-<span class="org-keyword">for</span> a, title <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, [<span class="org-string">'VBEM'</span>, <span class="org-string">'Grad'</span>, <span class="org-string">'Newton'</span>]):
+<span class="org-variable-name">lim</span> = [0, 230]
+<span class="org-keyword">for</span> a, name <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, models):
   a.plot(lim, lim, c=<span class="org-string">'r'</span>, lw=1, ls=<span class="org-string">':'</span>)
   a.set_xlabel(<span class="org-string">'Fitted value'</span>)
-  a.set_title(title)
+  a.set_title(name)
 ax[0].set_ylabel(<span class="org-string">'True value'</span>)
 fig.tight_layout()
 </pre>
@@ -983,7 +988,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-06-30 Wed 00:27</p>
+<p class="date">Created: 2021-06-30 Wed 14:30</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

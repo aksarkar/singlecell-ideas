@@ -177,16 +177,17 @@
          elbo = err - kl_l - kl_f
          return elbo
 
-       def _pm(self):
+       def _pm(self, x):
          pm_l = self.alpha_l / self.beta_l
          pm_ln_l = torch.digamma(self.alpha_l) - torch.log(self.beta_l)
          pm_f = self.alpha_f / self.beta_f
          pm_ln_f = torch.digamma(self.alpha_f) - torch.log(self.beta_f)
-         return pm_l, pm_ln_l, pm_f, pm_ln_f
+         t = x / (torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
+         return pm_l, pm_ln_l, pm_f, pm_ln_f, t
 
        def elbo_z(self, x):
          """ELBO wrt q(l_{ik}) q(f_{jk}) q(z_{ijk})"""
-         pm_l, pm_ln_l, pm_f, pm_ln_f = self._pm()
+         pm_l, pm_ln_l, pm_f, pm_ln_f, _ = self._pm(x)
          ret = (x * torch.log(torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
                 - pm_l @ pm_f.T
                 - torch.lgamma(x + 1)).sum()
@@ -209,31 +210,26 @@
        @torch.no_grad()
        def fit(self, x, num_epochs, eps=1e-15, step=1):
          self.trace = []
+         self.trace2 = []
          for i in range(num_epochs):
            self.trace.append(-self.elbo(x).cpu().numpy())
+           self.trace2.append(-self.elbo_z(x).cpu().numpy())
            obj = self.elbo_z(x).cpu().numpy()
            # Cemgil 2009, Alg. 1
            # Important: this optimizes elbo_z, not elbo
-           pm_l, pm_ln_l, pm_f, pm_ln_f = self._pm()
-           temp = x / (torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
-           self.alpha_l.data = torch.exp(pm_ln_l) * (temp @ torch.exp(pm_ln_f)) + self.a_l
+           pm_l, pm_ln_l, pm_f, pm_ln_f, t = self._pm(x)
+           self.alpha_l.data = torch.exp(pm_ln_l) * (t @ torch.exp(pm_ln_f)) + self.a_l
            self.beta_l.data = pm_f.sum(dim=0) + self.b_l
-           pm_l, pm_ln_l, pm_f, pm_ln_f = self._pm()
-           temp = x / (torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
-           self.alpha_f.data = torch.exp(pm_ln_f) * (torch.exp(pm_ln_l).T @ temp).T + self.a_f
+           pm_l, pm_ln_l, pm_f, pm_ln_f, t = self._pm(x)
+           self.alpha_f.data = torch.exp(pm_ln_f) * (torch.exp(pm_ln_l).T @ t).T + self.a_f
            self.beta_f.data = pm_l.sum(dim=0) + self.b_f
-           update1 = self.elbo_z(x).cpu().numpy()
-           if step > 0:
-             assert update1 >= obj
-             pm_l, pm_ln_l, pm_f, pm_ln_f = self._pm()
-             self.a_l.data += step * (pm_ln_l + torch.log(self.b_l) - torch.digamma(self.a_l)).sum(dim=0) / torch.polygamma(1, self.a_l)
-             torch.clamp(self.a_l, min=eps)
-             self.b_l.data = pm_l.shape[0] * self.a_l / pm_l.sum(dim=0)
-             self.a_f.data += step * (pm_ln_f + torch.log(self.b_f) - torch.digamma(self.a_f)).sum(dim=0) / torch.polygamma(1, self.a_f)
-             torch.clamp(self.a_f, min=eps)
-             self.b_f.data = pm_f.shape[0] * self.a_f / pm_f.sum(dim=0)
-             update2 = self.elbo_z(x).cpu().numpy()
-             assert update2 >= update1
+           pm_l, pm_ln_l, pm_f, pm_ln_f, _ = self._pm(x)
+           self.a_l.data += step * (pm_ln_l + torch.log(self.b_l) - torch.digamma(self.a_l)).sum(dim=0) / torch.polygamma(1, self.a_l)
+           torch.clamp(self.a_l, min=eps)
+           self.b_l.data = pm_l.shape[0] * self.a_l / pm_l.sum(dim=0)
+           self.a_f.data += step * (pm_ln_f + torch.log(self.b_f) - torch.digamma(self.a_f)).sum(dim=0) / torch.polygamma(1, self.a_f)
+           torch.clamp(self.a_f, min=eps)
+           self.b_f.data = pm_f.shape[0] * self.a_f / pm_f.sum(dim=0)
          return self
    #+END_SRC
 
@@ -313,19 +309,22 @@
                par.data[i,k] = torch.clamp(par.data[i,k], min=eps)
 
        def fit(self, x, num_epochs, step=1):
-         self.trace = [-self.elbo(x).cpu().numpy()]
+         self.trace = []
+         self.trace2 = []
          for t in range(num_epochs):
            # TODO: update order probably matters
            for par in self.parameters():
              if par.requires_grad:
                self._update(x, par, step=step)
            self.trace.append(-self.elbo(x).cpu().numpy())
+           with torch.no_grad():
+             self.trace2.append(-self.elbo_z(x).cpu().numpy())
          return self
    #+END_SRC
 
    #+RESULTS: newton
    :RESULTS:
-   # Out[5]:
+   # Out[14]:
    :END:
 
 ** Pathwise gradient
@@ -401,7 +400,7 @@
 
    #+RESULTS: grad
    :RESULTS:
-   # Out[6]:
+   # Out[7]:
    :END:
 
 * Results
@@ -426,7 +425,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[35]:
+   # Out[8]:
    :END:
 
    To initialize all methods, run 50 epochs of VBEM. Compare VBEM and
@@ -438,32 +437,32 @@
      # Important: VBEM is randomly initialized
      print('fitting initial model by VBEM')
      torch.manual_seed(1)
-     # TODO: this really needs line search
      m0 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=50, step=1e-3)
+
+     models = dict()
 
      # Continue VBEM updates
      print('fitting by VBEM')
-     m1 = PMFVBEM(n, p, K).cuda()
-     m1.load_state_dict(m0.state_dict())
-     m1.fit(xt, num_epochs=100, step=1e-4)
+     models['VBEM'] = PMFVBEM(n, p, K).cuda()
+     models['VBEM'].load_state_dict(m0.state_dict())
+     models['VBEM'].fit(xt, num_epochs=200, step=1e-3)
 
      # Important: GD is stochastic
      print('fitting by GD')
      torch.manual_seed(2)
-     m2 = PMFGD(n, p, K).cuda()
-     m2.load_state_dict(m0.state_dict())
-     m2.fit(xt, num_epochs=100000, lr=5e-2, eps=1e-2)
+     models['GD'] = PMFGD(n, p, K).cuda()
+     models['GD'].load_state_dict(m0.state_dict())
+     models['GD'].fit(xt, num_epochs=60000, lr=5e-2, eps=1e-2)
 
      print('fitting by Newton-Raphson')
-     m3 = PMFN(n, p, K).cuda()
-     m3.load_state_dict(m0.state_dict())
-     # TODO: this really needs line search
-     m3.fit(xt, num_epochs=100, step=0.5)
+     models['Newton'] = PMFN(n, p, K).cuda()
+     models['Newton'].load_state_dict(m0.state_dict())
+     models['Newton'].fit(xt, num_epochs=100, step=0.5)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[36]:
+   # Out[15]:
    : PMFN()
    :END:
 
@@ -472,20 +471,23 @@
    #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-elbo.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
-     fig, ax = plt.subplots(1, 2, sharey=True)
-     fig.set_size_inches(6, 2.5)
-     for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
-       mu = pd.Series(model.trace).ewm(alpha=0.1).mean()
-       sd = pd.Series(model.trace).ewm(alpha=0.1).std()
-       ax[0].plot(mu, c=cm(i), lw=1, marker=None, label=name)
-       ax[0].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
-     for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
-       mu = pd.Series(model.trace).ewm(alpha=0.1).mean()
-       sd = pd.Series(model.trace).ewm(alpha=0.1).std()
-       ax[1].plot(mu, c=cm(i), lw=1, marker=None, label=name)
-       ax[1].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
-     ax[1].set_xlim(0, 100)
-     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     fig, ax = plt.subplots(1, 3, sharey=True)
+     fig.set_size_inches(7.5, 2.5)
+     for i, name in enumerate(models):
+       temp = getattr(models[name], 'trace2', None)
+       if temp:
+         ax[0].plot(temp, c=cm(i), lw=1, marker=None, label=name)
+     ax[0].set_title('Approximating $q(z_{ijk})$')
+
+     for i, name in enumerate(models):
+       mu = pd.Series(models[name].trace).ewm(alpha=0.1).mean()
+       sd = pd.Series(models[name].trace).ewm(alpha=0.1).std()
+       for a in ax[1:]:
+         a.plot(mu, c=cm(i), lw=1, marker=None, label=name)
+         a.fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+         a.set_title('Integrating out $z_{ijk}$')
+     ax[-1].set_xlim(0, 100)
+     ax[-1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
      for a in ax:
        a.set_xlabel('Epoch (after initialization)')
      ax[0].set_ylabel('Negative ELBO')
@@ -494,22 +496,21 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[37]:
+   # Out[19]:
    [[file:figure/hpmf.org/sim-elbo.png]]
    :END:
 
    Report the final (approximate) ELBO.
 
    #+BEGIN_SRC ipython
-     {'VBEM': np.array(m1.trace[-10:]).mean(),
-      'GD': np.array(m2.trace[-10:]).mean(),
-      'Newton': np.array(m3.trace[-10:]).mean()}
+     {name: np.array(models[name].trace[-10:]).mean()
+      for name in models}
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[38]:
-   : {'VBEM': 105008.25, 'GD': 104886.67, 'Newton': 104985.69}
+   # Out[22]:
+   : {'VBEM': 104979.914, 'GD': 104915.23, 'Newton': 104974.35}
    :END:
 
    Compare the fitted values of each approach to the observed values.
@@ -519,22 +520,23 @@
      fig, ax = plt.subplots(1, 3, sharey=True)
      fig.set_size_inches(7, 3)
 
-     for a, model in zip(ax, (m1, m2, m3)):
+     for a, name in zip(ax, models):
        with torch.no_grad():
-         pm = ((model.alpha_l / model.beta_l) @ (model.alpha_f / model.beta_f).T).cpu()
+         pm = ((models[name].alpha_l / models[name].beta_l) @
+               (models[name].alpha_f / models[name].beta_f).T).cpu()
        a.scatter(pm.ravel(), x.ravel(), s=1, alpha=0.1, c='k')
      lim = [0, 60]
-     for a, title in zip(ax, ['VBEM', 'Grad', 'Newton']):
+     for a, name in zip(ax, models):
        a.plot(lim, lim, c='r', lw=1, ls=':')
        a.set_xlabel('Fitted value')
-       a.set_title(title)
+       a.set_title(name)
      ax[0].set_ylabel('True value')
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[39]:
+   # Out[24]:
    [[file:figure/hpmf.org/sim-ex-fit.png]]
    :END:
 
@@ -560,7 +562,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[40]:
+   # Out[25]:
    :END:
 
    To initialize all methods, run 50 epochs of VBEM. Compare VBEM,
@@ -571,32 +573,32 @@
      # Important: VBEM is randomly initialized
      print('fitting initial model by VBEM')
      torch.manual_seed(1)
-     # TODO: this really needs line search
-     m0 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=50, step=1e-4)
+     m0 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=50, step=1e-3)
+
+     models = dict()
 
      # Continue VBEM updates
      print('fitting by VBEM')
-     m1 = PMFVBEM(n, p, K).cuda()
-     m1.load_state_dict(m0.state_dict())
-     m1.fit(xt, num_epochs=200, step=0)
+     models['VBEM'] = PMFVBEM(n, p, K).cuda()
+     models['VBEM'].load_state_dict(m0.state_dict())
+     models['VBEM'].fit(xt, num_epochs=1000, step=1e-3)
 
      # Important: GD is stochastic
      print('fitting by GD')
      torch.manual_seed(2)
-     m2 = PMFGD(n, p, K).cuda()
-     m2.load_state_dict(m0.state_dict())
-     m2.fit(xt, num_epochs=100000, lr=5e-2, eps=1e-2)
+     models['GD'] = PMFGD(n, p, K).cuda()
+     models['GD'].load_state_dict(m0.state_dict())
+     models['GD'].fit(xt, num_epochs=60000, lr=5e-2, eps=1e-2)
 
      print('fitting by Newton-Raphson')
-     m3 = PMFN(n, p, K).cuda()
-     m3.load_state_dict(m0.state_dict())
-     # TODO: this really needs line search
-     m3.fit(xt, num_epochs=100, step=0.5)
+     models['Newton'] = PMFN(n, p, K).cuda()
+     models['Newton'].load_state_dict(m0.state_dict())
+     models['Newton'].fit(xt, num_epochs=200, step=0.5)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
+   # Out[33]:
    : PMFN()
    :END:
 
@@ -605,20 +607,23 @@
    #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/corr-sim-elbo.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
-     fig, ax = plt.subplots(1, 2, sharey=True)
-     fig.set_size_inches(6, 2.5)
-     for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
-       mu = pd.Series(model.trace).ewm(alpha=0.01).mean()
-       sd = pd.Series(model.trace).ewm(alpha=0.01).std()
-       ax[0].plot(mu, c=cm(i), lw=1, marker=None, label=name)
-       ax[0].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
-     for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
-       mu = pd.Series(model.trace).ewm(alpha=0.1).mean()
-       sd = pd.Series(model.trace).ewm(alpha=0.1).std()
-       ax[1].plot(mu, c=cm(i), lw=1, marker=None, label=name)
-       ax[1].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
-     ax[1].set_xlim(0, 200)
-     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7.5, 2.5)
+     for i, name in enumerate(models):
+       temp = getattr(models[name], 'trace2', None)
+       if temp:
+         ax[0].plot(temp, c=cm(i), lw=1, marker=None, label=name)
+     ax[0].set_title('Approximating $q(z_{ijk})$')
+
+     for i, name in enumerate(models):
+       mu = pd.Series(models[name].trace).ewm(alpha=0.1).mean()
+       sd = pd.Series(models[name].trace).ewm(alpha=0.1).std()
+       for a in ax[1:]:
+         a.plot(mu, c=cm(i), lw=1, marker=None, label=name)
+         a.fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+         a.set_title('Integrating out $z_{ijk}$')
+     ax[-1].set_xlim(0, 1000)
+     ax[-1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
      for a in ax:
        a.set_xlabel('Epoch (after initialization)')
      ax[0].set_ylabel('Negative ELBO')
@@ -627,22 +632,21 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[32]:
+   # Out[34]:
    [[file:figure/hpmf.org/corr-sim-elbo.png]]
    :END:
 
    Report the final (approximate) ELBO.
 
    #+BEGIN_SRC ipython
-     {'VBEM': np.array(m1.trace[-10:]).mean(),
-      'GD': np.array(m2.trace[-10:]).mean(),
-      'Newton': np.array(m3.trace[-10:]).mean()}
+     {name: np.array(models[name].trace[-10:]).mean()
+      for name in models}
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[33]:
-   : {'VBEM': 118743.36, 'GD': 118684.94, 'Newton': 118729.95}
+   # Out[35]:
+   : {'VBEM': 118721.9, 'GD': 118704.336, 'Newton': 118723.39}
    :END:
 
    Compare the fitted values of each approach to the observed values.
@@ -652,21 +656,22 @@
      fig, ax = plt.subplots(1, 3, sharey=True)
      fig.set_size_inches(7, 3)
 
-     for a, model in zip(ax, (m1, m2, m3)):
+     for a, name in zip(ax, models):
        with torch.no_grad():
-         pm = ((model.alpha_l / model.beta_l) @ (model.alpha_f / model.beta_f).T).cpu()
+         pm = ((models[name].alpha_l / models[name].beta_l) @
+               (models[name].alpha_f / models[name].beta_f).T).cpu()
        a.scatter(pm.ravel(), x.ravel(), s=1, alpha=0.1, c='k')
-     lim = [0, 250]
-     for a, title in zip(ax, ['VBEM', 'Grad', 'Newton']):
+     lim = [0, 230]
+     for a, name in zip(ax, models):
        a.plot(lim, lim, c='r', lw=1, ls=':')
        a.set_xlabel('Fitted value')
-       a.set_title(title)
+       a.set_title(name)
      ax[0].set_ylabel('True value')
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[34]:
+   # Out[39]:
    [[file:figure/hpmf.org/corr-sim-ex-fit.png]]
    :END:

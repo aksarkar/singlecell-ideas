@@ -132,19 +132,19 @@
    Updates for \(b_{lk}, b_{fk}\) are analytic:
 
    \begin{align}
-     \frac{\partial \ell}{\partial b_{lk}} &= \frac{a_{lk}}{b_{lk}} - \sum_{i} \E[l_{ik}] = 0\\
-     b_{lk} &:= \frac{a_{lk}}{\sum_{i} \E[l_{ik}]}\\
-     \frac{\partial \ell}{\partial b_{fk}} &= \frac{a_{fk}}{b_{fk}} - \sum_{j} \E[f_{jk}] = 0\\
-     b_{fk} &:= \frac{a_{fk}}{\sum_{j} \E[f_{jk}]},
+     \frac{\partial \ell}{\partial b_{lk}} &= \sum_{i} \left[\frac{a_{lk}}{b_{lk}} - \E[l_{ik}]\right] = 0\\
+     b_{lk} &:= \frac{n a_{lk}}{\sum_{i} \E[l_{ik}]}\\
+     \frac{\partial \ell}{\partial b_{fk}} &= \sum_{j} \left[\frac{a_{fk}}{b_{fk}} - \E[f_{jk}]\right] = 0\\
+     b_{fk} &:= \frac{p a_{fk}}{\sum_{j} \E[f_{jk}]},
    \end{align}
 
    as are gradients for \(a_{lk}, a_{fk}\):
 
    \begin{align}
-     \frac{\partial \ell}{\partial a_{lk}} &= \sum_{i} \E[\ln l_{ik}] + \ln b_{lk} - \psi(a_{lk})\\
-     \frac{\partial^2 \ell}{\partial a_{lk}^2} &= \psi^{(1)}(a_{lk})\\
-     \frac{\partial \ell}{\partial a_{fk}} &= \sum_{j} \E[\ln f_{jk}] + \ln b_{fk} - \psi(a_{fk})\\
-     \frac{\partial^2 \ell}{\partial a_{fk}^2} &= \psi^{(1)}(a_{fk}),
+     \frac{\partial \ell}{\partial a_{lk}} &= \sum_{i} \Big[\E[\ln l_{ik}] + \ln b_{lk} - \psi(a_{lk})\Big]\\
+     \frac{\partial^2 \ell}{\partial a_{lk}^2} &= -\psi^{(1)}(a_{lk})\\
+     \frac{\partial \ell}{\partial a_{fk}} &= \sum_{j} \Big[\E[\ln f_{jk}] + \ln b_{fk} - \psi(a_{fk})\Big]\\
+     \frac{\partial^2 \ell}{\partial a_{fk}^2} &= -\psi^{(1)}(a_{fk}),
    \end{align}
 
    where \(\psi^{(1)}\) denotes the trigamma function.
@@ -177,54 +177,69 @@
          elbo = err - kl_l - kl_f
          return elbo
 
-       @torch.no_grad()
-       def elbo_z(self, x, pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f):
+       def _pm(self):
+         pm_l = self.alpha_l / self.beta_l
+         pm_ln_l = torch.digamma(self.alpha_l) - torch.log(self.beta_l)
+         pm_f = self.alpha_f / self.beta_f
+         pm_ln_f = torch.digamma(self.alpha_f) - torch.log(self.beta_f)
+         return pm_l, pm_ln_l, pm_f, pm_ln_f
+
+       def elbo_z(self, x):
          """ELBO wrt q(l_{ik}) q(f_{jk}) q(z_{ijk})"""
-         temp = exp_pm_ln_l @ exp_pm_ln_f.T
-         ret = (x * torch.log(temp) - pm_l @ pm_f.T - torch.lgamma(x + 1)).sum()
-         ret += ((self.a_l - self.alpha_l) * torch.log(exp_pm_ln_l)
+         pm_l, pm_ln_l, pm_f, pm_ln_f = self._pm()
+         ret = (x * torch.log(torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
+                - pm_l @ pm_f.T
+                - torch.lgamma(x + 1)).sum()
+         ret += ((self.a_l - self.alpha_l) * pm_ln_l
                  - (self.b_l - self.beta_l) * pm_l
                  + self.a_l * torch.log(self.b_l)
                  - self.alpha_l * torch.log(self.beta_l)
                  - torch.lgamma(self.a_l)
                  + torch.lgamma(self.alpha_l)).sum()
-         ret += ((self.a_f - self.alpha_f) * torch.log(exp_pm_ln_f)
+         ret += ((self.a_f - self.alpha_f) * pm_ln_f
                  - (self.b_f - self.beta_f) * pm_f
                  + self.a_f * torch.log(self.b_f)
                  - self.alpha_f * torch.log(self.beta_f)
                  - torch.lgamma(self.a_f)
                  + torch.lgamma(self.alpha_f)).sum()
+         assert torch.isfinite(ret)
          assert ret <= 0
          return ret
 
        @torch.no_grad()
-       def _pm(self):
-         pm_l = (self.alpha_l / self.beta_l)
-         exp_pm_ln_l = torch.exp(torch.digamma(self.alpha_l) - torch.log(self.beta_l))
-         pm_f = (self.alpha_f / self.beta_f)
-         exp_pm_ln_f = torch.exp(torch.digamma(self.alpha_f) - torch.log(self.beta_f))
-         return pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f
-
-       @torch.no_grad()
-       def fit(self, x, num_epochs):
+       def fit(self, x, num_epochs, eps=1e-15, step=1):
          self.trace = []
          for i in range(num_epochs):
-           pm_l, exp_pm_ln_l, pm_f, exp_pm_ln_f = self._pm()
            self.trace.append(-self.elbo(x).cpu().numpy())
+           obj = self.elbo_z(x).cpu().numpy()
            # Cemgil 2009, Alg. 1
            # Important: this optimizes elbo_z, not elbo
-           temp = x / (exp_pm_ln_l @ exp_pm_ln_f.T)
-           self.alpha_l.data = exp_pm_ln_l * (temp @ exp_pm_ln_f) + self.a_l
+           pm_l, pm_ln_l, pm_f, pm_ln_f = self._pm()
+           temp = x / (torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
+           self.alpha_l.data = torch.exp(pm_ln_l) * (temp @ torch.exp(pm_ln_f)) + self.a_l
            self.beta_l.data = pm_f.sum(dim=0) + self.b_l
-           self.alpha_f.data = exp_pm_ln_f * (exp_pm_ln_l.T @ temp).T + self.a_f
+           pm_l, pm_ln_l, pm_f, pm_ln_f = self._pm()
+           temp = x / (torch.exp(pm_ln_l) @ torch.exp(pm_ln_f).T)
+           self.alpha_f.data = torch.exp(pm_ln_f) * (torch.exp(pm_ln_l).T @ temp).T + self.a_f
            self.beta_f.data = pm_l.sum(dim=0) + self.b_f
-           # TODO: Hyperparameter updates
+           update1 = self.elbo_z(x).cpu().numpy()
+           if step > 0:
+             assert update1 >= obj
+             pm_l, pm_ln_l, pm_f, pm_ln_f = self._pm()
+             self.a_l.data += step * (pm_ln_l + torch.log(self.b_l) - torch.digamma(self.a_l)).sum(dim=0) / torch.polygamma(1, self.a_l)
+             torch.clamp(self.a_l, min=eps)
+             self.b_l.data = pm_l.shape[0] * self.a_l / pm_l.sum(dim=0)
+             self.a_f.data += step * (pm_ln_f + torch.log(self.b_f) - torch.digamma(self.a_f)).sum(dim=0) / torch.polygamma(1, self.a_f)
+             torch.clamp(self.a_f, min=eps)
+             self.b_f.data = pm_f.shape[0] * self.a_f / pm_f.sum(dim=0)
+             update2 = self.elbo_z(x).cpu().numpy()
+             assert update2 >= update1
          return self
    #+END_SRC
 
    #+RESULTS: vbem
    :RESULTS:
-   # Out[4]:
+   # Out[267]:
    :END:
 
 ** Newton-Raphson
@@ -348,7 +363,7 @@
 
    #+NAME: grad
    #+BEGIN_SRC ipython
-     class PMF(torch.nn.Module):
+     class PMFGD(torch.nn.Module):
        def __init__(self, n, p, k):
          super().__init__()
          self.alpha_l = torch.nn.Parameter(torch.exp(torch.randn([n, k])))
@@ -411,72 +426,44 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[32]:
+   # Out[7]:
    :END:
 
-   To initialize all methods, run 500 epochs of VBEM. For simplicity, fix the
-   hyperparameters to the oracle values.
+   To initialize all methods, run 50 epochs of VBEM. Compare VBEM and
+   Newton-Raphson (which optimize the ELBO eq. 20-21) and gradient descent
+   (which optimizes the ELBO eq. 32). For each method, trace the ELBO estimated
+   according to eq. 32.
 
    #+BEGIN_SRC ipython :async t
      # Important: VBEM is randomly initialized
+     print('fitting initial model by VBEM')
      torch.manual_seed(1)
-     init_epochs = 500
-     m0 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=init_epochs)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[74]:
-   :END:
-
-   Starting from the same initialization, compare VBEM and Newton-Raphson
-   (which optimize the ELBO eq. 20-21) and gradient descent (which optimizes
-   the ELBO eq. 32). For each method, trace the ELBO estimated according to
-   eq. 32.
-
-   #+BEGIN_SRC ipython :async t
-     num_epochs = 4000
+     # TODO: this really needs line search
+     m0 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=50, step=1e-3)
 
      # Continue VBEM updates
+     print('fitting by VBEM')
      m1 = PMFVBEM(n, p, K).cuda()
-     with torch.no_grad():
-       m1.alpha_l.data = m0.alpha_l.clone()
-       m1.beta_l.data = m0.beta_l.clone()
-       m1.alpha_f.data = m0.alpha_f.clone()
-       m1.beta_f.data = m0.beta_f.clone()
-     m1.fit(xt, num_epochs=num_epochs)
+     m1.load_state_dict(m0.state_dict())
+     m1.fit(xt, num_epochs=100, step=1e-4)
 
      # Important: GD is stochastic
+     print('fitting by GD')
      torch.manual_seed(2)
-     m2 = PMF(n, p, K).cuda()
-     with torch.no_grad():
-       m2.alpha_l.data = m0.alpha_l.clone()
-       m2.beta_l.data = m0.beta_l.clone()
-       m2.alpha_f.data = m0.alpha_f.clone()
-       m2.beta_f.data = m0.beta_f.clone()
-     m2.a_l.requires_grad = False
-     m2.b_l.requires_grad = False
-     m2.a_f.requires_grad = False
-     m2.b_f.requires_grad = False
-     m2.fit(xt, num_epochs=4000, lr=1e-2)
+     m2 = PMFGD(n, p, K).cuda()
+     m2.load_state_dict(m0.state_dict())
+     m2.fit(xt, num_epochs=10000, lr=5e-2)
 
+     print('fitting by Newton-Raphson')
      m3 = PMFN(n, p, K).cuda()
-     with torch.no_grad():
-       m3.alpha_l.data = m0.alpha_l.clone()
-       m3.beta_l.data = m0.beta_l.clone()
-       m3.alpha_f.data = m0.alpha_f.clone()
-       m3.beta_f.data = m0.beta_f.clone()
-     m3.a_l.requires_grad = False
-     m3.b_l.requires_grad = False
-     m3.a_f.requires_grad = False
-     m3.b_f.requires_grad = False
-     # TODO: why does this blow up for step=1?
-     m3.fit(xt, num_epochs=100, step=1e-2)
+     m3.load_state_dict(m0.state_dict())
+     # TODO: this really needs line search
+     m3.fit(xt, num_epochs=100, step=0.5)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[75]:
+   # Out[253]:
    : PMFN()
    :END:
 
@@ -485,21 +472,29 @@
    #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-elbo.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
-     plt.gcf().set_size_inches(5, 2.5)
-     plt.yscale('log')
-     plt.plot(pd.Series(m0.trace).ewm(alpha=0.1).mean(), c=cm(0), lw=1, marker=None, label='Initialization')
+     fig, ax = plt.subplots(1, 2, sharey=True)
+     fig.set_size_inches(6, 2.5)
      for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
-       plt.plot(np.arange(init_epochs, init_epochs + len(model.trace)), pd.Series(model.trace).ewm(alpha=0.1).mean(), c=cm(i + 1), lw=1, marker=None, label=name)
-     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
-     plt.ylim(1.045e5, 1.12e5)
-     plt.xlabel('Epoch')
-     plt.ylabel('Negative ELBO\n(smoothed)')
-     plt.tight_layout()
+       mu = pd.Series(model.trace).ewm(alpha=0.1).mean()
+       sd = pd.Series(model.trace).ewm(alpha=0.1).std()
+       ax[0].plot(mu, c=cm(i), lw=1, marker=None, label=name)
+       ax[0].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+     for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
+       mu = pd.Series(model.trace).ewm(alpha=0.1).mean()
+       sd = pd.Series(model.trace).ewm(alpha=0.1).std()
+       ax[1].plot(mu, c=cm(i), lw=1, marker=None, label=name)
+       ax[1].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+     ax[1].set_xlim(0, 100)
+     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     for a in ax:
+       a.set_xlabel('Epoch (after initialization)')
+     ax[0].set_ylabel('Negative ELBO')
+     fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[76]:
+   # Out[254]:
    [[file:figure/hpmf.org/sim-elbo.png]]
    :END:
 
@@ -513,8 +508,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[77]:
-   : {'VBEM': 104987.02, 'GD': 104994.67, 'Newton': 104972.0}
+   # Out[255]:
+   : {'VBEM': 105008.25, 'GD': 105009.27, 'Newton': 104985.46}
    :END:
 
    Compare the fitted values of each approach to the observed values.
@@ -539,7 +534,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[79]:
+   # Out[256]:
    [[file:figure/hpmf.org/sim-ex-fit.png]]
    :END:
 
@@ -565,61 +560,43 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
+   # Out[257]:
    :END:
 
-   To initialize all methods, run 500 epochs of VBEM. For simplicity, fix the
-   hyperparameters to the oracle values. Starting from the same initialization,
-   compare VBEM and Newton-Raphson (which optimize the ELBO eq. 20-21) and
-   gradient descent (which optimizes the ELBO eq. 32). For each method, trace
-   the ELBO estimated according to eq. 32.
+   To initialize all methods, run 50 epochs of VBEM. Compare VBEM,
+   Newton-Raphson, and gradient descent, tracing the ELBO estimated according
+   to eq. 32.
 
    #+BEGIN_SRC ipython :async t
      # Important: VBEM is randomly initialized
+     print('fitting initial model by VBEM')
      torch.manual_seed(1)
-     init_epochs = 500
-     m0 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=init_epochs)
+     # TODO: this really needs line search
+     m0 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=50, step=1e-4)
 
      # Continue VBEM updates
+     print('fitting by VBEM')
      m1 = PMFVBEM(n, p, K).cuda()
-     with torch.no_grad():
-       m1.alpha_l.data = m0.alpha_l.clone()
-       m1.beta_l.data = m0.beta_l.clone()
-       m1.alpha_f.data = m0.alpha_f.clone()
-       m1.beta_f.data = m0.beta_f.clone()
-     m1.fit(xt, num_epochs=1500)
+     m1.load_state_dict(m0.state_dict())
+     m1.fit(xt, num_epochs=200, step=0)
 
      # Important: GD is stochastic
+     print('fitting by GD')
      torch.manual_seed(2)
-     m2 = PMF(n, p, K).cuda()
-     with torch.no_grad():
-       m2.alpha_l.data = m0.alpha_l.clone()
-       m2.beta_l.data = m0.beta_l.clone()
-       m2.alpha_f.data = m0.alpha_f.clone()
-       m2.beta_f.data = m0.beta_f.clone()
-     m2.a_l.requires_grad = False
-     m2.b_l.requires_grad = False
-     m2.a_f.requires_grad = False
-     m2.b_f.requires_grad = False
-     m2.fit(xt, num_epochs=8000, lr=2e-2)
+     m2 = PMFGD(n, p, K).cuda()
+     m2.load_state_dict(m0.state_dict())
+     m2.fit(xt, num_epochs=10000, lr=5e-2)
 
+     print('fitting by Newton-Raphson')
      m3 = PMFN(n, p, K).cuda()
-     with torch.no_grad():
-       m3.alpha_l.data = m0.alpha_l.clone()
-       m3.beta_l.data = m0.beta_l.clone()
-       m3.alpha_f.data = m0.alpha_f.clone()
-       m3.beta_f.data = m0.beta_f.clone()
-     m3.a_l.requires_grad = False
-     m3.b_l.requires_grad = False
-     m3.a_f.requires_grad = False
-     m3.b_f.requires_grad = False
-     # TODO: why does this blow up for step=1?
-     m3.fit(xt, num_epochs=100, step=1e-2)
+     m3.load_state_dict(m0.state_dict())
+     # TODO: this really needs line search
+     m3.fit(xt, num_epochs=100, step=0.5)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[54]:
+   # Out[273]:
    : PMFN()
    :END:
 
@@ -628,21 +605,29 @@
    #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/corr-sim-elbo.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
-     plt.gcf().set_size_inches(5, 2.5)
-     plt.yscale('log')
-     plt.plot(pd.Series(m0.trace).ewm(alpha=0.1).mean(), c=cm(0), lw=1, marker=None, label='Initialization')
+     fig, ax = plt.subplots(1, 2, sharey=True)
+     fig.set_size_inches(6, 2.5)
      for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
-       plt.plot(np.arange(init_epochs, init_epochs + len(model.trace)), pd.Series(model.trace).ewm(alpha=0.1).mean(), c=cm(i + 1), lw=1, marker=None, label=name)
-     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
-     plt.ylim(1.18e5, 1.4e5)
-     plt.xlabel('Epoch')
-     plt.ylabel('Negative ELBO\n(smoothed)')
-     plt.tight_layout()
+       mu = pd.Series(model.trace).ewm(alpha=0.1).mean()
+       sd = pd.Series(model.trace).ewm(alpha=0.1).std()
+       ax[0].plot(mu, c=cm(i), lw=1, marker=None, label=name)
+       ax[0].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+     for i, (model, name) in enumerate(zip((m1, m2, m3), ('VBEM', 'Grad', 'Newton'))):
+       mu = pd.Series(model.trace).ewm(alpha=0.05).mean()
+       sd = pd.Series(model.trace).ewm(alpha=0.05).std()
+       ax[1].plot(mu, c=cm(i), lw=1, marker=None, label=name)
+       ax[1].fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+     ax[1].set_xlim(0, 200)
+     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     for a in ax:
+       a.set_xlabel('Epoch (after initialization)')
+     ax[0].set_ylabel('Negative ELBO')
+     fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[57]:
+   # Out[279]:
    [[file:figure/hpmf.org/corr-sim-elbo.png]]
    :END:
 
@@ -656,8 +641,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[58]:
-   : {'VBEM': 118782.89, 'GD': 118788.15, 'Newton': 118788.04}
+   # Out[275]:
+   : {'VBEM': 118743.36, 'GD': 118731.02, 'Newton': 118729.98}
    :END:
 
    Compare the fitted values of each approach to the observed values.
@@ -682,7 +667,6 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[60]:
+   # Out[276]:
    [[file:figure/hpmf.org/corr-sim-ex-fit.png]]
    :END:
-

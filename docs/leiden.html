@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-06-23 Wed 12:58 -->
+<!-- 2021-06-30 Wed 15:50 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pathological behavior of the Leiden algorithm</title>
@@ -358,12 +358,43 @@ fig.tight_layout()
 <p><img src="figure/leiden.org/sim-ex.png" alt="sim-ex.png">
 </p>
 </div>
+
+<p>
+Repeat for the Louvain algorithm.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">K</span> = (2, 4, 8, 16, 32, 64, 128, 256)
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> K:
+  sc.pp.neighbors(dat, n_neighbors=k, key_added=f<span class="org-string">'K{k}'</span>)
+  sc.tl.louvain(dat, neighbors_key=f<span class="org-string">'K{k}'</span>, key_added=f<span class="org-string">'louvain_K{k}'</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 4, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(7, 4)
+<span class="org-keyword">for</span> a, k <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax.ravel(), K):
+  <span class="org-keyword">for</span> j <span class="org-keyword">in</span> pd.Categorical(dat.obs[f<span class="org-string">'louvain_K{k}'</span>]).categories:
+    <span class="org-variable-name">idx</span> = dat.obs[f<span class="org-string">'louvain_K{k}'</span>] == j
+    a.scatter(x[idx,0], x[idx,1], color=colorcet.cm[<span class="org-string">'glasbey_dark'</span>](<span class="org-builtin">int</span>(j)), s=1)
+    a.set_title(f<span class="org-string">'K = {k}'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/leiden.org/sim-ex-louvain.png" alt="sim-ex-louvain.png">
+</p>
+</div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-06-23 Wed 12:58</p>
+<p class="date">Created: 2021-06-30 Wed 15:50</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

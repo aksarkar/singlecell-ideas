@@ -31,7 +31,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[12]:
+  # Out[42]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -41,7 +41,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[43]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -53,7 +53,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[14]:
+  # Out[44]:
   :END:
 
 * Results
@@ -75,7 +75,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[27]:
+  # Out[45]:
   :END:
 
   Run the Leiden algorithm for different \(k\)-nearest neighbors graphs,
@@ -112,3 +112,36 @@
   # Out[30]:
   [[file:figure/leiden.org/sim-ex.png]]
   :END:
+
+  Repeat for the Louvain algorithm.
+
+  #+BEGIN_SRC ipython :async t
+    K = (2, 4, 8, 16, 32, 64, 128, 256)
+    for k in K:
+      sc.pp.neighbors(dat, n_neighbors=k, key_added=f'K{k}')
+      sc.tl.louvain(dat, neighbors_key=f'K{k}', key_added=f'louvain_K{k}')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[46]:
+  :END:
+
+  #+BEGIN_SRC ipython :ipyfile figure/leiden.org/sim-ex-louvain.png
+    plt.clf()
+    fig, ax = plt.subplots(2, 4, sharex=True, sharey=True)
+    fig.set_size_inches(7, 4)
+    for a, k in zip(ax.ravel(), K):
+      for j in pd.Categorical(dat.obs[f'louvain_K{k}']).categories:
+        idx = dat.obs[f'louvain_K{k}'] == j
+        a.scatter(x[idx,0], x[idx,1], color=colorcet.cm['glasbey_dark'](int(j)), s=1)
+        a.set_title(f'K = {k}')
+    fig.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[47]:
+  [[file:figure/leiden.org/sim-ex-louvain.png]]
+  :END:
+

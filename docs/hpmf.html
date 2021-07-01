@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-07-01 Thu 14:56 -->
+<!-- 2021-07-01 Thu 16:32 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hierarchical PMF</title>
@@ -659,24 +659,25 @@ bounds are the same.
     <span class="org-keyword">self</span>.a_f = torch.nn.Parameter(torch.ones([1, k]))
     <span class="org-keyword">self</span>.b_f = torch.nn.Parameter(torch.ones([1, k]))
 
-  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, n_samples):
     <span class="org-variable-name">q_l</span> = torch.distributions.Gamma(<span class="org-keyword">self</span>.alpha_l, <span class="org-keyword">self</span>.beta_l)
     <span class="org-variable-name">q_f</span> = torch.distributions.Gamma(<span class="org-keyword">self</span>.alpha_f, <span class="org-keyword">self</span>.beta_f)
     <span class="org-variable-name">kl_l</span> = torch.distributions.kl.kl_divergence(q_l, torch.distributions.Gamma(<span class="org-keyword">self</span>.a_l, <span class="org-keyword">self</span>.b_l)).<span class="org-builtin">sum</span>()
     <span class="org-variable-name">kl_f</span> = torch.distributions.kl.kl_divergence(q_f, torch.distributions.Gamma(<span class="org-keyword">self</span>.a_f, <span class="org-keyword">self</span>.b_f)).<span class="org-builtin">sum</span>()
-    <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: multiple samples?</span>
-    <span class="org-variable-name">l</span> = q_l.rsample()
-    <span class="org-variable-name">f</span> = q_f.rsample()
-    <span class="org-variable-name">err</span> = torch.distributions.Poisson(l @ f.T).log_prob(x).<span class="org-builtin">sum</span>()
+    <span class="org-variable-name">l</span> = q_l.rsample(n_samples)
+    <span class="org-variable-name">f</span> = q_f.rsample(n_samples)
+    <span class="org-variable-name">lam</span> = torch.einsum(<span class="org-string">'lik,ljk-&gt;lij'</span>, l, f)
+    <span class="org-variable-name">err</span> = torch.distributions.Poisson(lam).log_prob(x.unsqueeze(0)).mean(dim=0).<span class="org-builtin">sum</span>()
     <span class="org-variable-name">elbo</span> = err - kl_l - kl_f
     <span class="org-keyword">return</span> -elbo
 
-  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, num_epochs, **kwargs):
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, x, num_epochs, n_samples=1, **kwargs):
     <span class="org-keyword">self</span>.trace = []
+    <span class="org-variable-name">n_samples</span> = torch.Size([n_samples])
     <span class="org-variable-name">opt</span> = torch.optim.Adam(<span class="org-keyword">self</span>.parameters(), **kwargs)
     <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(num_epochs):
       opt.zero_grad()
-      <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x)
+      <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, n_samples)
       <span class="org-keyword">self</span>.trace.append(loss.detach().cpu().numpy())
       loss.backward()
       opt.step()
@@ -736,11 +737,17 @@ models[<span class="org-string">'VBEM'</span>].load_state_dict(m0.state_dict())
 models[<span class="org-string">'VBEM'</span>].fit(xt, num_epochs=200, step=1e-3)
 
 <span class="org-comment-delimiter"># </span><span class="org-comment">Important: GD is stochastic</span>
-<span class="org-keyword">print</span>(<span class="org-string">'fitting by GD'</span>)
+<span class="org-keyword">print</span>(<span class="org-string">'fitting by GD (1)'</span>)
 torch.manual_seed(2)
-<span class="org-variable-name">models</span>[<span class="org-string">'GD'</span>] = PMFGD(n, p, K).cuda()
-models[<span class="org-string">'GD'</span>].load_state_dict(m0.state_dict())
-models[<span class="org-string">'GD'</span>].fit(xt, num_epochs=60000, lr=5e-2, eps=1e-2)
+<span class="org-variable-name">models</span>[<span class="org-string">'GD (1)'</span>] = PMFGD(n, p, K).cuda()
+models[<span class="org-string">'GD (1)'</span>].load_state_dict(m0.state_dict())
+models[<span class="org-string">'GD (1)'</span>].fit(xt, num_epochs=60000, lr=5e-2, eps=1e-2)
+
+<span class="org-keyword">print</span>(<span class="org-string">'fitting by GD (10)'</span>)
+torch.manual_seed(2)
+<span class="org-variable-name">models</span>[<span class="org-string">'GD (10)'</span>] = PMFGD(n, p, K).cuda()
+models[<span class="org-string">'GD (10)'</span>].load_state_dict(m0.state_dict())
+models[<span class="org-string">'GD (10)'</span>].fit(xt, num_epochs=60000, n_samples=10, lr=5e-2, eps=1e-2)
 
 <span class="org-keyword">print</span>(<span class="org-string">'fitting by Newton-Raphson'</span>)
 <span class="org-variable-name">models</span>[<span class="org-string">'Newton'</span>] = PMFN(n, p, K).cuda()
@@ -802,8 +809,10 @@ Report the final (approximate) ELBO.
 </div>
 
 <pre class="example">
-{'VBEM': 104990.25, 'GD': 104915.23, 'Newton': 104974.35}
-
+{'VBEM': 104990.25,
+'GD (1)': 104915.23,
+'GD (10)': 104877.33,
+'Newton': 104974.35}
 </pre>
 
 <p>
@@ -812,7 +821,7 @@ Compare the fitted values of each approach to the observed values.
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 3, sharey=<span class="org-constant">True</span>)
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4, sharey=<span class="org-constant">True</span>)
 fig.set_size_inches(7, 3)
 
 <span class="org-keyword">for</span> a, name <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, models):
@@ -842,8 +851,8 @@ Compare the estimated factors to the ground truth.
 
 <div class="org-src-container">
 <pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(3, 3, sharey=<span class="org-constant">True</span>, sharex=<span class="org-constant">True</span>)
-fig.set_size_inches(6, 6)
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(4, 3, sharex=<span class="org-constant">True</span>, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(6, 8)
 <span class="org-keyword">for</span> i, (row, name) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(<span class="org-builtin">zip</span>(ax, models)):
   <span class="org-keyword">with</span> torch.no_grad():
     <span class="org-variable-name">pm</span> = (models[name].alpha_f / models[name].beta_f).cpu().numpy()
@@ -851,9 +860,9 @@ fig.set_size_inches(6, 6)
   <span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(row):
     a.scatter(pm[:,order[k]], f[:,k], s=1, c=<span class="org-string">'k'</span>, alpha=0.1)
     a.set_title(name)
-  row[0].set_ylabel(f<span class="org-string">'True factor {i+1}'</span>)
-<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax.T:
-  a[-1].set_xlabel(<span class="org-string">'Estimated factor'</span>)
+  row[0].set_ylabel(f<span class="org-string">'True factor'</span>)
+<span class="org-keyword">for</span> k, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax.T):
+  a[-1].set_xlabel(f<span class="org-string">'Estimated factor {k + 1}'</span>)
 fig.tight_layout()
 </pre>
 </div>
@@ -1044,7 +1053,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-07-01 Thu 14:56</p>
+<p class="date">Created: 2021-07-01 Thu 16:32</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

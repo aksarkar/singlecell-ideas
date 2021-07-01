@@ -374,24 +374,25 @@
          self.a_f = torch.nn.Parameter(torch.ones([1, k]))
          self.b_f = torch.nn.Parameter(torch.ones([1, k]))
 
-       def forward(self, x):
+       def forward(self, x, n_samples):
          q_l = torch.distributions.Gamma(self.alpha_l, self.beta_l)
          q_f = torch.distributions.Gamma(self.alpha_f, self.beta_f)
          kl_l = torch.distributions.kl.kl_divergence(q_l, torch.distributions.Gamma(self.a_l, self.b_l)).sum()
          kl_f = torch.distributions.kl.kl_divergence(q_f, torch.distributions.Gamma(self.a_f, self.b_f)).sum()
-         # TODO: multiple samples?
-         l = q_l.rsample()
-         f = q_f.rsample()
-         err = torch.distributions.Poisson(l @ f.T).log_prob(x).sum()
+         l = q_l.rsample(n_samples)
+         f = q_f.rsample(n_samples)
+         lam = torch.einsum('lik,ljk->lij', l, f)
+         err = torch.distributions.Poisson(lam).log_prob(x.unsqueeze(0)).mean(dim=0).sum()
          elbo = err - kl_l - kl_f
          return -elbo
 
-       def fit(self, x, num_epochs, **kwargs):
+       def fit(self, x, num_epochs, n_samples=1, **kwargs):
          self.trace = []
+         n_samples = torch.Size([n_samples])
          opt = torch.optim.Adam(self.parameters(), **kwargs)
          for i in range(num_epochs):
            opt.zero_grad()
-           loss = self.forward(x)
+           loss = self.forward(x, n_samples)
            self.trace.append(loss.detach().cpu().numpy())
            loss.backward()
            opt.step()
@@ -400,7 +401,7 @@
 
    #+RESULTS: grad
    :RESULTS:
-   # Out[6]:
+   # Out[83]:
    :END:
 
 * Results
@@ -425,7 +426,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[84]:
    :END:
 
    To initialize all methods, run 50 epochs of VBEM. Compare VBEM and
@@ -448,11 +449,17 @@
      models['VBEM'].fit(xt, num_epochs=200, step=1e-3)
 
      # Important: GD is stochastic
-     print('fitting by GD')
+     print('fitting by GD (1)')
      torch.manual_seed(2)
-     models['GD'] = PMFGD(n, p, K).cuda()
-     models['GD'].load_state_dict(m0.state_dict())
-     models['GD'].fit(xt, num_epochs=60000, lr=5e-2, eps=1e-2)
+     models['GD (1)'] = PMFGD(n, p, K).cuda()
+     models['GD (1)'].load_state_dict(m0.state_dict())
+     models['GD (1)'].fit(xt, num_epochs=60000, lr=5e-2, eps=1e-2)
+
+     print('fitting by GD (10)')
+     torch.manual_seed(2)
+     models['GD (10)'] = PMFGD(n, p, K).cuda()
+     models['GD (10)'].load_state_dict(m0.state_dict())
+     models['GD (10)'].fit(xt, num_epochs=60000, n_samples=10, lr=5e-2, eps=1e-2)
 
      print('fitting by Newton-Raphson')
      models['Newton'] = PMFN(n, p, K).cuda()
@@ -462,7 +469,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
+   # Out[85]:
    : PMFN()
    :END:
 
@@ -496,7 +503,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[86]:
    [[file:figure/hpmf.org/sim-elbo.png]]
    :END:
 
@@ -509,15 +516,20 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[10]:
-   : {'VBEM': 104990.25, 'GD': 104915.23, 'Newton': 104974.35}
+   # Out[87]:
+   #+BEGIN_EXAMPLE
+     {'VBEM': 104990.25,
+     'GD (1)': 104915.23,
+     'GD (10)': 104877.33,
+     'Newton': 104974.35}
+   #+END_EXAMPLE
    :END:
 
    Compare the fitted values of each approach to the observed values.
 
    #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-fit.png
      plt.clf()
-     fig, ax = plt.subplots(1, 3, sharey=True)
+     fig, ax = plt.subplots(1, 4, sharey=True)
      fig.set_size_inches(7, 3)
 
      for a, name in zip(ax, models):
@@ -536,7 +548,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
+   # Out[88]:
    [[file:figure/hpmf.org/sim-ex-fit.png]]
    :END:
 
@@ -544,8 +556,8 @@
 
    #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-factors.png
      plt.clf()
-     fig, ax = plt.subplots(3, 3, sharey=True, sharex=True)
-     fig.set_size_inches(6, 6)
+     fig, ax = plt.subplots(4, 3, sharex=True, sharey=True)
+     fig.set_size_inches(6, 8)
      for i, (row, name) in enumerate(zip(ax, models)):
        with torch.no_grad():
          pm = (models[name].alpha_f / models[name].beta_f).cpu().numpy()
@@ -553,15 +565,15 @@
        for k, a in enumerate(row):
          a.scatter(pm[:,order[k]], f[:,k], s=1, c='k', alpha=0.1)
          a.set_title(name)
-       row[0].set_ylabel(f'True factor {i+1}')
-     for a in ax.T:
-       a[-1].set_xlabel('Estimated factor')
+       row[0].set_ylabel(f'True factor')
+     for k, a in enumerate(ax.T):
+       a[-1].set_xlabel(f'Estimated factor {k + 1}')
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[32]:
+   # Out[98]:
    [[file:figure/hpmf.org/sim-ex-factors.png]]
    :END:
 

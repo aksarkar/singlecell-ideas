@@ -324,7 +324,7 @@
 
    #+RESULTS: newton
    :RESULTS:
-   # Out[14]:
+   # Out[5]:
    :END:
 
 ** Pathwise gradient
@@ -343,8 +343,8 @@
    al. 2020]]) and gradient descent. Briefly,
 
    \begin{align}
-     \nabla \textstyle \sum_{i,j} \E[\ln p(x_{ij} \mid \ml, \mf)] &\approx  \frac{1}{S} \sum_{s=1}^S \nabla \ln p(x_{ij} \mid \ml^{(s)}, \mf^{(s)}), \quad \ml^{(s)} \sim q(\ml), \mf^{(s)} \sim q(\mf)\\
-     &= \frac{1}{S} \sum_{s=1}^S \nabla \ln p(x_{ij} \mid h_{\ml}(\epsilon_{\ml}^{(s)}), h_{\mf}(\epsilon_{\ml}^{(s)})), \quad \epsilon_{\ml}^{(s)} \sim \Gam(1, 1), \epsilon_{\mf}^{(s)} \sim \Gam(1, 1),
+     \nabla \textstyle \sum_{i,j} \E[\ln p(x_{ij} \mid \ml, \mf)] &\approx  \frac{1}{S} \sum_{s=1}^S \sum_{i,j} \nabla \ln p(x_{ij} \mid \ml^{(s)}, \mf^{(s)}), \quad \ml^{(s)} \sim q(\ml), \mf^{(s)} \sim q(\mf)\\
+     &= \frac{1}{S} \sum_{s=1}^S \sum_{i,j} \nabla \ln p(x_{ij} \mid h_{\ml}(\epsilon_{\ml}^{(s)}), h_{\mf}(\epsilon_{\ml}^{(s)})), \quad \epsilon_{\ml}^{(s)} \sim \Gam(1, 1), \epsilon_{\mf}^{(s)} \sim \Gam(1, 1),
    \end{align}
 
    where \(\epsilon_{\ml}, \epsilon_{\mf}\) are matrices with elements
@@ -400,7 +400,7 @@
 
    #+RESULTS: grad
    :RESULTS:
-   # Out[7]:
+   # Out[6]:
    :END:
 
 * Results
@@ -425,7 +425,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[8]:
+   # Out[7]:
    :END:
 
    To initialize all methods, run 50 epochs of VBEM. Compare VBEM and
@@ -462,7 +462,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[15]:
+   # Out[8]:
    : PMFN()
    :END:
 
@@ -496,7 +496,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[19]:
+   # Out[9]:
    [[file:figure/hpmf.org/sim-elbo.png]]
    :END:
 
@@ -509,8 +509,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[22]:
-   : {'VBEM': 104979.914, 'GD': 104915.23, 'Newton': 104974.35}
+   # Out[10]:
+   : {'VBEM': 104990.25, 'GD': 104915.23, 'Newton': 104974.35}
    :END:
 
    Compare the fitted values of each approach to the observed values.
@@ -536,8 +536,33 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[24]:
+   # Out[11]:
    [[file:figure/hpmf.org/sim-ex-fit.png]]
+   :END:
+
+   Compare the estimated factors to the ground truth.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-factors.png
+     plt.clf()
+     fig, ax = plt.subplots(3, 3, sharey=True, sharex=True)
+     fig.set_size_inches(6, 6)
+     for i, (row, name) in enumerate(zip(ax, models)):
+       with torch.no_grad():
+         pm = (models[name].alpha_f / models[name].beta_f).cpu().numpy()
+       order = np.argmax(np.corrcoef(f, pm, rowvar=False)[K:,:K], axis=0)
+       for k, a in enumerate(row):
+         a.scatter(pm[:,order[k]], f[:,k], s=1, c='k', alpha=0.1)
+         a.set_title(name)
+       row[0].set_ylabel(f'True factor {i+1}')
+     for a in ax.T:
+       a[-1].set_xlabel('Estimated factor')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[32]:
+   [[file:figure/hpmf.org/sim-ex-factors.png]]
    :END:
 
 ** Correlated factors example
@@ -562,7 +587,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[25]:
+   # Out[33]:
    :END:
 
    To initialize all methods, run 50 epochs of VBEM. Compare VBEM,
@@ -598,7 +623,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[33]:
+   # Out[34]:
    : PMFN()
    :END:
 
@@ -632,7 +657,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[34]:
+   # Out[35]:
    [[file:figure/hpmf.org/corr-sim-elbo.png]]
    :END:
 
@@ -645,7 +670,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[35]:
+   # Out[36]:
    : {'VBEM': 118721.9, 'GD': 118704.336, 'Newton': 118723.39}
    :END:
 
@@ -672,6 +697,31 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[39]:
+   # Out[37]:
    [[file:figure/hpmf.org/corr-sim-ex-fit.png]]
+   :END:
+
+   Compare the estimated factors to the ground truth.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/corr-sim-ex-factors.png
+     plt.clf()
+     fig, ax = plt.subplots(3, 3, sharey=True, sharex=False)
+     fig.set_size_inches(6, 6)
+     for i, (row, name) in enumerate(zip(ax, models)):
+       with torch.no_grad():
+         pm = (models[name].alpha_f / models[name].beta_f).cpu().numpy()
+       order = np.argmax(np.corrcoef(f, pm, rowvar=False)[K:,:K], axis=0)
+       for k, a in enumerate(row):
+         a.scatter(pm[:,order[k]], f[:,k], s=1, c='k', alpha=0.1)
+         a.set_title(name)
+       row[0].set_ylabel(f'True factor {i+1}')
+     for a in ax.T:
+       a[-1].set_xlabel('Estimated factor')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[39]:
+   [[file:figure/hpmf.org/corr-sim-ex-factors.png]]
    :END:

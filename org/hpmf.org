@@ -58,13 +58,24 @@
   :END:
 
   #+BEGIN_SRC ipython
+    import rpy2.robjects.packages
+    import rpy2.robjects.pandas2ri
+    rpy2.robjects.pandas2ri.activate()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
     %matplotlib inline
     %config InlineBackend.figure_formats = set(['retina'])
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[3]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -75,7 +86,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[4]:
   :END:
 
 * Methods
@@ -235,7 +246,7 @@
 
    #+RESULTS: vbem
    :RESULTS:
-   # Out[4]:
+   # Out[5]:
    :END:
 
 ** Newton-Raphson
@@ -324,7 +335,7 @@
 
    #+RESULTS: newton
    :RESULTS:
-   # Out[5]:
+   # Out[6]:
    :END:
 
 ** Pathwise gradient
@@ -401,7 +412,7 @@
 
    #+RESULTS: grad
    :RESULTS:
-   # Out[83]:
+   # Out[7]:
    :END:
 
 * Results
@@ -737,3 +748,276 @@
    # Out[39]:
    [[file:figure/hpmf.org/corr-sim-ex-factors.png]]
    :END:
+
+** fastTopics example
+
+   Peter Carbonetto
+   [[https://stephenslab.github.io/fastTopics-experiments/smallsim.html][demonstrated]]
+   that EM for NMF can fail to make progress, with consequences on e.g., VBEM
+   for LDA.
+
+   #+BEGIN_SRC ipython
+     names = rpy2.robjects.r['load']('/scratch/midway2/aksarkar/singlecell/smallsimb.RData')
+     dat = {name: rpy2.robjects.r[name] for name in names}
+     n, p = dat['X'].shape
+     _, K = dat['L0'].shape
+     xt = torch.tensor(dat['X'], dtype=torch.float, device='cuda')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[8]:
+   :END:
+
+   Initialize \(\alpha_{lik}, \alpha_{fjk}\) at the given initialization
+   \(\ml_0, \mf_0\) and fix \(\beta_{lk} = 1, \beta_{fk} = 1\). 
+
+   #+BEGIN_SRC ipython
+     m0 = PMFVBEM(n, p, K).cuda()
+     eps = 0.1
+     m0.alpha_l.data = torch.clamp(torch.tensor(dat['L0']), min=eps)
+     m0.beta_l.data = torch.ones([1, K])
+     m0.alpha_f.data = torch.clamp(torch.tensor(dat['F0']), min=eps)
+     m0.beta_l.data = torch.ones([1, K])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[172]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     models = dict()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[173]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     print('fitting by VBEM')
+     models['VBEM'] = PMFVBEM(n, p, K).cuda()
+     models['VBEM'].load_state_dict(m0.state_dict())
+     models['VBEM'].fit(xt, num_epochs=500, step=1e-3)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[174]:
+   : PMFVBEM()
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     print('fitting by Newton-Raphson')
+     models['Newton'] = PMFN(n, p, K).cuda()
+     models['Newton'].load_state_dict(m0.state_dict())
+     models['Newton'].fit(xt, num_epochs=50, step=1e-6)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[176]:
+   : PMFN()
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     print(f'fitting by GD')
+     # Important: GD is stochastic
+     torch.manual_seed(2)
+     models['GD'] = PMFGD(n, p, K).cuda()
+     models['GD'].load_state_dict(m0.state_dict())
+     models['GD'].fit(xt, num_epochs=60000, n_samples=n_samples, lr=1e-4, eps=1e-2)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[177]:
+   : PMFGD()
+   :END:
+
+   Look at the ELBO achieved by the algorithms.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/ft-sim-elbo.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7.5, 2.5)
+     for i, name in enumerate(models):
+       temp = getattr(models[name], 'trace2', None)
+       if temp:
+         ax[0].plot(temp, c=cm(i), lw=1, marker=None, label=name)
+     ax[0].set_title('Approximating $q(z_{ijk})$')
+
+     for i, name in enumerate(models):
+       mu = pd.Series(models[name].trace).ewm(alpha=0.1).mean()
+       sd = pd.Series(models[name].trace).ewm(alpha=0.1).std()
+       for a in ax[1:]:
+         a.plot(mu, c=cm(i), lw=1, marker=None, label=name)
+         a.fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+         a.set_title('Integrating out $z_{ijk}$')
+     ax[-1].set_xlim(0, 500)
+     ax[-1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     for a in ax:
+       a.set_xlabel('Epoch (after initialization)')
+     ax[0].set_ylabel('Negative ELBO')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[178]:
+   [[file:figure/hpmf.org/ft-sim-elbo.png]]
+   :END:
+
+   Report the final (approximate) ELBO.
+
+   #+BEGIN_SRC ipython
+     {name: np.array(models[name].trace[-10:]).mean()
+      for name in models}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[179]:
+   : {'VBEM': 42475.727, 'Newton': 139408.52, 'GD': 63879.742}
+   :END:
+
+   Compare the fitted values of each approach to the observed values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/ft-sim-ex-fit.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3, sharey=True)
+     fig.set_size_inches(7, 3)
+
+     for a, name in zip(ax, models):
+       with torch.no_grad():
+         pm = ((models[name].alpha_l / models[name].beta_l) @
+               (models[name].alpha_f / models[name].beta_f).T).cpu()
+       a.scatter(pm.ravel(), dat['X'].ravel(), s=1, alpha=0.1, c='k')
+     lim = [0, 1225]
+     for a, name in zip(ax, models):
+       a.plot(lim, lim, c='r', lw=1, ls=':')
+       a.set_xlabel('Fitted value')
+       a.set_title(name)
+     ax[0].set_ylabel('True value')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[180]:
+   [[file:figure/hpmf.org/ft-sim-ex-fit.png]]
+   :END:
+
+   As an alternative initialization, run 50 epochs of VBEM. Compare VBEM,
+   Newton-Raphson, and gradient descent, tracing the ELBO estimated according
+   to eq. 32.
+
+   #+BEGIN_SRC ipython :async t
+     # Important: VBEM is randomly initialized
+     print('fitting initial model by VBEM')
+     torch.manual_seed(1)
+     m0 = PMFVBEM(n, p, K).cuda().fit(xt, num_epochs=50, step=1e-3)
+
+     models = dict()
+
+     # Continue VBEM updates
+     print('fitting by VBEM')
+     models['VBEM'] = PMFVBEM(n, p, K).cuda()
+     models['VBEM'].load_state_dict(m0.state_dict())
+     models['VBEM'].fit(xt, num_epochs=1000, step=1e-3)
+
+     print('fitting by Newton-Raphson')
+     models['Newton'] = PMFN(n, p, K).cuda()
+     models['Newton'].load_state_dict(m0.state_dict())
+     models['Newton'].fit(xt, num_epochs=200, step=1e-3)
+
+     # Important: GD is stochastic
+     print('fitting by GD')
+     torch.manual_seed(2)
+     models['GD'] = PMFGD(n, p, K).cuda()
+     models['GD'].load_state_dict(m0.state_dict())
+     models['GD'].fit(xt, num_epochs=60000, n_samples=10, lr=1e-3, eps=1e-2)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[9]:
+   : PMFGD()
+   :END:
+
+   Look at the ELBO achieved by the algorithms.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/ft-vbem-init-sim-elbo.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     fig, ax = plt.subplots(1, 3)
+     fig.set_size_inches(7.5, 2.5)
+     for i, name in enumerate(models):
+       temp = getattr(models[name], 'trace2', None)
+       if temp:
+         ax[0].plot(temp, c=cm(i), lw=1, marker=None, label=name)
+     ax[0].set_title('Approximating $q(z_{ijk})$')
+
+     for i, name in enumerate(models):
+       mu = pd.Series(models[name].trace).ewm(alpha=0.1).mean()
+       sd = pd.Series(models[name].trace).ewm(alpha=0.1).std()
+       for a in ax[1:]:
+         a.plot(mu, c=cm(i), lw=1, marker=None, label=name)
+         a.fill_between(np.arange(len(mu)), mu - sd, mu + sd, color=cm(i), alpha=0.1)
+         a.set_title('Integrating out $z_{ijk}$')
+     ax[-1].set_xlim(0, 1000)
+     ax[-1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     for a in ax:
+       a.set_xlabel('Epoch (after initialization)')
+     ax[0].set_ylabel('Negative ELBO')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[10]:
+   [[file:figure/hpmf.org/ft-vbem-init-sim-elbo.png]]
+   :END:
+
+   Report the final (approximate) ELBO.
+
+   #+BEGIN_SRC ipython
+     {name: np.array(models[name].trace[-10:]).mean()
+      for name in models}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
+   : {'VBEM': 35019.47, 'Newton': 35052.777, 'GD': 34970.6}
+   :END:
+
+   Compare the fitted values of each approach to the observed values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/ft-vbem-init-sim-ex-fit.png
+     plt.clf()
+     fig, ax = plt.subplots(1, 3, sharey=True)
+     fig.set_size_inches(7, 3)
+
+     for a, name in zip(ax, models):
+       with torch.no_grad():
+         pm = ((models[name].alpha_l / models[name].beta_l) @
+               (models[name].alpha_f / models[name].beta_f).T).cpu()
+       a.scatter(pm.ravel(), dat['X'].ravel(), s=1, alpha=0.1, c='k')
+     lim = [0, 1225]
+     for a, name in zip(ax, models):
+       a.plot(lim, lim, c='r', lw=1, ls=':')
+       a.set_xlabel('Fitted value')
+       a.set_title(name)
+     ax[0].set_ylabel('True value')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[13]:
+   [[file:figure/hpmf.org/ft-vbem-init-sim-ex-fit.png]]
+   :END:
+

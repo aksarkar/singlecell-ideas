@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-05-30 Sun 16:21 -->
+<!-- 2021-07-20 Tue 10:40 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logistic regression in the presence of error-prone labels</title>
@@ -258,14 +258,19 @@ for the JavaScript code in this tag.
 <div id="text-table-of-contents">
 <ul>
 <li><a href="#orgf22c2b3">Introduction</a></li>
-<li><a href="#org0eb2264">Maximum likelihood estimation</a></li>
-<li><a href="#orgcbac8fb">Approximate Bayesian inference</a></li>
-<li><a href="#orgc166d0f">Example</a>
-<ul>
 <li><a href="#setup">Setup</a></li>
+<li><a href="#org513ce30">Methods</a>
+<ul>
+<li><a href="#org7402355">Maximum likelihood estimation</a></li>
+<li><a href="#org6782d18">Approximate Bayesian inference</a></li>
+</ul>
+</li>
+<li><a href="#org0e8fc9e">Results</a>
+<ul>
 <li><a href="#org18caaf4">Simulation</a></li>
 <li><a href="#org7a529a2">Naive analysis</a></li>
-<li><a href="#orgf94f022">MCMC</a></li>
+<li><a href="#orgac9c5d0">Maximum likelihood estimation</a></li>
+<li><a href="#org7126dea">Approximate Bayesian inference</a></li>
 </ul>
 </li>
 <li><a href="#org858706d">Related work</a></li>
@@ -361,11 +366,50 @@ data, e.g., by estimating \(p(z_i = 1 \mid \mx, \vy)\).
 </div>
 </div>
 
-<div id="outline-container-org0eb2264" class="outline-2">
-<h2 id="org0eb2264">Maximum likelihood estimation</h2>
-<div class="outline-text-2" id="text-org0eb2264">
+<div id="outline-container-orgce0ed18" class="outline-2">
+<h2 id="setup"><a id="orgce0ed18"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> pyro
+<span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> sklearn.linear_model <span class="org-keyword">as</span> sklm
+<span class="org-keyword">import</span> sklearn.metrics <span class="org-keyword">as</span> skm
+<span class="org-keyword">import</span> sklearn.model_selection <span class="org-keyword">as</span> skms
+<span class="org-keyword">import</span> sklearn.utils <span class="org-keyword">as</span> sku
+<span class="org-keyword">import</span> torch
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org513ce30" class="outline-2">
+<h2 id="org513ce30">Methods</h2>
+<div class="outline-text-2" id="text-org513ce30">
+</div>
+<div id="outline-container-org7402355" class="outline-3">
+<h3 id="org7402355">Maximum likelihood estimation</h3>
+<div class="outline-text-3" id="text-org7402355">
 <p>
 One can use an EM algorithm to maximize the log likelihood
+(<a href="https://doi.org/10.1007/978-1-4612-5771-4_13">Ekholm and Palmgren 1982</a>,
+<a href="https://academic.oup.com/aje/article/146/2/195/165276">Magder and Hughes
+1997</a>)
 </p>
 
 \begin{equation}
@@ -416,34 +460,140 @@ updates
 </p>
 
 \begin{align}
-  \logit(\theta_1) &:= \frac{\sum_i \phi_i (1 - y_i)}{\sum_i \phi_i y_i}\\
-  \logit(\theta_0) &:= \frac{\sum_i (1 - \phi_i) y_i}{\sum_i (1 - \phi_i) (1 - y_i)},
+  \logit(\theta_1) &:= \ln\left(\frac{\sum_i \phi_i (1 - y_i)}{\sum_i \phi_i y_i}\right)\\
+  \logit(\theta_0) &:= \ln\left(\frac{\sum_i (1 - \phi_i) y_i}{\sum_i (1 - \phi_i) (1 - y_i)}\right),
 \end{align}
 
 <p>
-and updates \(\vb\) using a numerical method to increase the expected log
-joint probability (e.g., gradient ascent). One iterates the E and M steps
-alternately until e.g., the change in objective falls below some
-threshold. Intuitively, this algorithm alternates between estimating the true
-labels given the current estimates of the regression coefficients and error
-rates, and estimating the regression coefficients and error rates given the
-current estimates of the true labels. Crucially, all of the data is used to
-estimate the regression coefficients and error rates, which makes it possible
-to detect that an observed label is unlikely given the observed features and
-estimated error rates, by borrowing information from the other
-observations. From the estimated \(\hat{\vb}\), one can predict the true
-label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
+and updates \(\vb\) by maximizing the expected log joint
+probability. Considering terms that depend on \(\vb\), the objective function
+is
+</p>
+
+\begin{equation}
+  \sum_i \phi_i \ln \S(\vx_i' \vb) + (1 - \phi_i) \ln \S(-\vx_i' \vb)
+\end{equation}
+
+<p>
+which is the negative cross entropy loss with labels \(\phi_i\). Therefore,
+\(\vb\) can be estimated by logistic regression as a subroutine.
+</p>
+
+<p>
+<i>Remark.</i> In the case that one penalizes the log likelihood, the penalty
+terms only enter the M step in the updates to \(\vb\). In this case, the M
+step update to \(\vb\) involves a penalized logistic regression, which is
+available in standard packages.
+</p>
+
+<p>
+One iterates the E and M steps alternately until e.g., the change in
+objective falls below some threshold. Intuitively, this algorithm alternates
+between estimating the true labels given the current estimates of the
+regression coefficients and error rates, and estimating the regression
+coefficients and error rates given the current estimates of the true
+labels. Crucially, all of the data is used to estimate the regression
+coefficients and error rates, which makes it possible to detect that an
+observed label is unlikely given the observed features and estimated error
+rates, by borrowing information from the other observations. From the
+estimated \(\hat{\vb}\), one can predict the true label \(\tilde{z}\) for a
+new observation \((\tilde{\vx}, \tilde{y})\) as
 </p>
 
 \begin{equation}
   \E[\tilde{z}_i] = \S(\tilde{\vx}' \hat{\vb}).
 \end{equation}
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="org7234a65"><span class="org-keyword">def</span> <span class="org-function-name">logistic_regression_errors_em</span>(x, y, b=<span class="org-constant">None</span>, logits=<span class="org-constant">None</span>, atol=1e-5,
+                                  max_epochs=100, l2_weight=0, verbose=<span class="org-constant">True</span>, **kwargs):
+  <span class="org-doc">"""Fit logistic regression with error-prone labels by maximum likelihood</span>
+
+<span class="org-doc">  x - features, array-like (n, p)</span>
+<span class="org-doc">  y - labels, array-like (n, 1)</span>
+<span class="org-doc">  b - initial value for coefficients, array-like (p, 1)</span>
+<span class="org-doc">  logits - initial value for error logits, array-like (2, 1)</span>
+<span class="org-doc">  atol - tolerance for convergence (&gt; 0)</span>
+<span class="org-doc">  max_epochs - maximum number of EM iterations (&gt; 0)</span>
+<span class="org-doc">  l2_weight - l2 penalty weight (&gt;= 0)</span>
+<span class="org-doc">  verbose - print EM updates</span>
+<span class="org-doc">  kwargs - keyword arguments to logistic regression subroutine</span>
+
+<span class="org-doc">  """</span>
+  <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: this needs lots more error checking of args</span>
+  <span class="org-keyword">if</span> logits <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">logits</span> = np.array([-7, -7], dtype=np.<span class="org-builtin">float</span>)
+  <span class="org-keyword">if</span> b <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">b</span> = np.zeros((x.shape[1], 1))
+  <span class="org-variable-name">z</span> = _logistic_regression_errors_update_z(x, y, b, logits)
+  <span class="org-variable-name">obj</span> = _logistic_regression_errors_obj(x, y, z, b, logits)
+  <span class="org-comment-delimiter"># </span><span class="org-comment">This is needed for sag_solver below</span>
+  <span class="org-variable-name">warm_start</span> = <span class="org-constant">None</span>
+  <span class="org-keyword">if</span> verbose:
+    <span class="org-keyword">print</span>(f<span class="org-string">'{0:&gt;8d} {obj:.10g}'</span>)
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_epochs):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">eq. 12-14</span>
+    <span class="org-variable-name">logits</span>[0] = np.log(((1 - z) * y).<span class="org-builtin">sum</span>() / ((1 - z) * (1 - y)).<span class="org-builtin">sum</span>())
+    <span class="org-variable-name">logits</span>[1] = np.log((z * (1 - y)).<span class="org-builtin">sum</span>() / (z * y).<span class="org-builtin">sum</span>())
+    <span class="org-variable-name">theta</span> = sp.expit(logits)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">sklm.LogisticRegression checks that labels are binary. We need to bypass</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">this check and call directly into the underlying solver. There are</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">limitations depending on which solver is called into.</span>
+    <span class="org-comment-delimiter">#</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">We use sag_solver here to support lw_weight = 0. However, this subroutine</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">only approximately solves the problem, so the overall procedure no longer</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">necessarily monotonically improves the objective</span>
+    <span class="org-comment-delimiter">#</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Refer to https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/linear_model/_sag.py#L89</span>
+    <span class="org-variable-name">b</span>, <span class="org-variable-name">_</span>, <span class="org-variable-name">warm_start</span> = sklm._sag.sag_solver(
+      x, z.ravel(), loss=<span class="org-string">'log'</span>, alpha=l2_weight, warm_start_mem=warm_start,
+      **kwargs)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">sag_solver returns [1, x.shape[1]]</span>
+    <span class="org-variable-name">b</span> = b.reshape(-1, 1)
+    <span class="org-variable-name">z</span> = _logistic_regression_errors_update_z(x, y, b, logits)
+    <span class="org-variable-name">update</span> = _logistic_regression_errors_obj(x, y, z, b, logits)
+    <span class="org-keyword">if</span> verbose:
+      <span class="org-keyword">print</span>(f<span class="org-string">'{i + 1:&gt;8d} {update:.10g}'</span>)
+    <span class="org-keyword">if</span> <span class="org-keyword">not</span> np.isfinite(update):
+      <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'invalid objective function value'</span>)
+    <span class="org-keyword">elif</span> update - obj &lt; atol:
+      <span class="org-keyword">return</span> b, logits
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">obj</span> = update
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge in max_epochs'</span>)
+
+<span class="org-keyword">def</span> <span class="org-function-name">_logistic_regression_errors_obj_comp</span>(x, y, b, logits):
+  <span class="org-doc">"""Return 'mixture components' of the log joint probability"""</span>
+  <span class="org-variable-name">theta</span> = sp.expit(logits)
+  <span class="org-variable-name">alpha</span> = (y * np.log(1 - theta[1])
+           + (1 - y) * np.log(theta[1])
+           + np.log(sp.expit(x @ b)))
+  <span class="org-variable-name">beta</span> = (y * np.log(theta[0])
+          + (1 - y) * np.log(1 - theta[0])
+          + np.log(sp.expit(-x @ b)))
+  <span class="org-keyword">return</span> alpha, beta
+
+<span class="org-keyword">def</span> <span class="org-function-name">_logistic_regression_errors_update_z</span>(x, y, b, logits):
+  <span class="org-doc">"""Return new value of E[z]"""</span>
+  <span class="org-variable-name">alpha</span>, <span class="org-variable-name">beta</span> = _logistic_regression_errors_obj_comp(x, y, b, logits)
+  <span class="org-variable-name">z</span> = sp.softmax(np.hstack([alpha, beta]), axis=1)[:,0].reshape(-1, 1)
+  <span class="org-keyword">assert</span> z.shape == alpha.shape
+  <span class="org-keyword">return</span> z
+
+<span class="org-keyword">def</span> <span class="org-function-name">_logistic_regression_errors_obj</span>(x, y, z, b, logits):
+  <span class="org-doc">"""Return expected log joint probability"""</span>
+  <span class="org-variable-name">alpha</span>, <span class="org-variable-name">beta</span> = _logistic_regression_errors_obj_comp(x, y, b, logits)
+  <span class="org-variable-name">obj</span> = (z * alpha + (1 - z) * beta).<span class="org-builtin">sum</span>()
+  <span class="org-keyword">return</span> obj
+</pre>
+</div>
 </div>
 </div>
 
-<div id="outline-container-orgcbac8fb" class="outline-2">
-<h2 id="orgcbac8fb">Approximate Bayesian inference</h2>
-<div class="outline-text-2" id="text-orgcbac8fb">
+<div id="outline-container-org6782d18" class="outline-3">
+<h3 id="org6782d18">Approximate Bayesian inference</h3>
+<div class="outline-text-3" id="text-org6782d18">
 <p>
 If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
 posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
@@ -463,47 +613,61 @@ for a new data point \((\tilde{\vx}, \tilde{y})\), given the observed
 \end{equation}
 
 <p>
-The primary derived quantity of interest for prediction is the posterior mean
-\(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
+The primary derived quantity of interest for prediction is the posterior
+mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\). For simplicity, assume
+proper priors
 </p>
-</div>
-</div>
 
-<div id="outline-container-orgc166d0f" class="outline-2">
-<h2 id="orgc166d0f">Example</h2>
-<div class="outline-text-2" id="text-orgc166d0f">
-</div>
-<div id="outline-container-orgce0ed18" class="outline-3">
-<h3 id="setup"><a id="orgce0ed18"></a>Setup</h3>
-<div class="outline-text-3" id="text-setup">
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
-<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
-<span class="org-keyword">import</span> pyro
-<span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
-<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
-<span class="org-keyword">import</span> sklearn.linear_model <span class="org-keyword">as</span> sklm
-<span class="org-keyword">import</span> sklearn.metrics <span class="org-keyword">as</span> skm
-<span class="org-keyword">import</span> sklearn.model_selection <span class="org-keyword">as</span> skms
-<span class="org-keyword">import</span> torch
-</pre>
-</div>
+\begin{align}
+  \theta_k &\sim \Unif(0, 1)\\
+  \vb &\sim \N(\boldsymbol{0}, \lambda \mi)\\
+  \lambda &\sim \Exp(1).
+\end{align}
 
 <div class="org-src-container">
-<pre class="src src-ipython">%matplotlib inline
-%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+<pre class="src src-ipython" id="org76d100b"><span class="org-keyword">def</span> <span class="org-function-name">logistic_regression_errors_nuts</span>(x, y, num_samples=100, warmup_steps=100,
+                                    verbose=<span class="org-constant">True</span>):
+  <span class="org-doc">"""Fit logistic regression with error-prone labels using No U-Turn Sampler</span>
+
+<span class="org-doc">  x - features, array-like (n, p)</span>
+<span class="org-doc">  y - labels, array-like (n, 1)</span>
+<span class="org-doc">  num_samples - number of posterior samples to return</span>
+<span class="org-doc">  warmup_steps - number of initial posterior samples (not returned)</span>
+<span class="org-doc">  verbose - report progress</span>
+
+<span class="org-doc">  """</span>
+
+  <span class="org-variable-name">nuts</span> = pyro.infer.mcmc.NUTS(_logistic_regression_errors)
+  <span class="org-variable-name">samples</span> = pyro.infer.mcmc.MCMC(nuts, num_samples=num_samples,
+                                 warmup_steps=warmup_steps)
+  samples.run(torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>),
+              torch.tensor(y.ravel(), dtype=torch.<span class="org-builtin">float</span>))
+  <span class="org-keyword">return</span> samples
+
+<span class="org-keyword">def</span> <span class="org-function-name">_logistic_regression_errors</span>(x, y):
+  <span class="org-doc">"""Return stochastic computation graph for the generative model"""</span>
+  <span class="org-variable-name">theta</span> = pyro.sample(<span class="org-string">'theta'</span>, pyro.distributions.Uniform(
+    low=torch.zeros(2),
+    high=torch.ones(2)))
+  <span class="org-variable-name">lam</span> = pyro.sample(<span class="org-string">'lam'</span>, pyro.distributions.Exponential(rate=1.))
+  <span class="org-variable-name">b</span> = pyro.sample(<span class="org-string">'b'</span>, pyro.distributions.MultivariateNormal(
+    loc=torch.zeros(x.shape[1]),
+    covariance_matrix=lam * torch.eye(x.shape[1])))
+  <span class="org-variable-name">eta</span> = x @ b
+  <span class="org-keyword">with</span> pyro.plate(<span class="org-string">'data'</span>, x.shape[0]):
+    <span class="org-variable-name">probs</span> = (1 - theta[1]) * torch.sigmoid(eta) + theta[0] * torch.sigmoid(-eta)
+    <span class="org-variable-name">y</span> = pyro.sample(<span class="org-string">'y'</span>, pyro.distributions.Bernoulli(probs=probs), obs=y)
+  <span class="org-keyword">return</span> y
 </pre>
 </div>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
-<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
-<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
-</pre>
 </div>
 </div>
 </div>
 
+<div id="outline-container-org0e8fc9e" class="outline-2">
+<h2 id="org0e8fc9e">Results</h2>
+<div class="outline-text-2" id="text-org0e8fc9e">
+</div>
 <div id="outline-container-org18caaf4" class="outline-3">
 <h3 id="org18caaf4">Simulation</h3>
 <div class="outline-text-3" id="text-org18caaf4">
@@ -570,7 +734,7 @@ Fit regularized logistic regression to the data.
 </div>
 
 <p>
-Report the accuracy in the training and validation data.
+Report the accuracy in the validation data.
 </p>
 
 <div class="org-src-container">
@@ -586,37 +750,85 @@ Name: accuracy, dtype: float64
 </div>
 </div>
 
-<div id="outline-container-orgf94f022" class="outline-3">
-<h3 id="orgf94f022">MCMC</h3>
-<div class="outline-text-3" id="text-orgf94f022">
+<div id="outline-container-orgac9c5d0" class="outline-3">
+<h3 id="orgac9c5d0">Maximum likelihood estimation</h3>
+<div class="outline-text-3" id="text-orgac9c5d0">
 <p>
-Assume proper priors \(\theta_k \sim \Unif(0, 1)\), \(\vb \sim
-   \N(\boldsymbol{0}, \lambda \mi)\), \(\lambda \sim \Exp(1)\).
+Fit the model to the simulated data by maximizing the (unpenalized)
+likelihood. First, initialize at the oracle values, and report the accuracy
+in the validation data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">_logistic_regression_errors</span>(x, y):
-  <span class="org-variable-name">theta</span> = pyro.sample(<span class="org-string">'theta'</span>, pyro.distributions.Uniform(
-    low=torch.zeros(2),
-    high=torch.ones(2)))
-  <span class="org-variable-name">lam</span> = pyro.sample(<span class="org-string">'lam'</span>, pyro.distributions.Exponential(rate=1.))
-  <span class="org-variable-name">b</span> = pyro.sample(<span class="org-string">'b'</span>, pyro.distributions.MultivariateNormal(
-    loc=torch.zeros(x.shape[1]),
-    covariance_matrix=lam * torch.eye(x.shape[1])))
-  <span class="org-variable-name">eta</span> = x @ b
-  <span class="org-keyword">with</span> pyro.plate(<span class="org-string">'data'</span>, x.shape[0]):
-    <span class="org-variable-name">y</span> = pyro.sample(<span class="org-string">'y'</span>, pyro.distributions.Bernoulli(
-      probs=(1 - theta[1]) * torch.sigmoid(eta) + theta[0] * torch.sigmoid(-eta)), obs=y)
-  <span class="org-keyword">return</span> y
-
-<span class="org-keyword">def</span> <span class="org-function-name">logistic_regression_errors_nuts</span>(x, y, num_samples=100, warmup_steps=100, verbose=<span class="org-constant">True</span>, **kwargs):
-  <span class="org-variable-name">nuts</span> = pyro.infer.mcmc.NUTS(_logistic_regression_errors)
-  <span class="org-variable-name">samples</span> = pyro.infer.mcmc.MCMC(nuts, num_samples=num_samples, warmup_steps=warmup_steps)
-  samples.run(torch.tensor(x, dtype=torch.<span class="org-builtin">float</span>), torch.tensor(y.ravel(), dtype=torch.<span class="org-builtin">float</span>))
-  <span class="org-keyword">return</span> samples
+<pre class="src src-ipython"><span class="org-variable-name">oracle_fit_em</span> = logistic_regression_errors_em(xt, yt, b=b, logits=sp.logit([0.05, 0.05]), tol=1e-7)
+<span class="org-variable-name">pv</span> = sp.expit(xv @ oracle_fit_em[0])
+pd.Series({
+  <span class="org-string">'observed'</span>: skm.roc_auc_score(yv, pv),
+  <span class="org-string">'true'</span>: skm.roc_auc_score(zv, pv)}, name=<span class="org-string">'roc_auc'</span>)
 </pre>
 </div>
 
+<pre class="example">
+observed    0.800322
+true        0.841747
+Name: roc_auc, dtype: float64
+</pre>
+
+<p>
+Now, repeat the analysis, but initialize \(\vb\) at the naive analysis
+solution, and initialize \(\vtheta\) at the default \(\logit(-8) = 3.3
+   \times 10^{-4}\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit_em</span> = logistic_regression_errors_em(xt, yt, b=fit0.coef_.T, tol=1e-7, verbose=<span class="org-constant">True</span>)
+<span class="org-variable-name">pv</span> = sp.expit(xv @ fit_em[0])
+pd.Series({
+  <span class="org-string">'observed'</span>: skm.roc_auc_score(yv, pv),
+  <span class="org-string">'true'</span>: skm.roc_auc_score(zv, pv)}, name=<span class="org-string">'roc_auc'</span>)
+</pre>
+</div>
+
+<pre class="example">
+observed    0.797101
+true        0.843750
+Name: roc_auc, dtype: float64
+</pre>
+
+<p>
+Report the point estimates of the error rates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">sp.expit(fit_em[1])
+</pre>
+</div>
+
+<pre class="example">
+array([0.00084501, 0.00081056])
+
+</pre>
+
+<p>
+Report the accuracy of predicting the mislabeled data points in the
+validation data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">skm.roc_auc_score(yv != zv, np.where(yv, 1 - pv, pv))
+</pre>
+</div>
+
+<pre class="example">
+0.8634751773049646
+
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org7126dea" class="outline-3">
+<h3 id="org7126dea">Approximate Bayesian inference</h3>
+<div class="outline-text-3" id="text-org7126dea">
 <p>
 Sample from the posterior.
 </p>
@@ -705,6 +917,10 @@ errors. J. Am. Statist. Assoc. 72. 914-921</li>
 <li>Chen, T.T. (1979). Log-linear models for categorical data with
 misclassification and double sampling. J. Am. Statist. Assoc. 74. 481-488.</li>
 
+<li>Ekholm, A., &amp; Palmgren, J. (1982). A Model for a Binary Response with
+Misclassifications. Lecture Notes in Statistics,
+128–143. <a href="https://doi.org/10.1007/978-1-4612-5771-4_13">https://doi.org/10.1007/978-1-4612-5771-4_13</a></li>
+
 <li>Espeland, M.A. and Odoroff, C.L. (1985). Log-linear models for doubly sampled
 categorical data fitted by the EM
 algorithm. J. Am. Statist. Assoc. 80. 663-670</li>
@@ -712,6 +928,10 @@ algorithm. J. Am. Statist. Assoc. 80. 663-670</li>
 <li>Espeland, M.A. and Hui, S.L. (1987). A general approach to analyzing
 epidemiologic data that contain misclassification
 errors. Biometrics 43. 1001-1012</li>
+
+<li>Palmgren, J. and Ekholm, A. (1987), Exponential family non-linear models
+for categorical data with errors of observation. Appl. Stochastic Models
+Data Anal., 3: 111-124. <a href="https://doi.org/10.1002/asm.3150030206">https://doi.org/10.1002/asm.3150030206</a></li>
 
 <li>Zhi Geng &amp; Chooichiro Asano. (1989) Bayesian estimation methods for
 categorical data with misclassifications, Communications in Statistics -
@@ -728,6 +948,9 @@ inference on prevalence using a missing-data approach with simulation-based
 techniques: Applications to HIV screening. Statistics in Medicine 15,
 2161–2176.</li>
 
+<li>Magder LS, Hughes JP. Logistic regression when the outcome is measured with
+uncertainty. Am J Epidemiol. 1997;146(2):195–203.</li>
+
 <li>Rekaya, R., Weigel, K. A., and Gianola, D. (2001). Threshold model for
 misclassiﬁed binary responses with applications to animal
 breeding. Biometrics 57, 1123–1129.</li>
@@ -736,16 +959,32 @@ breeding. Biometrics 57, 1123–1129.</li>
 with Misclassification. Biometrics, 59:
 670-675. <a href="https://doi.org/10.1111/1541-0420.00077">https://doi.org/10.1111/1541-0420.00077</a></li>
 
+<li>Duffy SW, Warwick J, Williams AR, Keshavarz H, Kaffashian F, Rohan TE, Nili
+F, Sadeghi-Hassanabadi A. A simple model for potential use with a
+misclassified binary outcome in epidemiology. J Epidemiol Community
+Health. 2004;58(8):712–7.</li>
+
+<li>Prescott GJ, Garthwaite PH. A Bayesian approach to prospective binary
+outcome studies with misclassification in a binary risk factor. Stat
+Med. 2005;24(22):3463–77.</li>
+
+<li>Hofler M. The effect of misclassification on the estimation of association:
+a review. Int J Methods Psychiatr Res. 2005;14(2):92–101.</li>
+
 <li>Smith, S., Hay, E.H., Farhat, N. et al. Genome wide association studies in
 presence of misclassified binary responses. BMC Genet 14, 124
 (2013). <a href="https://doi.org/10.1186/1471-2156-14-124">https://doi.org/10.1186/1471-2156-14-124</a></li>
+
+<li>Rekaya R, Smith S, Hay el H, Aggrey SE. Misclassification in binary
+responses and effect on genome-wide association studies. Poult Sci
+2013;92(9):2535–2540.</li>
 </ul>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-05-30 Sun 16:21</p>
+<p class="date">Created: 2021-07-20 Tue 10:40</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

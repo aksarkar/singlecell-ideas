@@ -74,90 +74,7 @@
   infer the true labels (and thus identify mislabelled data points) from the
   data, e.g., by estimating \(p(z_i = 1 \mid \mx, \vy)\).
 
-* Maximum likelihood estimation
-
-  One can use an EM algorithm to maximize the log likelihood
-
-  \begin{equation}
-    \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
-  \end{equation}
-
-  with respect to \((\vb, \vtheta)\). 
-
-  /Remark./ In the case where \(p > n\), one can add an \(\ell_1\) and/or
-  \(\ell_2\) penalty on \(\vb\) to the log likelihood to regularize the
-  problem, and modify the M-step update appropriately.
-
-  We briefly outline the derivation of the algorithm. The joint probability
-
-  \begin{multline}
-    \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{\left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)}_{\triangleq \alpha_i}\\
-    + [z_i = 0]\underbrace{\left(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)\right)}_{\triangleq \beta_i},
-  \end{multline}
-
-  where \([\cdot]\) denotes the
-  [[https://en.wikipedia.org/wiki/Iverson_bracket][Iverson bracket]]. The
-  posterior
-
-  \begin{equation}
-    \phi_i \triangleq p(z_i = 1 \mid \vx_i, y_i, \vb, \vtheta) = \frac{\exp(\alpha_i)}{\exp(\alpha_i) + \exp(\beta_i)},
-  \end{equation}
-
-  and the expected log joint probability with respect to the posterior is
-
-  \begin{multline}
-    \sum_i \Big(\phi_i \left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)\\
-    + (1 - \phi_i) \left(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)\right) \Big).
-  \end{multline}
-
-  In the E-step, one updates \(\phi_i\) as described above. In the M-step, one
-  updates
-
-  \begin{align}
-    \logit(\theta_1) &:= \frac{\sum_i \phi_i (1 - y_i)}{\sum_i \phi_i y_i}\\
-    \logit(\theta_0) &:= \frac{\sum_i (1 - \phi_i) y_i}{\sum_i (1 - \phi_i) (1 - y_i)},
-  \end{align}
-
-  and updates \(\vb\) using a numerical method to increase the expected log
-  joint probability (e.g., gradient ascent). One iterates the E and M steps
-  alternately until e.g., the change in objective falls below some
-  threshold. Intuitively, this algorithm alternates between estimating the true
-  labels given the current estimates of the regression coefficients and error
-  rates, and estimating the regression coefficients and error rates given the
-  current estimates of the true labels. Crucially, all of the data is used to
-  estimate the regression coefficients and error rates, which makes it possible
-  to detect that an observed label is unlikely given the observed features and
-  estimated error rates, by borrowing information from the other
-  observations. From the estimated \(\hat{\vb}\), one can predict the true
-  label \(\tilde{z}\) for a new observation \((\tilde{\vx}, \tilde{y})\) as
-
-  \begin{equation}
-    \E[\tilde{z}_i] = \S(\tilde{\vx}' \hat{\vb}).
-  \end{equation}
-
-* Approximate Bayesian inference
-
-  If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
-  posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
-  readily implemented in inference engines such as
-  [[https://mc-stan.org/][Stan]], [[https://pyro.ai/][pyro]], or
-  [[https://www.tensorflow.org/probability][Tensorflow Probability]]. One could
-  alternatively use variational inference to find the best approximate
-  posterior in a tractable family, by minimizing the KL divergence between the
-  approximate posterior and the true posterior. From the estimated posterior,
-  one can estimate the posterior distribution of the true label \(\tilde{z}\)
-  for a new data point \((\tilde{\vx}, \tilde{y})\), given the observed
-  (training) data, as
-
-  \begin{equation}
-    p(\tilde{z} \mid \tilde{\vx}, \tilde{y}) = \int p(\tilde{y} \mid \tilde{z}, \vtheta)\, p(\tilde{z} \mid \tilde{\vx}, \vb)\, dp(\vb, \vtheta \mid \mx, \vy).
-  \end{equation}
-
-  The primary derived quantity of interest for prediction is the posterior mean
-  \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\).
-
-* Example
-** Setup
+* Setup
    :PROPERTIES:
    :CUSTOM_ID: setup
    :END:
@@ -170,9 +87,9 @@
    #+RESULTS:
    : 2
 
-   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :exports none :dir /scratch/midway2/aksarkar/singlecell
+   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
-   #+BEGIN_SRC ipython
+   #+BEGIN_SRC ipython :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/logistic.py
      import numpy as np
      import pandas as pd
      import pyro
@@ -181,12 +98,13 @@
      import sklearn.linear_model as sklm
      import sklearn.metrics as skm
      import sklearn.model_selection as skms
+     import sklearn.utils as sku
      import torch
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[11]:
+   # Out[1]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -196,7 +114,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[3]:
+   # Out[2]:
    :END:
 
    #+BEGIN_SRC ipython
@@ -207,9 +125,250 @@
 
    #+RESULTS:
    :RESULTS:
+   # Out[3]:
+   :END:
+
+* Methods
+** Maximum likelihood estimation
+
+   One can use an EM algorithm to maximize the log likelihood
+   ([[https://doi.org/10.1007/978-1-4612-5771-4_13][Ekholm and Palmgren 1982]],
+   [[https://academic.oup.com/aje/article/146/2/195/165276][Magder and Hughes
+   1997]])
+
+   \begin{equation}
+     \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
+   \end{equation}
+
+   with respect to \((\vb, \vtheta)\). 
+
+   /Remark./ In the case where \(p > n\), one can add an \(\ell_1\) and/or
+   \(\ell_2\) penalty on \(\vb\) to the log likelihood to regularize the
+   problem, and modify the M-step update appropriately.
+
+   We briefly outline the derivation of the algorithm. The joint probability
+
+   \begin{multline}
+     \ln p(y_i, z_i \mid \vx_i, \vb, \vtheta) = [z_i = 1]\underbrace{\left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)}_{\triangleq \alpha_i}\\
+     + [z_i = 0]\underbrace{\left(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)\right)}_{\triangleq \beta_i},
+   \end{multline}
+
+   where \([\cdot]\) denotes the
+   [[https://en.wikipedia.org/wiki/Iverson_bracket][Iverson bracket]]. The
+   posterior
+
+   \begin{equation}
+     \phi_i \triangleq p(z_i = 1 \mid \vx_i, y_i, \vb, \vtheta) = \frac{\exp(\alpha_i)}{\exp(\alpha_i) + \exp(\beta_i)},
+   \end{equation}
+
+   and the expected log joint probability with respect to the posterior is
+
+   \begin{multline}
+     \sum_i \Big(\phi_i \left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)\\
+     + (1 - \phi_i) \left(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)\right) \Big).
+   \end{multline}
+
+   In the E-step, one updates \(\phi_i\) as described above. In the M-step, one
+   updates
+
+   \begin{align}
+     \logit(\theta_1) &:= \ln\left(\frac{\sum_i \phi_i (1 - y_i)}{\sum_i \phi_i y_i}\right)\\
+     \logit(\theta_0) &:= \ln\left(\frac{\sum_i (1 - \phi_i) y_i}{\sum_i (1 - \phi_i) (1 - y_i)}\right),
+   \end{align}
+
+   and updates \(\vb\) by maximizing the expected log joint
+   probability. Considering terms that depend on \(\vb\), the objective function
+   is
+
+   \begin{equation}
+     \sum_i \phi_i \ln \S(\vx_i' \vb) + (1 - \phi_i) \ln \S(-\vx_i' \vb)
+   \end{equation}
+
+   which is the negative cross entropy loss with labels \(\phi_i\). Therefore,
+   \(\vb\) can be estimated by logistic regression as a subroutine.
+
+   /Remark./ In the case that one penalizes the log likelihood, the penalty
+   terms only enter the M step in the updates to \(\vb\). In this case, the M
+   step update to \(\vb\) involves a penalized logistic regression, which is
+   available in standard packages.
+
+   One iterates the E and M steps alternately until e.g., the change in
+   objective falls below some threshold. Intuitively, this algorithm alternates
+   between estimating the true labels given the current estimates of the
+   regression coefficients and error rates, and estimating the regression
+   coefficients and error rates given the current estimates of the true
+   labels. Crucially, all of the data is used to estimate the regression
+   coefficients and error rates, which makes it possible to detect that an
+   observed label is unlikely given the observed features and estimated error
+   rates, by borrowing information from the other observations. From the
+   estimated \(\hat{\vb}\), one can predict the true label \(\tilde{z}\) for a
+   new observation \((\tilde{\vx}, \tilde{y})\) as
+
+   \begin{equation}
+     \E[\tilde{z}_i] = \S(\tilde{\vx}' \hat{\vb}).
+   \end{equation}
+
+   #+NAME: em
+   #+BEGIN_SRC ipython :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/logistic.py
+     def logistic_regression_errors_em(x, y, b=None, logits=None, atol=1e-5,
+                                       max_epochs=100, l2_weight=0, verbose=True, **kwargs):
+       """Fit logistic regression with error-prone labels by maximum likelihood
+
+       x - features, array-like (n, p)
+       y - labels, array-like (n, 1)
+       b - initial value for coefficients, array-like (p, 1)
+       logits - initial value for error logits, array-like (2, 1)
+       atol - tolerance for convergence (> 0)
+       max_epochs - maximum number of EM iterations (> 0)
+       l2_weight - l2 penalty weight (>= 0)
+       verbose - print EM updates
+       kwargs - keyword arguments to logistic regression subroutine
+
+       """
+       # TODO: this needs lots more error checking of args
+       if logits is None:
+         logits = np.array([-7, -7], dtype=np.float)
+       if b is None:
+         b = np.zeros((x.shape[1], 1))
+       z = _logistic_regression_errors_update_z(x, y, b, logits)
+       obj = _logistic_regression_errors_obj(x, y, z, b, logits)
+       # This is needed for sag_solver below
+       warm_start = None
+       if verbose:
+         print(f'{0:>8d} {obj:.10g}')
+       for i in range(max_epochs):
+         # eq. 12-14
+         logits[0] = np.log(((1 - z) * y).sum() / ((1 - z) * (1 - y)).sum())
+         logits[1] = np.log((z * (1 - y)).sum() / (z * y).sum())
+         theta = sp.expit(logits)
+         # sklm.LogisticRegression checks that labels are binary. We need to bypass
+         # this check and call directly into the underlying solver. There are
+         # limitations depending on which solver is called into.
+         #
+         # We use sag_solver here to support lw_weight = 0. However, this subroutine
+         # only approximately solves the problem, so the overall procedure no longer
+         # necessarily monotonically improves the objective
+         #
+         # Refer to https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/linear_model/_sag.py#L89
+         b, _, warm_start = sklm._sag.sag_solver(
+           x, z.ravel(), loss='log', alpha=l2_weight, warm_start_mem=warm_start,
+           ,**kwargs)
+         # sag_solver returns [1, x.shape[1]]
+         b = b.reshape(-1, 1)
+         z = _logistic_regression_errors_update_z(x, y, b, logits)
+         update = _logistic_regression_errors_obj(x, y, z, b, logits)
+         if verbose:
+           print(f'{i + 1:>8d} {update:.10g}')
+         if not np.isfinite(update):
+           raise RuntimeError('invalid objective function value')
+         elif update - obj < atol:
+           return b, logits
+         else:
+           obj = update
+       else:
+         raise RuntimeError('failed to converge in max_epochs')
+
+     def _logistic_regression_errors_obj_comp(x, y, b, logits):
+       """Return 'mixture components' of the log joint probability"""
+       theta = sp.expit(logits)
+       alpha = (y * np.log(1 - theta[1])
+                + (1 - y) * np.log(theta[1])
+                + np.log(sp.expit(x @ b)))
+       beta = (y * np.log(theta[0])
+               + (1 - y) * np.log(1 - theta[0])
+               + np.log(sp.expit(-x @ b)))
+       return alpha, beta
+
+     def _logistic_regression_errors_update_z(x, y, b, logits):
+       """Return new value of E[z]"""
+       alpha, beta = _logistic_regression_errors_obj_comp(x, y, b, logits)
+       z = sp.softmax(np.hstack([alpha, beta]), axis=1)[:,0].reshape(-1, 1)
+       assert z.shape == alpha.shape
+       return z
+
+     def _logistic_regression_errors_obj(x, y, z, b, logits):
+       """Return expected log joint probability"""
+       alpha, beta = _logistic_regression_errors_obj_comp(x, y, b, logits)
+       obj = (z * alpha + (1 - z) * beta).sum()
+       return obj
+   #+END_SRC
+
+   #+RESULTS: em
+   :RESULTS:
    # Out[4]:
    :END:
 
+** Approximate Bayesian inference
+
+   If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
+   posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
+   readily implemented in inference engines such as
+   [[https://mc-stan.org/][Stan]], [[https://pyro.ai/][pyro]], or
+   [[https://www.tensorflow.org/probability][Tensorflow Probability]]. One could
+   alternatively use variational inference to find the best approximate
+   posterior in a tractable family, by minimizing the KL divergence between the
+   approximate posterior and the true posterior. From the estimated posterior,
+   one can estimate the posterior distribution of the true label \(\tilde{z}\)
+   for a new data point \((\tilde{\vx}, \tilde{y})\), given the observed
+   (training) data, as
+
+   \begin{equation}
+     p(\tilde{z} \mid \tilde{\vx}, \tilde{y}) = \int p(\tilde{y} \mid \tilde{z}, \vtheta)\, p(\tilde{z} \mid \tilde{\vx}, \vb)\, dp(\vb, \vtheta \mid \mx, \vy).
+   \end{equation}
+
+   The primary derived quantity of interest for prediction is the posterior
+   mean \(\E[\tilde{z} \mid \tilde{\vx}, \tilde{y}]\). For simplicity, assume
+   proper priors
+
+   \begin{align}
+     \theta_k &\sim \Unif(0, 1)\\
+     \vb &\sim \N(\boldsymbol{0}, \lambda \mi)\\
+     \lambda &\sim \Exp(1).
+   \end{align}
+
+   #+NAME: nuts
+   #+BEGIN_SRC ipython :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/logistic.py
+     def logistic_regression_errors_nuts(x, y, num_samples=100, warmup_steps=100,
+                                         verbose=True):
+       """Fit logistic regression with error-prone labels using No U-Turn Sampler
+
+       x - features, array-like (n, p)
+       y - labels, array-like (n, 1)
+       num_samples - number of posterior samples to return
+       warmup_steps - number of initial posterior samples (not returned)
+       verbose - report progress
+
+       """
+
+       nuts = pyro.infer.mcmc.NUTS(_logistic_regression_errors)
+       samples = pyro.infer.mcmc.MCMC(nuts, num_samples=num_samples,
+                                      warmup_steps=warmup_steps)
+       samples.run(torch.tensor(x, dtype=torch.float),
+                   torch.tensor(y.ravel(), dtype=torch.float))
+       return samples
+
+     def _logistic_regression_errors(x, y):
+       """Return stochastic computation graph for the generative model"""
+       theta = pyro.sample('theta', pyro.distributions.Uniform(
+         low=torch.zeros(2),
+         high=torch.ones(2)))
+       lam = pyro.sample('lam', pyro.distributions.Exponential(rate=1.))
+       b = pyro.sample('b', pyro.distributions.MultivariateNormal(
+         loc=torch.zeros(x.shape[1]),
+         covariance_matrix=lam * torch.eye(x.shape[1])))
+       eta = x @ b
+       with pyro.plate('data', x.shape[0]):
+         probs = (1 - theta[1]) * torch.sigmoid(eta) + theta[0] * torch.sigmoid(-eta)
+         y = pyro.sample('y', pyro.distributions.Bernoulli(probs=probs), obs=y)
+       return y
+   #+END_SRC
+
+   #+RESULTS: nuts
+   :RESULTS:
+   # Out[9]:
+   :END:
+
+* Results
 ** Simulation
 
    #+BEGIN_SRC ipython
@@ -268,7 +427,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[13]:
+   # Out[8]:
    :END:
 
 ** Naive analysis
@@ -281,10 +440,10 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[47]:
+   # Out[22]:
    :END:
 
-   Report the accuracy in the training and validation data.
+   Report the accuracy in the validation data.
 
    #+BEGIN_SRC ipython
      pd.Series({'observed': fit0.score(xv, yv), 'true': fit0.score(xv, zv)}, name='accuracy')
@@ -300,36 +459,80 @@
    #+END_EXAMPLE
    :END:
 
-** MCMC
+** Maximum likelihood estimation
 
-   Assume proper priors \(\theta_k \sim \Unif(0, 1)\), \(\vb \sim
-   \N(\boldsymbol{0}, \lambda \mi)\), \(\lambda \sim \Exp(1)\).
+   Fit the model to the simulated data by maximizing the (unpenalized)
+   likelihood. First, initialize at the oracle values, and report the accuracy
+   in the validation data.
 
-   #+BEGIN_SRC ipython
-     def _logistic_regression_errors(x, y):
-       theta = pyro.sample('theta', pyro.distributions.Uniform(
-         low=torch.zeros(2),
-         high=torch.ones(2)))
-       lam = pyro.sample('lam', pyro.distributions.Exponential(rate=1.))
-       b = pyro.sample('b', pyro.distributions.MultivariateNormal(
-         loc=torch.zeros(x.shape[1]),
-         covariance_matrix=lam * torch.eye(x.shape[1])))
-       eta = x @ b
-       with pyro.plate('data', x.shape[0]):
-         y = pyro.sample('y', pyro.distributions.Bernoulli(
-           probs=(1 - theta[1]) * torch.sigmoid(eta) + theta[0] * torch.sigmoid(-eta)), obs=y)
-       return y
-
-     def logistic_regression_errors_nuts(x, y, num_samples=100, warmup_steps=100, verbose=True, **kwargs):
-       nuts = pyro.infer.mcmc.NUTS(_logistic_regression_errors)
-       samples = pyro.infer.mcmc.MCMC(nuts, num_samples=num_samples, warmup_steps=warmup_steps)
-       samples.run(torch.tensor(x, dtype=torch.float), torch.tensor(y.ravel(), dtype=torch.float))
-       return samples
+   #+BEGIN_SRC ipython :async t
+     oracle_fit_em = logistic_regression_errors_em(xt, yt, b=b, logits=sp.logit([0.05, 0.05]), tol=1e-7)
+     pv = sp.expit(xv @ oracle_fit_em[0])
+     pd.Series({
+       'observed': skm.roc_auc_score(yv, pv),
+       'true': skm.roc_auc_score(zv, pv)}, name='roc_auc')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[29]:
+   #+BEGIN_EXAMPLE
+     observed    0.800322
+     true        0.841747
+     Name: roc_auc, dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+   Now, repeat the analysis, but initialize \(\vb\) at the naive analysis
+   solution, and initialize \(\vtheta\) at the default \(\logit(-8) = 3.3
+   \times 10^{-4}\).
+
+   #+BEGIN_SRC ipython
+     fit_em = logistic_regression_errors_em(xt, yt, b=fit0.coef_.T, tol=1e-7, verbose=True)
+     pv = sp.expit(xv @ fit_em[0])
+     pd.Series({
+       'observed': skm.roc_auc_score(yv, pv),
+       'true': skm.roc_auc_score(zv, pv)}, name='roc_auc')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[50]:
+   #+BEGIN_EXAMPLE
+     observed    0.797101
+     true        0.843750
+     Name: roc_auc, dtype: float64
+   #+END_EXAMPLE
+   :END:
+
+   Report the point estimates of the error rates.
+
+   #+BEGIN_SRC ipython
+     sp.expit(fit_em[1])
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[51]:
+   : array([0.00084501, 0.00081056])
+   :END:
+
+   Report the accuracy of predicting the mislabeled data points in the
+   validation data.
+
+   #+BEGIN_SRC ipython
+     skm.roc_auc_score(yv != zv, np.where(yv, 1 - pv, pv))
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[52]:
+   : 0.8634751773049646
+   :END:
+
+** Approximate Bayesian inference
+   :PROPERTIES:
+   :ORDERED:  t
    :END:
 
    Sample from the posterior.
@@ -412,6 +615,10 @@
   - Chen, T.T. (1979). Log-linear models for categorical data with
     misclassification and double sampling. J. Am. Statist. Assoc. 74. 481-488.
 
+  - Ekholm, A., & Palmgren, J. (1982). A Model for a Binary Response with
+    Misclassifications. Lecture Notes in Statistics,
+    128–143. https://doi.org/10.1007/978-1-4612-5771-4_13
+
   - Espeland, M.A. and Odoroff, C.L. (1985). Log-linear models for doubly sampled
     categorical data fitted by the EM
     algorithm. J. Am. Statist. Assoc. 80. 663-670
@@ -419,6 +626,10 @@
   - Espeland, M.A. and Hui, S.L. (1987). A general approach to analyzing
     epidemiologic data that contain misclassification
     errors. Biometrics 43. 1001-1012
+
+  - Palmgren, J. and Ekholm, A. (1987), Exponential family non-linear models
+    for categorical data with errors of observation. Appl. Stochastic Models
+    Data Anal., 3: 111-124. https://doi.org/10.1002/asm.3150030206
 
   - Zhi Geng & Chooichiro Asano. (1989) Bayesian estimation methods for
     categorical data with misclassifications, Communications in Statistics -
@@ -435,6 +646,9 @@
     techniques: Applications to HIV screening. Statistics in Medicine 15,
     2161–2176.
 
+  - Magder LS, Hughes JP. Logistic regression when the outcome is measured with
+    uncertainty. Am J Epidemiol. 1997;146(2):195–203.
+
   - Rekaya, R., Weigel, K. A., and Gianola, D. (2001). Threshold model for
     misclassiﬁed binary responses with applications to animal
     breeding. Biometrics 57, 1123–1129.
@@ -443,6 +657,22 @@
     with Misclassification. Biometrics, 59:
     670-675. https://doi.org/10.1111/1541-0420.00077
 
+  - Duffy SW, Warwick J, Williams AR, Keshavarz H, Kaffashian F, Rohan TE, Nili
+    F, Sadeghi-Hassanabadi A. A simple model for potential use with a
+    misclassified binary outcome in epidemiology. J Epidemiol Community
+    Health. 2004;58(8):712–7.
+
+  - Prescott GJ, Garthwaite PH. A Bayesian approach to prospective binary
+    outcome studies with misclassification in a binary risk factor. Stat
+    Med. 2005;24(22):3463–77.
+
+  - Hofler M. The effect of misclassification on the estimation of association:
+    a review. Int J Methods Psychiatr Res. 2005;14(2):92–101.
+
   - Smith, S., Hay, E.H., Farhat, N. et al. Genome wide association studies in
     presence of misclassified binary responses. BMC Genet 14, 124
     (2013). https://doi.org/10.1186/1471-2156-14-124
+
+  - Rekaya R, Smith S, Hay el H, Aggrey SE. Misclassification in binary
+    responses and effect on genome-wide association studies. Poult Sci
+    2013;92(9):2535–2540.

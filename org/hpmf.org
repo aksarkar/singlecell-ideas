@@ -49,12 +49,13 @@
   #+BEGIN_SRC ipython
     import numpy as np
     import pandas as pd
+    import scipy.stats as st
     import torch
   #+END_SRC
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[22]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -437,7 +438,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[84]:
+   # Out[8]:
    :END:
 
    To initialize all methods, run 50 epochs of VBEM. Compare VBEM and
@@ -480,8 +481,20 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[85]:
+   # Out[9]:
    : PMFN()
+   :END:
+
+   Write out the saved models.
+
+   #+BEGIN_SRC ipython
+     torch.save({k: models[k].state_dict() for k in models},
+                '/scratch/midway2/aksarkar/singlecell/hpmf-sim-ex.pt')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[11]:
    :END:
 
    Look at the ELBO achieved by the algorithms.
@@ -586,6 +599,58 @@
    :RESULTS:
    # Out[98]:
    [[file:figure/hpmf.org/sim-ex-factors.png]]
+   :END:
+
+   Look at the estimated priors.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-priors.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     fig, ax = plt.subplots(1, 2)
+     fig.set_size_inches(5, 2.5)
+     grid = np.linspace(0, 20, 1000)
+     for a, k in zip(ax, ('l', 'f')):
+       with torch.no_grad():
+         g = st.gamma(a=getattr(models['VBEM'], f'a_{k}').cpu()[0,j],
+                      scale=1 / getattr(models['VBEM'], f'b_{k}').cpu()[0,j])
+       for j in range(K):
+         a.plot(grid, g.pdf(grid), lw=1, c=cm(j), label=f'k={j}')
+       a.legend(frameon=False)
+     ax[0].set_ylabel('Density')
+     ax[0].set_xlabel('Loading')
+     ax[1].set_xlabel('Factor')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[34]:
+   [[file:figure/hpmf.org/sim-ex-priors.png]]
+   :END:
+
+   Compare the estimated loadings to the true loadings.
+
+   #+BEGIN_SRC ipython :ipyfile figure/hpmf.org/sim-ex-loadings.png
+     plt.clf()
+     fig, ax = plt.subplots(4, 3, sharey=True, sharex=False)
+     fig.set_size_inches(6, 8)
+     for i, (row, name) in enumerate(zip(ax, models)):
+       with torch.no_grad():
+         pm = (models[name].alpha_l / models[name].beta_l).cpu().numpy()
+       order = np.argmax(np.corrcoef(l, pm, rowvar=False)[K:,:K], axis=0)
+       for k, a in enumerate(row):
+         a.scatter(pm[:,order[k]], l[:,k], s=1, c='k', alpha=0.1)
+         a.set_title(name)
+       row[0].set_ylabel(f'True loadings {i+1}')
+     for a in ax.T:
+       a[-1].set_xlabel('Estimated lodaings')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[42]:
+   [[file:figure/hpmf.org/sim-ex-loadings.png]]
    :END:
 
 ** Correlated factors example

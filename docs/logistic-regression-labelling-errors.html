@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-07-20 Tue 10:40 -->
+<!-- 2021-07-21 Wed 21:45 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logistic regression in the presence of error-prone labels</title>
@@ -261,16 +261,16 @@ for the JavaScript code in this tag.
 <li><a href="#setup">Setup</a></li>
 <li><a href="#org513ce30">Methods</a>
 <ul>
-<li><a href="#org7402355">Maximum likelihood estimation</a></li>
-<li><a href="#org6782d18">Approximate Bayesian inference</a></li>
+<li><a href="#orgc039e51">Maximum likelihood estimation</a></li>
+<li><a href="#org34436e8">Approximate Bayesian inference</a></li>
 </ul>
 </li>
 <li><a href="#org0e8fc9e">Results</a>
 <ul>
 <li><a href="#org18caaf4">Simulation</a></li>
 <li><a href="#org7a529a2">Naive analysis</a></li>
-<li><a href="#orgac9c5d0">Maximum likelihood estimation</a></li>
-<li><a href="#org7126dea">Approximate Bayesian inference</a></li>
+<li><a href="#org4fa0a5d">Maximum likelihood estimation</a></li>
+<li><a href="#orgfde3581">Approximate Bayesian inference</a></li>
 </ul>
 </li>
 <li><a href="#org858706d">Related work</a></li>
@@ -282,7 +282,8 @@ for the JavaScript code in this tag.
 <h2 id="orgf22c2b3">Introduction</h2>
 <div class="outline-text-2" id="text-orgf22c2b3">
 <p>
-Logistic regression can be written \(
+Logistic regression can be written
+(<a href="https://www.routledge.com/Generalized-Linear-Models/McCullagh-Nelder/p/book/9780412317606">McCullagh and Nelder 1989</a>) \(
   \DeclareMathOperator\Bern{Bernoulli}
   \DeclareMathOperator\E{E}
   \DeclareMathOperator\Exp{Exp}
@@ -346,7 +347,7 @@ true (unobserved) labels \(z_i\), and the observed labels \(y_i\)
   y_i \mid z_i = 1, \theta_1 &\sim \Bern(1 - \theta_1)\\
   y_i \mid z_i = 0, \theta_0 &\sim \Bern(\theta_0)\\
   z_i \mid p_i &\sim \Bern(p_i)\\
-  \logit(p_i) &= \vx_i \vb.
+  \logit(p_i) &= \vx_i' \vb.
 \end{align}
 
 <p>
@@ -355,13 +356,24 @@ probabilities. Specifically, \(\theta_1\) denotes the probability of
 observing label \(y_i = 0\) when the true label \(z_i = 1\), and \(\theta_0\)
 denotes the probability of observing \(y_i = 1\) when \(z_i = 0\). (One could
 simplify by fixing \(\theta_0 = \theta_1\), or potentially build more complex
-models where the error rates themselves depend on features in the data.) As
-was the case for the simpler model, one estimates \((\vb, \vtheta)\) from
-observed data by maximizing the log likelihood, or by assuming a prior
-\(p(\vb, \vtheta)\) and estimating the posterior \(p(\vb, \vtheta \mid \mx,
-  \vy)\). However, unlike the simpler model, one can use these estimates to
-infer the true labels (and thus identify mislabelled data points) from the
-data, e.g., by estimating \(p(z_i = 1 \mid \mx, \vy)\).
+models where the error rates themselves depend on features in the data.)
+</p>
+
+<p>
+<i>Remark.</i> This model is identifable up to a sign flip in \(\vb\) and
+corresponding &ldquo;reflection&rdquo; of \(\vtheta\) (to mean probability of observing
+the correct label). If one places a prior on \(\vtheta\) that does not have
+density \(> 0.5\), then the model is identifable.
+</p>
+
+<p>
+As was the case for logistic regression without error-prone labels, one
+estimates \((\vb, \vtheta)\) from observed data by maximizing the log
+likelihood, or by assuming a prior \(p(\vb, \vtheta)\) and estimating the
+posterior \(p(\vb, \vtheta \mid \mx, \vy)\). However, unlike the simpler
+model, one can use these estimates to infer the true labels (and thus
+identify mislabelled data points) from the data, e.g., by estimating \(p(z_i
+  = 1 \mid \mx, \vy)\).
 </p>
 </div>
 </div>
@@ -373,6 +385,7 @@ data, e.g., by estimating \(p(z_i = 1 \mid \mx, \vy)\).
 <pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> pyro
+<span class="org-keyword">import</span> scipy.linalg <span class="org-keyword">as</span> sl
 <span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
 <span class="org-keyword">import</span> sklearn.linear_model <span class="org-keyword">as</span> sklm
@@ -402,9 +415,9 @@ data, e.g., by estimating \(p(z_i = 1 \mid \mx, \vy)\).
 <h2 id="org513ce30">Methods</h2>
 <div class="outline-text-2" id="text-org513ce30">
 </div>
-<div id="outline-container-org7402355" class="outline-3">
-<h3 id="org7402355">Maximum likelihood estimation</h3>
-<div class="outline-text-3" id="text-org7402355">
+<div id="outline-container-orgc039e51" class="outline-3">
+<h3 id="orgc039e51">Maximum likelihood estimation</h3>
+<div class="outline-text-3" id="text-orgc039e51">
 <p>
 One can use an EM algorithm to maximize the log likelihood
 (<a href="https://doi.org/10.1007/978-1-4612-5771-4_13">Ekholm and Palmgren 1982</a>,
@@ -413,7 +426,7 @@ One can use an EM algorithm to maximize the log likelihood
 </p>
 
 \begin{equation}
-  \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
+  \ell = \sum_i \ln \left(\sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta)\, p(z_i \mid \vx_i, \vb)\right)
 \end{equation}
 
 <p>
@@ -442,7 +455,7 @@ posterior
 </p>
 
 \begin{equation}
-  \phi_i \triangleq p(z_i = 1 \mid \vx_i, y_i, \vb, \vtheta) = \frac{\exp(\alpha_i)}{\exp(\alpha_i) + \exp(\beta_i)},
+  p(z_i = 1 \mid \vx_i, y_i, \vb, \vtheta) \triangleq \phi_i = \frac{\exp(\alpha_i)}{\exp(\alpha_i) + \exp(\beta_i)},
 \end{equation}
 
 <p>
@@ -450,13 +463,16 @@ and the expected log joint probability with respect to the posterior is
 </p>
 
 \begin{multline}
-  \sum_i \Big(\phi_i \left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)\\
+  h = \sum_i \Big(\phi_i \left(y_i \ln (1 - \theta_1) + (1 - y_i)\ln \theta_1 + \ln \S(\vx_i' \vb)\right)\\
   + (1 - \phi_i) \left(y_i \ln \theta_0 + (1 - y_i) \ln (1 - \theta_0) + \ln \S(-\vx_i' \vb)\right) \Big).
 \end{multline}
 
 <p>
-In the E-step, one updates \(\phi_i\) as described above. In the M-step, one
-updates
+The EM algorithm maximizes \(h\) by alternating E-steps and M-steps, which
+is equivalent to maximizing \(\ell\)
+(<a href="https://link.springer.com/chapter/10.1007%2F978-94-011-5014-9_12">Neal
+and Hinton 1998</a>). In the E-step, one updates \(\phi_i\) as described
+above. In the M-step, one updates
 </p>
 
 \begin{align}
@@ -466,8 +482,8 @@ updates
 
 <p>
 and updates \(\vb\) by maximizing the expected log joint
-probability. Considering terms that depend on \(\vb\), the objective function
-is
+probability. Considering only terms of \(h\) that depend on \(\vb\), the
+objective function is
 </p>
 
 \begin{equation}
@@ -490,12 +506,12 @@ available in standard packages.
 One iterates the E and M steps alternately until e.g., the change in
 objective falls below some threshold. Intuitively, this algorithm alternates
 between estimating the true labels given the current estimates of the
-regression coefficients and error rates, and estimating the regression
-coefficients and error rates given the current estimates of the true
-labels. Crucially, all of the data is used to estimate the regression
-coefficients and error rates, which makes it possible to detect that an
-observed label is unlikely given the observed features and estimated error
-rates, by borrowing information from the other observations. From the
+regression coefficients and error rates (E step), and estimating the
+regression coefficients and error rates given the current estimates of the
+true labels (M step). Crucially, all of the data is used to estimate the
+regression coefficients and error rates, which makes it possible to detect
+that an observed label is unlikely given the observed features and estimated
+error rates, by borrowing information from the other observations. From the
 estimated \(\hat{\vb}\), one can predict the true label \(\tilde{z}\) for a
 new observation \((\tilde{\vx}, \tilde{y})\) as
 </p>
@@ -506,7 +522,8 @@ new observation \((\tilde{\vx}, \tilde{y})\) as
 
 <div class="org-src-container">
 <pre class="src src-ipython" id="org7234a65"><span class="org-keyword">def</span> <span class="org-function-name">logistic_regression_errors_em</span>(x, y, b=<span class="org-constant">None</span>, logits=<span class="org-constant">None</span>, atol=1e-5,
-                                  max_epochs=100, l2_weight=0, verbose=<span class="org-constant">True</span>, **kwargs):
+                                  max_epochs=100, update_logits=<span class="org-constant">True</span>,
+                                  verbose=<span class="org-constant">True</span>, **kwargs):
   <span class="org-doc">"""Fit logistic regression with error-prone labels by maximum likelihood</span>
 
 <span class="org-doc">  x - features, array-like (n, p)</span>
@@ -515,7 +532,7 @@ new observation \((\tilde{\vx}, \tilde{y})\) as
 <span class="org-doc">  logits - initial value for error logits, array-like (2, 1)</span>
 <span class="org-doc">  atol - tolerance for convergence (&gt; 0)</span>
 <span class="org-doc">  max_epochs - maximum number of EM iterations (&gt; 0)</span>
-<span class="org-doc">  l2_weight - l2 penalty weight (&gt;= 0)</span>
+<span class="org-doc">  update_logits - update initial estimates of error logits</span>
 <span class="org-doc">  verbose - print EM updates</span>
 <span class="org-doc">  kwargs - keyword arguments to logistic regression subroutine</span>
 
@@ -527,36 +544,24 @@ new observation \((\tilde{\vx}, \tilde{y})\) as
     <span class="org-variable-name">b</span> = np.zeros((x.shape[1], 1))
   <span class="org-variable-name">z</span> = _logistic_regression_errors_update_z(x, y, b, logits)
   <span class="org-variable-name">obj</span> = _logistic_regression_errors_obj(x, y, z, b, logits)
-  <span class="org-comment-delimiter"># </span><span class="org-comment">This is needed for sag_solver below</span>
-  <span class="org-variable-name">warm_start</span> = <span class="org-constant">None</span>
   <span class="org-keyword">if</span> verbose:
     <span class="org-keyword">print</span>(f<span class="org-string">'{0:&gt;8d} {obj:.10g}'</span>)
   <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_epochs):
-    <span class="org-comment-delimiter"># </span><span class="org-comment">eq. 12-14</span>
-    <span class="org-variable-name">logits</span>[0] = np.log(((1 - z) * y).<span class="org-builtin">sum</span>() / ((1 - z) * (1 - y)).<span class="org-builtin">sum</span>())
-    <span class="org-variable-name">logits</span>[1] = np.log((z * (1 - y)).<span class="org-builtin">sum</span>() / (z * y).<span class="org-builtin">sum</span>())
+    <span class="org-keyword">if</span> update_logits:
+      <span class="org-comment-delimiter"># </span><span class="org-comment">eq. 12-14</span>
+      <span class="org-variable-name">logits</span>[0] = np.log(((1 - z) * y).<span class="org-builtin">sum</span>() / ((1 - z) * (1 - y)).<span class="org-builtin">sum</span>())
+      <span class="org-variable-name">logits</span>[1] = np.log((z * (1 - y)).<span class="org-builtin">sum</span>() / (z * y).<span class="org-builtin">sum</span>())
     <span class="org-variable-name">theta</span> = sp.expit(logits)
-    <span class="org-comment-delimiter"># </span><span class="org-comment">sklm.LogisticRegression checks that labels are binary. We need to bypass</span>
-    <span class="org-comment-delimiter"># </span><span class="org-comment">this check and call directly into the underlying solver. There are</span>
-    <span class="org-comment-delimiter"># </span><span class="org-comment">limitations depending on which solver is called into.</span>
-    <span class="org-comment-delimiter">#</span>
-    <span class="org-comment-delimiter"># </span><span class="org-comment">We use sag_solver here to support lw_weight = 0. However, this subroutine</span>
-    <span class="org-comment-delimiter"># </span><span class="org-comment">only approximately solves the problem, so the overall procedure no longer</span>
-    <span class="org-comment-delimiter"># </span><span class="org-comment">necessarily monotonically improves the objective</span>
-    <span class="org-comment-delimiter">#</span>
-    <span class="org-comment-delimiter"># </span><span class="org-comment">Refer to https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/linear_model/_sag.py#L89</span>
-    <span class="org-variable-name">b</span>, <span class="org-variable-name">_</span>, <span class="org-variable-name">warm_start</span> = sklm._sag.sag_solver(
-      x, z.ravel(), loss=<span class="org-string">'log'</span>, alpha=l2_weight, warm_start_mem=warm_start,
-      **kwargs)
-    <span class="org-comment-delimiter"># </span><span class="org-comment">sag_solver returns [1, x.shape[1]]</span>
-    <span class="org-variable-name">b</span> = b.reshape(-1, 1)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: the sklearn solver approximately maximizes the objective,</span>
+    <span class="org-comment-delimiter"># </span><span class="org-comment">which leads to weird issues</span>
+    <span class="org-variable-name">b</span> = _logistic_regression_irls(x, z)
     <span class="org-variable-name">z</span> = _logistic_regression_errors_update_z(x, y, b, logits)
     <span class="org-variable-name">update</span> = _logistic_regression_errors_obj(x, y, z, b, logits)
     <span class="org-keyword">if</span> verbose:
       <span class="org-keyword">print</span>(f<span class="org-string">'{i + 1:&gt;8d} {update:.10g}'</span>)
     <span class="org-keyword">if</span> <span class="org-keyword">not</span> np.isfinite(update):
       <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'invalid objective function value'</span>)
-    <span class="org-keyword">elif</span> update - obj &lt; atol:
+    <span class="org-keyword">elif</span> <span class="org-builtin">abs</span>(update - obj) &lt; atol:
       <span class="org-keyword">return</span> b, logits
     <span class="org-keyword">else</span>:
       <span class="org-variable-name">obj</span> = update
@@ -586,21 +591,49 @@ new observation \((\tilde{\vx}, \tilde{y})\) as
   <span class="org-variable-name">alpha</span>, <span class="org-variable-name">beta</span> = _logistic_regression_errors_obj_comp(x, y, b, logits)
   <span class="org-variable-name">obj</span> = (z * alpha + (1 - z) * beta).<span class="org-builtin">sum</span>()
   <span class="org-keyword">return</span> obj
+
+<span class="org-keyword">def</span> <span class="org-function-name">_logistic_regression_irls</span>(x, y, b=<span class="org-constant">None</span>, tol=1e-7, max_epochs=1000):
+  <span class="org-doc">"""Fit logistic regression by iterative reweighted least squares"""</span>
+  <span class="org-variable-name">mu</span> = np.log(y.mean() / (1 - y.mean()))
+  <span class="org-keyword">if</span> b <span class="org-keyword">is</span> <span class="org-constant">None</span>:
+    <span class="org-variable-name">b</span> = np.zeros((x.shape[1], 1))
+  <span class="org-variable-name">llik</span> = -np.inf
+  <span class="org-keyword">for</span> i <span class="org-keyword">in</span> <span class="org-builtin">range</span>(max_epochs):
+    <span class="org-variable-name">eta</span> = mu + x @ b
+    <span class="org-variable-name">mu</span> = sp.expit(eta)
+    <span class="org-variable-name">w</span> = mu * (1 - mu)
+    <span class="org-variable-name">z</span> = eta + (y - mu) / w
+    <span class="org-variable-name">b</span> = sl.solve(x.T @ np.diag(w.ravel()) @ x, x.T @ np.diag(w.ravel()) @ z)
+    <span class="org-variable-name">update</span> = (y * np.log(sp.expit(x @ b)) + (1 - y) * np.log(sp.expit(-x @ b))).<span class="org-builtin">sum</span>()
+    <span class="org-keyword">if</span> <span class="org-builtin">abs</span>(update - llik) &lt; tol:
+      <span class="org-keyword">return</span> b
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">llik</span> = update
+  <span class="org-keyword">else</span>:
+    <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'failed to converge in max_epochs'</span>)
 </pre>
 </div>
 </div>
 </div>
 
-<div id="outline-container-org6782d18" class="outline-3">
-<h3 id="org6782d18">Approximate Bayesian inference</h3>
-<div class="outline-text-3" id="text-org6782d18">
+<div id="outline-container-org34436e8" class="outline-3">
+<h3 id="org34436e8">Approximate Bayesian inference</h3>
+<div class="outline-text-3" id="text-org34436e8">
 <p>
 If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
-posterior \(p(\vb, \vtheta \mid \mx, \vy)\). Inference via MCMC can be
-readily implemented in inference engines such as
+posterior
+</p>
+
+\begin{equation}
+  p(\vb, \vtheta \mid \mx, \vy) = \frac{\sum_i \sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta) p(z_i \mid \vx_i, \vb) p(\vb, \vtheta)}{\int \sum_i \sum_{z_i \in \{0, 1\}} p(y_i \mid z_i, \vtheta) p(z_i \mid \vx_i, \vb)\, dp(\vb, \vtheta)}.
+\end{equation}
+
+<p>
+The integral in the denominator is intractable; however, approximate
+inference via MCMC can be readily implemented in inference engines such as
 <a href="https://mc-stan.org/">Stan</a>, <a href="https://pyro.ai/">pyro</a>, or
-<a href="https://www.tensorflow.org/probability">Tensorflow Probability</a>. One could
-alternatively use variational inference to find the best approximate
+<a href="https://www.tensorflow.org/probability">Tensorflow Probability</a>. One
+could alternatively use variational inference to find the best approximate
 posterior in a tractable family, by minimizing the KL divergence between the
 approximate posterior and the true posterior. From the estimated posterior,
 one can estimate the posterior distribution of the true label \(\tilde{z}\)
@@ -609,7 +642,7 @@ for a new data point \((\tilde{\vx}, \tilde{y})\), given the observed
 </p>
 
 \begin{equation}
-  p(\tilde{z} \mid \tilde{\vx}, \tilde{y}) = \int p(\tilde{y} \mid \tilde{z}, \vtheta)\, p(\tilde{z} \mid \tilde{\vx}, \vb)\, dp(\vb, \vtheta \mid \mx, \vy).
+  p(\tilde{z} \mid \tilde{\vx}, \tilde{y}, \mx, \vy) = \int p(\tilde{y} \mid \tilde{z}, \vtheta)\, p(\tilde{z} \mid \tilde{\vx}, \vb)\, dp(\vb, \vtheta \mid \mx, \vy).
 \end{equation}
 
 <p>
@@ -619,7 +652,7 @@ proper priors
 </p>
 
 \begin{align}
-  \theta_k &\sim \Unif(0, 1)\\
+  \theta_k &\sim \Unif(0, 0.5)\\
   \vb &\sim \N(\boldsymbol{0}, \lambda \mi)\\
   \lambda &\sim \Exp(1).
 \end{align}
@@ -648,7 +681,7 @@ proper priors
   <span class="org-doc">"""Return stochastic computation graph for the generative model"""</span>
   <span class="org-variable-name">theta</span> = pyro.sample(<span class="org-string">'theta'</span>, pyro.distributions.Uniform(
     low=torch.zeros(2),
-    high=torch.ones(2)))
+    high=0.5 * torch.ones(2)))
   <span class="org-variable-name">lam</span> = pyro.sample(<span class="org-string">'lam'</span>, pyro.distributions.Exponential(rate=1.))
   <span class="org-variable-name">b</span> = pyro.sample(<span class="org-string">'b'</span>, pyro.distributions.MultivariateNormal(
     loc=torch.zeros(x.shape[1]),
@@ -725,42 +758,40 @@ plt.tight_layout()
 <h3 id="org7a529a2">Naive analysis</h3>
 <div class="outline-text-3" id="text-org7a529a2">
 <p>
-Fit regularized logistic regression to the data.
+Fit logistic regression to predict the observed labels from the features,
+and report the accuracy in the validation data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">fit0</span> = sklm.LogisticRegressionCV(cv=4, n_jobs=-1).fit(xt, yt.ravel())
-</pre>
-</div>
-
-<p>
-Report the accuracy in the validation data.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython">pd.Series({<span class="org-string">'observed'</span>: fit0.score(xv, yv), <span class="org-string">'true'</span>: fit0.score(xv, zv)}, name=<span class="org-string">'accuracy'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">fit0</span> = _logistic_regression_irls(xt, yt)
+<span class="org-variable-name">pv</span> = sp.expit(xv @ fit0)
+pd.Series({
+  <span class="org-string">'observed'</span>: skm.roc_auc_score(yv, pv),
+  <span class="org-string">'true'</span>: skm.roc_auc_score(zv, pv)}, name=<span class="org-string">'roc_auc'</span>)
 </pre>
 </div>
 
 <pre class="example">
-observed    0.70
-true        0.75
-Name: accuracy, dtype: float64
+observed    0.852525
+true        0.909675
+Name: roc_auc, dtype: float64
 </pre>
 </div>
 </div>
 
-<div id="outline-container-orgac9c5d0" class="outline-3">
-<h3 id="orgac9c5d0">Maximum likelihood estimation</h3>
-<div class="outline-text-3" id="text-orgac9c5d0">
+<div id="outline-container-org4fa0a5d" class="outline-3">
+<h3 id="org4fa0a5d">Maximum likelihood estimation</h3>
+<div class="outline-text-3" id="text-org4fa0a5d">
 <p>
 Fit the model to the simulated data by maximizing the (unpenalized)
-likelihood. First, initialize at the oracle values, and report the accuracy
-in the validation data.
+likelihood. First, initialize at the oracle values, fix the error rates, and
+report the accuracy in the validation data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">oracle_fit_em</span> = logistic_regression_errors_em(xt, yt, b=b, logits=sp.logit([0.05, 0.05]), tol=1e-7)
+<pre class="src src-ipython"><span class="org-variable-name">oracle_fit_em</span> = logistic_regression_errors_em(
+  xt, yt, b=b, logits=sp.logit([0.05, 0.05]), update_logits=<span class="org-constant">False</span>, tol=1e-7,
+  max_epochs=1000)
 <span class="org-variable-name">pv</span> = sp.expit(xv @ oracle_fit_em[0])
 pd.Series({
   <span class="org-string">'observed'</span>: skm.roc_auc_score(yv, pv),
@@ -769,19 +800,69 @@ pd.Series({
 </div>
 
 <pre class="example">
-observed    0.800322
-true        0.841747
+observed    0.856970
+true        0.912485
 Name: roc_auc, dtype: float64
 </pre>
 
 <p>
-Now, repeat the analysis, but initialize \(\vb\) at the naive analysis
-solution, and initialize \(\vtheta\) at the default \(\logit(-8) = 3.3
-   \times 10^{-4}\).
+Report the accuracy of predicting the mislabeled data points in the
+validation data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">fit_em</span> = logistic_regression_errors_em(xt, yt, b=fit0.coef_.T, tol=1e-7, verbose=<span class="org-constant">True</span>)
+<pre class="src src-ipython">skm.roc_auc_score(yv != zv, np.where(yv, 1 - pv, pv))
+</pre>
+</div>
+
+<pre class="example">
+0.9219858156028369
+
+</pre>
+
+<p>
+Now repeat the analysis, updating the error rates.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">oracle_fit_em</span> = logistic_regression_errors_em(
+  xt, yt, b=b, logits=sp.logit([0.05, 0.05]), tol=1e-7, max_epochs=1000)
+<span class="org-variable-name">pv</span> = sp.expit(xv @ oracle_fit_em[0])
+pd.Series({
+  <span class="org-string">'observed'</span>: skm.roc_auc_score(yv, pv),
+  <span class="org-string">'true'</span>: skm.roc_auc_score(zv, pv)}, name=<span class="org-string">'roc_auc'</span>)
+</pre>
+</div>
+
+<pre class="example">
+observed    0.854141
+true        0.911281
+Name: roc_auc, dtype: float64
+</pre>
+
+<p>
+Report the accuracy of predicting the mislabeled data points in the
+validation data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">skm.roc_auc_score(yv != zv, np.where(yv, 1 - pv, pv))
+</pre>
+</div>
+
+<pre class="example">
+0.927304964539007
+
+</pre>
+
+<p>
+Now, repeat the analysis, but initialize \(\vb\) at the naive solution, and
+initialize \(\vtheta\) at the default \(\logit(-7) = 10^{-3}\).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit_em</span> = logistic_regression_errors_em(xt, yt, b=fit0, tol=1e-7,
+                                       max_epochs=1000, verbose=<span class="org-constant">True</span>)
 <span class="org-variable-name">pv</span> = sp.expit(xv @ fit_em[0])
 pd.Series({
   <span class="org-string">'observed'</span>: skm.roc_auc_score(yv, pv),
@@ -790,8 +871,8 @@ pd.Series({
 </div>
 
 <pre class="example">
-observed    0.797101
-true        0.843750
+observed    0.854141
+true        0.911281
 Name: roc_auc, dtype: float64
 </pre>
 
@@ -805,7 +886,7 @@ Report the point estimates of the error rates.
 </div>
 
 <pre class="example">
-array([0.00084501, 0.00081056])
+array([1.38606116e-02, 1.94704025e-10])
 
 </pre>
 
@@ -820,39 +901,24 @@ validation data.
 </div>
 
 <pre class="example">
-0.8634751773049646
+0.927304964539007
 
 </pre>
 </div>
 </div>
 
-<div id="outline-container-org7126dea" class="outline-3">
-<h3 id="org7126dea">Approximate Bayesian inference</h3>
-<div class="outline-text-3" id="text-org7126dea">
+<div id="outline-container-orgfde3581" class="outline-3">
+<h3 id="orgfde3581">Approximate Bayesian inference</h3>
+<div class="outline-text-3" id="text-orgfde3581">
 <p>
-Sample from the posterior.
+Sample from the posterior (1.5 minutes).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">samples</span> = logistic_regression_errors_nuts(xt, yt, num_samples=2000, warmup_steps=1000)
+<pre class="src src-ipython">torch.manual_seed(1)
+<span class="org-variable-name">samples</span> = logistic_regression_errors_nuts(xt, yt, num_samples=2000, warmup_steps=1000)
 </pre>
 </div>
-
-<p>
-Report the AUROC of predicting the true labels in the training data.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">pt</span> = np.stack([torch.sigmoid(torch.tensor(xt, dtype=torch.<span class="org-builtin">float</span>) @ bt).numpy()
-               <span class="org-keyword">for</span> bt <span class="org-keyword">in</span> samples.get_samples()[<span class="org-string">'b'</span>]]).mean(axis=0)
-skm.roc_auc_score(zt, pt)
-</pre>
-</div>
-
-<pre class="example">
-0.8662639056294336
-
-</pre>
 
 <p>
 Report the 95% credible intervals for the error rates.
@@ -865,8 +931,27 @@ Report the 95% credible intervals for the error rates.
 
 <pre class="example">
 0         1
-0  0.026715  0.155089
-1  0.011076  0.155695
+0  0.044269  0.161897
+1  0.015789  0.155854
+</pre>
+
+<p>
+Report the AUROC of predicting the true labels in the training data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">xs</span> = torch.tensor(xt, dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">ys</span> = torch.tensor(yt, dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">pt</span> = np.stack([(((1 - tt[1]) ** ys * tt[1] ** (1 - ys)).ravel() * torch.sigmoid(xs @ bt)).numpy()
+               <span class="org-keyword">for</span> tt, bt <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(samples.get_samples()[<span class="org-string">'theta'</span>],
+                                 samples.get_samples()[<span class="org-string">'b'</span>])]).mean(axis=0)
+skm.roc_auc_score(zt, pt)
+</pre>
+</div>
+
+<pre class="example">
+0.9751495423583979
+
 </pre>
 
 <p>
@@ -874,14 +959,17 @@ Report the AUROC of predicting the true labels in the validation data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">pv</span> = np.stack([torch.sigmoid(torch.tensor(xv, dtype=torch.<span class="org-builtin">float</span>) @ bt).numpy()
-               <span class="org-keyword">for</span> bt <span class="org-keyword">in</span> samples.get_samples()[<span class="org-string">'b'</span>]]).mean(axis=0)
+<pre class="src src-ipython"><span class="org-variable-name">xs</span> = torch.tensor(xv, dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">ys</span> = torch.tensor(yv, dtype=torch.<span class="org-builtin">float</span>)
+<span class="org-variable-name">pv</span> = np.stack([(((1 - tt[1]) ** ys * tt[1] ** (1 - ys)).ravel() * torch.sigmoid(xs @ bt)).numpy()
+               <span class="org-keyword">for</span> tt, bt <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(samples.get_samples()[<span class="org-string">'theta'</span>],
+                                 samples.get_samples()[<span class="org-string">'b'</span>])]).mean(axis=0)
 skm.roc_auc_score(zv, pv)
 </pre>
 </div>
 
 <pre class="example">
-0.8375350140056023
+0.984
 
 </pre>
 
@@ -896,7 +984,7 @@ validation data.
 </div>
 
 <pre class="example">
-0.9505208333333334
+0.7057387057387057
 
 </pre>
 </div>
@@ -984,7 +1072,7 @@ responses and effect on genome-wide association studies. Poult Sci
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-07-20 Tue 10:40</p>
+<p class="date">Created: 2021-07-21 Wed 21:45</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

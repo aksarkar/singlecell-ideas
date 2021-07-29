@@ -147,6 +147,8 @@
 * Methods
 ** Data
 
+   - [[https://www.nature.com/articles/s41587-020-0739-1][Stickels et
+     al. 2021]] (SLIDE-seq v2)
    - [[https://support.10xgenomics.com/spatial-gene-expression/datasets/1.1.0/V1_Breast_Cancer_Block_A_Section_1][Breast
      cancer]] (10X Genomics Visium v1.1.0)
    - [[https://github.com/LieberInstitute/spatialLIBD][Human DPFC]] (10X

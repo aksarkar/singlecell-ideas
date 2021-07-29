@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-07-21 Wed 21:45 -->
+<!-- 2021-07-29 Thu 16:05 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logistic regression in the presence of error-prone labels</title>
@@ -261,16 +261,16 @@ for the JavaScript code in this tag.
 <li><a href="#setup">Setup</a></li>
 <li><a href="#org513ce30">Methods</a>
 <ul>
-<li><a href="#orgc039e51">Maximum likelihood estimation</a></li>
-<li><a href="#org34436e8">Approximate Bayesian inference</a></li>
+<li><a href="#org4fa0a5d">Maximum likelihood estimation</a></li>
+<li><a href="#orgfde3581">Approximate Bayesian inference</a></li>
 </ul>
 </li>
 <li><a href="#org0e8fc9e">Results</a>
 <ul>
 <li><a href="#org18caaf4">Simulation</a></li>
 <li><a href="#org7a529a2">Naive analysis</a></li>
-<li><a href="#org4fa0a5d">Maximum likelihood estimation</a></li>
-<li><a href="#orgfde3581">Approximate Bayesian inference</a></li>
+<li><a href="#orgf6f4087">Maximum likelihood estimation</a></li>
+<li><a href="#org19703d6">Approximate Bayesian inference</a></li>
 </ul>
 </li>
 <li><a href="#org858706d">Related work</a></li>
@@ -415,9 +415,9 @@ identify mislabelled data points) from the data, e.g., by estimating \(p(z_i
 <h2 id="org513ce30">Methods</h2>
 <div class="outline-text-2" id="text-org513ce30">
 </div>
-<div id="outline-container-orgc039e51" class="outline-3">
-<h3 id="orgc039e51">Maximum likelihood estimation</h3>
-<div class="outline-text-3" id="text-orgc039e51">
+<div id="outline-container-org4fa0a5d" class="outline-3">
+<h3 id="org4fa0a5d">Maximum likelihood estimation</h3>
+<div class="outline-text-3" id="text-org4fa0a5d">
 <p>
 One can use an EM algorithm to maximize the log likelihood
 (<a href="https://doi.org/10.1007/978-1-4612-5771-4_13">Ekholm and Palmgren 1982</a>,
@@ -616,9 +616,9 @@ new observation \((\tilde{\vx}, \tilde{y})\) as
 </div>
 </div>
 
-<div id="outline-container-org34436e8" class="outline-3">
-<h3 id="org34436e8">Approximate Bayesian inference</h3>
-<div class="outline-text-3" id="text-org34436e8">
+<div id="outline-container-orgfde3581" class="outline-3">
+<h3 id="orgfde3581">Approximate Bayesian inference</h3>
+<div class="outline-text-3" id="text-orgfde3581">
 <p>
 If one assumes a prior \(p(\vb, \vtheta)\), then one can estimate the
 posterior
@@ -779,9 +779,9 @@ Name: roc_auc, dtype: float64
 </div>
 </div>
 
-<div id="outline-container-org4fa0a5d" class="outline-3">
-<h3 id="org4fa0a5d">Maximum likelihood estimation</h3>
-<div class="outline-text-3" id="text-org4fa0a5d">
+<div id="outline-container-orgf6f4087" class="outline-3">
+<h3 id="orgf6f4087">Maximum likelihood estimation</h3>
+<div class="outline-text-3" id="text-orgf6f4087">
 <p>
 Fit the model to the simulated data by maximizing the (unpenalized)
 likelihood. First, initialize at the oracle values, fix the error rates, and
@@ -907,9 +907,9 @@ validation data.
 </div>
 </div>
 
-<div id="outline-container-orgfde3581" class="outline-3">
-<h3 id="orgfde3581">Approximate Bayesian inference</h3>
-<div class="outline-text-3" id="text-orgfde3581">
+<div id="outline-container-org19703d6" class="outline-3">
+<h3 id="org19703d6">Approximate Bayesian inference</h3>
+<div class="outline-text-3" id="text-org19703d6">
 <p>
 Sample from the posterior (1.5 minutes).
 </p>
@@ -1072,7 +1072,7 @@ responses and effect on genome-wide association studies. Poult Sci
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-07-21 Wed 21:45</p>
+<p class="date">Created: 2021-07-29 Thu 16:05</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

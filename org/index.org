@@ -43,6 +43,7 @@ analysis plus some related topics.
 
 * General methods development
 
+  - [[file:vae-unamortized.org][VAEs without amortized inference]]
   - [[file:hpmf.org][Hierarchical PMF]]
   - [[file:logistic-regression-labelling-errors.org][Logistic regression in the presence of error-prone labels]]
   - [[file:influence.org][Is eQTL analysis robust to removing some data points?]]

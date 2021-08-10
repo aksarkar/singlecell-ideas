@@ -15,6 +15,8 @@
   \newcommand\va{\mathbf{a}}
   \newcommand\vb{\mathbf{b}}
   \newcommand\vs{\mathbf{s}}
+  \newcommand\vl{\mathbf{l}}
+  \newcommand\vf{\mathbf{f}}
   \)
 
   \begin{align}
@@ -42,7 +44,7 @@
   #+END_SRC
 
   #+RESULTS:
-  : 1
+  : 2
 
   #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="4G") :exports none :dir /scratch/midway2/aksarkar/singlecell
 
@@ -97,7 +99,7 @@
    ([[https://dx.doi.org/10.1155/2009/785152][Cemgil 2009]])
 
    \begin{align}
-     x_{ij} &= \sum_{k=1}^K z_{ijk}\\
+     x_{ij} &= \textstyle\sum_k z_{ijk}\\
      z_{ijk} \mid l_{ik}, f_{jk} &\sim \Pois(l_{ik} f_{jk})\\
      l_{ik} &\sim \Gam(a_{lk}, b_{lk})\\
      f_{jk} &\sim \Gam(a_{fk}, b_{fk}).
@@ -415,6 +417,77 @@
    :RESULTS:
    # Out[7]:
    :END:
+
+** Alternating Poisson Regression
+
+   [[https://arxiv.org/abs/2105.13440][Carbonetto et al. 2021]] propose
+   /Alternating Poisson Regression/ as a general algorithmic framework for
+   fitting PMF. The essence of the approach is that the objective function (for
+   MLE) can be written
+
+   \begin{align}
+     \ell &= \sum_i \ell_i\\
+     \ell_i &= \sum_j x_{ij} \ln (\vl_i' \vf_j) - \vl_i' \vf_j - \ln\Gam(x_{ij} + 1),
+   \end{align}
+
+   which corresponds to estimating \(\vl_i\) by fitting \(n\) regression
+   subproblems of the form (fixing \(i\))
+
+   \begin{align}
+     x_j \sim \Pois(\vl' \vf_j)
+   \end{align}
+
+   by maximum likelihood. By symmetry, one can also estimate \(\vf_j\) by
+   fitting \(p\) regression subproblems. Here, we show that HPMF can be
+   similarly decomposed into problems of the form
+
+   \begin{align}
+     x_{j} &\sim \Pois(\vl' \vf_j)\\
+     l_{k} &\sim \Gam(a_k, b_k).
+   \end{align}
+
+   Fixing \(i\), consider the augmented model
+
+   \begin{align}
+     x_{j} &= \textstyle\sum_k z_{jk}\\
+     z_{jk} &\sim \Pois(l_{k} f_{jk})\\
+     l_{k} &\sim \Gam(a_k, b_k).
+   \end{align}
+
+   The log joint probability
+
+   \begin{equation}
+     \ln p = \sum_{j, k} \left[z_{jk} \ln (l_k f_{jk}) - l_k f_{jk}\right] + \sum_k \left[a_k \ln b_k + (a_k - 1) \ln l_k - l_k b_k - \ln\Gamma(a_k)\right] + \mathrm{const},
+   \end{equation}
+
+   yielding coordinate updates
+
+   \begin{align}
+     q(z_{j1}, \ldots, z_{jK}) &= \Mult(x_j; \pi_{j1}, \ldots, \pi_{jK})\\
+     \pi_{jk} &\propto \exp\left(\ln f_{jk} + \E[\ln l_k]\right)\\
+     q(l_k) &= \textstyle\Gam(\underbrace{\sum_j \E[z_{jk}] + a_k}_{\triangleq \alpha_k}, \underbrace{\sum_j x_j + b_k}_{\triangleq \beta_k}).
+   \end{align}
+
+   The ELBO
+
+   \begin{multline}
+     \ell_i = \sum_{j, k} \left[\E[z_{jk}] (\ln f_{jk} + \E[\ln l_k] - \ln \pi_{jk}) - \E[l_k] f_{jk} - \ln\Gamma(x_j + 1)\right]\\
+     + \sum_k \left[(a_k - \alpha_k) \E[\ln l_k] - (b_k - \beta_k) \E[l_k] + a_k \ln b_k - \alpha_k \ln \beta_k + \ln\Gamma(a_k) - \ln\Gamma(\alpha_k)\right],
+   \end{multline}
+
+   which is clearly the terms of the HPMF ELBO above involving \(i\). Note that
+   one cannot update \(a_k, b_k\) within this subproblem, since they are
+   shared between subproblems.
+
+   Using a similar argument as made above for full HPMF, one can plug in
+   \(\E[z_{jk}]\), yielding
+
+   \begin{gather}
+     \sum_{j, k} \E[z_{jk}] (\ln f_{jk} + \E[\ln l_k] - \ln \pi_{jk}) = \sum_j x_j \ln t_j\\
+     \sum_j \E[z_{jk}] = \E[\ln l_k] \sum_j \frac{x_j f_{jk}}{t_j},
+   \end{gather}
+
+   where \(t_j \triangleq \sum_k \exp(\ln f_{jk} + \E[\ln l_k])\).
 
 * Results
 ** Simulated example

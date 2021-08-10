@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-08-09 Mon 19:52 -->
+<!-- 2021-08-09 Mon 19:55 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Single cell ideas</title>
+<title>PCA of bulk RNA-seq data</title>
 <meta name="generator" content="Org mode">
 <meta name="author" content="Abhishek Sarkar">
 <style type="text/css">
@@ -230,119 +230,208 @@ for the JavaScript code in this tag.
 </head>
 <body>
 <div id="content">
-<h1 class="title">Single cell ideas</h1>
+<h1 class="title">PCA of bulk RNA-seq data</h1>
 <div id="table-of-contents">
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#orgd75b5ec">Expression models</a></li>
-<li><a href="#orga0fd2f1">Single cell applications</a></li>
-<li><a href="#org782d899">Other applications</a></li>
-<li><a href="#org81a6dcc">Theory</a></li>
-<li><a href="#org844768b">General methods development</a></li>
-<li><a href="#orgc8f4f70">Computation</a></li>
+<li><a href="#org4ee47d5">Introduction</a></li>
+<li><a href="#setup">Setup</a></li>
+<li><a href="#orgac42420">PCA of GEUVADIS RPKM</a></li>
+<li><a href="#orgb68ae3d">PCA of GEUVADIS relative abundances</a></li>
 </ul>
 </div>
 </div>
+
+<div id="outline-container-org4ee47d5" class="outline-2">
+<h2 id="org4ee47d5">Introduction</h2>
+<div class="outline-text-2" id="text-org4ee47d5">
 <p>
-A collection of various (often incomplete or broken) ideas for single cell
-analysis plus some related topics.
+Jean Morrison observed that the first principal component explained 97% of
+variance in a bulk RNA-seq data set, and the loadings were highly correlated
+with per-gene mean expression. Here, we show that this result is expected
+when analyzing the gene-by-sample matrix &#x2013; it corresponds to the fact that
+variation in RNA-seq levels can be adequately described simply by a mean and
+a variance per gene.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgaeb46ff" class="outline-2">
+<h2 id="setup"><a id="orgaeb46ff"></a>Setup</h2>
+<div class="outline-text-2" id="text-setup">
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
+<span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
+<span class="org-keyword">import</span> sklearn.decomposition <span class="org-keyword">as</span> skd
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">%matplotlib inline
+%config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgac42420" class="outline-2">
+<h2 id="orgac42420">PCA of GEUVADIS RPKM</h2>
+<div class="outline-text-2" id="text-orgac42420">
+<p>
+Read the matrix of RPKM.
 </p>
 
-<div id="outline-container-orgd75b5ec" class="outline-2">
-<h2 id="orgd75b5ec">Expression models</h2>
-<div class="outline-text-2" id="text-orgd75b5ec">
-<ul class="org-ul">
-<li><a href="flows.html"><b>Normalizing flows for EBPM</b></a></li>
-<li><a href="spatial-vae.html"><b>Convolutional VAE for spatial transcriptomic data</b></a></li>
-<li><a href="zinb-em.html">EM algorithm for point-Gamma expression model</a></li>
-<li><a href="taylor.html">Taylor expansions for single cell transforms</a></li>
-<li><a href="zinb-vae-gmm.html">Deep unsupervised clustering of scRNA-seq data</a></li>
-<li><a href="nbmix.html">Model-based clustering of scRNA-seq data</a></li>
-<li><a href="voom.html">An improved voom transform for scRNA-seq data</a></li>
-<li><a href="mpebpm.html">Massively Parallel Empirical Bayes Poisson Means</a></li>
-</ul>
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = pd.read_table(<span class="org-string">'/project2/compbio/geuvadis/analysis_results/GD462.GeneQuantRPKM.50FN.samplename.resk10.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+dat.shape
+</pre>
+</div>
+
+<pre class="example">
+(23722, 466)
+
+</pre>
+
+<p>
+Compute the truncated SVD.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit</span> = skd.PCA(n_components=10, random_state=1).fit(dat.iloc[:,4:].values)
+</pre>
+</div>
+
+<p>
+Report the variance explained by the top PCs.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.bar(np.arange(10), fit.explained_variance_ratio_, color=<span class="org-string">'k'</span>)
+plt.xticks(np.arange(10), 1 + np.arange(10))
+plt.ylim(0, 1)
+plt.xlabel(<span class="org-string">'Principal component'</span>)
+plt.ylabel(<span class="org-string">'PVE'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pca.org/geuvadis-rpkm-scree.png" alt="geuvadis-rpkm-scree.png">
+</p>
+</div>
+
+<p>
+Plot the sample loading on the first PC against the mean RPKM per gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.scatter(fit.transform(dat.iloc[:,4:].values)[:,0], dat.iloc[:,4:].mean(axis=1), s=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Loading on PC1'</span>)
+plt.ylabel(<span class="org-string">'Mean RPKM'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pca.org/geuvadis-rpkm-pc1-total.png" alt="geuvadis-rpkm-pc1-total.png">
+</p>
+</div>
 </div>
 </div>
 
-<div id="outline-container-orga0fd2f1" class="outline-2">
-<h2 id="orga0fd2f1">Single cell applications</h2>
-<div class="outline-text-2" id="text-orga0fd2f1">
-<ul class="org-ul">
-<li><a href="leiden.html">Pathological behavior of the Leiden algorithm</a></li>
-<li><a href="expr-var-struct.html">Learning the structure of RNA expression variation</a></li>
-<li><a href="expr-var-buffering.html">Buffering of RNA expression variation</a></li>
-<li><a href="pglmm.html">Poisson GLMM for differential expression</a></li>
-<li><a href="time-course.html">Fully unsupervised topic models of scRNA-seq time course data</a></li>
-<li><a href="diff-var.html">Differential variance analysis</a></li>
-<li><a href="montoro.html">Deconvolution of Montoro et al.</a></li>
-<li><a href="pseudobulk.html">Alternative approaches to scRNA-seq pseudobulk models</a></li>
-<li><a href="scqtl.html">Single cell QTL mapping via sparse multiple regression</a></li>
-<li><a href="trajectory.html">Cardiac trajectory prediction</a></li>
-<li><a href="experimental-finemapping.html">Experimental fine-mapping of QTLs from
-scRNA-seq data</a></li>
-<li><a href="alignment.html">Single cell alignment</a></li>
-<li><a href="pop-structure.html">Population structure in single cell data</a></li>
-</ul>
-</div>
+<div id="outline-container-orgb68ae3d" class="outline-2">
+<h2 id="orgb68ae3d">PCA of GEUVADIS relative abundances</h2>
+<div class="outline-text-2" id="text-orgb68ae3d">
+<p>
+Read the matrix of read counts.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">reads</span> = pd.read_table(<span class="org-string">'/project2/compbio/geuvadis/analysis_results/GD660.GeneQuantCount.txt.gz'</span>, sep=<span class="org-string">'\t'</span>)
+</pre>
 </div>
 
-<div id="outline-container-org782d899" class="outline-2">
-<h2 id="org782d899">Other applications</h2>
-<div class="outline-text-2" id="text-org782d899">
-<ul class="org-ul">
-<li><a href="pca.html">PCA of bulk RNA-seq data</a></li>
-<li><a href="species-var.html">Correlation of gene expression variance across species</a></li>
-</ul>
-</div>
+<p>
+Compute relative abundances.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">temp</span> = reads.iloc[:,4:].values
+<span class="org-variable-name">lam</span> = temp / temp.<span class="org-builtin">sum</span>(axis=0)
+</pre>
 </div>
 
-<div id="outline-container-org81a6dcc" class="outline-2">
-<h2 id="org81a6dcc">Theory</h2>
-<div class="outline-text-2" id="text-org81a6dcc">
-<ul class="org-ul">
-<li><a href="grand-challenges.html"><b>Grand challenges in single-cell data science</b></a></li>
-<li><a href="pois-beta.html">Poisson-Beta model</a></li>
-</ul>
-</div>
+<p>
+Compute the truncated SVD.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">fit_lam</span> = skd.PCA(n_components=10, random_state=1).fit(lam)
+</pre>
 </div>
 
-<div id="outline-container-org844768b" class="outline-2">
-<h2 id="org844768b">General methods development</h2>
-<div class="outline-text-2" id="text-org844768b">
-<ul class="org-ul">
-<li><a href="vae-unamortized.html">VAEs without amortized inference</a></li>
-<li><a href="hpmf.html">Hierarchical PMF</a></li>
-<li><a href="logistic-regression-labelling-errors.html">Logistic regression in the presence of error-prone labels</a></li>
-<li><a href="influence.html">Is eQTL analysis robust to removing some data points?</a></li>
-<li><a href="horseshoe.html">Empirical Bayes inference for the horseshoe prior</a></li>
-<li><a href="sparse-pois-fa.html">Sparse Poisson Factor Analysis</a></li>
-<li><a href="prior-scaling.html">Scaling priors for regression models</a></li>
-<li><a href="rpp.html">Parallel computation of randomized quantiles</a></li>
-<li><a href="noisy-topics.html">Noisy topic models</a></li>
-<li><a href="mnn.html">Mutual nearest neighbors in topic model space</a></li>
-<li><a href="ebpmf.html">Empirical Bayes Poisson Matrix Factorization</a></li>
-<li><a href="mediation.html">Causal mediation analysis</a></li>
-<li><a href="gom.html">Two-group grade of membership model</a></li>
-<li><a href="wlra.html">Weighted low rank approximation</a></li>
-<li><a href="susie.html">Multivariate fine mapping</a></li>
-</ul>
-</div>
+<p>
+Report the variance explained by the top PCs.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(4, 2)
+plt.bar(np.arange(10), fit_lam.explained_variance_ratio_, color=<span class="org-string">'k'</span>)
+plt.xticks(np.arange(10), 1 + np.arange(10))
+plt.ylim(0, 1)
+plt.xlabel(<span class="org-string">'Principal component'</span>)
+plt.ylabel(<span class="org-string">'PVE'</span>)
+plt.tight_layout()
+</pre>
 </div>
 
-<div id="outline-container-orgc8f4f70" class="outline-2">
-<h2 id="orgc8f4f70">Computation</h2>
-<div class="outline-text-2" id="text-orgc8f4f70">
-<ul class="org-ul">
-<li><a href="cellassign.html">Installing cellAssign</a></li>
-<li><a href="tsne.html">Pathological input to t-SNE</a></li>
-</ul>
+
+<div class="figure">
+<p><img src="figure/pca.org/geuvadis-lam-scree.png" alt="geuvadis-lam-scree.png">
+</p>
+</div>
+
+<p>
+Plot the sample loading on the first PC against the mean relative abundance
+per gene.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">plt.clf()
+plt.gcf().set_size_inches(3, 3)
+plt.scatter(fit_lam.transform(lam)[:,0], lam.mean(axis=1), s=1, c=<span class="org-string">'k'</span>)
+plt.xlabel(<span class="org-string">'Loading on PC1'</span>)
+plt.ylabel(<span class="org-string">'Mean relative abundance'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/pca.org/geuvadis-lam-pc1-total.png" alt="geuvadis-lam-pc1-total.png">
+</p>
+</div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-08-09 Mon 19:52</p>
+<p class="date">Created: 2021-08-09 Mon 19:55</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

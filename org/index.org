@@ -34,6 +34,7 @@ analysis plus some related topics.
 
 * Other applications
 
+  - [[file:pca.org][PCA of bulk RNA-seq data]]
   - [[file:species-var.org][Correlation of gene expression variance across species]]
 
 * Theory

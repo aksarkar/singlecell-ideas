@@ -1,0 +1,194 @@
+#+TITLE: PCA of bulk RNA-seq data
+#+SETUPFILE: setup.org
+
+* Introduction
+
+  Jean Morrison observed that the first principal component explained 97% of
+  variance in a bulk RNA-seq data set, and the loadings were highly correlated
+  with per-gene mean expression. Here, we show that this result is expected
+  when analyzing the gene-by-sample matrix -- it corresponds to the fact that
+  variation in RNA-seq levels can be adequately described simply by a mean and
+  a variance per gene.
+
+* Setup
+  :PROPERTIES:
+  :CUSTOM_ID: setup
+  :END:
+
+  #+BEGIN_SRC emacs-lisp :exports none
+    (add-to-list 'python-shell-completion-native-disabled-interpreters "jupyter")
+    (org-babel-lob-ingest "/home/aksarkar/.emacs.d/org-templates/library.org")
+  #+END_SRC
+
+  #+RESULTS:
+  : 2
+
+  #+CALL: ipython3(venv="singlecell",partition="mstephens",memory="4G") :exports none :dir /scratch/midway2/aksarkar/singlecell
+
+  #+BEGIN_SRC ipython
+    import numpy as np
+    import pandas as pd
+    import sklearn.decomposition as skd
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[1]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    %matplotlib inline
+    %config InlineBackend.figure_formats = set(['retina'])
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[2]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[3]:
+  :END:
+
+* PCA of GEUVADIS RPKM
+
+  Read the matrix of RPKM.
+
+  #+BEGIN_SRC ipython :async t
+    dat = pd.read_table('/project2/compbio/geuvadis/analysis_results/GD462.GeneQuantRPKM.50FN.samplename.resk10.txt.gz', sep='\t')
+    dat.shape
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[10]:
+  : (23722, 466)
+  :END:
+
+  Compute the truncated SVD.
+
+  #+BEGIN_SRC ipython :async t
+    fit = skd.PCA(n_components=10, random_state=1).fit(dat.iloc[:,4:].values)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[11]:
+  :END:
+
+  Report the variance explained by the top PCs.
+
+  #+BEGIN_SRC ipython :ipyfile figure/pca.org/geuvadis-rpkm-scree.png
+    plt.clf()
+    plt.gcf().set_size_inches(4, 2)
+    plt.bar(np.arange(10), fit.explained_variance_ratio_, color='k')
+    plt.xticks(np.arange(10), 1 + np.arange(10))
+    plt.ylim(0, 1)
+    plt.xlabel('Principal component')
+    plt.ylabel('PVE')
+    plt.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[12]:
+  [[file:figure/pca.org/geuvadis-rpkm-scree.png]]
+  :END:
+
+  Plot the sample loading on the first PC against the mean RPKM per gene.
+
+  #+BEGIN_SRC ipython :ipyfile figure/pca.org/geuvadis-rpkm-pc1-total.png
+    plt.clf()
+    plt.gcf().set_size_inches(3, 3)
+    plt.scatter(fit.transform(dat.iloc[:,4:].values)[:,0], dat.iloc[:,4:].mean(axis=1), s=1, c='k')
+    plt.xlabel('Loading on PC1')
+    plt.ylabel('Mean RPKM')
+    plt.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[18]:
+  [[file:figure/pca.org/geuvadis-rpkm-pc1-total.png]]
+  :END:
+
+* PCA of GEUVADIS relative abundances
+
+  Read the matrix of read counts.
+
+  #+BEGIN_SRC ipython
+    reads = pd.read_table('/project2/compbio/geuvadis/analysis_results/GD660.GeneQuantCount.txt.gz', sep='\t')
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[4]:
+  :END:
+
+  Compute relative abundances.
+
+  #+BEGIN_SRC ipython
+    temp = reads.iloc[:,4:].values
+    lam = temp / temp.sum(axis=0)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[5]:
+  :END:
+
+  Compute the truncated SVD.
+
+  #+BEGIN_SRC ipython :async t
+    fit_lam = skd.PCA(n_components=10, random_state=1).fit(lam)
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[8]:
+  :END:
+
+  Report the variance explained by the top PCs.
+
+  #+BEGIN_SRC ipython :ipyfile figure/pca.org/geuvadis-lam-scree.png
+    plt.clf()
+    plt.gcf().set_size_inches(4, 2)
+    plt.bar(np.arange(10), fit_lam.explained_variance_ratio_, color='k')
+    plt.xticks(np.arange(10), 1 + np.arange(10))
+    plt.ylim(0, 1)
+    plt.xlabel('Principal component')
+    plt.ylabel('PVE')
+    plt.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[13]:
+  [[file:figure/pca.org/geuvadis-lam-scree.png]]
+  :END:
+
+  Plot the sample loading on the first PC against the mean relative abundance
+  per gene.
+
+  #+BEGIN_SRC ipython :ipyfile figure/pca.org/geuvadis-lam-pc1-total.png
+    plt.clf()
+    plt.gcf().set_size_inches(3, 3)
+    plt.scatter(fit_lam.transform(lam)[:,0], lam.mean(axis=1), s=1, c='k')
+    plt.xlabel('Loading on PC1')
+    plt.ylabel('Mean relative abundance')
+    plt.tight_layout()
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[19]:
+  [[file:figure/pca.org/geuvadis-lam-pc1-total.png]]
+  :END:
+

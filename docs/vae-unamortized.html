@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-07-29 Thu 16:49 -->
+<!-- 2021-08-25 Wed 18:48 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VAEs without amortized inference</title>
@@ -589,6 +589,13 @@ plt.tight_layout()
 </div>
 
 <p>
+<i>Remark</i> <a href="https://arxiv.org/abs/1801.03558">Cremer et al. 2018</a> discuss the
+&ldquo;amortization gap&rdquo; we observe here, that results from the fact that the
+encoder network produces suboptimal variational parameters for each data
+point.
+</p>
+
+<p>
 Compare the fitted values with the observed values.
 </p>
 
@@ -621,7 +628,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-07-29 Thu 16:49</p>
+<p class="date">Created: 2021-08-25 Wed 18:48</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

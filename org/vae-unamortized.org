@@ -328,6 +328,11 @@
   [[file:figure/vae-unamortized.org/sim-uvae-trace.png]]
   :END:
 
+  /Remark/ [[https://arxiv.org/abs/1801.03558][Cremer et al. 2018]] discuss the
+  "amortization gap" we observe here, that results from the fact that the
+  encoder network produces suboptimal variational parameters for each data
+  point.
+
   Compare the fitted values with the observed values.
 
   #+BEGIN_SRC ipython :ipyfile figure/vae-unamortized.org/sim-fit.png

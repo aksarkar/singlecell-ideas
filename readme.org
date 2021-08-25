@@ -49,6 +49,7 @@
     git+https://github.com/aksarkar/scaa.git#egg=scaa
     git+https://github.com/aksarkar/wlra.git#egg=wlra
     h5py==2.10.0
+    hyperopt
     leidenalg
     pyro-ppl
     rpy2==3.2.4

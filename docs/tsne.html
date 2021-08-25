@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-01-08 Fri 12:06 -->
+<!-- 2021-08-25 Wed 18:48 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pathological input to t-SNE</title>
@@ -248,7 +248,7 @@ for the JavaScript code in this tag.
 <p>
 Peter Carbonetto reported an issue where t-SNE learns clusters from a topic
 model embedding where it shouldn&rsquo;t. We give a simple example with
-continuously varying data where t-SNE invents clusters.
+continuously varying data where both t-SNE and UMAP invent clusters.
 </p>
 </div>
 </div>
@@ -287,7 +287,7 @@ Generate data varying in one dimension only
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">n</span> = 500
+<pre class="src src-ipython"><span class="org-variable-name">n</span> = 2000
 <span class="org-variable-name">x</span> = np.linspace(0, 1, n)
 <span class="org-variable-name">c</span> = colorcet.cm[<span class="org-string">'bmy'</span>](x)
 <span class="org-variable-name">y</span> = np.zeros(n)
@@ -363,7 +363,7 @@ fig.tight_layout()
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-01-08 Fri 12:06</p>
+<p class="date">Created: 2021-08-25 Wed 18:48</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

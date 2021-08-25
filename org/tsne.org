@@ -5,7 +5,7 @@
 
   Peter Carbonetto reported an issue where t-SNE learns clusters from a topic
   model embedding where it shouldn't. We give a simple example with
-  continuously varying data where t-SNE invents clusters.
+  continuously varying data where both t-SNE and UMAP invent clusters.
 
 * Setup
   :PROPERTIES:
@@ -18,7 +18,7 @@
   #+END_SRC
 
   #+RESULTS:
-  : 1
+  : 2
 
   #+CALL: ipython3(venv="singlecell",partition="mstephens") :exports none :dir /scratch/midway2/aksarkar/modes
 
@@ -30,7 +30,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[1]:
+  # Out[2]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -40,7 +40,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[2]:
+  # Out[3]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -52,7 +52,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[4]:
   :END:
 
 * Example
@@ -60,7 +60,7 @@
   Generate data varying in one dimension only
 
   #+BEGIN_SRC ipython
-    n = 500
+    n = 2000
     x = np.linspace(0, 1, n)
     c = colorcet.cm['bmy'](x)
     y = np.zeros(n)
@@ -69,7 +69,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[4]:
+  # Out[10]:
   :END:
 
   #+BEGIN_SRC ipython :async t
@@ -82,7 +82,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[31]:
+  # Out[11]:
   :END:
 
   #+BEGIN_SRC ipython :ipyfile figure/tsne.org/line.png
@@ -100,7 +100,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[32]:
+  # Out[12]:
   [[file:figure/tsne.org/line.png]]
   :END:
 
@@ -117,7 +117,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[6]:
+  # Out[13]:
   :END:
 
   #+BEGIN_SRC ipython :ipyfile figure/tsne.org/line-umap.png
@@ -136,6 +136,6 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[12]:
+  # Out[14]:
   [[file:figure/tsne.org/line-umap.png]]
   :END:

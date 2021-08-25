@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-05-14 Thu 23:52 -->
+<!-- 2021-08-25 Wed 18:52 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cardiac trajectory prediction</title>
@@ -227,28 +227,6 @@ for the JavaScript code in this tag.
  }
 /*]]>*///-->
 </script>
-<script type="text/x-mathjax-config">
-    MathJax.Hub.Config({
-        displayAlign: "center",
-        displayIndent: "0em",
-
-        "HTML-CSS": { scale: 100,
-                        linebreaks: { automatic: "false" },
-                        webFont: "TeX"
-                       },
-        SVG: {scale: 100,
-              linebreaks: { automatic: "false" },
-              font: "TeX"},
-        NativeMML: {scale: 100},
-        TeX: { equationNumbers: {autoNumber: "AMS"},
-               MultLineWidth: "85%",
-               TagSide: "right",
-               TagIndent: ".8em"
-             }
-});
-</script>
-<script type="text/javascript"
-        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_HTML"></script>
 </head>
 <body>
 <div id="content">
@@ -258,20 +236,21 @@ for the JavaScript code in this tag.
 <div id="text-table-of-contents">
 <ul>
 <li><a href="#orgf17561b">Introduction</a></li>
-<li><a href="#org4035f92">Setup</a></li>
+<li><a href="#orgd5fe55c">Setup</a></li>
 <li><a href="#orgcfb7f09">Materials and methods</a>
 <ul>
-<li><a href="#orga1eaf62">iPSC-derived cardiomyocyte differentiation time course data</a></li>
+<li><a href="#orgca3dd86">Selewa et al. iPSC-CM data</a></li>
+<li><a href="#org41e4dbb">Elorbany et al. iPSC-CM data</a></li>
 </ul>
 </li>
 <li><a href="#org2a6603e">Results</a>
 <ul>
-<li><a href="#org74318a5">NMF</a></li>
 <li><a href="#orga00ec74">Diffusion pseudotime</a></li>
-<li><a href="#org7ba5af5">NMF-based pseudotime</a></li>
-<li><a href="#org1b11bb5">NMF pseudotime</a></li>
-<li><a href="#org2184063">Per individual analysis</a></li>
-<li><a href="#org195cdd7">ZINB</a></li>
+<li><a href="#orgbddb008">Dependence of DPT on preprocessing</a></li>
+<li><a href="#org1c0b384">NMF-based pseudotime</a></li>
+<li><a href="#orgdef75dc">NMF pseudotime</a></li>
+<li><a href="#org80fe738">Per individual analysis</a></li>
+<li><a href="#orgf6fa745">Geodesics</a></li>
 </ul>
 </li>
 </ul>
@@ -283,44 +262,60 @@ for the JavaScript code in this tag.
 <div class="outline-text-2" id="text-orgf17561b">
 <p>
 Here, we investigate some ideas for modeling differentiation of iPSCs into
-cardiomyocytes.
+cardiomyocytes. Our goal is to build intuition about methods which model gene
+expression trajectories.
 </p>
 
 <p>
-Our goal is to build intuition about methods which learn gene expression
-trajectories.
+We revisit this in light of a recent publication
+(<a href="https://www.nature.com/articles/s41588-021-00894-z">Morabito et
+al. 2021</a>), that used a recurrent VAE
+(<a href="https://academic.oup.com/bioinformatics/advance-article/doi/10.1093/bioinformatics/btab260/6273572">Mitra
+and MacLean 2021</a>). The input to the VAE was diffusion pseudotime (DPT),
+which seems suspect given our preliminary results on the uncertainty of DPT.
 </p>
 </div>
 </div>
 
-<div id="outline-container-org4035f92" class="outline-2">
-<h2 id="org4035f92">Setup</h2>
-<div class="outline-text-2" id="text-org4035f92">
+<div id="outline-container-orgd5fe55c" class="outline-2">
+<h2 id="orgd5fe55c">Setup</h2>
+<div class="outline-text-2" id="text-orgd5fe55c">
 <div class="org-src-container">
 <pre class="src src-ipython" id="org9f8bc1c"><span class="org-keyword">import</span> anndata
-<span class="org-keyword">import</span> gzip
+<span class="org-keyword">import</span> collections
+<span class="org-keyword">import</span> functools <span class="org-keyword">as</span> ft
+<span class="org-keyword">import</span> hyperopt <span class="org-keyword">as</span> hp
+<span class="org-keyword">import</span> mpebpm
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
-<span class="org-keyword">import</span> scanpy.api <span class="org-keyword">as</span> sc
-<span class="org-keyword">import</span> scipy.io <span class="org-keyword">as</span> si
+<span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
 <span class="org-keyword">import</span> scipy.sparse <span class="org-keyword">as</span> ss
+<span class="org-keyword">import</span> scipy.special <span class="org-keyword">as</span> sp
 <span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
-<span class="org-keyword">import</span> scqtl
-<span class="org-keyword">import</span> scvi.dataset
-<span class="org-keyword">import</span> scvi.models
-<span class="org-keyword">import</span> scvi.inference
-<span class="org-keyword">import</span> sklearn.decomposition <span class="org-keyword">as</span> skd
-<span class="org-keyword">import</span> sklearn.linear_model <span class="org-keyword">as</span> sklm
-<span class="org-keyword">import</span> umap
+<span class="org-keyword">import</span> torch
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> rpy2.robjects.packages
+<span class="org-keyword">import</span> rpy2.robjects.pandas2ri
+rpy2.robjects.pandas2ri.activate()
 </pre>
 </div>
 
 <div class="org-src-container">
 <pre class="src src-ipython">%matplotlib inline
 %config <span class="org-variable-name">InlineBackend.figure_formats</span> = <span class="org-builtin">set</span>([<span class="org-string">'retina'</span>])
-<span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
 <span class="org-keyword">import</span> matplotlib
 <span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
+<span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
 </pre>
 </div>
 </div>
@@ -330,56 +325,143 @@ trajectories.
 <h2 id="orgcfb7f09">Materials and methods</h2>
 <div class="outline-text-2" id="text-orgcfb7f09">
 </div>
-<div id="outline-container-orga1eaf62" class="outline-3">
-<h3 id="orga1eaf62">iPSC-derived cardiomyocyte differentiation time course data</h3>
-<div class="outline-text-3" id="text-orga1eaf62">
+<div id="outline-container-orgca3dd86" class="outline-3">
+<h3 id="orgca3dd86">Selewa et al. iPSC-CM data</h3>
+<div class="outline-text-3" id="text-orgca3dd86">
 <p>
-We differentiated iPSCs into cardiomyocytes from two individuals, and
-performed Drop-Seq and DroNC-Seq at 4 and 5 time points respectively: 0, 1,
-3, 7, and 15 days.
+<a href="https://www.nature.com/articles/s41598-020-58327-6">Selewa et al. 2020</a>
+differentiated iPSCs derived from from two donor individuals into
+cardiomyocytes, and performed Drop-Seq and DroNC-Seq at 4 and 5 time points,
+respectively: 0, 1, 3, 7, and 15 days.
 </p>
 
 <p>
-Read and compress the Drop-Seq data.
+Read the data.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">data</span> = pd.read_table(<span class="org-string">'/project2/onibasu/data/project_CZI/DROP_combined_counts.tsv.gz'</span>, index_col=0)
-<span class="org-variable-name">counts</span> = ss.csr_matrix(data.values)
-<span class="org-keyword">with</span> gzip.<span class="org-builtin">open</span>(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/counts.mtx.gz'</span>, <span class="org-string">'wb'</span>) <span class="org-keyword">as</span> f:
-  si.mmwrite(f, counts)
-data.index.to_series().to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/genes.txt'</span>, index=<span class="org-constant">None</span>)
-pd.DataFrame(data.columns.to_series().<span class="org-builtin">apply</span>(<span class="org-keyword">lambda</span> x: pd.Series(x.split(<span class="org-string">'_'</span>)))).to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/cells.txt'</span>, index=<span class="org-constant">None</span>, sep=<span class="org-string">' '</span>)
+<pre class="src src-ipython"><span class="org-variable-name">raw</span> = pd.read_table(<span class="org-string">'/project2/onibasu/data/public_html/Alan_CZI/DGE_Matrices/DROP_combined_counts.tsv.gz'</span>, index_col=0)
 </pre>
 </div>
 
 <p>
-Read the compressed data.
+Convert to <code>adata</code>.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython" id="orgb42b316"><span class="org-variable-name">counts</span> = si.mmread(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/counts.mtx.gz'</span>)
-<span class="org-variable-name">genes</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/genes.txt'</span>, header=<span class="org-constant">None</span>, index_col=0)
-<span class="org-variable-name">cells</span> = pd.read_table(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/cells.txt'</span>, sep=<span class="org-string">' '</span>)
-<span class="org-variable-name">cells.columns</span> = [<span class="org-string">'barcode'</span>, <span class="org-string">'day'</span>, <span class="org-string">'ind'</span>]
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.AnnData(ss.csc_matrix(raw.values.T),
+                      obs=pd.DataFrame([pd.Series(x) <span class="org-keyword">for</span> x <span class="org-keyword">in</span> raw.columns.<span class="org-builtin">str</span>.split(<span class="org-string">'_'</span>)]),
+                      var=raw.index.to_series().to_frame())
 </pre>
 </div>
 
 <p>
-Keep genes detected in at least 10% of cells.
+Fix up the column names for <code>h5ad</code> output.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython" id="orged6de86"><span class="org-variable-name">adata</span> = anndata.AnnData(counts.T.tocsr(), obs=cells, var=genes)
-sc.pp.filter_genes(adata, min_cells=.1 * adata.shape[0])
-adata.shape
+<pre class="src src-ipython"><span class="org-variable-name">dat.var.columns</span> = [<span class="org-string">'gene'</span>]
+<span class="org-variable-name">dat.obs.columns</span> = [<span class="org-string">'barcode'</span>, <span class="org-string">'day'</span>, <span class="org-string">'donor'</span>, <span class="org-string">'dummy1'</span>, <span class="org-string">'dummy2'</span>]
+</pre>
+</div>
+
+<p>
+Drop genes with no non-zero observations.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">sc.pp.filter_genes(dat, min_cells=1)
+dat.shape
 </pre>
 </div>
 
 <pre class="example">
-(25311, 1898)
+(20816, 24486)
 
 </pre>
+
+<p>
+Write out to <code>h5ad</code>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython">dat.write(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/GSE129096_DROP_combined_allcells.h5ad'</span>)
+</pre>
+</div>
+
+<p>
+Read the <code>h5ad</code>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/GSE129096_DROP_combined_allcells.h5ad'</span>)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org41e4dbb" class="outline-3">
+<h3 id="org41e4dbb">Elorbany et al. iPSC-CM data</h3>
+<div class="outline-text-3" id="text-org41e4dbb">
+<p>
+<a href="https://www.biorxiv.org/content/10.1101/2021.06.03.446970v1">Elorbany et
+al. 2021</a> generated iPSC-CM differentiation scRNA-seq time course data in
+19 cell lines at 7 time points. Read the data.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-R"><span class="org-ess-modifiers">library</span>(Seurat)
+dat <span class="org-ess-assignment">&lt;-</span> readRDS(<span class="org-string">"/project2/gilad/reem/singlecellCM/Sobjs/xfinalmerged/Sobj_allrounds_finalmerged_noNA.rds"</span>)
+saveRDS(dat$RNA@data, <span class="org-string">"/scratch/midway2/aksarkar/singlecell/elorbany-counts.Rds"</span>)
+saveRDS(dat$RNA@meta.features, <span class="org-string">"/scratch/midway2/aksarkar/singlecell/elorbany-genes.Rds"</span>)
+saveRDS(dat@meta.data, <span class="org-string">"/scratch/midway2/aksarkar/singlecell/elorbany-cells.Rds"</span>)
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">readRDS</span> = rpy2.robjects.r[<span class="org-string">'readRDS'</span>]
+<span class="org-variable-name">x</span> = readRDS(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/elorbany-counts.Rds'</span>)
+<span class="org-variable-name">cells</span> = readRDS(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/elorbany-cells.Rds'</span>)
+rpy2.robjects.pandas2ri.deactivate()
+<span class="org-variable-name">genes</span> = pd.Series(<span class="org-builtin">list</span>(readRDS(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/elorbany-genes.Rds'</span>).rownames)).to_frame()
+rpy2.robjects.pandas2ri.activate()
+</pre>
+</div>
+
+<p>
+Convert to <code>adata</code>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.AnnData(
+  ss.csc_matrix((x.slots[<span class="org-string">'x'</span>], x.slots[<span class="org-string">'i'</span>], x.slots[<span class="org-string">'p'</span>]), shape=x.slots[<span class="org-string">'Dim'</span>]).T,
+  obs=cells,
+  var=genes)
+</pre>
+</div>
+
+<p>
+Write to <code>h5ad</code>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">dat.var.columns</span> = [<span class="org-string">'name'</span>]
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-ipython">dat.write_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/elorbany-ipsc-cm.h5ad'</span>)
+</pre>
+</div>
+
+<p>
+Read the <code>h5ad</code>.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">elorbany_dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/elorbany-ipsc-cm.h5ad'</span>)
+</pre>
+</div>
 </div>
 </div>
 </div>
@@ -388,93 +470,76 @@ adata.shape
 <h2 id="org2a6603e">Results</h2>
 <div class="outline-text-2" id="text-org2a6603e">
 </div>
-<div id="outline-container-org74318a5" class="outline-3">
-<h3 id="org74318a5">NMF</h3>
-<div class="outline-text-3" id="text-org74318a5">
-<p>
-Learn a low-rank representation of the data under the model:
-</p>
-
-<p>
-\[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
-\[ \lambda_{ij} = [\mathbf{LF}]_{ij} \]
-</p>
-
-<p>
-This corresponds to NMF.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">nmf</span> = skd.NMF(n_components=10, solver=<span class="org-string">'mu'</span>, beta_loss=1)
-<span class="org-variable-name">loadings</span> = nmf.fit_transform(adata.X)
-</pre>
-</div>
-
-<p>
-In this model, the total number of molecules detected is included in
-\(\lambda\), so we scale to remove the library size.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">L</span> = loadings / adata.X.<span class="org-builtin">sum</span>(axis=1)
-</pre>
-</div>
-</div>
-</div>
-
 <div id="outline-container-orga00ec74" class="outline-3">
 <h3 id="orga00ec74">Diffusion pseudotime</h3>
 <div class="outline-text-3" id="text-orga00ec74">
 <p>
-By default, diffusion pseudotime embeds the data in principal component
-space to compute distances.
+Compute DPT in the Selewa et al. data. By default, the method embeds the
+data in principal component space to compute distances.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">rep1</span> = adata[adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>]
-sc.pp.neighbors(rep1)
-sc.tl.diffmap(rep1)
-
-<span class="org-variable-name">rep2</span> = adata[adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep2'</span>]
-sc.pp.neighbors(rep2)
-sc.tl.diffmap(rep2)
+<pre class="src src-ipython"><span class="org-variable-name">reps</span> = {k: dat[dat.obs[<span class="org-string">'donor'</span>] == k] <span class="org-keyword">for</span> k <span class="org-keyword">in</span> (<span class="org-string">'Rep1'</span>, <span class="org-string">'Rep2'</span>)}
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> reps:
+  sc.pp.filter_genes(reps[k], min_cells=1)
+  sc.pp.pca(reps[k])
+  sc.pp.neighbors(reps[k])
+  sc.tl.diffmap(reps[k])
 </pre>
 </div>
 
 <p>
-Compute diffusion psuedotime.
+Compute DPT in each donor, starting from 200 random starting points (day 0
+cells).
 </p>
 
 <div class="org-src-container">
 <pre class="src src-ipython">np.random.seed(1)
-<span class="org-variable-name">dpt</span> = []
-<span class="org-keyword">for</span> root <span class="org-keyword">in</span> np.random.choice(rep1.obs[rep1.obs[<span class="org-string">'day'</span>] == 0].index, 200):
-  <span class="org-variable-name">rep1.uns</span>[<span class="org-string">'iroot'</span>] = root
-  sc.tl.dpt(rep1, n_dcs=15)
-  dpt.append(rep1.obs[<span class="org-string">'dpt_pseudotime'</span>])
-  <span class="org-keyword">del</span> rep1.obs[<span class="org-string">'dpt_pseudotime'</span>]
-<span class="org-variable-name">dpt</span> = np.array(dpt).T
+<span class="org-variable-name">dpt</span> = collections.defaultdict(<span class="org-builtin">list</span>)
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> reps:
+  <span class="org-keyword">for</span> root <span class="org-keyword">in</span> np.random.choice(reps[k].obs[reps[k].obs[<span class="org-string">'day'</span>] == <span class="org-string">'0'</span>].index, 200):
+    reps[k]<span class="org-variable-name">.uns</span>[<span class="org-string">'iroot'</span>] = <span class="org-builtin">int</span>(root)
+    sc.tl.dpt(reps[k], n_dcs=15)
+    dpt[k].append(reps[k].obs[<span class="org-string">'dpt_pseudotime'</span>])
+    <span class="org-keyword">del</span> reps[k].obs[<span class="org-string">'dpt_pseudotime'</span>]
 </pre>
 </div>
 
+<p>
+Order the cells in each donor by average DPT, then downsample and plot error
+bars.
+</p>
+
 <div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-plt.gcf().set_size_inches(3, 8)
-<span class="org-variable-name">mean_dpt</span> = dpt.mean(axis=1)
-<span class="org-variable-name">order</span> = np.array([i <span class="org-keyword">for</span> k, i <span class="org-keyword">in</span> <span class="org-builtin">sorted</span>([(k, i) <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(np.argsort(mean_dpt))])])
-<span class="org-keyword">for</span> i, (k, _) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(rep1.obs.groupby(<span class="org-string">'day'</span>)):
-  plt.errorbar(x=mean_dpt[rep1.obs[<span class="org-string">'day'</span>] == k],
-           y=order[rep1.obs[<span class="org-string">'day'</span>] == k],
-           xerr=dpt[rep1.obs[<span class="org-string">'day'</span>] == k].std(axis=1),
-           fmt=<span class="org-string">'o'</span>,
-           elinewidth=1,
-           markersize=1,
-           c=f<span class="org-string">'C{i}'</span>,
-           label=k,)
-plt.xlabel(<span class="org-string">'Diffusion pseudotime'</span>)
-plt.ylabel(<span class="org-string">'Cell'</span>)
-<span class="org-variable-name">leg</span> = plt.legend()
-leg.set_title(<span class="org-string">'Day'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(2, 1, sharex=<span class="org-constant">True</span>)
+fig.set_size_inches(6, 4)
+<span class="org-keyword">for</span> a, k <span class="org-keyword">in</span> <span class="org-builtin">zip</span>(ax, dpt):
+  <span class="org-variable-name">temp</span> = np.array(dpt[k]).T
+  <span class="org-variable-name">mean_dpt</span> = temp.mean(axis=1)
+  <span class="org-variable-name">order</span> = np.argsort(mean_dpt)[::100]
+  <span class="org-variable-name">n</span> = 0
+  <span class="org-keyword">for</span> i, (day, _) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(reps[k].obs.groupby(<span class="org-string">'day'</span>)):
+    <span class="org-variable-name">idx</span> = reps[k].obs[<span class="org-string">'day'</span>].iloc[order] == day
+    a.errorbar(
+      x=np.arange(order.shape[0])[idx],
+      y=mean_dpt[order][idx],
+      yerr=temp[order][idx].std(axis=1),
+      fmt=<span class="org-string">'o'</span>,
+      markersize=1,
+      elinewidth=0.5,
+      c=cm(i),
+      label=day)
+    <span class="org-variable-name">n</span> += <span class="org-builtin">len</span>(idx)
+<span class="org-keyword">for</span> i, a <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(ax):
+  a.set_title(f<span class="org-string">'Donor {i + 1}'</span>)
+  a.set_ylim(0, 1)
+  a.set_ylabel(<span class="org-string">'Diffusion pseudotime'</span>)
+  <span class="org-variable-name">leg</span> = a.legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+  leg.set_title(<span class="org-string">'Day'</span>)
+ax[-1].set_xlabel(<span class="org-string">'Cell (subsampled)'</span>)
+fig.tight_layout()
 </pre>
 </div>
 
@@ -485,140 +550,151 @@ leg.set_title(<span class="org-string">'Day'</span>)
 </div>
 
 <p>
-Read off gene expression of marker genes (<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4546707/">Karakikes et al. 2016</a>) over DPT
-trajectories.
+Repeat the analysis for the Elorbany et al. data. Get the individual with
+the most cells.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">lam</span> = L.dot(nmf.components_)
-lam.shape
+<pre class="src src-ipython">elorbany_dat.obs.groupby([<span class="org-string">'individual'</span>])[<span class="org-string">'diffday'</span>].agg(<span class="org-builtin">len</span>).sort_values().tail()
 </pre>
 </div>
 
 <pre class="example">
-(25311, 4161)
-
+individual
+NA18511    22203
+NA18858    23197
+NA19093    24299
+NA19190    24405
+NA18499    29466
+Name: diffday, dtype: int64
 </pre>
-
-<div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">markers</span> = [
-  <span class="org-comment-delimiter"># </span><span class="org-comment">iPSC</span>
-  <span class="org-string">'POU5F1'</span>,  <span class="org-comment-delimiter"># </span><span class="org-comment">Oct-4</span>
-  <span class="org-string">'SOX2'</span>,
-  <span class="org-string">'NANOG'</span>,
-  <span class="org-comment-delimiter"># </span><span class="org-comment">mesoderm formation</span>
-  <span class="org-string">'T'</span>,  <span class="org-comment-delimiter"># </span><span class="org-comment">BRY/TBXT</span>
-  <span class="org-string">'MIXL1'</span>,
-  <span class="org-comment-delimiter"># </span><span class="org-comment">cardiogenic mesoderm</span>
-  <span class="org-string">'MESP1'</span>,
-  <span class="org-string">'ISL1'</span>,
-  <span class="org-string">'KDR'</span>,
-  <span class="org-comment-delimiter"># </span><span class="org-comment">cardiac progenitor</span>
-  <span class="org-string">'NKX2-5'</span>,
-  <span class="org-string">'GATA4'</span>,
-  <span class="org-string">'TBX5'</span>,
-  <span class="org-string">'MEF2C'</span>,
-  <span class="org-string">'HAND1'</span>,
-  <span class="org-string">'HAND2'</span>,
-  <span class="org-comment-delimiter"># </span><span class="org-comment">cardiomyocyte</span>
-  <span class="org-string">'MYL2'</span>,
-  <span class="org-string">'MYL7'</span>,
-  <span class="org-string">'MYH6'</span>,
-  <span class="org-string">'TNNT2'</span>
-  ]
-</pre>
-</div>
-
-<div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
-fig.set_size_inches(11, 3)
-<span class="org-keyword">for</span> i, name <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>([<span class="org-string">'GATA4'</span>, <span class="org-string">'MIXL1'</span>, <span class="org-string">'T'</span>, <span class="org-string">'MYL7'</span>]):
-  <span class="org-keyword">for</span> j, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(rep1.obs.groupby(<span class="org-string">'day'</span>)):
-    ax[i].set_yscale(<span class="org-string">'log'</span>)
-    ax[i].scatter(dpt.mean(axis=1)[rep1.obs[<span class="org-string">'day'</span>] == k], lam[(adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep1'</span>).values,np.where(rep1.var_names == name)].A.ravel()[rep1.obs[<span class="org-string">'day'</span>] == k], s=1, c=f<span class="org-string">'C{j}'</span>)
-  ax[i].set_xlabel(<span class="org-string">'Diffusion pseudotime'</span>)
-  ax[i].set_title(name)
-ax[0].set_ylabel(<span class="org-string">'Latent expression'</span>)
-fig.tight_layout()
-</pre>
-</div>
-
-
-<div class="figure">
-<p><img src="figure/trajectory.org/drop-seq-dpt-markers.png" alt="drop-seq-dpt-markers.png">
-</p>
-</div>
 
 <p>
-Do the same for the second donor, who has one extra time point.
+Compute DPT in that donor, starting from 200 random starting points (day 0
+cells).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">np.random.seed(1)
+<pre class="src src-ipython"><span class="org-variable-name">temp</span> = elorbany_dat[elorbany_dat.obs[<span class="org-string">'individual'</span>] == <span class="org-string">'NA18499'</span>]
+sc.pp.filter_genes(temp, min_cells=1)
+sc.pp.pca(temp)
+sc.pp.neighbors(temp, n_neighbors=30)
+sc.tl.diffmap(temp, n_comps=10)
+
+np.random.seed(1)
 <span class="org-variable-name">dpt</span> = []
-<span class="org-keyword">for</span> root <span class="org-keyword">in</span> np.random.choice(rep2.obs[rep2.obs[<span class="org-string">'day'</span>] == 0].index, 200):
-  <span class="org-variable-name">rep2.uns</span>[<span class="org-string">'iroot'</span>] = root
-  sc.tl.dpt(rep2, n_dcs=15)
-  dpt.append(rep2.obs[<span class="org-string">'dpt_pseudotime'</span>])
-  <span class="org-keyword">del</span> rep2.obs[<span class="org-string">'dpt_pseudotime'</span>]
+<span class="org-keyword">for</span> root <span class="org-keyword">in</span> np.random.choice(np.flatnonzero(temp.obs[<span class="org-string">'diffday'</span>] == <span class="org-string">'Day 0'</span>), 200):
+  <span class="org-variable-name">temp.uns</span>[<span class="org-string">'iroot'</span>] = root
+  sc.tl.dpt(temp, n_dcs=10)
+  dpt.append(temp.obs[<span class="org-string">'dpt_pseudotime'</span>].values)
+  <span class="org-keyword">del</span> temp.obs[<span class="org-string">'dpt_pseudotime'</span>]
 <span class="org-variable-name">dpt</span> = np.array(dpt).T
 </pre>
 </div>
 
+<p>
+Order the cells by average DPT, then downsample and plot error bars.
+</p>
+
 <div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-plt.gcf().set_size_inches(3, 8)
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = colorcet.cm[<span class="org-string">'bmy'</span>]
+plt.clf()
+plt.gcf().set_size_inches(6, 2.5)
 <span class="org-variable-name">mean_dpt</span> = dpt.mean(axis=1)
-<span class="org-variable-name">order</span> = np.array([i <span class="org-keyword">for</span> k, i <span class="org-keyword">in</span> <span class="org-builtin">sorted</span>([(k, i) <span class="org-keyword">for</span> i, k <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(np.argsort(mean_dpt))])])
-<span class="org-keyword">for</span> i, (k, _) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(rep2.obs.groupby(<span class="org-string">'day'</span>)):
-  plt.errorbar(x=mean_dpt[rep2.obs[<span class="org-string">'day'</span>] == k],
-           y=order[rep2.obs[<span class="org-string">'day'</span>] == k],
-           xerr=dpt[rep2.obs[<span class="org-string">'day'</span>] == k].std(axis=1),
-           fmt=<span class="org-string">'o'</span>,
-           elinewidth=1,
-           markersize=1,
-           c=f<span class="org-string">'C{i}'</span>,
-           label=k,)
-plt.xlabel(<span class="org-string">'Diffusion pseudotime'</span>)
-plt.ylabel(<span class="org-string">'Cell'</span>)
-<span class="org-variable-name">leg</span> = plt.legend()
-leg.set_title(<span class="org-string">'Day'</span>)
+<span class="org-variable-name">order</span> = np.argsort(mean_dpt)[::200]
+<span class="org-keyword">for</span> i, (day, _) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(temp.obs.groupby(<span class="org-string">'diffday'</span>)):
+  <span class="org-variable-name">idx</span> = temp.obs[<span class="org-string">'diffday'</span>].iloc[order] == day
+  plt.errorbar(
+    x=np.arange(order.shape[0])[idx],
+    y=mean_dpt[order][idx],
+    yerr=dpt[order][idx].std(axis=1),
+    fmt=<span class="org-string">'o'</span>,
+    markersize=1,
+    elinewidth=0.5,
+    c=cm(<span class="org-builtin">int</span>(day[4:]) / 15),
+    label=day)
+<span class="org-variable-name">leg</span> = plt.legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5))
+leg.set_title(<span class="org-string">'Diffday'</span>)
+plt.title(<span class="org-string">'NA18499'</span>)
+plt.ylim(0, 1)
+plt.ylabel(<span class="org-string">'Diffusion pseudotime'</span>)
+plt.xlabel(<span class="org-string">'Cell (subsampled)'</span>)
+plt.tight_layout()
 </pre>
 </div>
 
 
 <div class="figure">
-<p><img src="figure/trajectory.org/drop-seq-dpt-rep2.png" alt="drop-seq-dpt-rep2.png">
+<p><img src="figure/trajectory.org/elorbany-dpt.png" alt="elorbany-dpt.png">
 </p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgbddb008" class="outline-3">
+<h3 id="orgbddb008">Dependence of DPT on preprocessing</h3>
+<div class="outline-text-3" id="text-orgbddb008">
+<p>
+Selewa et al. write &ldquo;Selection of genes for trajectory analysis, or feature
+selection, is critical for obtaining accurate trajectories.&rdquo; Since we know
+something about the true ordering of cells, one can use model-based
+optimization to find optimal pre-processing filters.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">loss</span>(theta, dat, n_samples=200):
+  <span class="org-variable-name">min_cells</span>, <span class="org-variable-name">n_pcs</span>, <span class="org-variable-name">n_neighbors</span>, <span class="org-variable-name">n_dcs</span> = theta
+  <span class="org-variable-name">temp</span> = dat.copy()
+  sc.pp.filter_genes(temp, min_cells=<span class="org-builtin">int</span>(min_cells))
+  <span class="org-comment-delimiter"># </span><span class="org-comment">Important: PCA is randomized too</span>
+  np.random.seed(1)
+  sc.pp.pca(temp, n_comps=<span class="org-builtin">int</span>(n_pcs))
+  sc.pp.neighbors(temp, n_neighbors=<span class="org-builtin">int</span>(n_neighbors))
+  sc.tl.diffmap(temp, n_comps=<span class="org-builtin">int</span>(n_dcs))
+  <span class="org-variable-name">dpt</span> = []
+  <span class="org-keyword">for</span> root <span class="org-keyword">in</span> np.random.choice(np.flatnonzero(temp.obs[<span class="org-string">'day'</span>] == <span class="org-string">'0'</span>), n_samples):
+    <span class="org-variable-name">temp.uns</span>[<span class="org-string">'iroot'</span>] = root
+    sc.tl.dpt(temp, n_dcs=<span class="org-builtin">int</span>(n_dcs))
+    dpt.append(temp.obs[<span class="org-string">'dpt_pseudotime'</span>])
+    <span class="org-keyword">del</span> temp.obs[<span class="org-string">'dpt_pseudotime'</span>]
+
+  <span class="org-variable-name">expected_order</span> = pd.Categorical(dat.obs[<span class="org-string">'day'</span>].<span class="org-builtin">apply</span>(<span class="org-builtin">float</span>), ordered=<span class="org-constant">True</span>).codes
+  <span class="org-variable-name">order</span> = np.argsort(np.array(dpt).T.mean(axis=1))
+  <span class="org-variable-name">ranks</span> = np.empty_like(order)
+  <span class="org-variable-name">ranks</span>[order] = np.arange(<span class="org-builtin">len</span>(order))
+  <span class="org-keyword">return</span> {<span class="org-string">'loss'</span>: -st.kendalltau(ranks, expected_order)[0], <span class="org-string">'status'</span>: hp.STATUS_OK}
+</pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython">plt.clf()
-<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 4)
-fig.set_size_inches(11, 3)
-<span class="org-keyword">for</span> i, name <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>([<span class="org-string">'GATA4'</span>, <span class="org-string">'MIXL1'</span>, <span class="org-string">'T'</span>, <span class="org-string">'MYL7'</span>]):
-  <span class="org-keyword">for</span> j, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(rep2.obs.groupby(<span class="org-string">'day'</span>)):
-    ax[i].set_yscale(<span class="org-string">'log'</span>)
-    ax[i].scatter(dpt.mean(axis=1)[rep2.obs[<span class="org-string">'day'</span>] == k], lam[(adata.obs[<span class="org-string">'ind'</span>] == <span class="org-string">'Rep2'</span>).values,np.where(rep2.var_names == name)].A.ravel()[rep2.obs[<span class="org-string">'day'</span>] == k], s=1, c=f<span class="org-string">'C{j}'</span>)
-  ax[i].set_xlabel(<span class="org-string">'Diffusion pseudotime'</span>)
-  ax[i].set_title(name)
-ax[0].set_ylabel(<span class="org-string">'Latent expression'</span>)
-fig.tight_layout()
+<pre class="src src-ipython"><span class="org-variable-name">rep2</span> = dat[dat.obs[<span class="org-string">'donor'</span>] == <span class="org-string">'Rep2'</span>]
 </pre>
 </div>
 
+<div class="org-src-container">
+<pre class="src src-ipython">np.random.seed(1)
+<span class="org-variable-name">trials</span> = hp.Trials()
+<span class="org-variable-name">opt</span> = hp.fmin(
+  ft.partial(loss, dat=rep2, n_samples=200),
+  space=[hp.hp.loguniform(<span class="org-string">'min_cells'</span>, 0, np.log(1000)),
+         hp.hp.uniform(<span class="org-string">'n_pcs'</span>, 3, 50),
+         hp.hp.uniform(<span class="org-string">'n_neighbors'</span>, 5, 50),
+         hp.hp.uniform(<span class="org-string">'n_dcs'</span>, 2, 50)],
+  algo=hp.tpe.suggest,
+  trials=trials,
+  max_evals=100)
+</pre>
+</div>
 
-<div class="figure">
-<p><img src="figure/trajectory.org/drop-seq-dpt-markers-rep2.png" alt="drop-seq-dpt-markers-rep2.png">
+<p>
+0 - b238f6e9-37dd-4970-abeb-0eeb347a11ee
 </p>
 </div>
 </div>
-</div>
 
-<div id="outline-container-org7ba5af5" class="outline-3">
-<h3 id="org7ba5af5">NMF-based pseudotime</h3>
-<div class="outline-text-3" id="text-org7ba5af5">
+<div id="outline-container-org1c0b384" class="outline-3">
+<h3 id="org1c0b384">NMF-based pseudotime</h3>
+<div class="outline-text-3" id="text-org1c0b384">
 <p>
 Look at the diffusion maps.
 </p>
@@ -789,9 +865,9 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org1b11bb5" class="outline-3">
-<h3 id="org1b11bb5">NMF pseudotime</h3>
-<div class="outline-text-3" id="text-org1b11bb5">
+<div id="outline-container-orgdef75dc" class="outline-3">
+<h3 id="orgdef75dc">NMF pseudotime</h3>
+<div class="outline-text-3" id="text-orgdef75dc">
 <p>
 First, see if we can confidently separate terminal cardiomyocytes.
 </p>
@@ -881,9 +957,9 @@ Text(0,0.5,'Factor')
 </div>
 </div>
 
-<div id="outline-container-org2184063" class="outline-3">
-<h3 id="org2184063">Per individual analysis</h3>
-<div class="outline-text-3" id="text-org2184063">
+<div id="outline-container-org80fe738" class="outline-3">
+<h3 id="org80fe738">Per individual analysis</h3>
+<div class="outline-text-3" id="text-org80fe738">
 <p>
 Try to look at one individual at a time.
 </p>
@@ -947,67 +1023,44 @@ fig.tight_layout()
 </div>
 </div>
 
-<div id="outline-container-org195cdd7" class="outline-3">
-<h3 id="org195cdd7">ZINB</h3>
-<div class="outline-text-3" id="text-org195cdd7">
+<div id="outline-container-orgf6fa745" class="outline-3">
+<h3 id="orgf6fa745">Geodesics</h3>
+<div class="outline-text-3" id="text-orgf6fa745">
 <p>
-Fit the ZINB model where parameters are shared between cells from the same
-individual and day.
+Estimate the geodesic in this space
+(<a href="https://www.springer.com/us/book/9780817634902">https://www.springer.com/us/book/9780817634902</a>, <a href="https://arxiv.org/pdf/1411.7432">https://arxiv.org/pdf/1411.7432</a>
+<a href="https://arxiv.org/abs/1710.11379">https://arxiv.org/abs/1710.11379</a>).
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython">&lt;&lt;imports&gt;&gt;
-&lt;&lt;read-cm-data&gt;&gt;
-&lt;&lt;<span class="org-builtin">filter</span>-cm-data&gt;&gt;
-
-<span class="org-variable-name">groups</span> = adata.obs.groupby([<span class="org-string">'day'</span>, <span class="org-string">'ind'</span>])
-<span class="org-variable-name">onehot</span> = np.zeros((adata.shape[0], <span class="org-builtin">len</span>(groups))).astype(np.float32)
-<span class="org-keyword">for</span> i, (k, g) <span class="org-keyword">in</span> <span class="org-builtin">enumerate</span>(groups):
-  <span class="org-variable-name">onehot</span>[g.index,i] = 1.0
-<span class="org-variable-name">design</span> = np.zeros((adata.shape[0], 1)).astype(np.float32)
-<span class="org-variable-name">size_factor</span> = adata.X.<span class="org-builtin">sum</span>(axis=1).A.astype(np.float32)
-<span class="org-variable-name">init</span> = scqtl.tf.fit(
-  umi=adata.X.A,
-  size_factor=size_factor,
-  onehot=onehot,
-  design=design,
-  learning_rate=1e-3,
-  max_epochs=30000,
-  verbose=<span class="org-constant">True</span>)
-<span class="org-variable-name">log_mu</span>, <span class="org-variable-name">log_phi</span>, <span class="org-variable-name">logodds</span>, <span class="org-variable-name">nb_nll</span>, <span class="org-variable-name">zinb_nll</span> = scqtl.tf.fit(
-  umi=adata.X.A,
-  size_factor=size_factor,
-  onehot=onehot,
-  design=design,
-  warm_start=init[:3],
-  learning_rate=1e-3,
-  max_epochs=30000,
-  verbose=<span class="org-constant">True</span>)
-pd.DataFrame(log_mu).to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/log_mu.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
-pd.DataFrame(log_phi).to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/log_phi.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
-pd.DataFrame(logodds).to_csv(<span class="org-string">'/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/logodds.txt.gz'</span>, compression=<span class="org-string">'gzip'</span>, sep=<span class="org-string">'\t'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">metric</span> = m.components_.dot(m.components_.T)
 </pre>
 </div>
 
 <div class="org-src-container">
-<pre class="src src-sh">sbatch --partition=gpu2 --gres=gpu:1 --mem=16G --time=7:00:00 --job-name=tf-zinb --out=tf-zinb-cm.out
-<span class="org-comment-delimiter">#</span><span class="org-comment">!/bin/bash</span>
-<span class="org-builtin">source</span> activate singlecell
-python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/tf-zinb.py
+<pre class="src src-ipython"><span class="org-keyword">import</span> scipy.integrate
+
+<span class="org-keyword">def</span> <span class="org-function-name">f</span>(x, y):
+  <span class="org-keyword">return</span> np.vstack((y[], -.5 * np.linalg.pinv(metric), np.kron(y[1], y[1])))
+
+<span class="org-keyword">def</span> <span class="org-function-name">bc</span>(ya, yb):
+  <span class="org-keyword">return</span> np.array([ya - loadings[start][0], yb - loadings[end][0]])
+
+<span class="org-variable-name">x</span> = np.linspace(0, 1, 5)
+<span class="org-variable-name">res</span> = scipy.integrate.solve_bvp(f, bc, x, np.zeros((20, x.size)))
 </pre>
 </div>
 
-<pre class="example">
-Submitted batch job 55970981
-
-</pre>
+<p>
+0 - f554087f-b03a-4574-8613-072c205e5251
+</p>
 </div>
 </div>
 </div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-05-14 Thu 23:52</p>
+<p class="date">Created: 2021-08-25 Wed 18:52</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

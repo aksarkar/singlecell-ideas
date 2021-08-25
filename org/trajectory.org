@@ -4,10 +4,15 @@
 * Introduction
 
   Here, we investigate some ideas for modeling differentiation of iPSCs into
-  cardiomyocytes.
+  cardiomyocytes. Our goal is to build intuition about methods which model gene
+  expression trajectories.
 
-  Our goal is to build intuition about methods which learn gene expression
-  trajectories.
+  We revisit this in light of a recent publication
+  ([[https://www.nature.com/articles/s41588-021-00894-z][Morabito et
+  al. 2021]]), that used a recurrent VAE
+  ([[https://academic.oup.com/bioinformatics/advance-article/doi/10.1093/bioinformatics/btab260/6273572][Mitra
+  and MacLean 2021]]). The input to the VAE was diffusion pseudotime (DPT),
+  which seems suspect given our preliminary results on the uncertainty of DPT.
 
 * Setup
 
@@ -16,33 +21,40 @@
   #+END_SRC
 
   #+RESULTS:
-  : 1
+  : 2
 
-  #+CALL: ipython3(memory="16G",venv="singlecell",partition="gpu2",opts="--gres=gpu:1") :dir /scratch/midway2/aksarkar/ideas :exports none
+  #+CALL: ipython3(venv="singlecell",partition="gpu2",opts="--gres=gpu:1",memory="32G") :dir /scratch/midway2/aksarkar/singlecell
 
-  #+RESULTS:
-  : Submitted batch job 56732663
+  #+CALL: tensorboard(venv="singlecell",partition="mstephens") :dir /scratch/midway2/aksarkar/singlecell
 
   #+NAME: imports
   #+BEGIN_SRC ipython
     import anndata
-    import gzip
+    import collections
+    import functools as ft
+    import hyperopt as hp
+    import mpebpm
     import numpy as np
     import pandas as pd
-    import scanpy.api as sc
-    import scipy.io as si
+    import scanpy as sc
     import scipy.sparse as ss
+    import scipy.special as sp
     import scipy.stats as st
-    import scqtl
-    import scvi.dataset
-    import scvi.models
-    import scvi.inference
-    import sklearn.decomposition as skd
-    import sklearn.linear_model as sklm
-    import umap
+    import torch
   #+END_SRC
 
   #+RESULTS: imports
+  :RESULTS:
+  # Out[154]:
+  :END:
+
+  #+BEGIN_SRC ipython
+    import rpy2.robjects.packages
+    import rpy2.robjects.pandas2ri
+    rpy2.robjects.pandas2ri.activate()
+  #+END_SRC
+
+  #+RESULTS:
   :RESULTS:
   # Out[2]:
   :END:
@@ -50,8 +62,6 @@
   #+BEGIN_SRC ipython
     %matplotlib inline
     %config InlineBackend.figure_formats = set(['retina'])
-    import colorcet
-    import matplotlib
     import matplotlib.pyplot as plt
   #+END_SRC
 
@@ -60,277 +70,393 @@
   # Out[3]:
   :END:
 
+  #+BEGIN_SRC ipython
+    import colorcet
+    import matplotlib
+    import matplotlib.pyplot as plt
+    plt.rcParams['figure.facecolor'] = 'w'
+    plt.rcParams['font.family'] = 'Nimbus Sans'
+  #+END_SRC
+
+  #+RESULTS:
+  :RESULTS:
+  # Out[4]:
+  :END:
+
 * Materials and methods
-** iPSC-derived cardiomyocyte differentiation time course data
+** Selewa et al. iPSC-CM data
 
-   We differentiated iPSCs into cardiomyocytes from two individuals, and
-   performed Drop-Seq and DroNC-Seq at 4 and 5 time points respectively: 0, 1,
-   3, 7, and 15 days.
+   [[https://www.nature.com/articles/s41598-020-58327-6][Selewa et al. 2020]]
+   differentiated iPSCs derived from from two donor individuals into
+   cardiomyocytes, and performed Drop-Seq and DroNC-Seq at 4 and 5 time points,
+   respectively: 0, 1, 3, 7, and 15 days.
 
-   Read and compress the Drop-Seq data.
-
-   #+BEGIN_SRC ipython :async t
-     data = pd.read_table('/project2/onibasu/data/project_CZI/DROP_combined_counts.tsv.gz', index_col=0)
-     counts = ss.csr_matrix(data.values)
-     with gzip.open('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/counts.mtx.gz', 'wb') as f:
-       si.mmwrite(f, counts)
-     data.index.to_series().to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/genes.txt', index=None)
-     pd.DataFrame(data.columns.to_series().apply(lambda x: pd.Series(x.split('_')))).to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/cells.txt', index=None, sep=' ')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   :END:
-
-   Read the compressed data.
-
-   #+NAME: read-cm-data
-   #+BEGIN_SRC ipython
-     counts = si.mmread('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/counts.mtx.gz')
-     genes = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/genes.txt', header=None, index_col=0)
-     cells = pd.read_table('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/cells.txt', sep=' ')
-     cells.columns = ['barcode', 'day', 'ind']
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[3]:
-   :END:
-
-   Keep genes detected in at least 10% of cells.
-
-   #+NAME: filter-cm-data
-   #+BEGIN_SRC ipython
-     adata = anndata.AnnData(counts.T.tocsr(), obs=cells, var=genes)
-     sc.pp.filter_genes(adata, min_cells=.1 * adata.shape[0])
-     adata.shape
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[19]:
-   : (25311, 1898)
-   :END:
-
-* Results
-** NMF
-   
-   Learn a low-rank representation of the data under the model:
-
-   \[ x_{ij} \sim \mathrm{Poisson}(\lambda_{ij}) \]
-   \[ \lambda_{ij} = [\mathbf{LF}]_{ij} \]
-
-   This corresponds to NMF.
+   Read the data.
 
    #+BEGIN_SRC ipython :async t
-     nmf = skd.NMF(n_components=10, solver='mu', beta_loss=1)
-     loadings = nmf.fit_transform(adata.X)
+     raw = pd.read_table('/project2/onibasu/data/public_html/Alan_CZI/DGE_Matrices/DROP_combined_counts.tsv.gz', index_col=0)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
+   # Out[5]:
    :END:
 
-   In this model, the total number of molecules detected is included in
-   \(\lambda\), so we scale to remove the library size.
+   Convert to ~adata~.
+
+   #+BEGIN_SRC ipython :async t
+     dat = anndata.AnnData(ss.csc_matrix(raw.values.T),
+                           obs=pd.DataFrame([pd.Series(x) for x in raw.columns.str.split('_')]),
+                           var=raw.index.to_series().to_frame())
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[48]:
+   :END:
+
+   Fix up the column names for ~h5ad~ output.
 
    #+BEGIN_SRC ipython
-     L = loadings / adata.X.sum(axis=1)
+     dat.var.columns = ['gene']
+     dat.obs.columns = ['barcode', 'day', 'donor', 'dummy1', 'dummy2']
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[13]:
+   # Out[49]:
    :END:
 
-** Diffusion pseudotime
-
-   By default, diffusion pseudotime embeds the data in principal component
-   space to compute distances.
+   Drop genes with no non-zero observations.
 
    #+BEGIN_SRC ipython
-     rep1 = adata[adata.obs['ind'] == 'Rep1']
-     sc.pp.neighbors(rep1)
-     sc.tl.diffmap(rep1)
-
-     rep2 = adata[adata.obs['ind'] == 'Rep2']
-     sc.pp.neighbors(rep2)
-     sc.tl.diffmap(rep2)
+     sc.pp.filter_genes(dat, min_cells=1)
+     dat.shape
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[7]:
+   # Out[53]:
+   : (20816, 24486)
    :END:
 
-   Compute diffusion psuedotime.
+   Write out to ~h5ad~.
 
    #+BEGIN_SRC ipython
-     np.random.seed(1)
-     dpt = []
-     for root in np.random.choice(rep1.obs[rep1.obs['day'] == 0].index, 200):
-       rep1.uns['iroot'] = root
-       sc.tl.dpt(rep1, n_dcs=15)
-       dpt.append(rep1.obs['dpt_pseudotime'])
-       del rep1.obs['dpt_pseudotime']
-     dpt = np.array(dpt).T
+     dat.write('/scratch/midway2/aksarkar/singlecell/GSE129096_DROP_combined_allcells.h5ad')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[9]:
+   # Out[56]:
    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-dpt.png
-     plt.clf()
-     plt.gcf().set_size_inches(3, 8)
-     mean_dpt = dpt.mean(axis=1)
-     order = np.array([i for k, i in sorted([(k, i) for i, k in enumerate(np.argsort(mean_dpt))])])
-     for i, (k, _) in enumerate(rep1.obs.groupby('day')):
-       plt.errorbar(x=mean_dpt[rep1.obs['day'] == k],
-                y=order[rep1.obs['day'] == k],
-                xerr=dpt[rep1.obs['day'] == k].std(axis=1),
-                fmt='o',
-                elinewidth=1,
-                markersize=1,
-                c=f'C{i}',
-                label=k,)
-     plt.xlabel('Diffusion pseudotime')
-     plt.ylabel('Cell')
-     leg = plt.legend()
-     leg.set_title('Day')
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[11]:
-   [[file:figure/trajectory.org/drop-seq-dpt.png]]
-   :END:
-
-   Read off gene expression of marker genes ([[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4546707/][Karakikes et al. 2016]]) over DPT
-   trajectories.
+   Read the ~h5ad~.
 
    #+BEGIN_SRC ipython
-     lam = L.dot(nmf.components_)
-     lam.shape
+     dat = anndata.read_h5ad('/scratch/midway2/aksarkar/singlecell/GSE129096_DROP_combined_allcells.h5ad')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[23]:
-   : (25311, 4161)
+   # Out[83]:
    :END:
+
+** Elorbany et al. iPSC-CM data
+
+   [[https://www.biorxiv.org/content/10.1101/2021.06.03.446970v1][Elorbany et
+   al. 2021]] generated iPSC-CM differentiation scRNA-seq time course data in
+   19 cell lines at 7 time points. Read the data.
+
+   #+BEGIN_SRC R :eval never
+     library(Seurat)
+     dat <- readRDS("/project2/gilad/reem/singlecellCM/Sobjs/xfinalmerged/Sobj_allrounds_finalmerged_noNA.rds")
+     saveRDS(dat$RNA@data, "/scratch/midway2/aksarkar/singlecell/elorbany-counts.Rds")
+     saveRDS(dat$RNA@meta.features, "/scratch/midway2/aksarkar/singlecell/elorbany-genes.Rds")
+     saveRDS(dat@meta.data, "/scratch/midway2/aksarkar/singlecell/elorbany-cells.Rds")
+   #+END_SRC
+
+   #+BEGIN_SRC ipython :async t
+     readRDS = rpy2.robjects.r['readRDS']
+     x = readRDS('/scratch/midway2/aksarkar/singlecell/elorbany-counts.Rds')
+     cells = readRDS('/scratch/midway2/aksarkar/singlecell/elorbany-cells.Rds')
+     rpy2.robjects.pandas2ri.deactivate()
+     genes = pd.Series(list(readRDS('/scratch/midway2/aksarkar/singlecell/elorbany-genes.Rds').rownames)).to_frame()
+     rpy2.robjects.pandas2ri.activate()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[5]:
+   :END:
+
+   Convert to ~adata~.
+
+   #+BEGIN_SRC ipython :async t
+     dat = anndata.AnnData(
+       ss.csc_matrix((x.slots['x'], x.slots['i'], x.slots['p']), shape=x.slots['Dim']).T,
+       obs=cells,
+       var=genes)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[12]:
+   :END:
+
+   Write to ~h5ad~.
 
    #+BEGIN_SRC ipython
-     markers = [
-       # iPSC
-       'POU5F1',  # Oct-4
-       'SOX2',
-       'NANOG',
-       # mesoderm formation
-       'T',  # BRY/TBXT
-       'MIXL1',
-       # cardiogenic mesoderm
-       'MESP1',
-       'ISL1',
-       'KDR',
-       # cardiac progenitor
-       'NKX2-5',
-       'GATA4',
-       'TBX5',
-       'MEF2C',
-       'HAND1',
-       'HAND2',
-       # cardiomyocyte
-       'MYL2',
-       'MYL7',
-       'MYH6',
-       'TNNT2'
-       ]
+     dat.var.columns = ['name']
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[15]:
+   # Out[18]:
    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-dpt-markers.png
-     plt.clf()
-     fig, ax = plt.subplots(1, 4)
-     fig.set_size_inches(11, 3)
-     for i, name in enumerate(['GATA4', 'MIXL1', 'T', 'MYL7']):
-       for j, (k, g) in enumerate(rep1.obs.groupby('day')):
-         ax[i].set_yscale('log')
-         ax[i].scatter(dpt.mean(axis=1)[rep1.obs['day'] == k], lam[(adata.obs['ind'] == 'Rep1').values,np.where(rep1.var_names == name)].A.ravel()[rep1.obs['day'] == k], s=1, c=f'C{j}')
-       ax[i].set_xlabel('Diffusion pseudotime')
-       ax[i].set_title(name)
-     ax[0].set_ylabel('Latent expression')
-     fig.tight_layout()
+   #+BEGIN_SRC ipython :async t
+     dat.write_h5ad('/scratch/midway2/aksarkar/singlecell/elorbany-ipsc-cm.h5ad')
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[26]:
+   :END:
+
+   Read the ~h5ad~.
+
+   #+BEGIN_SRC ipython
+     elorbany_dat = anndata.read_h5ad('/scratch/midway2/aksarkar/singlecell/elorbany-ipsc-cm.h5ad')
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
    # Out[41]:
-   [[file:figure/trajectory.org/drop-seq-dpt-markers.png]]
    :END:
 
-   Do the same for the second donor, who has one extra time point.
+* Results
+** Diffusion pseudotime
 
-   #+BEGIN_SRC ipython
-     np.random.seed(1)
-     dpt = []
-     for root in np.random.choice(rep2.obs[rep2.obs['day'] == 0].index, 200):
-       rep2.uns['iroot'] = root
-       sc.tl.dpt(rep2, n_dcs=15)
-       dpt.append(rep2.obs['dpt_pseudotime'])
-       del rep2.obs['dpt_pseudotime']
-     dpt = np.array(dpt).T
-   #+END_SRC
+   Compute DPT in the Selewa et al. data. By default, the method embeds the
+   data in principal component space to compute distances.
 
-   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-dpt-rep2.png
-     plt.clf()
-     plt.gcf().set_size_inches(3, 8)
-     mean_dpt = dpt.mean(axis=1)
-     order = np.array([i for k, i in sorted([(k, i) for i, k in enumerate(np.argsort(mean_dpt))])])
-     for i, (k, _) in enumerate(rep2.obs.groupby('day')):
-       plt.errorbar(x=mean_dpt[rep2.obs['day'] == k],
-                y=order[rep2.obs['day'] == k],
-                xerr=dpt[rep2.obs['day'] == k].std(axis=1),
-                fmt='o',
-                elinewidth=1,
-                markersize=1,
-                c=f'C{i}',
-                label=k,)
-     plt.xlabel('Diffusion pseudotime')
-     plt.ylabel('Cell')
-     leg = plt.legend()
-     leg.set_title('Day')
+   #+BEGIN_SRC ipython :async t
+     reps = {k: dat[dat.obs['donor'] == k] for k in ('Rep1', 'Rep2')}
+     for k in reps:
+       sc.pp.filter_genes(reps[k], min_cells=1)
+       sc.pp.pca(reps[k])
+       sc.pp.neighbors(reps[k])
+       sc.tl.diffmap(reps[k])
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[44]:
-   [[file:figure/trajectory.org/drop-seq-dpt-rep2.png]]
+   # Out[262]:
    :END:
 
-   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-dpt-markers-rep2.png
+   Compute DPT in each donor, starting from 200 random starting points (day 0
+   cells).
+
+   #+BEGIN_SRC ipython :async t
+     np.random.seed(1)
+     dpt = collections.defaultdict(list)
+     for k in reps:
+       for root in np.random.choice(reps[k].obs[reps[k].obs['day'] == '0'].index, 200):
+         reps[k].uns['iroot'] = int(root)
+         sc.tl.dpt(reps[k], n_dcs=15)
+         dpt[k].append(reps[k].obs['dpt_pseudotime'])
+         del reps[k].obs['dpt_pseudotime']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[263]:
+   :END:
+
+   Order the cells in each donor by average DPT, then downsample and plot error
+   bars.
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/drop-seq-dpt.png
+     cm = plt.get_cmap('Dark2')
      plt.clf()
-     fig, ax = plt.subplots(1, 4)
-     fig.set_size_inches(11, 3)
-     for i, name in enumerate(['GATA4', 'MIXL1', 'T', 'MYL7']):
-       for j, (k, g) in enumerate(rep2.obs.groupby('day')):
-         ax[i].set_yscale('log')
-         ax[i].scatter(dpt.mean(axis=1)[rep2.obs['day'] == k], lam[(adata.obs['ind'] == 'Rep2').values,np.where(rep2.var_names == name)].A.ravel()[rep2.obs['day'] == k], s=1, c=f'C{j}')
-       ax[i].set_xlabel('Diffusion pseudotime')
-       ax[i].set_title(name)
-     ax[0].set_ylabel('Latent expression')
+     fig, ax = plt.subplots(2, 1, sharex=True)
+     fig.set_size_inches(6, 4)
+     for a, k in zip(ax, dpt):
+       temp = np.array(dpt[k]).T
+       mean_dpt = temp.mean(axis=1)
+       order = np.argsort(mean_dpt)[::100]
+       n = 0
+       for i, (day, _) in enumerate(reps[k].obs.groupby('day')):
+         idx = reps[k].obs['day'].iloc[order] == day
+         a.errorbar(
+           x=np.arange(order.shape[0])[idx],
+           y=mean_dpt[order][idx],
+           yerr=temp[order][idx].std(axis=1),
+           fmt='o',
+           markersize=1,
+           elinewidth=0.5,
+           c=cm(i),
+           label=day)
+         n += len(idx)
+     for i, a in enumerate(ax):
+       a.set_title(f'Donor {i + 1}')
+       a.set_ylim(0, 1)
+       a.set_ylabel('Diffusion pseudotime')
+       leg = a.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+       leg.set_title('Day')
+     ax[-1].set_xlabel('Cell (subsampled)')
      fig.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[42]:
-   [[file:figure/trajectory.org/drop-seq-dpt-markers-rep2.png]]
+   # Out[356]:
+   [[file:figure/trajectory.org/drop-seq-dpt.png]]
+   :END:
+
+   Repeat the analysis for the Elorbany et al. data. Get the individual with
+   the most cells.
+
+   #+BEGIN_SRC ipython
+     elorbany_dat.obs.groupby(['individual'])['diffday'].agg(len).sort_values().tail()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[43]:
+   #+BEGIN_EXAMPLE
+     individual
+     NA18511    22203
+     NA18858    23197
+     NA19093    24299
+     NA19190    24405
+     NA18499    29466
+     Name: diffday, dtype: int64
+   #+END_EXAMPLE
+   :END:
+
+   Compute DPT in that donor, starting from 200 random starting points (day 0
+   cells).
+
+   #+BEGIN_SRC ipython :async t
+     temp = elorbany_dat[elorbany_dat.obs['individual'] == 'NA18499']
+     sc.pp.filter_genes(temp, min_cells=1)
+     sc.pp.pca(temp)
+     sc.pp.neighbors(temp, n_neighbors=30)
+     sc.tl.diffmap(temp, n_comps=10)
+
+     np.random.seed(1)
+     dpt = []
+     for root in np.random.choice(np.flatnonzero(temp.obs['diffday'] == 'Day 0'), 200):
+       temp.uns['iroot'] = root
+       sc.tl.dpt(temp, n_dcs=10)
+       dpt.append(temp.obs['dpt_pseudotime'].values)
+       del temp.obs['dpt_pseudotime']
+     dpt = np.array(dpt).T
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[82]:
+   :END:
+
+   Order the cells by average DPT, then downsample and plot error bars.
+
+   #+BEGIN_SRC ipython :ipyfile figure/trajectory.org/elorbany-dpt.png
+     cm = colorcet.cm['bmy']
+     plt.clf()
+     plt.gcf().set_size_inches(6, 2.5)
+     mean_dpt = dpt.mean(axis=1)
+     order = np.argsort(mean_dpt)[::200]
+     for i, (day, _) in enumerate(temp.obs.groupby('diffday')):
+       idx = temp.obs['diffday'].iloc[order] == day
+       plt.errorbar(
+         x=np.arange(order.shape[0])[idx],
+         y=mean_dpt[order][idx],
+         yerr=dpt[order][idx].std(axis=1),
+         fmt='o',
+         markersize=1,
+         elinewidth=0.5,
+         c=cm(int(day[4:]) / 15),
+         label=day)
+     leg = plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5))
+     leg.set_title('Diffday')
+     plt.title('NA18499')
+     plt.ylim(0, 1)
+     plt.ylabel('Diffusion pseudotime')
+     plt.xlabel('Cell (subsampled)')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[81]:
+   [[file:figure/trajectory.org/elorbany-dpt.png]]
+   :END:
+
+** Dependence of DPT on preprocessing
+
+   Selewa et al. write "Selection of genes for trajectory analysis, or feature
+   selection, is critical for obtaining accurate trajectories." Since we know
+   something about the true ordering of cells, one can use model-based
+   optimization to find optimal pre-processing filters.
+
+   #+BEGIN_SRC ipython
+     def loss(theta, dat, n_samples=200):
+       min_cells, n_pcs, n_neighbors, n_dcs = theta
+       temp = dat.copy()
+       sc.pp.filter_genes(temp, min_cells=int(min_cells))
+       # Important: PCA is randomized too
+       np.random.seed(1)
+       sc.pp.pca(temp, n_comps=int(n_pcs))
+       sc.pp.neighbors(temp, n_neighbors=int(n_neighbors))
+       sc.tl.diffmap(temp, n_comps=int(n_dcs))
+       dpt = []
+       for root in np.random.choice(np.flatnonzero(temp.obs['day'] == '0'), n_samples):
+         temp.uns['iroot'] = root
+         sc.tl.dpt(temp, n_dcs=int(n_dcs))
+         dpt.append(temp.obs['dpt_pseudotime'])
+         del temp.obs['dpt_pseudotime']
+
+       expected_order = pd.Categorical(dat.obs['day'].apply(float), ordered=True).codes
+       order = np.argsort(np.array(dpt).T.mean(axis=1))
+       ranks = np.empty_like(order)
+       ranks[order] = np.arange(len(order))
+       return {'loss': -st.kendalltau(ranks, expected_order)[0], 'status': hp.STATUS_OK}
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[164]:
+   :END:
+
+   #+BEGIN_SRC ipython
+     rep2 = dat[dat.obs['donor'] == 'Rep2']
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[155]:
+   :END:
+
+   #+BEGIN_SRC ipython :async t
+     np.random.seed(1)
+     trials = hp.Trials()
+     opt = hp.fmin(
+       ft.partial(loss, dat=rep2, n_samples=200),
+       space=[hp.hp.loguniform('min_cells', 0, np.log(1000)),
+              hp.hp.uniform('n_pcs', 3, 50),
+              hp.hp.uniform('n_neighbors', 5, 50),
+              hp.hp.uniform('n_dcs', 2, 50)],
+       algo=hp.tpe.suggest,
+       trials=trials,
+       max_evals=100)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   0 - b238f6e9-37dd-4970-abeb-0eeb347a11ee
    :END:
 
 ** NMF-based pseudotime
@@ -651,7 +777,7 @@
    [[file:figure/trajectory.org/rep1-structure.png]]
    :END:
 
-** Geodesics                                                       :noexport:
+** Geodesics
 
    Estimate the geodesic in this space
    (https://www.springer.com/us/book/9780817634902, https://arxiv.org/pdf/1411.7432
@@ -683,50 +809,3 @@
    :RESULTS:
    0 - f554087f-b03a-4574-8613-072c205e5251
    :END:
-** ZINB
-
-   Fit the ZINB model where parameters are shared between cells from the same
-   individual and day.
-
-   #+BEGIN_SRC ipython :eval never :noweb tangle :tangle /project2/mstephens/aksarkar/projects/singlecell-ideas/code/tf-zinb.py
-     <<imports>>
-     <<read-cm-data>>
-     <<filter-cm-data>>
-
-     groups = adata.obs.groupby(['day', 'ind'])
-     onehot = np.zeros((adata.shape[0], len(groups))).astype(np.float32)
-     for i, (k, g) in enumerate(groups):
-       onehot[g.index,i] = 1.0
-     design = np.zeros((adata.shape[0], 1)).astype(np.float32)
-     size_factor = adata.X.sum(axis=1).A.astype(np.float32)
-     init = scqtl.tf.fit(
-       umi=adata.X.A,
-       size_factor=size_factor,
-       onehot=onehot,
-       design=design,
-       learning_rate=1e-3,
-       max_epochs=30000,
-       verbose=True)
-     log_mu, log_phi, logodds, nb_nll, zinb_nll = scqtl.tf.fit(
-       umi=adata.X.A,
-       size_factor=size_factor,
-       onehot=onehot,
-       design=design,
-       warm_start=init[:3],
-       learning_rate=1e-3,
-       max_epochs=30000,
-       verbose=True)
-     pd.DataFrame(log_mu).to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/log_mu.txt.gz', compression='gzip', sep='\t')
-     pd.DataFrame(log_phi).to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/log_phi.txt.gz', compression='gzip', sep='\t')
-     pd.DataFrame(logodds).to_csv('/project2/mstephens/aksarkar/projects/singlecell-ideas/data/czi/drop/logodds.txt.gz', compression='gzip', sep='\t')
-   #+END_SRC
-
-   #+BEGIN_SRC sh :dir /scratch/midway2/aksarkar/ideas/
-     sbatch --partition=gpu2 --gres=gpu:1 --mem=16G --time=7:00:00 --job-name=tf-zinb --out=tf-zinb-cm.out
-     #!/bin/bash
-     source activate singlecell
-     python /project2/mstephens/aksarkar/projects/singlecell-ideas/code/tf-zinb.py
-   #+END_SRC
-
-   #+RESULTS:
-   : Submitted batch job 55970981

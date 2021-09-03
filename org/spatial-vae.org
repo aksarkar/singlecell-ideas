@@ -155,6 +155,9 @@
      Genomics Visium;
      [[https://www.nature.com/articles/s41593-020-00787-0][Maynard et
      al. 2021]])
+   - [[https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE144240][Human
+     Squamous Cell Carcinoma]] (ST
+     [[https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7391009/][Ji et al. 2020]])
    - [[https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130682][Mouse
      olfactory bulb]] (HDST;
      [[https://www.nature.com/articles/s41592-019-0548-y][Vikovic et

@@ -17,11 +17,11 @@
 
   The main disadvantage of strategy (1) is that, as commonly applied to
   transformed counts, it does not separate measurement error and biological
-  variation of interest. The main disadvantage of strategy (2) is that it does
-  not account for transcriptional noise
+  variation of interest (Sarkar and Stephens 2021). The main disadvantage of
+  strategy (2) is that it does not account for transcriptional noise
   ([[https://doi.org/10.1016/j.cell.2008.09.050][Raj 2008]]). We
-  [[file:nbmix.org][previously developed a simple mixture model]] which could
-  address this issue. Here, we develop an alternative method based on
+  [[file:nbmix.org][previously developed a simple mixture model]] that could
+  address the second issue. Here, we develop an alternative method based on
   [[http://ruishu.io/2016/12/25/gmvae/][GMVAE]], which allows us to explore a
   different way of separating and representing transcriptional noise.
 
@@ -59,7 +59,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[17]:
+  # Out[1]:
   :END:
 
   #+BEGIN_SRC ipython
@@ -81,7 +81,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[37]:
+  # Out[3]:
   :END:
 
 * Methods
@@ -114,7 +114,7 @@
 
    \begin{align}
      \vx_i \mid \vz_i, s^2 &\sim \N(f(\vz_i), s^2 \mi)\\
-     \vz_i &\sim \N(0, \mi),
+     \vz_i &\sim \N(0, s_0^2 \mi),
    \end{align}
 
    where
@@ -125,7 +125,8 @@
    - \(f\) is a (fully connected, say) neural network mapping latent variables
      to the (noiseless, true) mean vector
 
-   This simple case is a generalization of PPCA
+   This is a simplification of the original presentation of VAEs (Kingma and
+   Welling 2014); in this for, it is a simple generalization of PPCA
    ([[https://dx.doi.org/10.1111/1467-9868.00196][Tipping and Bishop
    1999]]). To perform inference, typically one introduces a variational
    approximation parameterized by an inference network
@@ -149,6 +150,9 @@
          super().__init__()
          self.net = torch.nn.Sequential(
            torch.nn.Linear(input_dim, hidden_dim),
+           torch.nn.ReLU(),
+           torch.nn.BatchNorm1d(hidden_dim),
+           torch.nn.Linear(hidden_dim, hidden_dim),
            torch.nn.ReLU(),
            torch.nn.BatchNorm1d(hidden_dim),
          )
@@ -183,7 +187,7 @@
 
    #+RESULTS: dist
    :RESULTS:
-   # Out[52]:
+   # Out[49]:
    :END:
 
    Then, the ELBO
@@ -200,32 +204,113 @@
    ([[https://openreview.net/forum?id=33X9fd2-9FyZd][Kingma and Welling
    2014]]). Then, it is trivial to generalize this setup to other likelihoods.
 
+   #+NAME: vae
+   #+BEGIN_SRC ipython
+     class VAE(torch.nn.Module):
+       def __init__(self, input_dim, latent_dim, hidden_dim=128):
+         super().__init__()
+         # Roughly 1e-3
+         # self.residual_scale_raw = torch.nn.Parameter(torch.tensor(-9.))
+         self.prior_scale_raw = torch.nn.Parameter(torch.tensor(-9.))
+         self.encoder = DeepGaussian(input_dim, latent_dim, hidden_dim)
+         self.decoder = DeepGaussian(latent_dim, input_dim, hidden_dim)
+
+       def forward(self, x, writer=None, global_step=None):
+         softplus = torch.nn.functional.softplus
+         z_mean, z_scale = self.encoder.forward(x)
+         qz = torch.distributions.Normal(z_scale, z_scale)
+         kl = torch.distributions.kl.kl_divergence(qz, torch.distributions.Normal(0., softplus(self.prior_scale_raw))).sum(dim=1)
+         x_mean, x_scale = self.decoder.forward(qz.rsample())
+         err = torch.distributions.Normal(x_mean, x_scale).log_prob(x).sum(dim=1)
+         loss = -(err - kl).sum()
+         if writer is not None:
+           writer.add_scalar('loss/kl', kl.sum(), global_step)
+           writer.add_scalar('loss/neg_err', -err.sum(), global_step)
+           writer.add_scalar('loss/neg_elbo', loss, global_step)
+         return loss
+
+       def fit(self, data, n_epochs, log_dir=None, **kwargs):
+         assert torch.cuda.is_available()
+         self.cuda()
+         if log_dir is not None:
+           writer = tb.SummaryWriter(log_dir)
+         else:
+           writer = None
+         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         global_step = 0
+         for epoch in range(n_epochs):
+           for batch in data:
+             x = batch[0].cuda()
+             opt.zero_grad()
+             loss = self.forward(x, writer=writer, global_step=global_step)
+             if torch.isnan(loss):
+               raise RuntimeError('nan loss')
+             loss.backward()
+             opt.step()
+             global_step += 1
+         return self
+
+       # @torch.no_grad()
+       # def residual_scale(self):
+       #   return torch.nn.functional.softplus(self.residual_scale_raw).cpu().numpy()
+
+       @torch.no_grad()
+       def prior_scale(self):
+         return torch.nn.functional.softplus(self.prior_scale_raw).cpu().numpy()
+
+       @torch.no_grad()
+       def get_latent(self, data):
+         zhat = []
+         for (x,) in data:
+           zhat.append(self.encoder.forward(x)[0].cpu().numpy())
+         return np.vstack(zhat)
+
+       @torch.no_grad()
+       def predict(self, data):
+         xhat = []
+         for (x,) in data:
+           xhat.append(self.decoder.forward(self.encoder.forward(x)[0])[0].cpu().numpy())
+         return np.vstack(xhat)
+   #+END_SRC
+
+   #+RESULTS: vae
+   :RESULTS:
+   # Out[206]:
+   :END:
+
 ** Gaussian GMVAE
 
    Now assume
 
    \begin{align}
-     \vx_i \mid \vz_i, \sigma^2 &\sim \N(f(\vz_i), \sigma^2\mi)\\
-     \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
-     y_i \mid \va &\sim \Mult(1, \va),
+     \vx_i \mid \vz_i &\sim \N(m(\vz_i), \diag(s^2(\vz_i)))\\
+     \vz_i \mid \vy_i &\sim \N(m_0(\vy_i), \diag(s_0^2(\vy_i)))\\
+     \vy_i \mid \va &\sim \Mult(1, \va),
    \end{align}
 
    where
 
-   - \(y_i \in \{1, \ldots, k\}\) denotes the latent cluster assignment
    - \(m(\cdot), s^2(\cdot)\) are fully-connected neural networks mapping
+     latent variables to the noiseless observation and the observation noise,
+     respectively
+   - \(\vy_i\) is a one-hot \(k\)-vector denoting the latent cluster assignment
+   - \(m_0(\cdot), s_0^2(\cdot)\) are fully-connected neural networks mapping
      latent labels to latent variables (in particular, \(m\) gives the cluster
      centroids)
    - \(\va\) is the \(k\)-vector of prior probabilities for each cluster
      assignment
    
-   Now, the (marginal) prior on latent variables \(\vz_i\) is a mixture of
-   Gaussians. To perform inference, introduce a variational approximation
+   This specification combines the prior specification of
+   [[https://openreview.net/forum?id=33X9fd2-9FyZd][Rui Shu]] with the
+   likelihood of [[https://arxiv.org/abs/1611.02648][Dilokthanakul et
+   al. 2016]]. Specifically, the (marginal) prior on latent variables \(\vz_i\)
+   is a mixture of Gaussians. To perform inference, introduce a variational
+   approximation
 
    \begin{align}
-     q(y_i, \vz_i \mid \vx_i) &= q(y_i \mid \vx_i)\, q(\vz_i \mid \vx_i, y_i)\\
-     q(y_i \mid \vx_i) &= \Mult(1, \pi(\vx_i))\\
-     q(\vz_i \mid \vx_i, y_i) &= \N(\mu(\vx_i, y_i), \sigma^2(\vx_i, y_i)),
+     q(\vy_i, \vz_i \mid \vx_i) &= q(\vy_i \mid \vx_i)\, q(\vz_i \mid \vx_i, \vy_i)\\
+     q(\vy_i \mid \vx_i) &= \Mult(1, \pi(\vx_i))\\
+     q(\vz_i \mid \vx_i, \vy_i) &= \N(\mu(\vx_i, \vy_i), \sigma^2(\vx_i, \vy_i)),
    \end{align}
 
    where
@@ -239,11 +324,12 @@
    Gaussian, not a mixture of Gaussians. The ELBO
 
    \begin{equation}
-     \ell = \sum_i \E_q\left[\ln p(\vx_i \mid \vz_i) + \ln\frac{p(y_i)}{q(y_i \mid \vx_i)} + \ln\frac{p(\vz_i \mid y_i)}{q(\vz_i \mid \vx_i, y_i)}\right],
+     \ell = \sum_i \E_q\left[\ln p(\vx_i \mid \vz_i) + \ln\frac{p(\vy_i)}{q(\vy_i \mid \vx_i)} + \ln\frac{p(\vz_i \mid \vy_i)}{q(\vz_i \mid \vx_i, \vy_i)}\right],
    \end{equation}
 
-   in which the expectation is replaced by a Monte Carlo integral as above. As
-   a sanity check (reproducing previous results), implement this case.
+   in which the expectation over \(q(\vy_i \mid \vx_i)\) is computed exactly
+   (by summing over mixture components) and the expectation over \(q(\vz_i \mid
+   \vx_i, \vy_i)\) is replaced by a Monte Carlo integral as above.
 
    #+NAME: gmvae
    #+BEGIN_SRC ipython
@@ -251,14 +337,13 @@
        def __init__(self, input_dim, latent_dim, n_clusters, hidden_dim=128):
          super().__init__()
          self.n_clusters = n_clusters
-         self.sigma_raw = torch.nn.Parameter(torch.zeros([1]))
+         self.residual_scale_raw = torch.nn.Parameter(torch.zeros([1]))
          self.encoder_y = DeepCategorical(input_dim, n_clusters, hidden_dim)
          self.encoder_z = DeepGaussian(input_dim + n_clusters, latent_dim, hidden_dim)
          self.decoder_z = DeepGaussian(n_clusters, latent_dim, hidden_dim)
          self.decoder_x = torch.nn.Sequential(
            FC(latent_dim, hidden_dim),
-           torch.nn.Linear(hidden_dim, input_dim)
-         )
+           torch.nn.Linear(hidden_dim, input_dim))
 
        def forward(self, x, labels=None, writer=None, global_step=None, eps=1e-16):
          # [batch_size, n_clusters]
@@ -271,23 +356,34 @@
            # labels is one-hot [batch_size, n_clusters]
            with torch.no_grad():
              if labels.shape[1] == 2:
-               writer.add_scalar('loss/cross_entropy_p', torch.nn.functional.binary_cross_entropy(probs, labels), global_step)
-               writer.add_scalar('loss/cross_entropy_1p', torch.nn.functional.binary_cross_entropy(1 - probs, labels), global_step)
-             writer.add_scalar('loss/cond_entropy', -(probs * torch.log(probs + eps)).mean(), global_step)
+               writer.add_scalar('loss/cross_entropy_p',
+                                 torch.nn.functional.binary_cross_entropy(probs, labels),
+                                 global_step)
+               writer.add_scalar('loss/cross_entropy_1p',
+                                 torch.nn.functional.binary_cross_entropy(1 - probs, labels),
+                                 global_step)
+             writer.add_scalar('loss/cond_entropy',
+                               -(probs * torch.log(probs + eps)).mean(),
+                               global_step)
          y = torch.eye(self.n_clusters).cuda()
          # [n_clusters, latent_dim]
          prior_mean, prior_scale = self.decoder_z.forward(y)
          # Important: really marginalize over y
          for k in range(self.n_clusters):
-           mean, scale = self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))
+           z_mean, z_scale = self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))
            # [batch_size, latent_dim]
            # TODO: n_samples > 1 breaks BatchNorm in decoder
-           qz = torch.distributions.Normal(mean, scale).rsample()
-           loss += (probs[:,k].reshape(-1, 1) * (torch.distributions.Normal(mean, scale).log_prob(qz) - torch.distributions.Normal(prior_mean[k], prior_scale[k]).log_prob(qz))).sum()
+           qz = torch.distributions.Normal(z_mean, z_scale).rsample()
+           loss += (probs[:,k].reshape(-1, 1)
+                    ,* (torch.distributions.Normal(z_mean, z_scale).log_prob(qz)
+                       - torch.distributions.Normal(prior_mean[k], prior_scale[k]).log_prob(qz))).sum()
            assert not torch.isnan(loss)
            # [batch_size, input_dim]
-           mu = self.decoder_x(qz)
-           loss -= (torch.distributions.Normal(mu, torch.nn.functional.softplus(self.sigma_raw)).log_prob(x)).sum()
+           x_mean = self.decoder_x.forward(qz)
+           loss -= (probs[:,k].reshape(-1, 1)
+                    ,* torch.distributions.Normal(
+                      x_mean,
+                      torch.nn.functional.softplus(self.residual_scale_raw)).log_prob(x)).sum()
            assert not torch.isnan(loss)
            assert loss > 0
          if writer is not None:
@@ -319,8 +415,8 @@
 
        @property
        @torch.no_grad()
-       def sigma(self):
-         return torch.nn.functional.softplus(self.sigma_raw).cpu().numpy()
+       def residual_scale(self):
+         return torch.nn.functional.softplus(self.residual_scale_raw).cpu().numpy()
 
        @torch.no_grad()
        def get_labels(self, data):
@@ -353,7 +449,7 @@
 
    #+RESULTS: gmvae
    :RESULTS:
-   # Out[181]:
+   # Out[120]:
    :END:
 
 ** Bernoulli GMVAE
@@ -474,7 +570,7 @@
    measurement model (likelihood):
 
    \begin{align}
-     \vx_i \mid \xiplus, \vz_i &\sim \Pois(\xiplus (\lambda(\vz_i))_j)
+     \vx_i \mid \xiplus, \vz_i &\sim \Pois(\xiplus (\lambda(\vz_i))_j)\\
      \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
      y_i \mid \va &\sim \Mult(1, \va),
    \end{align}
@@ -584,9 +680,11 @@
 * Results
 ** Pinwheel example
 
-   Use the "pinwheel data" from Johnson et al. 2017
+   Use the "pinwheel data" from [[https://arxiv.org/abs/1603.06277][Johnson et
+   al. 2016]]
    ([[https://github.com/mattjj/svae/blob/master/experiments/gmm_svae_synth.py#L11][source
-   code]] associated with Dilokthanakul et al. 2017).
+   code]] associated with [[https://arxiv.org/abs/1611.02648][Dilokthanakul et
+   al. 2016]]).
 
    #+BEGIN_SRC ipython
      def make_pinwheel_data(radial_std, tangential_std, num_classes, num_per_class, rate, seed=0):
@@ -603,10 +701,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[4]:
+   # Out[6]:
    :END:
 
-   Generate data following Dilokthanakul et al. 2017.
+   Generate data following [[https://arxiv.org/abs/1611.02648][Dilokthanakul et
+   al. 2016]].
 
    #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/pinwheel-ex.png
      n = 10000
@@ -625,9 +724,11 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[81]:
+   # Out[7]:
    [[file:figure/zinb-vae-gmm.org/pinwheel-ex.png]]
    :END:
+
+*** GMM
 
    Fit a GMM by EM, with oracle number of components.
 
@@ -664,12 +765,135 @@
    [[file:figure/zinb-vae-gmm.org/pinwheel-ex-gmm.png]]
    :END:
 
+*** VAE
+
+   Fit an ordinary VAE.
+
+   #+BEGIN_SRC ipython :async t
+     seed = 15
+     batch_size = 32
+     lr = 1e-2
+     n_epochs = 40
+     latent_dim = 4
+     torch.manual_seed(seed)
+     data = td.DataLoader(
+       td.TensorDataset(
+         torch.tensor(dat, device='cuda', dtype=torch.float)),
+       drop_last=True,
+       shuffle=True,
+       batch_size=batch_size)
+     fit0 = VAE(input_dim=2, latent_dim=latent_dim)
+     fit0 = fit0.fit(data,
+                  lr=lr,
+                  n_epochs=n_epochs,
+                  log_dir=f'runs/gmvae/pinwheel-vae-{latent_dim}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}'
+             )
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[207]:
+   :END:
+
+   Plot the latent space.
+
+   #+BEGIN_SRC ipython :async t
+     data = td.DataLoader(
+       td.TensorDataset(
+         torch.tensor(dat, device='cuda', dtype=torch.float)),
+       batch_size=batch_size)
+     zhat = fit0.get_latent(data)
+     u = umap.UMAP(random_state=1).fit_transform(zhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[208]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/pinwheel-ex-vae-zhat-umap.png
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     plt.gcf().set_size_inches(3.5, 3)
+     for k in range(K):
+       plt.scatter(u[labels == k,0], u[labels == k,1], s=1, color=cm(k), label=f'C{k}')
+     plt.legend(frameon=False, handletextpad=0, markerscale=4, loc='center left', bbox_to_anchor=(1, .5))
+     plt.gca().set_aspect('equal', adjustable='datalim')
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[209]:
+   [[file:figure/zinb-vae-gmm.org/pinwheel-ex-vae-zhat-umap.png]]
+   :END:
+
+   Report the estimated \(\hat{s}_0\).
+
+   #+BEGIN_SRC ipython
+     fit0.prior_scale()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[210]:
+   : array(0.0014072, dtype=float32)
+   :END:
+
+   Plot the predicted values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/pinwheel-ex-vae-xhat.png
+     data = td.DataLoader(
+       td.TensorDataset(
+         torch.tensor(dat, device='cuda', dtype=torch.float)),
+       batch_size=batch_size)
+     xhat = fit0.predict(data)
+
+     cm = plt.get_cmap('Dark2')
+     plt.clf()
+     fig, ax = plt.subplots(1, 2, sharey=True)
+     fig.set_size_inches(6, 3)
+     for k in range(K):
+       ax[0].scatter(dat[labels == k,0], dat[labels == k,1], s=1, color=cm(k), label=f'C{k}')
+       ax[1].scatter(xhat[labels == k, 0], xhat[labels == k, 1], s=1, color=cm(k), label=f'C{k}')
+     ax[0].set_title('Observed data')
+     ax[1].set_title('Reconstructed data')
+     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
+     for a in ax:
+       a.set_aspect('equal', adjustable='datalim')
+       a.set_xlabel('$x_1$')
+     ax[0].set_ylabel('$x_2$')
+     fig.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[211]:
+   [[file:figure/zinb-vae-gmm.org/pinwheel-ex-vae-xhat.png]]
+   :END:
+
+   Report the estimated \(\hat{s}\).
+
+   #+BEGIN_SRC ipython
+     fit0.residual_scale()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[205]:
+   : array(0.7099699, dtype=float32)
+   :END:
+
+*** GMVAE
+
    Fit GMVAE.
 
    #+BEGIN_SRC ipython :async t
-     seed = 9
-     batch_size = 64
-     lr = 5e-4
+     seed = 4
+     batch_size = 32
+     lr = 1e-2
      n_epochs = 10
      latent_dim = 2
      torch.manual_seed(seed)
@@ -685,14 +909,13 @@
             .fit(data,
                  lr=lr,
                  n_epochs=n_epochs,
-                 # log_dir=f'runs/gmvae/pinwheel-{latent_dim}-{K}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}'
-            )
-     )
+                 log_dir=f'runs/gmvae/pinwheel-{latent_dim}-{K}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}'
+            ))
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[182]:
+   # Out[51]:
    :END:
 
    Plot the predicted values.
@@ -724,7 +947,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[183]:
+   # Out[52]:
    [[file:figure/zinb-vae-gmm.org/pinwheel-ex-gmvae-xhat.png]]
    :END:
 
@@ -749,8 +972,8 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[149]:
-   : 0.2832
+   # Out[53]:
+   : 0.4851
    :END:
 
    Plot the latent space.
@@ -761,7 +984,7 @@
      fig, ax = plt.subplots(1, 2, sharey=True)
      fig.set_size_inches(6, 3)
 
-     lim = [-5, 5]
+     lim = [-50, 50]
      x, y = np.meshgrid(np.linspace(*lim), np.linspace(*lim))
      with torch.no_grad():
        prior_mean, prior_scale = fit.decoder_z.forward(torch.eye(fit.n_clusters).cuda())
@@ -792,7 +1015,7 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[185]:
+   # Out[54]:
    [[file:figure/zinb-vae-gmm.org/pinwheel-ex-gmvae.png]]
    :END:
 

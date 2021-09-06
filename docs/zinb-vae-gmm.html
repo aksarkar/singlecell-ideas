@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2021-09-05 Sun 17:26 -->
+<!-- 2021-09-06 Mon 12:06 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deep unsupervised clustering of scRNA-seq data</title>
@@ -259,9 +259,17 @@ for the JavaScript code in this tag.
 <ul>
 <li><a href="#orgf40b2f7">Introduction</a></li>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#org1b5c4f4">Methods</a></li>
+<li><a href="#org1b5c4f4">Methods</a>
+<ul>
+<li><a href="#org0949e82">Variational autoencoder</a></li>
+<li><a href="#org9ebf0d0">Gaussian GMVAE</a></li>
+<li><a href="#org6cecaaf">Bernoulli GMVAE</a></li>
+<li><a href="#orgdbd1073">Poisson GMVAE</a></li>
+</ul>
+</li>
 <li><a href="#org6e57704">Results</a>
 <ul>
+<li><a href="#org3d1099e">Pinwheel example</a></li>
 <li><a href="#orgda964e9">MNIST sanity check</a></li>
 <li><a href="#org0bb3b13">Two-way example</a></li>
 </ul>
@@ -313,6 +321,8 @@ different way of separating and representing transcriptional noise.
 <span class="org-keyword">import</span> numpy <span class="org-keyword">as</span> np
 <span class="org-keyword">import</span> pandas <span class="org-keyword">as</span> pd
 <span class="org-keyword">import</span> scanpy <span class="org-keyword">as</span> sc
+<span class="org-keyword">import</span> scipy.stats <span class="org-keyword">as</span> st
+<span class="org-keyword">import</span> sklearn.mixture <span class="org-keyword">as</span> skm
 <span class="org-keyword">import</span> torch
 <span class="org-keyword">import</span> torch.utils.data <span class="org-keyword">as</span> td
 <span class="org-keyword">import</span> torch.utils.tensorboard <span class="org-keyword">as</span> tb
@@ -328,7 +338,8 @@ different way of separating and representing transcriptional noise.
 </div>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
+<pre class="src src-ipython"><span class="org-keyword">import</span> colorcet
+<span class="org-keyword">import</span> matplotlib.pyplot <span class="org-keyword">as</span> plt
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'figure.facecolor'</span>] = <span class="org-string">'w'</span>
 <span class="org-variable-name">plt.rcParams</span>[<span class="org-string">'font.family'</span>] = <span class="org-string">'Nimbus Sans'</span>
 </pre>
@@ -339,35 +350,40 @@ different way of separating and representing transcriptional noise.
 <div id="outline-container-org1b5c4f4" class="outline-2">
 <h2 id="org1b5c4f4">Methods</h2>
 <div class="outline-text-2" id="text-org1b5c4f4">
+</div>
+<div id="outline-container-org0949e82" class="outline-3">
+<h3 id="org0949e82">Variational autoencoder</h3>
+<div class="outline-text-3" id="text-org0949e82">
 <p>
-We assume \(
-  \DeclareMathOperator\Bern{Bernoulli}
-  \DeclareMathOperator\E{E}
-  \DeclareMathOperator\Gam{Gamma}
-  \DeclareMathOperator\Mult{Multinomial}
-  \DeclareMathOperator\N{\mathcal{N}}
-  \DeclareMathOperator\Pois{Poisson}
-  \DeclareMathOperator\diag{diag}
-  \DeclareMathOperator\KL{\mathcal{KL}}
-  \newcommand\kl[2]{\KL(#1\;\Vert\;#2)}
-  \newcommand\xiplus{x_{i+}}
-  \newcommand\mi{\mathbf{I}}
-  \newcommand\va{\mathbf{a}}
-  \newcommand\vb{\mathbf{b}}
-  \newcommand\vu{\mathbf{u}}
-  \newcommand\vx{\mathbf{x}}
-  \newcommand\vz{\mathbf{z}}
-  \newcommand\vlambda{\boldsymbol{\lambda}}
-  \newcommand\vmu{\boldsymbol{\mu}}
-  \newcommand\vphi{\boldsymbol{\phi}}
-  \newcommand\vpi{\boldsymbol{\pi}}
-  \)
+In perhaps the simplest case, one assumes \(
+   \DeclareMathOperator\Bern{Bernoulli}
+   \DeclareMathOperator\E{E}
+   \DeclareMathOperator\KL{\mathcal{KL}}
+   \DeclareMathOperator\Gam{Gamma}
+   \DeclareMathOperator\Mult{Multinomial}
+   \DeclareMathOperator\N{\mathcal{N}}
+   \DeclareMathOperator\Pois{Poisson}
+   \DeclareMathOperator\diag{diag}
+   \DeclareMathOperator\KL{\mathcal{KL}}
+   \newcommand\kl[2]{\KL(#1\;\Vert\;#2)}
+   \newcommand\xiplus{x_{i+}}
+   \newcommand\mi{\mathbf{I}}
+   \newcommand\va{\mathbf{a}}
+   \newcommand\vb{\mathbf{b}}
+   \newcommand\vu{\mathbf{u}}
+   \newcommand\vx{\mathbf{x}}
+   \newcommand\vy{\mathbf{y}}
+   \newcommand\vz{\mathbf{z}}
+   \newcommand\vlambda{\boldsymbol{\lambda}}
+   \newcommand\vmu{\boldsymbol{\mu}}
+   \newcommand\vphi{\boldsymbol{\phi}}
+   \newcommand\vpi{\boldsymbol{\pi}}
+   \)
 </p>
 
 \begin{align}
-  x_{ij} \mid \xiplus, \vz_i &\sim \Pois(\xiplus (\lambda(\vz_i))_j)\\
-  \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
-  y_i \mid \va &\sim \Mult(1, \va),
+  \vx_i \mid \vz_i, s^2 &\sim \N(f(\vz_i), s^2 \mi)\\
+  \vz_i &\sim \N(0, \mi),
 \end{align}
 
 <p>
@@ -375,65 +391,37 @@ where
 </p>
 
 <ul class="org-ul">
-<li>\(x_{ij}\) denotes the number of molecules of gene \(j = 1, \ldots, p\)
-observed in cell \(i = 1, \ldots, n\)</li>
-<li>\(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of molecules
-observed in cell \(i\)</li>
-<li>\(\lambda(\cdot)\) is a fully-connected neural network mapping latent
-variables to true gene expression</li>
-<li>\(\vz_i \in \mathbb{R}^d\) denotes the \(d\)-dimensional latent variable
-corresponding to observation \(\vx_i\)</li>
-<li>\(m(\cdot), s^2(\cdot)\) are fully-connected neural networks mapping
-latent labels to latent variables (in particular, \(m\) gives the cluster
-centroids)</li>
-<li>\(y_i \in \{1, \ldots, k\}\) denotes the latent cluster assignment</li>
-<li>\(\va\) is the \(k\)-vector of prior probabilities for each cluster
-assignment.</li>
+<li>\(\vx_i\) denotes a \(p\)-dimensional observation</li>
+<li>\(\vz_i\) denotes the \(d\)-dimensional latent variable corresponding to
+observation \(\vx_i\), with \(d \ll p\)</li>
+<li>\(f\) is a (fully connected, say) neural network mapping latent variables
+to the (noiseless, true) mean vector</li>
 </ul>
 
 <p>
-In this model, true gene expression can be represented in a \(d\)-dimensional
-space, \(d \ll p\), and within that space belongs to one of \(k\) clusters,
-indexed by \(y_i\). In other words, the (marginal) prior on latent variables
-\(\vz_i\) is a mixture of Gaussians. To perform inference, introduce a
-variational approximation
-</p>
-
-\begin{align}
-  q(y_i, \vz_i \mid \vx_i) &= q(y_i \mid \vx_i)\, q(\vz_i \mid \vx_i, y_i)\\
-  q(y_i \mid \vx_i) &= \Mult(1, \pi(\vx_i))\\
-  q(\vz_i \mid \vx_i, y_i) &= \N(\mu(\vx_i, y_i), \sigma^2(\vx_i, y_i)),
-\end{align}
-
-<p>
-where
-</p>
-
-<ul class="org-ul">
-<li>\(\pi(\cdot)\) is a fully-connected neural network mapping observations to
-latent labels (more precisely, posterior probabilities)</li>
-<li>\(\mu(\cdot), \sigma^2(\cdot)\) are fully-connected neural networks mapping
-observations and latent labels to latent variables.</li>
-</ul>
-
-<p>
-Importantly, the approximate posterior distribution of latent variables is
-Gaussian, not a mixture of Gaussians. The ELBO
+This simple case is a generalization of PPCA
+(<a href="https://dx.doi.org/10.1111/1467-9868.00196">Tipping and Bishop
+1999</a>). To perform inference, typically one introduces a variational
+approximation parameterized by an inference network
+(<a href="https://escholarship.org/uc/item/34j1h7k5">Gershman and Goodman 2014</a>).
 </p>
 
 \begin{equation}
-  \ell = \sum_i \E_{q(y_i, \vz_i \mid \vx_i)}\left[\sum_j \left[\ln p(x_{ij} \mid \xiplus, \vz_i)\right] + \ln\frac{p(y_i)}{q(y_i \mid \vx_i)} + \ln\frac{p(\vz_i \mid y_i)}{q(\vz_i \mid \vx_i, y_i)}\right].
+  q(\vz_i \mid \vx_i) = \N(\mu(\vz_i), \diag(\sigma^2(\vz_i))),
 \end{equation}
 
 <p>
-In general, computing expectations over \(q(y_i \mid \vx_i)\) requires
-computing a weighted sum. However, the second term is the KL divergence
-between two Multinomials, which is analytic. Further, the first term must be
-approximated as a Monte Carlo integral (Kingma and Welling 2014).
+where \(\mu, \sigma^2\) give the mean and diagonal of the covariance matrix
+of the approximate posterior distribution.
+</p>
+
+<p>
+<i>Remark</i> The inference network <a href="vae-unamortized.html">is not strictly
+necessary</a>.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">class</span> <span class="org-type">FC</span>(torch.nn.Module):
+<pre class="src src-ipython" id="orgec24408"><span class="org-keyword">class</span> <span class="org-type">FC</span>(torch.nn.Module):
   <span class="org-doc">"""Fully connected layers"""</span>
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, hidden_dim=128):
     <span class="org-builtin">super</span>().__init__()
@@ -471,6 +459,210 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
     <span class="org-keyword">return</span> <span class="org-keyword">self</span>.logits(q)
 </pre>
 </div>
+
+<p>
+Then, the ELBO
+</p>
+
+\begin{equation}
+  \ell = \sum_i \E_q[\ln p(\vz_i \mid \vz_i)] - \KL(q(\vz_i \mid \vx_i) \Vert p(\vz_i)),
+\end{equation}
+
+<p>
+where the second term is analytic (since it is the KL divergence between two
+Gaussians). In practice, one replaces the intractable first term \(\E_q[\ln
+   p(\vz_i \mid \vz_i)]\) with a Monte Carlo integral, where samples from \(q\)
+are simulated from a standard distribution transformed by some
+differentiable function \(g\)
+(<a href="https://openreview.net/forum?id=33X9fd2-9FyZd">Kingma and Welling
+2014</a>). Then, it is trivial to generalize this setup to other likelihoods.
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9ebf0d0" class="outline-3">
+<h3 id="org9ebf0d0">Gaussian GMVAE</h3>
+<div class="outline-text-3" id="text-org9ebf0d0">
+<p>
+Now assume
+</p>
+
+\begin{align}
+  \vx_i \mid \vz_i, \sigma^2 &\sim \N(f(\vz_i), \sigma^2\mi)\\
+  \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
+  y_i \mid \va &\sim \Mult(1, \va),
+\end{align}
+
+<p>
+where
+</p>
+
+<ul class="org-ul">
+<li>\(y_i \in \{1, \ldots, k\}\) denotes the latent cluster assignment</li>
+<li>\(m(\cdot), s^2(\cdot)\) are fully-connected neural networks mapping
+latent labels to latent variables (in particular, \(m\) gives the cluster
+centroids)</li>
+<li>\(\va\) is the \(k\)-vector of prior probabilities for each cluster
+assignment</li>
+</ul>
+
+<p>
+Now, the (marginal) prior on latent variables \(\vz_i\) is a mixture of
+Gaussians. To perform inference, introduce a variational approximation
+</p>
+
+\begin{align}
+  q(y_i, \vz_i \mid \vx_i) &= q(y_i \mid \vx_i)\, q(\vz_i \mid \vx_i, y_i)\\
+  q(y_i \mid \vx_i) &= \Mult(1, \pi(\vx_i))\\
+  q(\vz_i \mid \vx_i, y_i) &= \N(\mu(\vx_i, y_i), \sigma^2(\vx_i, y_i)),
+\end{align}
+
+<p>
+where
+</p>
+
+<ul class="org-ul">
+<li>\(\pi(\cdot)\) is a fully-connected neural network mapping observations to
+latent labels (more precisely, posterior probabilities)</li>
+<li>\(\mu(\cdot), \sigma^2(\cdot)\) are fully-connected neural networks mapping
+observations and latent labels to latent variables.</li>
+</ul>
+
+<p>
+Importantly, the approximate posterior distribution of latent variables is
+Gaussian, not a mixture of Gaussians. The ELBO
+</p>
+
+\begin{equation}
+  \ell = \sum_i \E_q\left[\ln p(\vx_i \mid \vz_i) + \ln\frac{p(y_i)}{q(y_i \mid \vx_i)} + \ln\frac{p(\vz_i \mid y_i)}{q(\vz_i \mid \vx_i, y_i)}\right],
+\end{equation}
+
+<p>
+in which the expectation is replaced by a Monte Carlo integral as above. As
+a sanity check (reproducing previous results), implement this case.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython" id="orgdcc3b93"><span class="org-keyword">class</span> <span class="org-type">GMVAE</span>(torch.nn.Module):
+  <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, latent_dim, n_clusters, hidden_dim=128):
+    <span class="org-builtin">super</span>().__init__()
+    <span class="org-keyword">self</span>.n_clusters = n_clusters
+    <span class="org-keyword">self</span>.sigma_raw = torch.nn.Parameter(torch.zeros([1]))
+    <span class="org-keyword">self</span>.encoder_y = DeepCategorical(input_dim, n_clusters, hidden_dim)
+    <span class="org-keyword">self</span>.encoder_z = DeepGaussian(input_dim + n_clusters, latent_dim, hidden_dim)
+    <span class="org-keyword">self</span>.decoder_z = DeepGaussian(n_clusters, latent_dim, hidden_dim)
+    <span class="org-keyword">self</span>.decoder_x = torch.nn.Sequential(
+      FC(latent_dim, hidden_dim),
+      torch.nn.Linear(hidden_dim, input_dim)
+    )
+
+  <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x, labels=<span class="org-constant">None</span>, writer=<span class="org-constant">None</span>, global_step=<span class="org-constant">None</span>, eps=1e-16):
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[batch_size, n_clusters]</span>
+    <span class="org-variable-name">logits</span> = <span class="org-keyword">self</span>.encoder_y.forward(x)
+    <span class="org-variable-name">probs</span> = torch.nn.functional.softmax(logits, dim=1)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: accumulate negative ELBO</span>
+    <span class="org-variable-name">loss</span> = (probs * (torch.log(probs + eps) + torch.log(torch.tensor(<span class="org-keyword">self</span>.n_clusters, dtype=torch.<span class="org-builtin">float</span>)))).<span class="org-builtin">sum</span>()
+    <span class="org-keyword">assert</span> <span class="org-keyword">not</span> torch.isnan(loss)
+    <span class="org-keyword">if</span> writer <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span> <span class="org-keyword">and</span> labels <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      <span class="org-comment-delimiter"># </span><span class="org-comment">labels is one-hot [batch_size, n_clusters]</span>
+      <span class="org-keyword">with</span> torch.no_grad():
+        <span class="org-keyword">if</span> labels.shape[1] == 2:
+          writer.add_scalar(<span class="org-string">'loss/cross_entropy_p'</span>, torch.nn.functional.binary_cross_entropy(probs, labels), global_step)
+          writer.add_scalar(<span class="org-string">'loss/cross_entropy_1p'</span>, torch.nn.functional.binary_cross_entropy(1 - probs, labels), global_step)
+        writer.add_scalar(<span class="org-string">'loss/cond_entropy'</span>, -(probs * torch.log(probs + eps)).mean(), global_step)
+    <span class="org-variable-name">y</span> = torch.eye(<span class="org-keyword">self</span>.n_clusters).cuda()
+    <span class="org-comment-delimiter"># </span><span class="org-comment">[n_clusters, latent_dim]</span>
+    <span class="org-variable-name">prior_mean</span>, <span class="org-variable-name">prior_scale</span> = <span class="org-keyword">self</span>.decoder_z.forward(y)
+    <span class="org-comment-delimiter"># </span><span class="org-comment">Important: really marginalize over y</span>
+    <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(<span class="org-keyword">self</span>.n_clusters):
+      <span class="org-variable-name">mean</span>, <span class="org-variable-name">scale</span> = <span class="org-keyword">self</span>.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))
+      <span class="org-comment-delimiter"># </span><span class="org-comment">[batch_size, latent_dim]</span>
+      <span class="org-comment-delimiter"># </span><span class="org-comment">TODO: n_samples &gt; 1 breaks BatchNorm in decoder</span>
+      <span class="org-variable-name">qz</span> = torch.distributions.Normal(mean, scale).rsample()
+      <span class="org-variable-name">loss</span> += (probs[:,k].reshape(-1, 1) * (torch.distributions.Normal(mean, scale).log_prob(qz) - torch.distributions.Normal(prior_mean[k], prior_scale[k]).log_prob(qz))).<span class="org-builtin">sum</span>()
+      <span class="org-keyword">assert</span> <span class="org-keyword">not</span> torch.isnan(loss)
+      <span class="org-comment-delimiter"># </span><span class="org-comment">[batch_size, input_dim]</span>
+      <span class="org-variable-name">mu</span> = <span class="org-keyword">self</span>.decoder_x(qz)
+      <span class="org-variable-name">loss</span> -= (torch.distributions.Normal(mu, torch.nn.functional.softplus(<span class="org-keyword">self</span>.sigma_raw)).log_prob(x)).<span class="org-builtin">sum</span>()
+      <span class="org-keyword">assert</span> <span class="org-keyword">not</span> torch.isnan(loss)
+      <span class="org-keyword">assert</span> loss &gt; 0
+    <span class="org-keyword">if</span> writer <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      writer.add_scalar(<span class="org-string">'loss/neg_elbo'</span>, loss, global_step)
+    <span class="org-keyword">return</span> loss
+
+  <span class="org-keyword">def</span> <span class="org-function-name">fit</span>(<span class="org-keyword">self</span>, data, n_epochs=100, log_dir=<span class="org-constant">None</span>, **kwargs):
+    <span class="org-keyword">assert</span> torch.cuda.is_available()
+    <span class="org-keyword">self</span>.cuda()
+    <span class="org-keyword">if</span> log_dir <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
+      <span class="org-variable-name">writer</span> = tb.SummaryWriter(log_dir)
+    <span class="org-keyword">else</span>:
+      <span class="org-variable-name">writer</span> = <span class="org-constant">None</span>
+    <span class="org-variable-name">opt</span> = torch.optim.RMSprop(<span class="org-keyword">self</span>.parameters(), **kwargs)
+    <span class="org-variable-name">global_step</span> = 0
+    <span class="org-keyword">for</span> epoch <span class="org-keyword">in</span> <span class="org-builtin">range</span>(n_epochs):
+      <span class="org-keyword">for</span> batch <span class="org-keyword">in</span> data:
+        <span class="org-variable-name">x</span> = batch.pop(0).cuda()
+        <span class="org-keyword">if</span> batch:
+          <span class="org-variable-name">y</span> = batch.pop(0).cuda()
+        opt.zero_grad()
+        <span class="org-variable-name">loss</span> = <span class="org-keyword">self</span>.forward(x, labels=y, writer=writer, global_step=global_step)
+        <span class="org-keyword">if</span> torch.isnan(loss):
+          <span class="org-keyword">raise</span> <span class="org-type">RuntimeError</span>(<span class="org-string">'nan loss'</span>)
+        loss.backward()
+        opt.step()
+        <span class="org-variable-name">global_step</span> += 1
+    <span class="org-keyword">return</span> <span class="org-keyword">self</span>
+
+  <span class="org-type">@property</span>
+  <span class="org-type">@torch.no_grad</span>()
+  <span class="org-keyword">def</span> <span class="org-function-name">sigma</span>(<span class="org-keyword">self</span>):
+    <span class="org-keyword">return</span> torch.nn.functional.softplus(<span class="org-keyword">self</span>.sigma_raw).cpu().numpy()
+
+  <span class="org-type">@torch.no_grad</span>()
+  <span class="org-keyword">def</span> <span class="org-function-name">get_labels</span>(<span class="org-keyword">self</span>, data):
+    <span class="org-variable-name">yhat</span> = []
+    <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
+      yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
+    <span class="org-keyword">return</span> np.vstack(yhat)
+
+  <span class="org-type">@torch.no_grad</span>()
+  <span class="org-keyword">def</span> <span class="org-function-name">get_latent</span>(<span class="org-keyword">self</span>, data):
+    <span class="org-variable-name">zhat</span> = []
+    <span class="org-variable-name">y</span> = torch.eye(<span class="org-keyword">self</span>.n_clusters).cuda()
+    <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
+      <span class="org-variable-name">yhat</span> = torch.nn.functional.softmax(<span class="org-keyword">self</span>.encoder_y.forward(x), dim=1)
+      zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
+                               <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(<span class="org-keyword">self</span>.n_clusters)]).<span class="org-builtin">sum</span>(dim=0).cpu().numpy())
+    <span class="org-keyword">return</span> np.vstack(zhat)
+
+  <span class="org-type">@torch.no_grad</span>()
+  <span class="org-keyword">def</span> <span class="org-function-name">predict</span>(<span class="org-keyword">self</span>, data):
+    <span class="org-variable-name">xhat</span> = []
+    <span class="org-variable-name">y</span> = torch.eye(<span class="org-keyword">self</span>.n_clusters).cuda()
+    <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
+      <span class="org-variable-name">yhat</span> = torch.nn.functional.softmax(<span class="org-keyword">self</span>.encoder_y.forward(x), dim=1)
+      <span class="org-variable-name">zhat</span> = torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
+                          <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(fit.n_clusters)]).<span class="org-builtin">sum</span>(dim=0)
+      xhat.append(<span class="org-keyword">self</span>.decoder_x(zhat).cpu().numpy())
+    <span class="org-keyword">return</span> np.vstack(xhat)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org6cecaaf" class="outline-3">
+<h3 id="org6cecaaf">Bernoulli GMVAE</h3>
+<div class="outline-text-3" id="text-org6cecaaf">
+<p>
+As a sanity check (applying to MNIST), implement the approach for the
+Bernoulli likelihood.
+</p>
+
+\begin{align}
+  x_{ij} \mid \vz_i &\sim \Bern((f(\vz_i))_j)\\
+  \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
+  y_i \mid \va &\sim \Mult(1, \va).
+\end{align}
 
 <div class="org-src-container">
 <pre class="src src-ipython" id="orgf28a8c5"><span class="org-keyword">class</span> <span class="org-type">BGMVAE</span>(torch.nn.Module):
@@ -567,6 +759,35 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
     <span class="org-keyword">return</span> np.vstack(zhat)
 </pre>
 </div>
+</div>
+</div>
+
+<div id="outline-container-orgdbd1073" class="outline-3">
+<h3 id="orgdbd1073">Poisson GMVAE</h3>
+<div class="outline-text-3" id="text-orgdbd1073">
+<p>
+Now implement the case we are interested in for scRNA-seq data, with Poisson
+measurement model (likelihood):
+</p>
+
+\begin{align}
+  \vx_i \mid \xiplus, \vz_i &\sim \Pois(\xiplus (\lambda(\vz_i))_j)
+  \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
+  y_i \mid \va &\sim \Mult(1, \va),
+\end{align}
+
+<p>
+where
+</p>
+
+<ul class="org-ul">
+<li>\(x_{ij}\) denotes the number of molecules of gene \(j = 1, \ldots, p\)
+observed in cell \(i = 1, \ldots, n\)</li>
+<li>\(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of molecules
+observed in cell \(i\)</li>
+<li>\(\lambda(\cdot)\) is a fully-connected neural network mapping latent
+variables to true gene expression</li>
+</ul>
 
 <div class="org-src-container">
 <pre class="src src-ipython" id="org712d798"><span class="org-keyword">class</span> <span class="org-type">PGMVAE</span>(torch.nn.Module):
@@ -657,11 +878,237 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
 </div>
 </div>
 </div>
+</div>
 
 <div id="outline-container-org6e57704" class="outline-2">
 <h2 id="org6e57704">Results</h2>
 <div class="outline-text-2" id="text-org6e57704">
 </div>
+<div id="outline-container-org3d1099e" class="outline-3">
+<h3 id="org3d1099e">Pinwheel example</h3>
+<div class="outline-text-3" id="text-org3d1099e">
+<p>
+Use the &ldquo;pinwheel data&rdquo; from Johnson et al. 2017
+(<a href="https://github.com/mattjj/svae/blob/master/experiments/gmm_svae_synth.py#L11">source
+code</a> associated with Dilokthanakul et al. 2017).
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-keyword">def</span> <span class="org-function-name">make_pinwheel_data</span>(radial_std, tangential_std, num_classes, num_per_class, rate, seed=0):
+  <span class="org-variable-name">rng</span> = np.random.default_rng(seed)
+  <span class="org-variable-name">rads</span> = np.linspace(0, 2 * np.pi, num_classes, endpoint=<span class="org-constant">False</span>)
+  <span class="org-variable-name">features</span> = rng.normal(size=(num_classes * num_per_class, 2)) * np.array([radial_std, tangential_std])
+  <span class="org-variable-name">features</span>[:,0] += 1.
+  <span class="org-variable-name">labels</span> = np.repeat(np.arange(num_classes), num_per_class)
+  <span class="org-variable-name">angles</span> = rads[labels] + rate * np.exp(features[:,0])
+  <span class="org-variable-name">rotations</span> = np.stack([np.cos(angles), -np.sin(angles), np.sin(angles), np.cos(angles)])
+  <span class="org-variable-name">rotations</span> = np.reshape(rotations.T, (-1, 2, 2))
+  <span class="org-keyword">return</span> np.einsum(<span class="org-string">'ti,tij-&gt;tj'</span>, features, rotations), labels
+</pre>
+</div>
+
+<p>
+Generate data following Dilokthanakul et al. 2017.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">n</span> = 10000
+<span class="org-variable-name">K</span> = 5
+<span class="org-variable-name">dat</span>, <span class="org-variable-name">labels</span> = make_pinwheel_data(0.1, 0.05, K, n // K, .5, seed=0)
+<span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(4, 3)
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K):
+  plt.scatter(dat[labels == k,0], dat[labels == k,1], s=1, color=cm(k), label=f<span class="org-string">'C{k}'</span>)
+plt.legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
+plt.xlabel(<span class="org-string">'$x_1$'</span>)
+plt.ylabel(<span class="org-string">'$x_2$'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/zinb-vae-gmm.org/pinwheel-ex.png" alt="pinwheel-ex.png">
+</p>
+</div>
+
+<p>
+Fit a GMM by EM, with oracle number of components.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">m0</span> = skm.GaussianMixture(n_components=K, random_state=1).fit(dat)
+</pre>
+</div>
+
+<p>
+Plot the fit.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+plt.gcf().set_size_inches(3.5, 3)
+<span class="org-variable-name">lim</span> = [-1.5, 1.5]
+<span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = np.meshgrid(np.linspace(*lim), np.linspace(*lim))
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K):
+  plt.scatter(dat[labels == k,0], dat[labels == k,1], s=1, color=cm(k), label=f<span class="org-string">'C{k}'</span>)
+  <span class="org-variable-name">f</span> = st.multivariate_normal(m0.means_[k], m0.covariances_[k]).pdf(np.stack([x, y]).reshape(2, -1).T).reshape(50, 50)
+  plt.contour(x, y, f, linewidths=0.5, levels=5, cmap=colorcet.cm[<span class="org-string">'gray_r'</span>])
+plt.legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
+plt.xlabel(<span class="org-string">'$x_1$'</span>)
+plt.ylabel(<span class="org-string">'$x_2$'</span>)
+plt.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/zinb-vae-gmm.org/pinwheel-ex-gmm.png" alt="pinwheel-ex-gmm.png">
+</p>
+</div>
+
+<p>
+Fit GMVAE.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">seed</span> = 9
+<span class="org-variable-name">batch_size</span> = 64
+<span class="org-variable-name">lr</span> = 5e-4
+<span class="org-variable-name">n_epochs</span> = 10
+<span class="org-variable-name">latent_dim</span> = 2
+torch.manual_seed(seed)
+<span class="org-variable-name">data</span> = td.DataLoader(
+  td.TensorDataset(
+    torch.tensor(dat, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(pd.get_dummies(pd.Categorical(labels)).values, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>)),
+  drop_last=<span class="org-constant">True</span>,
+  shuffle=<span class="org-constant">True</span>,
+  batch_size=batch_size)
+<span class="org-comment-delimiter"># </span><span class="org-comment">Fix number of clusters to the ground truth</span>
+<span class="org-variable-name">fit</span> = (GMVAE(input_dim=2, latent_dim=latent_dim, n_clusters=K)
+       .fit(data,
+            lr=lr,
+            n_epochs=n_epochs,
+            <span class="org-comment-delimiter"># </span><span class="org-comment">log_dir=f'runs/gmvae/pinwheel-{latent_dim}-{K}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}'</span>
+       )
+)
+</pre>
+</div>
+
+<p>
+Plot the predicted values.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">data</span> = td.DataLoader(
+  td.TensorDataset(
+    torch.tensor(dat, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(pd.get_dummies(pd.Categorical(labels)).values, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>)),
+  batch_size=batch_size)
+<span class="org-variable-name">xhat</span> = fit.predict(data)
+
+<span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(6, 3)
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K):
+  ax[0].scatter(dat[labels == k,0], dat[labels == k,1], s=1, color=cm(k), label=f<span class="org-string">'C{k}'</span>)
+  ax[1].scatter(xhat[labels == k, 0], xhat[labels == k, 1], s=1, color=cm(k), label=f<span class="org-string">'C{k}'</span>)
+ax[0].set_title(<span class="org-string">'Observed data'</span>)
+ax[1].set_title(<span class="org-string">'Denoised data'</span>)
+ax[1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_aspect(<span class="org-string">'equal'</span>, adjustable=<span class="org-string">'datalim'</span>)
+  a.set_xlabel(<span class="org-string">'$x_1$'</span>)
+ax[0].set_ylabel(<span class="org-string">'$x_2$'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/zinb-vae-gmm.org/pinwheel-ex-gmvae-xhat.png" alt="pinwheel-ex-gmvae-xhat.png">
+</p>
+</div>
+
+<p>
+Assign labels to the estimated clusters using the most frequently occurring
+ground truth label, then assess clustering accuracy.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">data</span> = td.DataLoader(
+  td.TensorDataset(
+    torch.tensor(dat, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(pd.get_dummies(pd.Categorical(labels)).values, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>)),
+  batch_size=batch_size)
+<span class="org-variable-name">yhat</span> = fit.get_labels(data)
+
+<span class="org-variable-name">acc</span> = 0
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K):
+  <span class="org-variable-name">query</span> = np.argmax(pd.get_dummies(pd.Categorical(labels)).values, axis=1) == k
+  <span class="org-variable-name">idx</span> = np.argmax(yhat[query].<span class="org-builtin">sum</span>(axis=0))
+  <span class="org-variable-name">acc</span> += (np.argmax(yhat[query], axis=1) == idx).<span class="org-builtin">sum</span>()
+acc / n
+</pre>
+</div>
+
+<pre class="example">
+0.2832
+
+</pre>
+
+<p>
+Plot the latent space.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-ipython"><span class="org-variable-name">cm</span> = plt.get_cmap(<span class="org-string">'Dark2'</span>)
+plt.clf()
+<span class="org-variable-name">fig</span>, <span class="org-variable-name">ax</span> = plt.subplots(1, 2, sharey=<span class="org-constant">True</span>)
+fig.set_size_inches(6, 3)
+
+<span class="org-variable-name">lim</span> = [-5, 5]
+<span class="org-variable-name">x</span>, <span class="org-variable-name">y</span> = np.meshgrid(np.linspace(*lim), np.linspace(*lim))
+<span class="org-keyword">with</span> torch.no_grad():
+  <span class="org-variable-name">prior_mean</span>, <span class="org-variable-name">prior_scale</span> = fit.decoder_z.forward(torch.eye(fit.n_clusters).cuda())
+  <span class="org-variable-name">prior_mean</span> = prior_mean.cpu().numpy()
+  <span class="org-variable-name">prior_scale</span> = prior_scale.cpu().numpy()
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K):
+  <span class="org-variable-name">f</span> = st.multivariate_normal(prior_mean[k], np.diag(prior_scale[k] ** 2)).pdf(np.stack([x, y]).reshape(2, -1).T).reshape(50, 50)
+  ax[0].scatter(*prior_mean[k], marker=<span class="org-string">'x'</span>, s=16, color=cm(k), label=f<span class="org-string">'C{k}'</span>)
+  ax[0].contour(x, y, f, cmap=colorcet.cm[<span class="org-string">'blues'</span>])
+ax[0].set_title(<span class="org-string">'Prior $p(z)$'</span>)
+ax[0].set_ylabel(<span class="org-string">'$z_2$'</span>)
+
+<span class="org-variable-name">data</span> = td.DataLoader(
+  td.TensorDataset(
+    torch.tensor(dat, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>),
+    torch.tensor(pd.get_dummies(pd.Categorical(labels)).values, device=<span class="org-string">'cuda'</span>, dtype=torch.<span class="org-builtin">float</span>)),
+  batch_size=batch_size)
+<span class="org-variable-name">zhat</span> = fit.get_latent(data)
+<span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(K):
+  ax[1].scatter(zhat[labels == k,0], zhat[labels == k,1], s=1, color=cm(k), label=f<span class="org-string">'C{k}'</span>)
+ax[1].legend(frameon=<span class="org-constant">False</span>, loc=<span class="org-string">'center left'</span>, bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
+ax[1].set_title(<span class="org-string">'Posterior $q(z \mid x)$'</span>)
+<span class="org-keyword">for</span> a <span class="org-keyword">in</span> ax:
+  a.set_aspect(<span class="org-string">'equal'</span>, adjustable=<span class="org-string">'datalim'</span>)
+  a.set_xlabel(<span class="org-string">'$z_1$'</span>)
+fig.tight_layout()
+</pre>
+</div>
+
+
+<div class="figure">
+<p><img src="figure/zinb-vae-gmm.org/pinwheel-ex-gmvae.png" alt="pinwheel-ex-gmvae.png">
+</p>
+</div>
+</div>
+</div>
+
 <div id="outline-container-orgda964e9" class="outline-3">
 <h3 id="orgda964e9">MNIST sanity check</h3>
 <div class="outline-text-3" id="text-orgda964e9">
@@ -981,7 +1428,7 @@ inference and implementation.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2021-09-05 Sun 17:26</p>
+<p class="date">Created: 2021-09-06 Mon 12:06</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

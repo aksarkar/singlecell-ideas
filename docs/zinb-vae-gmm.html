@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- 2020-07-09 Thu 23:44 -->
+<!-- 2021-09-05 Sun 17:26 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Deep unsupervised clustering of scRNA-seq data</title>
@@ -360,6 +360,7 @@ We assume \(
   \newcommand\vlambda{\boldsymbol{\lambda}}
   \newcommand\vmu{\boldsymbol{\mu}}
   \newcommand\vphi{\boldsymbol{\phi}}
+  \newcommand\vpi{\boldsymbol{\pi}}
   \)
 </p>
 
@@ -446,7 +447,8 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
     <span class="org-keyword">return</span> <span class="org-keyword">self</span>.net(x)
 
 <span class="org-keyword">class</span> <span class="org-type">DeepGaussian</span>(torch.nn.Module):
-  <span class="org-doc">"""Gaussian distribution parameterized by FC networks for mean and scale"""</span>
+  <span class="org-doc">"""Gaussian distribution parameterized by FC networks for mean and (diagonal)</span>
+<span class="org-doc">scale"""</span>
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, output_dim, hidden_dim=128):
     <span class="org-builtin">super</span>().__init__()
     <span class="org-keyword">self</span>.net = FC(input_dim, hidden_dim)
@@ -467,9 +469,12 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
   <span class="org-keyword">def</span> <span class="org-function-name">forward</span>(<span class="org-keyword">self</span>, x):
     <span class="org-variable-name">q</span> = <span class="org-keyword">self</span>.net(x)
     <span class="org-keyword">return</span> <span class="org-keyword">self</span>.logits(q)
+</pre>
+</div>
 
-<span class="org-keyword">class</span> <span class="org-type">BGMVAE</span>(torch.nn.Module):
-  <span class="org-doc">"GMVAE with Bernoulli likelihood"</span>
+<div class="org-src-container">
+<pre class="src src-ipython" id="orgf28a8c5"><span class="org-keyword">class</span> <span class="org-type">BGMVAE</span>(torch.nn.Module):
+  <span class="org-doc">"""GMVAE with Bernoulli likelihood"""</span>
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, latent_dim, n_clusters, hidden_dim=128):
     <span class="org-builtin">super</span>().__init__()
     <span class="org-keyword">self</span>.n_clusters = n_clusters
@@ -491,7 +496,7 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
     <span class="org-keyword">assert</span> <span class="org-keyword">not</span> torch.isnan(loss)
     <span class="org-keyword">if</span> writer <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span> <span class="org-keyword">and</span> labels <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
       <span class="org-keyword">with</span> torch.no_grad():
-        <span class="org-variable-name">cond_entropy</span> = (probs * torch.log(probs + 1e-16)).mean()
+        <span class="org-variable-name">cond_entropy</span> = -(probs * torch.log(probs + 1e-16)).mean()
         writer.add_scalar(<span class="org-string">'loss/cond_entropy'</span>, cond_entropy, global_step)
         <span class="org-variable-name">acc</span> = 0.
         <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(labels.shape[1]):
@@ -544,25 +549,27 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
 
   <span class="org-type">@torch.no_grad</span>()
   <span class="org-keyword">def</span> <span class="org-function-name">get_labels</span>(<span class="org-keyword">self</span>, data):
-    <span class="org-keyword">with</span> torch.no_grad():
-      <span class="org-variable-name">yhat</span> = []
-      <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
-        <span class="org-variable-name">x</span> = x.cuda()
-        yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
+    <span class="org-variable-name">yhat</span> = []
+    <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
+      <span class="org-variable-name">x</span> = x.cuda()
+      yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
     <span class="org-keyword">return</span> np.vstack(yhat)
 
   <span class="org-type">@torch.no_grad</span>()
   <span class="org-keyword">def</span> <span class="org-function-name">get_latent</span>(<span class="org-keyword">self</span>, data):
-    <span class="org-keyword">with</span> torch.no_grad():
-      <span class="org-variable-name">zhat</span> = []
-      <span class="org-variable-name">y</span> = torch.eye(<span class="org-keyword">self</span>.n_clusters).cuda()
-      <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
-        <span class="org-variable-name">x</span> = x.cuda()
-        <span class="org-variable-name">yhat</span> = torch.nn.functional.softmax(<span class="org-keyword">self</span>.encoder_y.forward(x), dim=1)
-        zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0] <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(fit.n_clusters)]).<span class="org-builtin">sum</span>(dim=0).cpu().numpy())
+    <span class="org-variable-name">zhat</span> = []
+    <span class="org-variable-name">y</span> = torch.eye(<span class="org-keyword">self</span>.n_clusters).cuda()
+    <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
+      <span class="org-variable-name">x</span> = x.cuda()
+      <span class="org-variable-name">yhat</span> = torch.nn.functional.softmax(<span class="org-keyword">self</span>.encoder_y.forward(x), dim=1)
+      zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
+                               <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(fit.n_clusters)]).<span class="org-builtin">sum</span>(dim=0).cpu().numpy())
     <span class="org-keyword">return</span> np.vstack(zhat)
+</pre>
+</div>
 
-<span class="org-keyword">class</span> <span class="org-type">PGMVAE</span>(torch.nn.Module):
+<div class="org-src-container">
+<pre class="src src-ipython" id="org712d798"><span class="org-keyword">class</span> <span class="org-type">PGMVAE</span>(torch.nn.Module):
   <span class="org-keyword">def</span> <span class="org-function-name">__init__</span>(<span class="org-keyword">self</span>, input_dim, latent_dim, n_clusters, hidden_dim=128):
     <span class="org-builtin">super</span>().__init__()
     <span class="org-keyword">self</span>.n_clusters = n_clusters
@@ -584,8 +591,8 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
     <span class="org-keyword">assert</span> <span class="org-keyword">not</span> torch.isnan(loss)
     <span class="org-keyword">if</span> writer <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span> <span class="org-keyword">and</span> labels <span class="org-keyword">is</span> <span class="org-keyword">not</span> <span class="org-constant">None</span>:
       <span class="org-keyword">with</span> torch.no_grad():
-        writer.add_scalar(<span class="org-string">'loss/cross_entropy'</span>, torch.nn.functional.binary_cross_entropy(probs, labels), global_step)
-        writer.add_scalar(<span class="org-string">'loss/cond_entropy'</span>, (probs * torch.log(probs + 1e-16)).mean(), global_step)
+        writer.add_scalar(<span class="org-string">'loss/cross_entropy'</span>, <span class="org-builtin">min</span>(torch.nn.functional.binary_cross_entropy(probs, labels), torch.nn.functional.binary_cross_entropy(1 - probs, labels)), global_step)
+        writer.add_scalar(<span class="org-string">'loss/cond_entropy'</span>, -(probs * torch.log(probs + 1e-16)).mean(), global_step)
     <span class="org-comment-delimiter"># </span><span class="org-comment">Assume cuda</span>
     <span class="org-variable-name">y</span> = torch.eye(<span class="org-keyword">self</span>.n_clusters).cuda()
     <span class="org-comment-delimiter"># </span><span class="org-comment">[n_clusters, latent_dim]</span>
@@ -632,20 +639,19 @@ approximated as a Monte Carlo integral (Kingma and Welling 2014).
 
   <span class="org-type">@torch.no_grad</span>()
   <span class="org-keyword">def</span> <span class="org-function-name">get_labels</span>(<span class="org-keyword">self</span>, data):
-    <span class="org-keyword">with</span> torch.no_grad():
-      <span class="org-variable-name">yhat</span> = []
-      <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
-        yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
+    <span class="org-variable-name">yhat</span> = []
+    <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
+      yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
     <span class="org-keyword">return</span> np.vstack(yhat)
 
   <span class="org-type">@torch.no_grad</span>()
   <span class="org-keyword">def</span> <span class="org-function-name">get_latent</span>(<span class="org-keyword">self</span>, data):
-    <span class="org-keyword">with</span> torch.no_grad():
-      <span class="org-variable-name">zhat</span> = []
-      <span class="org-variable-name">y</span> = torch.eye(<span class="org-keyword">self</span>.n_clusters).cuda()
-      <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
-        <span class="org-variable-name">yhat</span> = torch.nn.functional.softmax(<span class="org-keyword">self</span>.encoder_y.forward(x), dim=1)
-        zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0] <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(fit.n_clusters)]).<span class="org-builtin">sum</span>(dim=0).cpu().numpy())
+    <span class="org-variable-name">zhat</span> = []
+    <span class="org-variable-name">y</span> = torch.eye(<span class="org-keyword">self</span>.n_clusters).cuda()
+    <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
+      <span class="org-variable-name">yhat</span> = torch.nn.functional.softmax(<span class="org-keyword">self</span>.encoder_y.forward(x), dim=1)
+      zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
+                               <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(fit.n_clusters)]).<span class="org-builtin">sum</span>(dim=0).cpu().numpy())
     <span class="org-keyword">return</span> np.vstack(zhat)
 </pre>
 </div>
@@ -689,8 +695,8 @@ pixel probabilities.
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">k</span> = 10
 <span class="org-variable-name">seed</span> = 5
-<span class="org-variable-name">lr</span> = 1e-2
-<span class="org-variable-name">n_epochs</span> = 1
+<span class="org-variable-name">lr</span> = 5e-3
+<span class="org-variable-name">n_epochs</span> = 2
 <span class="org-variable-name">latent_dim</span> = 10
 torch.manual_seed(seed)
 <span class="org-variable-name">fit</span> = (BGMVAE(input_dim=mnist_data[0][0].shape[0], latent_dim=latent_dim, n_clusters=k)
@@ -731,7 +737,7 @@ acc / y.shape[0]
 </div>
 
 <pre class="example">
-0.6783333333333333
+0.6509666666666667
 
 </pre>
 </div>
@@ -746,7 +752,7 @@ Read sorted immune cell scRNA-seq data
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/ideas/zheng-10-way.h5ad'</span>)
+<pre class="src src-ipython"><span class="org-variable-name">dat</span> = anndata.read_h5ad(<span class="org-string">'/scratch/midway2/aksarkar/singlecell/mix4.h5ad'</span>)
 </pre>
 </div>
 
@@ -770,10 +776,10 @@ mix2
 AnnData object with n_obs × n_vars = 20294 × 17808
 obs: 'barcode', 'cell_type', 'leiden'
 var: 'ensg', 'name', 'n_cells', 'n_counts'
-uns: 'pca', 'neighbors', 'leiden', 'umap'
+uns: 'leiden', 'neighbors', 'pca', 'umap'
 obsm: 'X_pca', 'X_umap'
 varm: 'PCs'
-obsp: 'distances', 'connectivities'
+obsp: 'connectivities', 'distances'
 </pre>
 
 
@@ -804,12 +810,12 @@ Fit PGMVAE.
 
 <div class="org-src-container">
 <pre class="src src-ipython"><span class="org-variable-name">k</span> = 2
-<span class="org-variable-name">seed</span> = 0
-<span class="org-variable-name">lr</span> = 1e-2
+<span class="org-variable-name">seed</span> = 3
+<span class="org-variable-name">lr</span> = 5e-3
 <span class="org-variable-name">n_epochs</span> = 2
-<span class="org-variable-name">latent_dim</span> = 10
+<span class="org-variable-name">latent_dim</span> = 4
 torch.manual_seed(seed)
-<span class="org-variable-name">fit</span> = (PGMVAE(input_dim=mix2.shape[1], latent_dim=latent_dim, n_clusters=2)
+<span class="org-variable-name">fit</span> = (PGMVAE(input_dim=mix2.shape[1], latent_dim=latent_dim, n_clusters=k)
        .fit(data,
             lr=lr,
             n_epochs=n_epochs,
@@ -862,13 +868,7 @@ Get the latent representation.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-ipython"><span class="org-keyword">with</span> torch.no_grad():
-  <span class="org-variable-name">zhat</span> = []
-  <span class="org-variable-name">y</span> = torch.eye(fit.n_clusters).cuda()
-  <span class="org-keyword">for</span> x, *_ <span class="org-keyword">in</span> data:
-    <span class="org-variable-name">yhat</span> = torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1)
-    zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0] <span class="org-keyword">for</span> k <span class="org-keyword">in</span> <span class="org-builtin">range</span>(fit.n_clusters)]).<span class="org-builtin">sum</span>(dim=0).cpu().numpy())
-  <span class="org-variable-name">zhat</span> = np.vstack(zhat)
+<pre class="src src-ipython"><span class="org-variable-name">zhat</span> = fit.get_latent(data)
 </pre>
 </div>
 
@@ -981,7 +981,7 @@ inference and implementation.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Abhishek Sarkar</p>
-<p class="date">Created: 2020-07-09 Thu 23:44</p>
+<p class="date">Created: 2021-09-05 Sun 17:26</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

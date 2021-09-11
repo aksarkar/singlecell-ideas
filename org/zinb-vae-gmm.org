@@ -17,13 +17,15 @@
 
   The main disadvantage of strategy (1) is that, as commonly applied to
   transformed counts, it does not separate measurement error and biological
-  variation of interest (Sarkar and Stephens 2021). The main disadvantage of
-  strategy (2) is that it does not account for transcriptional noise
+  variation of interest ([[http://dx.doi.org/10.1038/s41588-021-00873-4][Sarkar
+  and Stephens 2021]]). The main disadvantage of strategy (2) is that it does
+  not account for transcriptional noise
   ([[https://doi.org/10.1016/j.cell.2008.09.050][Raj 2008]]). We
   [[file:nbmix.org][previously developed a simple mixture model]] that could
   address the second issue. Here, we develop an alternative method based on
   [[http://ruishu.io/2016/12/25/gmvae/][GMVAE]], which allows us to explore a
-  different way of separating and representing transcriptional noise.
+  [[https://users.rcc.uchicago.edu/~aksarkar/singlecell-ideas/expr-var-struct.html][different
+  way of separating and representing transcriptional noise]].
 
 * Setup
   :PROPERTIES:
@@ -49,6 +51,7 @@
     import pandas as pd
     import scanpy as sc
     import scipy.stats as st
+    import sklearn.decomposition as skd
     import sklearn.mixture as skm
     import torch
     import torch.utils.data as td
@@ -85,7 +88,7 @@
   :END:
 
 * Methods
-** Variational autoencoder
+** Gaussian VAE
 
    In perhaps the simplest case, one assumes \(
    \DeclareMathOperator\Bern{Bernoulli}
@@ -102,6 +105,8 @@
    \newcommand\mi{\mathbf{I}}
    \newcommand\va{\mathbf{a}}
    \newcommand\vb{\mathbf{b}}
+   \newcommand\vm{\mathbf{m}}
+   \newcommand\vs{\mathbf{s}}
    \newcommand\vu{\mathbf{u}}
    \newcommand\vx{\mathbf{x}}
    \newcommand\vy{\mathbf{y}}
@@ -114,7 +119,7 @@
 
    \begin{align}
      \vx_i \mid \vz_i, s^2 &\sim \N(f(\vz_i), s^2 \mi)\\
-     \vz_i &\sim \N(0, s_0^2 \mi),
+     \vz_i \mid s_0^2 &\sim \N(0, s_0^2 \mi),
    \end{align}
 
    where
@@ -125,19 +130,24 @@
    - \(f\) is a (fully connected, say) neural network mapping latent variables
      to the (noiseless, true) mean vector
 
-   This is a simplification of the original presentation of VAEs (Kingma and
-   Welling 2014); in this for, it is a simple generalization of PPCA
-   ([[https://dx.doi.org/10.1111/1467-9868.00196][Tipping and Bishop
-   1999]]). To perform inference, typically one introduces a variational
-   approximation parameterized by an inference network
+   /Remark/ This is slightly different than the original presentation of VAEs
+   ([[https://openreview.net/forum?id=33X9fd2-9FyZd][Kingma and Welling
+   2014]]).
+
+   There are two inference tasks: (1) estimating \(s^2, s_0^2, f\) and (2)
+   estimating \(p(\vz_i \mid \vx_i, s^2, s_0^2, f)\). This is an instance of
+   /variational empirical Bayes/ ([[https://dx.doi.org/10.1111/rssb.12388][Wang
+   et al. 2020]]), which is typically done by introducing a variational
+   approximation parameterized by an /inference network/
    ([[https://escholarship.org/uc/item/34j1h7k5][Gershman and Goodman 2014]]).
 
    \begin{equation}
      q(\vz_i \mid \vx_i) = \N(\mu(\vz_i), \diag(\sigma^2(\vz_i))),
    \end{equation}
 
-   where \(\mu, \sigma^2\) give the mean and diagonal of the covariance matrix
-   of the approximate posterior distribution.
+   where \(\mu, \sigma^2\) are neural networks mapping the latent variable
+   \(\vz_i\) to the mean and diagonal of the covariance matrix of the
+   approximate posterior distribution.
 
    /Remark/ The inference network [[file:vae-unamortized.org][is not strictly
    necessary]].
@@ -151,10 +161,10 @@
          self.net = torch.nn.Sequential(
            torch.nn.Linear(input_dim, hidden_dim),
            torch.nn.ReLU(),
-           torch.nn.BatchNorm1d(hidden_dim),
+           # torch.nn.BatchNorm1d(hidden_dim),
            torch.nn.Linear(hidden_dim, hidden_dim),
            torch.nn.ReLU(),
-           torch.nn.BatchNorm1d(hidden_dim),
+           # torch.nn.BatchNorm1d(hidden_dim),
          )
 
        def forward(self, x):
@@ -167,7 +177,9 @@
          super().__init__()
          self.net = FC(input_dim, hidden_dim)
          self.mean = torch.nn.Linear(hidden_dim, output_dim)
-         self.scale = torch.nn.Sequential(torch.nn.Linear(hidden_dim, output_dim), torch.nn.Softplus())
+         self.scale = torch.nn.Sequential(
+           torch.nn.Linear(hidden_dim, output_dim),
+           torch.nn.Softplus())
 
        def forward(self, x):
          q = self.net(x)
@@ -178,16 +190,18 @@
        def __init__(self, input_dim, output_dim, hidden_dim=128):
          super().__init__()
          self.net = FC(input_dim, hidden_dim)
-         self.logits = torch.nn.Linear(hidden_dim, output_dim)
+         self.probs = torch.nn.Sequential(
+           torch.nn.Linear(hidden_dim, output_dim),
+           torch.nn.Softmax(dim=1))
 
        def forward(self, x):
          q = self.net(x)
-         return self.logits(q)
+         return self.probs(q)
    #+END_SRC
 
    #+RESULTS: dist
    :RESULTS:
-   # Out[49]:
+   # Out[14]:
    :END:
 
    Then, the ELBO
@@ -209,19 +223,21 @@
      class VAE(torch.nn.Module):
        def __init__(self, input_dim, latent_dim, hidden_dim=128):
          super().__init__()
-         # Roughly 1e-3
-         # self.residual_scale_raw = torch.nn.Parameter(torch.tensor(-9.))
-         self.prior_scale_raw = torch.nn.Parameter(torch.tensor(-9.))
+         self.residual_scale_raw = torch.nn.Parameter(torch.zeros([1]))
+         self.prior_scale_raw = torch.nn.Parameter(torch.zeros([1]))
          self.encoder = DeepGaussian(input_dim, latent_dim, hidden_dim)
-         self.decoder = DeepGaussian(latent_dim, input_dim, hidden_dim)
+         self.decoder = torch.nn.Sequential(
+           FC(latent_dim, hidden_dim),
+           torch.nn.Linear(hidden_dim, input_dim))
 
-       def forward(self, x, writer=None, global_step=None):
+       def forward(self, x, n_samples, writer=None, global_step=None):
          softplus = torch.nn.functional.softplus
          z_mean, z_scale = self.encoder.forward(x)
-         qz = torch.distributions.Normal(z_scale, z_scale)
+         qz = torch.distributions.Normal(z_mean, z_scale)
          kl = torch.distributions.kl.kl_divergence(qz, torch.distributions.Normal(0., softplus(self.prior_scale_raw))).sum(dim=1)
-         x_mean, x_scale = self.decoder.forward(qz.rsample())
-         err = torch.distributions.Normal(x_mean, x_scale).log_prob(x).sum(dim=1)
+         z = qz.rsample(n_samples)
+         x_mean = self.decoder.forward(z)
+         err = torch.distributions.Normal(x_mean, softplus(self.residual_scale_raw)).log_prob(x).mean(dim=0).sum(dim=1)
          loss = -(err - kl).sum()
          if writer is not None:
            writer.add_scalar('loss/kl', kl.sum(), global_step)
@@ -229,9 +245,10 @@
            writer.add_scalar('loss/neg_elbo', loss, global_step)
          return loss
 
-       def fit(self, data, n_epochs, log_dir=None, **kwargs):
+       def fit(self, data, n_epochs, n_samples=1, log_dir=None, **kwargs):
          assert torch.cuda.is_available()
          self.cuda()
+         n_samples = torch.Size([n_samples])
          if log_dir is not None:
            writer = tb.SummaryWriter(log_dir)
          else:
@@ -239,10 +256,10 @@
          opt = torch.optim.RMSprop(self.parameters(), **kwargs)
          global_step = 0
          for epoch in range(n_epochs):
-           for batch in data:
-             x = batch[0].cuda()
+           for (x,) in data:
+             x = x.cuda()
              opt.zero_grad()
-             loss = self.forward(x, writer=writer, global_step=global_step)
+             loss = self.forward(x, n_samples, writer=writer, global_step=global_step)
              if torch.isnan(loss):
                raise RuntimeError('nan loss')
              loss.backward()
@@ -250,9 +267,9 @@
              global_step += 1
          return self
 
-       # @torch.no_grad()
-       # def residual_scale(self):
-       #   return torch.nn.functional.softplus(self.residual_scale_raw).cpu().numpy()
+       @torch.no_grad()
+       def residual_scale(self):
+         return torch.nn.functional.softplus(self.residual_scale_raw).cpu().numpy()
 
        @torch.no_grad()
        def prior_scale(self):
@@ -269,43 +286,36 @@
        def predict(self, data):
          xhat = []
          for (x,) in data:
-           xhat.append(self.decoder.forward(self.encoder.forward(x)[0])[0].cpu().numpy())
+           xhat.append(self.decoder.forward(self.encoder.forward(x)[0]).cpu().numpy())
          return np.vstack(xhat)
    #+END_SRC
 
    #+RESULTS: vae
    :RESULTS:
-   # Out[206]:
+   # Out[5]:
    :END:
 
-** Gaussian GMVAE
+** Gaussian mixture prior VAE
 
-   Now assume
+   Now assume ([[http://ruishu.io/2016/12/25/gmvae/][Shu 2016]],
+   [[https://arxiv.org/abs/1611.02648][Dilokthanakul et al. 2016]],
+   [[https://www.ijcai.org/proceedings/2017/0273.pdf][Jiang et al. 2017]])
 
    \begin{align}
-     \vx_i \mid \vz_i &\sim \N(m(\vz_i), \diag(s^2(\vz_i)))\\
-     \vz_i \mid \vy_i &\sim \N(m_0(\vy_i), \diag(s_0^2(\vy_i)))\\
+     \vx_i \mid \vz_i, s^2 &\sim \N(f(\vz_i), s^2 \mi)\\
+     \vz_i \mid \vy_i &\sim \N(\vm_{\vy_i}, \vs_{\vy_i}^2)\\
      \vy_i \mid \va &\sim \Mult(1, \va),
    \end{align}
 
    where
 
-   - \(m(\cdot), s^2(\cdot)\) are fully-connected neural networks mapping
-     latent variables to the noiseless observation and the observation noise,
-     respectively
    - \(\vy_i\) is a one-hot \(k\)-vector denoting the latent cluster assignment
-   - \(m_0(\cdot), s_0^2(\cdot)\) are fully-connected neural networks mapping
-     latent labels to latent variables (in particular, \(m\) gives the cluster
-     centroids)
    - \(\va\) is the \(k\)-vector of prior probabilities for each cluster
      assignment
+   - \(\vm, \vs^2\) are prior means and diagonal covariances for the clusters
    
-   This specification combines the prior specification of
-   [[https://openreview.net/forum?id=33X9fd2-9FyZd][Rui Shu]] with the
-   likelihood of [[https://arxiv.org/abs/1611.02648][Dilokthanakul et
-   al. 2016]]. Specifically, the (marginal) prior on latent variables \(\vz_i\)
-   is a mixture of Gaussians. To perform inference, introduce a variational
-   approximation
+   Under this model, the marginal prior \(p(\vz_i)\) is a mixture of
+   Gaussians. To perform inference, introduce a variational approximation
 
    \begin{align}
      q(\vy_i, \vz_i \mid \vx_i) &= q(\vy_i \mid \vx_i)\, q(\vz_i \mid \vx_i, \vy_i)\\
@@ -318,7 +328,7 @@
    - \(\pi(\cdot)\) is a fully-connected neural network mapping observations to
      latent labels (more precisely, posterior probabilities)
    - \(\mu(\cdot), \sigma^2(\cdot)\) are fully-connected neural networks mapping
-     observations and latent labels to latent variables.
+     observations and latent labels to latent variables
 
    Importantly, the approximate posterior distribution of latent variables is
    Gaussian, not a mixture of Gaussians. The ELBO
@@ -340,15 +350,16 @@
          self.residual_scale_raw = torch.nn.Parameter(torch.zeros([1]))
          self.encoder_y = DeepCategorical(input_dim, n_clusters, hidden_dim)
          self.encoder_z = DeepGaussian(input_dim + n_clusters, latent_dim, hidden_dim)
-         self.decoder_z = DeepGaussian(n_clusters, latent_dim, hidden_dim)
+         self.prior_mean = torch.nn.Parameter(torch.randn([n_clusters, latent_dim]))
+         self.prior_scale_raw = torch.nn.Parameter(torch.randn([n_clusters, latent_dim]))
          self.decoder_x = torch.nn.Sequential(
            FC(latent_dim, hidden_dim),
            torch.nn.Linear(hidden_dim, input_dim))
 
-       def forward(self, x, labels=None, writer=None, global_step=None, eps=1e-16):
+       def forward(self, x, n_samples, labels=None, writer=None, global_step=None, eps=1e-16):
+         softplus = torch.nn.functional.softplus
          # [batch_size, n_clusters]
-         logits = self.encoder_y.forward(x)
-         probs = torch.nn.functional.softmax(logits, dim=1)
+         probs = self.encoder_y.forward(x)
          # Important: accumulate negative ELBO
          loss = (probs * (torch.log(probs + eps) + torch.log(torch.tensor(self.n_clusters, dtype=torch.float)))).sum()
          assert not torch.isnan(loss)
@@ -366,33 +377,29 @@
                                -(probs * torch.log(probs + eps)).mean(),
                                global_step)
          y = torch.eye(self.n_clusters).cuda()
-         # [n_clusters, latent_dim]
-         prior_mean, prior_scale = self.decoder_z.forward(y)
          # Important: really marginalize over y
          for k in range(self.n_clusters):
            z_mean, z_scale = self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))
            # [batch_size, latent_dim]
-           # TODO: n_samples > 1 breaks BatchNorm in decoder
-           qz = torch.distributions.Normal(z_mean, z_scale).rsample()
+           qz = torch.distributions.Normal(z_mean, z_scale).rsample(n_samples)
            loss += (probs[:,k].reshape(-1, 1)
                     ,* (torch.distributions.Normal(z_mean, z_scale).log_prob(qz)
-                       - torch.distributions.Normal(prior_mean[k], prior_scale[k]).log_prob(qz))).sum()
+                       - torch.distributions.Normal(self.prior_mean[k], softplus(self.prior_scale_raw[k])).log_prob(qz))).mean(dim=0).sum()
            assert not torch.isnan(loss)
            # [batch_size, input_dim]
            x_mean = self.decoder_x.forward(qz)
            loss -= (probs[:,k].reshape(-1, 1)
-                    ,* torch.distributions.Normal(
-                      x_mean,
-                      torch.nn.functional.softplus(self.residual_scale_raw)).log_prob(x)).sum()
+                    ,* torch.distributions.Normal(x_mean, softplus(self.residual_scale_raw)).log_prob(x)).mean(dim=0).sum()
            assert not torch.isnan(loss)
            assert loss > 0
          if writer is not None:
            writer.add_scalar('loss/neg_elbo', loss, global_step)
          return loss
 
-       def fit(self, data, n_epochs=100, log_dir=None, **kwargs):
+       def fit(self, data, n_samples, n_epochs=100, log_dir=None, **kwargs):
          assert torch.cuda.is_available()
          self.cuda()
+         n_samples = torch.Size([n_samples])
          if log_dir is not None:
            writer = tb.SummaryWriter(log_dir)
          else:
@@ -405,7 +412,7 @@
              if batch:
                y = batch.pop(0).cuda()
              opt.zero_grad()
-             loss = self.forward(x, labels=y, writer=writer, global_step=global_step)
+             loss = self.forward(x, n_samples, labels=y, writer=writer, global_step=global_step)
              if torch.isnan(loss):
                raise RuntimeError('nan loss')
              loss.backward()
@@ -418,11 +425,16 @@
        def residual_scale(self):
          return torch.nn.functional.softplus(self.residual_scale_raw).cpu().numpy()
 
+       @property
+       @torch.no_grad()
+       def prior_scale(self):
+         return torch.nn.functional.softplus(self.prior_scale_raw).cpu().numpy()
+
        @torch.no_grad()
        def get_labels(self, data):
          yhat = []
          for x, *_ in data:
-           yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
+           yhat.append(self.encoder_y.forward(x).cpu().numpy())
          return np.vstack(yhat)
 
        @torch.no_grad()
@@ -430,8 +442,8 @@
          zhat = []
          y = torch.eye(self.n_clusters).cuda()
          for x, *_ in data:
-           yhat = torch.nn.functional.softmax(self.encoder_y.forward(x), dim=1)
-           zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
+           yhat = self.encoder_y.forward(x)
+           zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
                                     for k in range(self.n_clusters)]).sum(dim=0).cpu().numpy())
          return np.vstack(zhat)
 
@@ -440,28 +452,27 @@
          xhat = []
          y = torch.eye(self.n_clusters).cuda()
          for x, *_ in data:
-           yhat = torch.nn.functional.softmax(self.encoder_y.forward(x), dim=1)
-           zhat = torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
-                               for k in range(fit.n_clusters)]).sum(dim=0)
+           yhat = self.encoder_y.forward(x)
+           zhat = torch.stack([yhat[:,k].reshape(-1, 1) * self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
+                               for k in range(self.n_clusters)]).sum(dim=0)
            xhat.append(self.decoder_x(zhat).cpu().numpy())
          return np.vstack(xhat)
    #+END_SRC
 
    #+RESULTS: gmvae
    :RESULTS:
-   # Out[120]:
+   # Out[95]:
    :END:
 
 ** Bernoulli GMVAE
 
-   As a sanity check (applying to MNIST), implement the approach for the
-   Bernoulli likelihood.
+   Implement the approach for the Bernoulli likelihood, to model MNIST.
 
-   \begin{align}
-     x_{ij} \mid \vz_i &\sim \Bern((f(\vz_i))_j)\\
-     \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
-     y_i \mid \va &\sim \Mult(1, \va).
-   \end{align}
+   \begin{equation}
+     x_{ij} \mid \vz_i \sim \Bern((f(\vz_i))_j),
+   \end{equation}
+
+   where \(x_{ij}\) is a binary pixel.
 
    #+NAME: bgmvae
    #+BEGIN_SRC ipython
@@ -567,13 +578,11 @@
 ** Poisson GMVAE
 
    Now implement the case we are interested in for scRNA-seq data, with Poisson
-   measurement model (likelihood):
+   measurement model (likelihood)
 
-   \begin{align}
-     \vx_i \mid \xiplus, \vz_i &\sim \Pois(\xiplus (\lambda(\vz_i))_j)\\
-     \vz_i \mid y_i &\sim \N(m(y_i), s^2(y_i))\\
-     y_i \mid \va &\sim \Mult(1, \va),
-   \end{align}
+   \begin{equation}
+     \vx_i \mid \xiplus, \vz_i \sim \Pois(\xiplus (f(\vz_i))_j)
+   \end{equation}
 
    where
 
@@ -581,8 +590,6 @@
      observed in cell \(i = 1, \ldots, n\)
    - \(\xiplus \triangleq \sum_j x_{ij}\) denotes the total number of molecules
      observed in cell \(i\)
-   - \(\lambda(\cdot)\) is a fully-connected neural network mapping latent
-     variables to true gene expression
 
    #+NAME: pgmvae
    #+BEGIN_SRC ipython
@@ -658,7 +665,7 @@
        def get_labels(self, data):
          yhat = []
          for x, *_ in data:
-           yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
+           yhat.append(torch.nn.functional.softmax(self.encoder_y.forward(x), dim=1).cpu().numpy())
          return np.vstack(yhat)
 
        @torch.no_grad()
@@ -667,7 +674,7 @@
          y = torch.eye(self.n_clusters).cuda()
          for x, *_ in data:
            yhat = torch.nn.functional.softmax(self.encoder_y.forward(x), dim=1)
-           zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
+           zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
                                     for k in range(fit.n_clusters)]).sum(dim=0).cpu().numpy())
          return np.vstack(zhat)
    #+END_SRC
@@ -678,147 +685,51 @@
    :END:
 
 * Results
-** Pinwheel example
+** GMM sanity check
 
-   Use the "pinwheel data" from [[https://arxiv.org/abs/1603.06277][Johnson et
-   al. 2016]]
-   ([[https://github.com/mattjj/svae/blob/master/experiments/gmm_svae_synth.py#L11][source
-   code]] associated with [[https://arxiv.org/abs/1611.02648][Dilokthanakul et
-   al. 2016]]).
+   As a sanity check, simulate from a mixture of 5 Gaussians convolved with
+   Gaussian noise.
 
    #+BEGIN_SRC ipython
-     def make_pinwheel_data(radial_std, tangential_std, num_classes, num_per_class, rate, seed=0):
-       rng = np.random.default_rng(seed)
-       rads = np.linspace(0, 2 * np.pi, num_classes, endpoint=False)
-       features = rng.normal(size=(num_classes * num_per_class, 2)) * np.array([radial_std, tangential_std])
-       features[:,0] += 1.
-       labels = np.repeat(np.arange(num_classes), num_per_class)
-       angles = rads[labels] + rate * np.exp(features[:,0])
-       rotations = np.stack([np.cos(angles), -np.sin(angles), np.sin(angles), np.cos(angles)])
-       rotations = np.reshape(rotations.T, (-1, 2, 2))
-       return np.einsum('ti,tij->tj', features, rotations), labels
+     num_obs = 10000
+     num_features = 10
+     num_clusters = 5
+     noise_scale = 0.5
+
+     rng = np.random.default_rng(1)
+     mu = rng.normal(size=(num_clusters, num_features))
+     sigma = rng.lognormal(size=(num_clusters, num_features))
+     y = rng.choice(num_clusters, size=num_obs)
+     Y = pd.get_dummies(y).values
+     x = rng.normal(loc=mu[y], scale=noise_scale + sigma[y])
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[6]:
+   # Out[58]:
    :END:
 
-   Generate data following [[https://arxiv.org/abs/1611.02648][Dilokthanakul et
-   al. 2016]].
-
-   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/pinwheel-ex.png
-     n = 10000
-     K = 5
-     dat, labels = make_pinwheel_data(0.1, 0.05, K, n // K, .5, seed=0)
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(4, 3)
-     for k in range(K):
-       plt.scatter(dat[labels == k,0], dat[labels == k,1], s=1, color=cm(k), label=f'C{k}')
-     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
-     plt.xlabel('$x_1$')
-     plt.ylabel('$x_2$')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[7]:
-   [[file:figure/zinb-vae-gmm.org/pinwheel-ex.png]]
-   :END:
-
-*** GMM
-
-   Fit a GMM by EM, with oracle number of components.
+   Plot a UMAP of the data.
 
    #+BEGIN_SRC ipython :async t
-     m0 = skm.GaussianMixture(n_components=K, random_state=1).fit(dat)
+     u = umap.UMAP().fit_transform(x)
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[73]:
+   # Out[29]:
    :END:
 
-   Plot the fit.
-
-   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/pinwheel-ex-gmm.png
+   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/gmm-ex-umap.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
      plt.gcf().set_size_inches(3.5, 3)
-     lim = [-1.5, 1.5]
-     x, y = np.meshgrid(np.linspace(*lim), np.linspace(*lim))
-     for k in range(K):
-       plt.scatter(dat[labels == k,0], dat[labels == k,1], s=1, color=cm(k), label=f'C{k}')
-       f = st.multivariate_normal(m0.means_[k], m0.covariances_[k]).pdf(np.stack([x, y]).reshape(2, -1).T).reshape(50, 50)
-       plt.contour(x, y, f, linewidths=0.5, levels=5, cmap=colorcet.cm['gray_r'])
-     plt.legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
-     plt.xlabel('$x_1$')
-     plt.ylabel('$x_2$')
-     plt.tight_layout()
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[84]:
-   [[file:figure/zinb-vae-gmm.org/pinwheel-ex-gmm.png]]
-   :END:
-
-*** VAE
-
-   Fit an ordinary VAE.
-
-   #+BEGIN_SRC ipython :async t
-     seed = 15
-     batch_size = 32
-     lr = 1e-2
-     n_epochs = 40
-     latent_dim = 4
-     torch.manual_seed(seed)
-     data = td.DataLoader(
-       td.TensorDataset(
-         torch.tensor(dat, device='cuda', dtype=torch.float)),
-       drop_last=True,
-       shuffle=True,
-       batch_size=batch_size)
-     fit0 = VAE(input_dim=2, latent_dim=latent_dim)
-     fit0 = fit0.fit(data,
-                  lr=lr,
-                  n_epochs=n_epochs,
-                  log_dir=f'runs/gmvae/pinwheel-vae-{latent_dim}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}'
-             )
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[207]:
-   :END:
-
-   Plot the latent space.
-
-   #+BEGIN_SRC ipython :async t
-     data = td.DataLoader(
-       td.TensorDataset(
-         torch.tensor(dat, device='cuda', dtype=torch.float)),
-       batch_size=batch_size)
-     zhat = fit0.get_latent(data)
-     u = umap.UMAP(random_state=1).fit_transform(zhat)
-   #+END_SRC
-
-   #+RESULTS:
-   :RESULTS:
-   # Out[208]:
-   :END:
-
-   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/pinwheel-ex-vae-zhat-umap.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     plt.gcf().set_size_inches(3.5, 3)
-     for k in range(K):
-       plt.scatter(u[labels == k,0], u[labels == k,1], s=1, color=cm(k), label=f'C{k}')
-     plt.legend(frameon=False, handletextpad=0, markerscale=4, loc='center left', bbox_to_anchor=(1, .5))
+     for k in range(num_clusters):
+       plt.scatter(u[y == k,0], u[y == k,1], s=1, alpha=0.1, color=cm(k), label=f'C{k}')
      plt.gca().set_aspect('equal', adjustable='datalim')
+     l = plt.legend(frameon=False, markerscale=4, handletextpad=0, loc='center left', bbox_to_anchor=(1, .5))
+     for h in l.legendHandles:
+       h.set_alpha(1)
      plt.xlabel('UMAP 1')
      plt.ylabel('UMAP 2')
      plt.tight_layout()
@@ -826,198 +737,269 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[209]:
-   [[file:figure/zinb-vae-gmm.org/pinwheel-ex-vae-zhat-umap.png]]
+   # Out[30]:
+   [[file:figure/zinb-vae-gmm.org/gmm-ex-umap.png]]
    :END:
 
-   Report the estimated \(\hat{s}_0\).
+   Report the oracle log likelihood.
 
    #+BEGIN_SRC ipython
-     fit0.prior_scale()
+     st.norm(loc=mu[y], scale=noise_scale + sigma[y]).logpdf(x).sum()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[210]:
-   : array(0.0014072, dtype=float32)
+   # Out[31]:
+   : -182471.79127489863
    :END:
 
-   Plot the predicted values.
+*** GMM on observed data
 
-   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/pinwheel-ex-vae-xhat.png
-     data = td.DataLoader(
-       td.TensorDataset(
-         torch.tensor(dat, device='cuda', dtype=torch.float)),
-       batch_size=batch_size)
-     xhat = fit0.predict(data)
+   Fit a GMM with the oracle number of clusters.
 
+   #+BEGIN_SRC ipython :async t
+     m0 = skm.GaussianMixture(n_components=num_clusters).fit(x)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[32]:
+   :END:
+
+   Report the clustering accuracy.
+
+   #+BEGIN_SRC ipython
+     yhat = m0.predict(x)
+     acc = 0
+     for k in range(num_clusters):
+       idx = np.argmax(pd.get_dummies(y)[yhat == k].sum(axis=0))
+       acc += (y[yhat == k] == idx).sum()
+     acc /= y.shape[0]
+     acc
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[34]:
+   : 0.858
+   :END:
+
+   Report the log likelihood, marginalizing over \(p(\vy \mid \vx)\).
+
+   #+BEGIN_SRC ipython
+     yhat = m0.predict_proba(x)
+     np.log(np.stack([yhat[:,k] * st.multivariate_normal(mean=m0.means_[k], cov=m0.covariances_[k]).pdf(x)
+                      for k in range(num_clusters)]).sum(axis=0)).sum()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[35]:
+   : -181326.07982124935
+   :END:
+
+*** VAE followed by GMM
+
+   Fit a Gaussian VAE to the data.
+
+   #+BEGIN_SRC ipython :async t
+     run = 6
+     latent_dim = 4
+     batch_size = 32
+     lr = 1e-2
+     n_samples = 10
+     n_epochs = 20
+
+     torch.manual_seed(run)
+     data = td.DataLoader(td.TensorDataset(torch.tensor(x, dtype=torch.float, device='cuda')),
+                          batch_size=batch_size, drop_last=True, shuffle=True)
+     m2 = VAE(input_dim=num_features, latent_dim=latent_dim)
+     m2.fit(data, n_epochs=n_epochs, n_samples=n_samples, lr=lr)
+
+     data = td.DataLoader(td.TensorDataset(torch.tensor(x, dtype=torch.float, device='cuda')),
+                          batch_size=batch_size)
+     zhat = m2.get_latent(data)
+     xhat = m2.predict(data)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[36]:
+   :END:
+
+   Compare the predicted values to the observed values.
+
+   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/gmm-ex-vae-fit.png
+     plt.clf()
+     plt.gcf().set_size_inches(3, 3)
+     plt.scatter(x.ravel(), xhat.ravel(), s=1, alpha=0.1, c='k')
+     plt.gca().set_aspect('equal', adjustable='datalim')
+     plt.xlabel('Observed value')
+     plt.ylabel('Predicted value')
+     plt.tight_layout()
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[37]:
+   [[file:figure/zinb-vae-gmm.org/gmm-ex-vae-fit.png]]
+   :END:
+
+   Plot UMAP of the embedding.
+
+   #+BEGIN_SRC ipython :async t
+     u = umap.UMAP(random_state=1).fit_transform(zhat)
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[38]:
+   :END:
+
+   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/gmm-ex-vae-gmm.png
      cm = plt.get_cmap('Dark2')
      plt.clf()
-     fig, ax = plt.subplots(1, 2, sharey=True)
-     fig.set_size_inches(6, 3)
-     for k in range(K):
-       ax[0].scatter(dat[labels == k,0], dat[labels == k,1], s=1, color=cm(k), label=f'C{k}')
-       ax[1].scatter(xhat[labels == k, 0], xhat[labels == k, 1], s=1, color=cm(k), label=f'C{k}')
-     ax[0].set_title('Observed data')
-     ax[1].set_title('Reconstructed data')
-     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
-     for a in ax:
-       a.set_aspect('equal', adjustable='datalim')
-       a.set_xlabel('$x_1$')
-     ax[0].set_ylabel('$x_2$')
-     fig.tight_layout()
+     plt.gcf().set_size_inches(3.5, 3)
+     for k in range(num_clusters):
+       plt.scatter(u[y == k,0], u[y == k,1], s=1, alpha=0.1, color=cm(k), label=f'C{k}')
+     plt.gca().set_aspect('equal', adjustable='datalim')
+     l = plt.legend(frameon=False, markerscale=4, handletextpad=0, loc='center left', bbox_to_anchor=(1, .5))
+     for h in l.legendHandles:
+       h.set_alpha(1)
+     plt.xlabel('UMAP 1')
+     plt.ylabel('UMAP 2')
+     plt.tight_layout()
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[211]:
-   [[file:figure/zinb-vae-gmm.org/pinwheel-ex-vae-xhat.png]]
+   # Out[40]:
+   [[file:figure/zinb-vae-gmm.org/gmm-ex-vae-gmm.png]]
    :END:
 
-   Report the estimated \(\hat{s}\).
+   Fit a GMM in the embedding space, then report the clustering accuracy.
 
    #+BEGIN_SRC ipython
-     fit0.residual_scale()
+     m2_gmm = skm.GaussianMixture(n_components=num_clusters).fit(zhat)
+     yhat = m2_gmm.predict(zhat)
+     acc = 0
+     for k in range(num_clusters):
+       idx = np.argmax(pd.get_dummies(y)[yhat == k].sum(axis=0))
+       acc += (y[yhat == k] == idx).sum()
+     acc /= y.shape[0]
+     acc
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[205]:
-   : array(0.7099699, dtype=float32)
+   # Out[42]:
+   : 0.5425
    :END:
 
 *** GMVAE
 
-   Fit GMVAE.
+    Now, fit GMVAE to the data, fixing to the oracle number of clusters.
 
-   #+BEGIN_SRC ipython :async t
-     seed = 4
-     batch_size = 32
-     lr = 1e-2
-     n_epochs = 10
-     latent_dim = 2
-     torch.manual_seed(seed)
-     data = td.DataLoader(
-       td.TensorDataset(
-         torch.tensor(dat, device='cuda', dtype=torch.float),
-         torch.tensor(pd.get_dummies(pd.Categorical(labels)).values, device='cuda', dtype=torch.float)),
-       drop_last=True,
-       shuffle=True,
-       batch_size=batch_size)
-     # Fix number of clusters to the ground truth
-     fit = (GMVAE(input_dim=2, latent_dim=latent_dim, n_clusters=K)
-            .fit(data,
-                 lr=lr,
-                 n_epochs=n_epochs,
-                 log_dir=f'runs/gmvae/pinwheel-{latent_dim}-{K}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}'
-            ))
-   #+END_SRC
+    #+BEGIN_SRC ipython :async t
+      run = 2
+      latent_dim = 4
+      batch_size = 32
+      lr = 1e-2
+      n_samples = 10
+      n_epochs = 20
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[51]:
-   :END:
+      torch.manual_seed(run)
+      data = td.DataLoader(td.TensorDataset(torch.tensor(x, dtype=torch.float, device='cuda'),
+                                            torch.tensor(Y, dtype=torch.float, device='cuda')),
+                           batch_size=batch_size, drop_last=True, shuffle=True)
+      m3 = GMVAE(input_dim=num_features, n_clusters=num_clusters, latent_dim=latent_dim)
+      m3.fit(data, n_epochs=n_epochs, n_samples=n_samples, lr=lr,
+             log_dir=f'runs/pgmvae/gmm-ex-gmvae-{run}-{lr:.1g}-{n_samples}-{batch_size}-{n_epochs}')
 
-   Plot the predicted values.
+      data = td.DataLoader(td.TensorDataset(torch.tensor(x, dtype=torch.float, device='cuda'),
+                                            torch.tensor(Y, dtype=torch.float, device='cuda')),
+                           batch_size=batch_size)
+      zhat = m3.get_latent(data)
+      yhat = np.argmax(m3.get_labels(data), axis=1)
+      xhat = m3.predict(data)
+    #+END_SRC
 
-   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/pinwheel-ex-gmvae-xhat.png
-     data = td.DataLoader(
-       td.TensorDataset(
-         torch.tensor(dat, device='cuda', dtype=torch.float),
-         torch.tensor(pd.get_dummies(pd.Categorical(labels)).values, device='cuda', dtype=torch.float)),
-       batch_size=batch_size)
-     xhat = fit.predict(data)
+    #+RESULTS:
+    :RESULTS:
+    # Out[96]:
+    :END:
 
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     fig, ax = plt.subplots(1, 2, sharey=True)
-     fig.set_size_inches(6, 3)
-     for k in range(K):
-       ax[0].scatter(dat[labels == k,0], dat[labels == k,1], s=1, color=cm(k), label=f'C{k}')
-       ax[1].scatter(xhat[labels == k, 0], xhat[labels == k, 1], s=1, color=cm(k), label=f'C{k}')
-     ax[0].set_title('Observed data')
-     ax[1].set_title('Denoised data')
-     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
-     for a in ax:
-       a.set_aspect('equal', adjustable='datalim')
-       a.set_xlabel('$x_1$')
-     ax[0].set_ylabel('$x_2$')
-     fig.tight_layout()
-   #+END_SRC
+    Compare the predicted values to the observed values.
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[52]:
-   [[file:figure/zinb-vae-gmm.org/pinwheel-ex-gmvae-xhat.png]]
-   :END:
+    #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/gmm-ex-gmvae-fit.png
+      plt.clf()
+      plt.gcf().set_size_inches(3, 3)
+      plt.scatter(x.ravel(), xhat.ravel(), s=1, alpha=0.1, c='k')
+      plt.gca().set_aspect('equal', adjustable='datalim')
+      plt.xlabel('Observed value')
+      plt.ylabel('Predicted value')
+      plt.tight_layout()
+    #+END_SRC
 
-   Assign labels to the estimated clusters using the most frequently occurring
-   ground truth label, then assess clustering accuracy.
+    #+RESULTS:
+    :RESULTS:
+    # Out[97]:
+    [[file:figure/zinb-vae-gmm.org/gmm-ex-gmvae-fit.png]]
+    :END:
 
-   #+BEGIN_SRC ipython :async t
-     data = td.DataLoader(
-       td.TensorDataset(
-         torch.tensor(dat, device='cuda', dtype=torch.float),
-         torch.tensor(pd.get_dummies(pd.Categorical(labels)).values, device='cuda', dtype=torch.float)),
-       batch_size=batch_size)
-     yhat = fit.get_labels(data)
+    Plot UMAP of the embedding.
 
-     acc = 0
-     for k in range(K):
-       query = np.argmax(pd.get_dummies(pd.Categorical(labels)).values, axis=1) == k
-       idx = np.argmax(yhat[query].sum(axis=0))
-       acc += (np.argmax(yhat[query], axis=1) == idx).sum()
-     acc / n
-   #+END_SRC
+    #+BEGIN_SRC ipython :async t
+      u = umap.UMAP(random_state=1).fit_transform(zhat)
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[53]:
-   : 0.4851
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[98]:
+    :END:
 
-   Plot the latent space.
+    #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/gmm-ex-gmvae-zhat-umap.png
+      cm = plt.get_cmap('Dark2')
+      plt.clf()
+      fig, ax = plt.subplots(1, 2)
+      fig.set_size_inches(6, 3)
+      for k in range(num_clusters):
+        ax[0].scatter(u[y == k,0], u[y == k,1], s=1, alpha=0.1, color=cm(k), label=f'C{k}')
+        ax[1].scatter(u[yhat == k,0], u[yhat == k,1], s=1, alpha=0.1, color=cm(k), label=f'C{k}')
+      for a in ax:
+        a.set_aspect('equal', adjustable='datalim')
+        a.set_xlabel('UMAP 1')
+      ax[0].set_title('True labels')
+      ax[1].set_title('Predicted labels')
+      l = ax[1].legend(frameon=False, markerscale=4, handletextpad=0, loc='center left', bbox_to_anchor=(1, .5))
+      for h in l.legendHandles:
+        h.set_alpha(1)
+      ax[0].set_ylabel('UMAP 2')
+      fig.tight_layout()
+    #+END_SRC
 
-   #+BEGIN_SRC ipython :ipyfile figure/zinb-vae-gmm.org/pinwheel-ex-gmvae.png
-     cm = plt.get_cmap('Dark2')
-     plt.clf()
-     fig, ax = plt.subplots(1, 2, sharey=True)
-     fig.set_size_inches(6, 3)
+    #+RESULTS:
+    :RESULTS:
+    # Out[99]:
+    [[file:figure/zinb-vae-gmm.org/gmm-ex-gmvae-zhat-umap.png]]
+    :END:
 
-     lim = [-50, 50]
-     x, y = np.meshgrid(np.linspace(*lim), np.linspace(*lim))
-     with torch.no_grad():
-       prior_mean, prior_scale = fit.decoder_z.forward(torch.eye(fit.n_clusters).cuda())
-       prior_mean = prior_mean.cpu().numpy()
-       prior_scale = prior_scale.cpu().numpy()
-     for k in range(K):
-       f = st.multivariate_normal(prior_mean[k], np.diag(prior_scale[k] ** 2)).pdf(np.stack([x, y]).reshape(2, -1).T).reshape(50, 50)
-       ax[0].scatter(*prior_mean[k], marker='x', s=16, color=cm(k), label=f'C{k}')
-       ax[0].contour(x, y, f, cmap=colorcet.cm['blues'])
-     ax[0].set_title('Prior $p(z)$')
-     ax[0].set_ylabel('$z_2$')
+    Report the clustering accuracy.
 
-     data = td.DataLoader(
-       td.TensorDataset(
-         torch.tensor(dat, device='cuda', dtype=torch.float),
-         torch.tensor(pd.get_dummies(pd.Categorical(labels)).values, device='cuda', dtype=torch.float)),
-       batch_size=batch_size)
-     zhat = fit.get_latent(data)
-     for k in range(K):
-       ax[1].scatter(zhat[labels == k,0], zhat[labels == k,1], s=1, color=cm(k), label=f'C{k}')
-     ax[1].legend(frameon=False, loc='center left', bbox_to_anchor=(1, .5), handletextpad=0, markerscale=4)
-     ax[1].set_title('Posterior $q(z \mid x)$')
-     for a in ax:
-       a.set_aspect('equal', adjustable='datalim')
-       a.set_xlabel('$z_1$')
-     fig.tight_layout()
-   #+END_SRC
+    #+BEGIN_SRC ipython
+      acc = 0
+      for k in range(num_clusters):
+        idx = np.argmax(pd.get_dummies(y)[yhat == k].sum(axis=0))
+        acc += (y[yhat == k] == idx).sum()
+      acc /= y.shape[0]
+      acc
+    #+END_SRC
 
-   #+RESULTS:
-   :RESULTS:
-   # Out[54]:
-   [[file:figure/zinb-vae-gmm.org/pinwheel-ex-gmvae.png]]
-   :END:
+    #+RESULTS:
+    :RESULTS:
+    # Out[100]:
+    : 0.5156
+    :END:
 
 ** MNIST sanity check
 
@@ -1337,3 +1319,25 @@
    regulatory network, such that it is reasonable to model it in the low
    dimensional space. This assumption simplifies the model in terms of both
    inference and implementation.
+
+** VADE
+
+   [[https://www.ijcai.org/proceedings/2017/0273.pdf][Jiang et al. 2017]]
+   propose /Variational Deep Embedding/
+
+   \begin{align}
+     \vx_i \mid \vz_i, s^2 &\sim \N(f(\vz_i), s^2 \mi)\\
+     \vz_i \mid y_i &\sim \N(\vm_{\vy_i}, \vs_{\vy_i}^2 \mi)\\
+     \vy_i \mid \va &\sim \Mult(1, \va),
+   \end{align}
+
+   where \(\vm, \vs\) are prior means and diagonal covariances,
+   respectively. Under this model, the marginal prior \(p(\vz_i)\) is a mixture
+   of Gaussians.
+
+   /Remark/ We have simplified the likelihood.
+
+** GMVAE
+
+   This specification combines the prior specification of
+   

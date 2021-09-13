@@ -84,7 +84,7 @@
 
   #+RESULTS:
   :RESULTS:
-  # Out[3]:
+  # Out[2]:
   :END:
 
 * Methods
@@ -201,7 +201,7 @@
 
    #+RESULTS: dist
    :RESULTS:
-   # Out[14]:
+   # Out[3]:
    :END:
 
    Then, the ELBO
@@ -253,7 +253,7 @@
            writer = tb.SummaryWriter(log_dir)
          else:
            writer = None
-         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         opt = torch.optim.Adam(self.parameters(), **kwargs)
          global_step = 0
          for epoch in range(n_epochs):
            for (x,) in data:
@@ -297,7 +297,9 @@
 
 ** Gaussian mixture prior VAE
 
-   Now assume ([[http://ruishu.io/2016/12/25/gmvae/][Shu 2016]],
+   Now assume
+   ([[https://papers.nips.cc/paper/5352-semi-supervised-learning-with-deep-generative-models.pdf][Kingma
+   et al. 2014]], [[http://ruishu.io/2016/12/25/gmvae/][Shu 2016]],
    [[https://arxiv.org/abs/1611.02648][Dilokthanakul et al. 2016]],
    [[https://www.ijcai.org/proceedings/2017/0273.pdf][Jiang et al. 2017]])
 
@@ -404,7 +406,7 @@
            writer = tb.SummaryWriter(log_dir)
          else:
            writer = None
-         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         opt = torch.optim.Adam(self.parameters(), **kwargs)
          global_step = 0
          for epoch in range(n_epochs):
            for batch in data:
@@ -476,103 +478,202 @@
 
    #+NAME: bgmvae
    #+BEGIN_SRC ipython
-    class BGMVAE(torch.nn.Module):
-      """GMVAE with Bernoulli likelihood"""
-      def __init__(self, input_dim, latent_dim, n_clusters, hidden_dim=128):
-        super().__init__()
-        self.n_clusters = n_clusters
-        self.encoder_y = DeepCategorical(input_dim, n_clusters, hidden_dim)
-        self.encoder_z = DeepGaussian(input_dim + n_clusters, latent_dim, hidden_dim)
-        self.decoder_z = DeepGaussian(n_clusters, latent_dim, hidden_dim)
-        self.decoder_x = torch.nn.Sequential(
-          FC(latent_dim, hidden_dim),
-          torch.nn.Linear(hidden_dim, input_dim),
-          torch.nn.Sigmoid()
-        )
+     class BGMVAE(torch.nn.Module):
+       """GMVAE with Bernoulli likelihood"""
+       def __init__(self, input_dim, latent_dim, n_clusters, hidden_dim=128):
+         super().__init__()
+         self.n_clusters = n_clusters
+         self.encoder_y = DeepCategorical(input_dim, n_clusters, hidden_dim)
+         self.encoder_z = DeepGaussian(input_dim + n_clusters, latent_dim, hidden_dim)
+         self.decoder_z = DeepGaussian(n_clusters, latent_dim, hidden_dim)
+         self.decoder_x = torch.nn.Sequential(
+           FC(latent_dim + n_clusters, hidden_dim),
+           torch.nn.Linear(hidden_dim, input_dim),
+           torch.nn.Sigmoid()
+         )
 
-      def forward(self, x, labels=None, writer=None, global_step=None):
-        # [batch_size, n_clusters]
-        logits = self.encoder_y.forward(x)
-        probs = torch.nn.functional.softmax(logits, dim=1)
-        # Important: Negative ELBO
-        loss = (probs * (torch.log(probs + 1e-16) + torch.log(torch.tensor(self.n_clusters, dtype=torch.float)))).sum()
-        assert not torch.isnan(loss)
-        if writer is not None and labels is not None:
-          with torch.no_grad():
-            cond_entropy = -(probs * torch.log(probs + 1e-16)).mean()
-            writer.add_scalar('loss/cond_entropy', cond_entropy, global_step)
-            acc = 0.
-            for k in range(labels.shape[1]):
-              query = torch.argmax(labels, dim=1) == k
-              if query.any():
-                idx = torch.argmax(probs[query].sum(dim=0))
-                acc += (torch.argmax(probs[query], dim=1) == idx).sum()
-            writer.add_scalar('loss/accuracy', acc / x.shape[0], global_step)
-        # Assume cuda
-        y = torch.eye(self.n_clusters).cuda()
-        # [n_clusters, latent_dim]
-        prior_mean, prior_scale = self.decoder_z.forward(y)
-        for k in range(self.n_clusters):
-          mean, scale = self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))
-          # [batch_size, latent_dim]
-          # TODO: n_samples > 1 breaks BatchNorm in decoder
-          qz = torch.distributions.Normal(mean, scale).rsample()
-          loss += (probs[:,k].reshape(-1, 1) * (torch.distributions.Normal(mean, scale).log_prob(qz) - torch.distributions.Normal(prior_mean[k], prior_scale[k]).log_prob(qz))).sum()
-          assert not torch.isnan(loss)
-          # [batch_size, input_dim]
-          px = self.decoder_x(qz)
-          loss -= (probs[:,k].reshape(-1, 1) * (x * torch.log(px + 1e-16) + (1 - x) * torch.log(1 - px + 1e-16))).sum()
-          assert not torch.isnan(loss)
-          assert loss > 0
-        if writer is not None:
-          writer.add_scalar('loss/neg_elbo', loss, global_step)
-        return loss
+       def forward(self, x, n_samples, labels=None, writer=None, global_step=None):
+         # [batch_size, n_clusters]
+         probs = self.encoder_y.forward(x)
+         # Important: Negative ELBO
+         loss = (probs * (torch.log(probs + 1e-16) + torch.log(torch.tensor(self.n_clusters, dtype=torch.float)))).sum()
+         assert not torch.isnan(loss)
+         if writer is not None and labels is not None:
+           with torch.no_grad():
+             cond_entropy = -(probs * torch.log(probs + 1e-16)).sum(dim=1).mean()
+             writer.add_scalar('loss/cond_entropy', cond_entropy, global_step)
+             yhat = torch.zeros(x.shape[0], dtype=torch.long, device='cuda')
+             for k in range(labels.shape[1]):
+               query = torch.argmax(probs, dim=1) == k
+               if query.any():
+                 yhat[query] = torch.argmax(labels[query].sum(dim=0))
+             writer.add_scalar('loss/accuracy', (yhat == torch.argmax(labels, dim=1)).sum() / x.shape[0], global_step)
+         # Assume cuda
+         y = torch.eye(self.n_clusters).cuda()
+         # [n_clusters, latent_dim]
+         prior_mean, prior_scale = self.decoder_z.forward(y)
+         for k in range(self.n_clusters):
+           mean, scale = self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))
+           # [n_samples, batch_size, latent_dim]
+           qz = torch.distributions.Normal(mean, scale).rsample(n_samples)
+           loss += (probs[:,k].reshape(-1, 1)
+                    ,* (torch.distributions.Normal(mean, scale).log_prob(qz)
+                       - torch.distributions.Normal(prior_mean[k], prior_scale[k]).log_prob(qz))).mean(dim=0).sum()
+           assert not torch.isnan(loss)
+           # [n_samples, batch_size, input_dim + n_clusters]
+           px = self.decoder_x(torch.cat([qz, y[k].repeat(1, x.shape[0], 1)], dim=2))
+           loss -= (probs[:,k].reshape(-1, 1)
+                    ,* (x * torch.log(px + 1e-16)
+                       + (1 - x) * torch.log(1 - px + 1e-16))).mean(dim=0).sum()
+           assert not torch.isnan(loss)
+           assert loss > 0
+         if writer is not None:
+           writer.add_scalar('loss/neg_elbo', loss, global_step)
+         return loss
 
-      def fit(self, data, n_epochs=100, log_dir=None, **kwargs):
-        self.cuda()
-        if log_dir is not None:
-          writer = tb.SummaryWriter(log_dir)
-        else:
-          writer = None
-        opt = torch.optim.RMSprop(self.parameters(), **kwargs)
-        global_step = 0
-        for epoch in range(n_epochs):
-          for x, y in data:
-            # TODO: put entire MNIST on GPU in advance
-            x = x.cuda()
-            y = y.cuda()
-            opt.zero_grad()
-            loss = self.forward(x, labels=y, writer=writer, global_step=global_step)
-            if torch.isnan(loss):
-              raise RuntimeError('nan loss')
-            loss.backward()
-            opt.step()
-            global_step += 1
-        return self
+       def fit(self, data, n_samples=1, n_epochs=100, log_dir=None, **kwargs):
+         self.cuda()
+         n_samples = torch.Size([n_samples])
+         if log_dir is not None:
+           writer = tb.SummaryWriter(log_dir)
+         else:
+           writer = None
+         opt = torch.optim.Adam(self.parameters(), **kwargs)
+         global_step = 0
+         for epoch in range(n_epochs):
+           for x, y in data:
+             # TODO: put entire MNIST on GPU in advance
+             x = x.cuda()
+             y = y.cuda()
+             opt.zero_grad()
+             loss = self.forward(x, n_samples, labels=y, writer=writer, global_step=global_step)
+             if torch.isnan(loss):
+               raise RuntimeError('nan loss')
+             loss.backward()
+             opt.step()
+             global_step += 1
+         return self
 
-      @torch.no_grad()
-      def get_labels(self, data):
-        yhat = []
-        for x, *_ in data:
-          x = x.cuda()
-          yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
-        return np.vstack(yhat)
+       @torch.no_grad()
+       def get_labels(self, data):
+         yhat = []
+         for x, *_ in data:
+           x = x.cuda()
+           yhat.append(torch.nn.functional.softmax(fit.encoder_y.forward(x), dim=1).cpu().numpy())
+         return np.vstack(yhat)
 
-      @torch.no_grad()
-      def get_latent(self, data):
-        zhat = []
-        y = torch.eye(self.n_clusters).cuda()
-        for x, *_ in data:
-          x = x.cuda()
-          yhat = torch.nn.functional.softmax(self.encoder_y.forward(x), dim=1)
-          zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
-                                   for k in range(fit.n_clusters)]).sum(dim=0).cpu().numpy())
-        return np.vstack(zhat)
+       @torch.no_grad()
+       def get_latent(self, data):
+         zhat = []
+         y = torch.eye(self.n_clusters).cuda()
+         for x, *_ in data:
+           x = x.cuda()
+           yhat = torch.nn.functional.softmax(self.encoder_y.forward(x), dim=1)
+           zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * fit.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
+                                    for k in range(fit.n_clusters)]).sum(dim=0).cpu().numpy())
+         return np.vstack(zhat)
    #+END_SRC
 
    #+RESULTS: bgmvae
    :RESULTS:
-   # Out[34]:
+   # Out[158]:
+   :END:
+
+   For reference, implement Kingma et al. M2 model.
+
+   #+NAME: m2
+   #+BEGIN_SRC ipython
+     class M2(torch.nn.Module):
+       def __init__(self, input_dim, latent_dim, n_clusters, hidden_dim=128):
+         super().__init__()
+         self.n_clusters = n_clusters
+         self.encoder_y = DeepCategorical(input_dim, n_clusters, hidden_dim)
+         self.encoder_z = DeepGaussian(input_dim + n_clusters, latent_dim, hidden_dim)
+         self.decoder_x = torch.nn.Sequential(
+           FC(latent_dim + n_clusters, hidden_dim),
+           torch.nn.Linear(hidden_dim, input_dim),
+           torch.nn.Sigmoid()
+         )
+
+       def forward(self, x, n_samples, labels=None, writer=None, global_step=None):
+         # [batch_size, n_clusters]
+         probs = self.encoder_y.forward(x)
+         # Important: Negative ELBO
+         loss = (probs * (torch.log(probs + 1e-16) + torch.log(torch.tensor(self.n_clusters, dtype=torch.float)))).sum()
+         assert not torch.isnan(loss)
+         if writer is not None and labels is not None:
+           with torch.no_grad():
+             cond_entropy = -(probs * torch.log(probs + 1e-16)).sum(dim=1).mean()
+             writer.add_scalar('loss/cond_entropy', cond_entropy, global_step)
+             yhat = torch.zeros(x.shape[0], dtype=torch.long, device='cuda')
+             for k in range(labels.shape[1]):
+               query = torch.argmax(probs, dim=1) == k
+               if query.any():
+                 yhat[query] = torch.argmax(labels[query].sum(dim=0))
+             writer.add_scalar('loss/accuracy', (yhat == torch.argmax(labels, dim=1)).sum() / x.shape[0], global_step)
+         # Assume cuda
+         y = torch.eye(self.n_clusters).cuda()
+         for k in range(self.n_clusters):
+           mean, scale = self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))
+           # [n_samples, batch_size, latent_dim]
+           qz = torch.distributions.Normal(mean, scale).rsample(n_samples)
+           loss += (probs[:,k].reshape(-1, 1) * (torch.distributions.Normal(mean, scale).log_prob(qz) - torch.distributions.Normal(0., 1.).log_prob(qz))).sum()
+           assert not torch.isnan(loss)
+           # [n_samples, batch_size, input_dim + num_clusters]
+           px = self.decoder_x(torch.cat([qz, y[k].repeat(1, x.shape[0], 1)], dim=2))
+           loss -= (probs[:,k].reshape(-1, 1) * (x * torch.log(px + 1e-16) + (1 - x) * torch.log(1 - px + 1e-16))).mean(dim=0).sum()
+           assert not torch.isnan(loss)
+           assert loss > 0
+         if writer is not None:
+           writer.add_scalar('loss/neg_elbo', loss, global_step)
+         return loss
+
+       def fit(self, data, n_samples=1, n_epochs=100, log_dir=None, **kwargs):
+         self.cuda()
+         n_samples = torch.Size([n_samples])
+         if log_dir is not None:
+           writer = tb.SummaryWriter(log_dir)
+         else:
+           writer = None
+         opt = torch.optim.Adam(self.parameters(), **kwargs)
+         global_step = 0
+         for epoch in range(n_epochs):
+           for x, y in data:
+             # TODO: put entire MNIST on GPU in advance
+             x = x.cuda()
+             y = y.cuda()
+             opt.zero_grad()
+             loss = self.forward(x, n_samples, labels=y, writer=writer, global_step=global_step)
+             if torch.isnan(loss):
+               raise RuntimeError('nan loss')
+             loss.backward()
+             opt.step()
+             global_step += 1
+         return self
+
+       @torch.no_grad()
+       def get_labels(self, data):
+         yhat = []
+         for x, *_ in data:
+           x = x.cuda()
+           yhat.append(self.encoder_y.forward(x).cpu().numpy())
+         return np.vstack(yhat)
+
+       @torch.no_grad()
+       def get_latent(self, data):
+         zhat = []
+         y = torch.eye(self.n_clusters).cuda()
+         for x, *_ in data:
+           x = x.cuda()
+           yhat = self.encoder_y.forward(x)
+           zhat.append(torch.stack([yhat[:,k].reshape(-1, 1) * self.encoder_z.forward(torch.cat([x, y[k].repeat(x.shape[0], 1)], dim=1))[0]
+                                    for k in range(self.n_clusters)]).sum(dim=0).cpu().numpy())
+         return np.vstack(zhat)
+   #+END_SRC
+
+   #+RESULTS: m2
+   :RESULTS:
+   # Out[151]:
    :END:
 
 ** Poisson GMVAE
@@ -641,7 +742,7 @@
          self.cuda()
          if log_dir is not None:
            writer = tb.SummaryWriter(log_dir)
-         opt = torch.optim.RMSprop(self.parameters(), **kwargs)
+         opt = torch.optim.Adam(self.parameters(), **kwargs)
          global_step = 0
          for epoch in range(n_epochs):
            for batch in data:
@@ -681,7 +782,7 @@
 
    #+RESULTS: pgmvae
    :RESULTS:
-   # Out[165]:
+   # Out[123]:
    :END:
 
 * Results
@@ -1027,27 +1128,55 @@
 
    #+RESULTS:
    :RESULTS:
-   # Out[33]:
+   # Out[120]:
    :END:
 
+   First, fit Kingma et al. M2 model.
+
    #+BEGIN_SRC ipython :async t
-     k = 10
-     seed = 5
+     K = 10
      lr = 5e-3
      n_epochs = 2
+     n_samples = 1
      latent_dim = 10
-     torch.manual_seed(seed)
-     fit = (BGMVAE(input_dim=mnist_data[0][0].shape[0], latent_dim=latent_dim, n_clusters=k)
-            .fit(data,
-                 lr=lr,
-                 n_epochs=n_epochs,
-                 log_dir=f'runs/pgmvae/mnist-{latent_dim}-{k}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}')
-     )
+     M2_fits = dict()
+     for seed in range(5):
+       torch.manual_seed(seed)
+       M2_fits[seed] = (M2(input_dim=mnist_data[0][0].shape[0], latent_dim=latent_dim, n_clusters=K)
+                        .fit(data,
+                             lr=lr,
+                             n_samples=n_samples,
+                             n_epochs=n_epochs,
+                             log_dir=f'runs/m2/mnist-{latent_dim}-{K}-{seed}-{lr:.1g}-{batch_size}-{n_samples}-{n_epochs}'))
    #+END_SRC
 
    #+RESULTS:
    :RESULTS:
-   # Out[35]:
+   # Out[152]:
+   :END:
+
+   Now fit BGMVAE.
+
+   #+BEGIN_SRC ipython :async t
+     K = 10
+     lr = 5e-3
+     n_epochs = 2
+     latent_dim = 10
+     bgmvae_fits = dict()
+     for seed in range(5):
+       torch.manual_seed(seed)
+       bgmvae_fits[seed] = (BGMVAE(input_dim=mnist_data[0][0].shape[0], latent_dim=latent_dim, n_clusters=K)
+                            .fit(data,
+                                 lr=lr,
+                                 n_samples=1,
+                                 n_epochs=n_epochs,
+                                 log_dir=f'runs/bgmvae/mnist-{latent_dim}-{seed}-{lr:.1g}-{batch_size}-{n_epochs}-{K}')
+       )
+   #+END_SRC
+
+   #+RESULTS:
+   :RESULTS:
+   # Out[159]:
    :END:
 
    Get the approximate posterior distribution on labels.
@@ -1056,7 +1185,6 @@
      data = td.DataLoader(mnist_data, batch_size=batch_size, shuffle=False,
                           pin_memory=True)
      yhat = fit.get_labels(data)
-     y = np.vstack([label for _, label in mnist_data])
    #+END_SRC
 
    #+RESULTS:
